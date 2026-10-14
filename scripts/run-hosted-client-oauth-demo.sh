@@ -44,7 +44,9 @@ wait_for_url() {
   return 1
 }
 
-trap cleanup EXIT HUP INT TERM
+# Requested shutdown exits through cleanup instead of resuming child monitoring.
+trap cleanup EXIT
+trap 'exit 0' HUP INT TERM
 
 for command in curl lsof node pnpm; do
   command -v "$command" >/dev/null 2>&1 || fail "missing required command: $command"

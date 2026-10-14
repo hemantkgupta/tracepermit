@@ -32,6 +32,7 @@ node --check "$repo_root/scripts/summarize-live-cli.mjs"
 node --check "$repo_root/scripts/run-demo-endpoint-client.mjs"
 node --check "$repo_root/scripts/demo-cleanup-guardian.mjs"
 node --test "$repo_root/scripts/demo-cleanup-guardian.test.mjs"
+node --test "$repo_root/scripts/demo-shutdown.test.mjs"
 
 if ! grep -Fq 'simulated !== true' "$repo_root/scripts/run-openai-tunnel-demo.sh"; then
   echo "TracePermit demo verification: the tunnel launcher must verify simulator-only mode." >&2

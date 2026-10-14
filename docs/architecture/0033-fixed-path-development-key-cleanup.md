@@ -26,6 +26,14 @@ identity and SHA-256 digest. After the launcher dies, it removes the key and
 session descriptor only if the exact observed key is still present. Normal
 shutdown retains an independent shell trap.
 
+Both the local and hosted OAuth launchers handle `SIGINT`, `SIGTERM`, and
+`SIGHUP` by exiting successfully through the `EXIT` cleanup trap. Cleanup runs
+once and does not return to child-health monitoring. Unexpected child exits
+still fail the launcher, and startup validation keeps its nonzero status.
+Subprocess tests cover requested stops, actual child exits, and validation
+failures in isolated temporary fixtures; real local acceptance additionally
+checks listener closure, key removal, restart, and rejection of old credentials.
+
 ## Consequences
 
 The local demo is intentionally single-session. A stale key or state file
