@@ -17,6 +17,7 @@ pnpm test:endpoint-connector-e2e
 npm --prefix site ci
 npm --prefix site audit --audit-level=low
 pnpm site:build
+node --test scripts/site-search-compatibility.test.mjs
 pnpm demo:verify
 ```
 
@@ -28,7 +29,9 @@ simulator scenario or an equivalent protocol smoke test.
 
 The site uses a separate npm lockfile. CI installs it with `npm ci`, rejects
 reported dependency advisories at low severity or higher, and builds the static
-output. See the [site dependency runbook](../runbooks/site-dependency-maintenance.md)
+output. A compatibility test compiles the real search component and verifies
+its canonical hot-update binding and generated index in an isolated site fixture.
+See the [site dependency runbook](../runbooks/site-dependency-maintenance.md)
 for the scoped Vite override and the conditions for removing it.
 
 Demo lifecycle acceptance (OPS-004, SEC-013) requires `SIGINT`, `SIGTERM`, and

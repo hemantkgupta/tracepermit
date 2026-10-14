@@ -7,6 +7,13 @@ export default defineConfig({
   cleanUrls: true,
   lastUpdated: true,
 
+  vite: {
+    resolve: {
+      // VitePress 1.x accepts a URL in its search HMR hook; Vite 6 needs an ID.
+      alias: { "/@localSearchIndex": "@localSearchIndex" },
+    },
+  },
+
   head: [
     ["link", { rel: "icon", type: "image/svg+xml", href: "/logo.svg" }],
     ["meta", { name: "theme-color", content: "#3b82f6" }],

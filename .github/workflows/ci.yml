@@ -48,6 +48,7 @@ jobs:
           npm --prefix site ci
           npm --prefix site audit --audit-level=low
           pnpm site:build
+          node --test scripts/site-search-compatibility.test.mjs
 
       - name: Verify simulator-only semantic scenarios
         run: |
