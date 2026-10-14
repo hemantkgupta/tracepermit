@@ -41,6 +41,12 @@ Scenario 6: the development and OAuth profiles both use ports 5173, 8080, and
 Scenarios 3 and 8 use disposable PostgreSQL for approval, while semantic,
 scheduled-stop, synthetic-exfiltration, and latency qualification use local Java application boundaries.
 
+An intentional stop exits successfully and removes the local session descriptor
+and endpoint signing key. A child crash still fails the launcher. Start a fresh
+`pnpm demo` session before running `pnpm demo:run` after Scenarios 0–1 or repeating
+the same reads: the gateway retains recent reads for one minute, so accumulated
+requests can correctly trigger the rapid-read policy instead of another allow.
+
 ## Recommended order
 
 | Order | Scenario                                                                                         | Audience question answered                                                                                 | Command                                      |

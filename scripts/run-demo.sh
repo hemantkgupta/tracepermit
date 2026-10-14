@@ -62,7 +62,9 @@ cleanup() {
   echo "TracePermit demo: stopped; ephemeral token and endpoint keys are no longer usable."
 }
 
-trap cleanup EXIT HUP INT TERM
+# Requested shutdown exits through cleanup instead of resuming child monitoring.
+trap cleanup EXIT
+trap 'exit 0' HUP INT TERM
 
 for command in curl lsof node nohup openssl pnpm; do require_command "$command"; done
 

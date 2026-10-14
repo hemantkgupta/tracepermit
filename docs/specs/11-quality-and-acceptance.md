@@ -14,7 +14,11 @@ pnpm format:check
 pnpm docs:links
 pnpm portability:check
 pnpm test:endpoint-connector-e2e
+npm --prefix site ci
+npm --prefix site audit --audit-level=low
 pnpm site:build
+node --test scripts/site-search-compatibility.test.mjs
+pnpm demo:verify
 ```
 
 `pnpm check` builds, typechecks, and tests the React console, verifies the
@@ -22,6 +26,19 @@ Node/Java environment, and runs the Java aggregate test and coverage gates.
 PostgreSQL integration tests use disposable Testcontainers; Docker is needed
 for those checks. Runtime-affecting changes also need the closest numbered
 simulator scenario or an equivalent protocol smoke test.
+
+The site uses a separate npm lockfile. CI installs it with `npm ci`, rejects
+reported dependency advisories at low severity or higher, and builds the static
+output. A compatibility test compiles the real search component and verifies
+its canonical hot-update binding and generated index in an isolated site fixture.
+See the [site dependency runbook](../runbooks/site-dependency-maintenance.md)
+for the scoped Vite override and the conditions for removing it.
+
+Demo lifecycle acceptance (OPS-004, SEC-013) requires `SIGINT`, `SIGTERM`, and
+`SIGHUP` to exit successfully through cleanup exactly once. A real child exit
+must still fail, startup validation must keep its error status, and normal
+shutdown must stop children and remove the local endpoint key and session.
+`pnpm demo:verify` runs subprocess regressions for both launcher profiles.
 
 ## Behavior acceptance
 
