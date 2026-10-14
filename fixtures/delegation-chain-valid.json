@@ -1,0 +1,140 @@
+{
+  "schemaVersion": "1.0",
+  "eventId": "018f47a2-f5ce-7a4b-8f54-80e5d3eaf094",
+  "observedAt": "2026-10-08T10:20:00.000Z",
+  "traceId": "bf3a2c1e4b5d67890123456789abcdef",
+  "identity": {
+    "subject": {
+      "id": "user:alice@example.com",
+      "type": "human",
+      "authenticationMethod": "oidc",
+      "assurance": "authenticated"
+    },
+    "actor": {
+      "id": "workload:deployment-api",
+      "type": "workload",
+      "authenticationMethod": "mtls",
+      "assurance": "authenticated"
+    },
+    "evidence": [
+      {
+        "evidenceId": "evidence-oidc-alice-chain",
+        "subjectId": "user:alice@example.com",
+        "kind": "oidc_token",
+        "assurance": "authenticated",
+        "issuer": "https://id.acme.example",
+        "verifiedAt": "2026-10-08T10:19:59.000Z",
+        "credentialFingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      {
+        "evidenceId": "evidence-mtls-deployment-chain",
+        "subjectId": "workload:deployment-api",
+        "kind": "mtls_certificate",
+        "assurance": "authenticated",
+        "issuer": "acme-workload-ca",
+        "verifiedAt": "2026-10-08T10:19:59.000Z",
+        "credentialFingerprint": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+      }
+    ]
+  },
+  "trigger": {
+    "kind": "service",
+    "origin": "api",
+    "requestId": "req-api-chain-2001",
+    "clientName": "deployment-api"
+  },
+  "declaredIntent": {
+    "goal": "Inspect then update one simulated security group",
+    "source": "api_field"
+  },
+  "action": {
+    "protocol": "sdk",
+    "toolName": "aws.ec2.update_security_group",
+    "arguments": {
+      "groupId": "sg-demo",
+      "port": 443,
+      "cidr": "192.0.2.0/24"
+    },
+    "target": {
+      "system": "aws",
+      "environment": "test",
+      "accountId": "simulated-123",
+      "resourceType": "security-group"
+    }
+  },
+  "lineage": {
+    "rootPrincipalId": "user:alice@example.com",
+    "hops": [
+      {
+        "hopId": "hop-chain-user",
+        "kind": "principal",
+        "subjectId": "user:alice@example.com",
+        "assurance": "authenticated",
+        "source": "acme-oidc",
+        "observedAt": "2026-10-08T10:19:58.000Z"
+      },
+      {
+        "hopId": "hop-chain-api",
+        "parentHopId": "hop-chain-user",
+        "kind": "agent",
+        "subjectId": "workload:deployment-api",
+        "assurance": "delegated",
+        "source": "tracepermit-delegation",
+        "observedAt": "2026-10-08T10:19:59.000Z",
+        "delegationTokenId": "delegation-chain-root"
+      },
+      {
+        "hopId": "hop-chain-tool",
+        "parentHopId": "hop-chain-api",
+        "kind": "tool",
+        "subjectId": "tool:security-group-adapter",
+        "assurance": "delegated",
+        "source": "tracepermit-delegation",
+        "observedAt": "2026-10-08T10:20:00.000Z",
+        "delegationTokenId": "delegation-chain-child"
+      }
+    ],
+    "delegations": [
+      {
+        "tokenId": "delegation-chain-root",
+        "issuer": "tracepermit",
+        "subjectId": "workload:deployment-api",
+        "actorId": "user:alice@example.com",
+        "audience": "tracepermit-gateway",
+        "scopes": [
+          "aws.ec2.security_group.read",
+          "aws.ec2.security_group.update"
+        ],
+        "resources": [
+          "aws:simulated-123:security-group:sg-demo",
+          "aws:simulated-123:security-group:sg-secondary"
+        ],
+        "purpose": "bounded simulated deployment",
+        "traceId": "bf3a2c1e4b5d67890123456789abcdef",
+        "issuedAt": "2026-10-08T10:19:40.000Z",
+        "expiresAt": "2026-10-08T10:24:40.000Z",
+        "tokenHash": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+        "verification": "verified"
+      },
+      {
+        "tokenId": "delegation-chain-child",
+        "parentTokenId": "delegation-chain-root",
+        "issuer": "tracepermit",
+        "subjectId": "tool:security-group-adapter",
+        "actorId": "workload:deployment-api",
+        "audience": "tracepermit-gateway",
+        "scopes": ["aws.ec2.security_group.update"],
+        "resources": ["aws:simulated-123:security-group:sg-demo"],
+        "purpose": "update one simulated security group",
+        "traceId": "bf3a2c1e4b5d67890123456789abcdef",
+        "issuedAt": "2026-10-08T10:19:50.000Z",
+        "expiresAt": "2026-10-08T10:21:50.000Z",
+        "tokenHash": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+        "verification": "verified"
+      }
+    ]
+  },
+  "clientClaims": {
+    "changeTicket": "CHG-SIMULATED-2001"
+  }
+}

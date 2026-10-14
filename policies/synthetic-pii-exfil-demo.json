@@ -1,0 +1,60 @@
+{
+  "schemaVersion": "1.0",
+  "id": "pol-synthetic-pii-exfil-demo-001",
+  "version": 1,
+  "name": "Synthetic customer read and cross-tool egress boundary",
+  "description": "Allow one fixed synthetic customer read and block any external send; an authorized prior read adds a specific exfiltration reason.",
+  "enabled": true,
+  "defaultDecision": {
+    "outcome": "block",
+    "reasonCode": "NO_EXPLICIT_ALLOW"
+  },
+  "rules": [
+    {
+      "id": "block-pii-read-then-external-send",
+      "priority": 300,
+      "description": "Cross-target, server-owned history upgrades an external-send proposal to an exfiltration-specific denial.",
+      "match": {
+        "origins": ["scheduler"],
+        "subjectTypes": ["workload"],
+        "targetSystems": ["synthetic-egress"],
+        "toolNames": ["demo.egress.send_external"],
+        "requiredSignals": ["SYNTHETIC_PII_READ_THEN_EXTERNAL_SEND"]
+      },
+      "decision": {
+        "outcome": "block",
+        "reasonCode": "SYNTHETIC_PII_EXFILTRATION_SEQUENCE_BLOCKED"
+      }
+    },
+    {
+      "id": "block-external-send-by-default",
+      "priority": 200,
+      "description": "External send is denied even without prior customer-read history.",
+      "match": {
+        "targetSystems": ["synthetic-egress"],
+        "toolNames": ["demo.egress.send_external"]
+      },
+      "decision": {
+        "outcome": "block",
+        "reasonCode": "EXTERNAL_SEND_NOT_AUTHORIZED"
+      }
+    },
+    {
+      "id": "allow-fixed-synthetic-customer-read",
+      "priority": 100,
+      "description": "Allow a verified scheduled workload to read only the fixed synthetic dataset through its strict simulator adapter.",
+      "match": {
+        "origins": ["scheduler"],
+        "subjectTypes": ["workload"],
+        "targetSystems": ["synthetic-crm"],
+        "actionClasses": ["read"],
+        "toolNames": ["demo.customer.bulk_read"],
+        "requiredSignals": ["SYNTHETIC_PII_DATASET"]
+      },
+      "decision": {
+        "outcome": "allow",
+        "reasonCode": "FIXED_SYNTHETIC_DATASET_READ"
+      }
+    }
+  ]
+}

@@ -1,0 +1,163 @@
+{
+  "$id": "https://schemas.tracepermit.invalid/v1/source-attestation-claims-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "type": {
+      "type": "string",
+      "const": "tracepermit-source-attestation+jws"
+    },
+    "canonicalizationProfile": {
+      "type": "string",
+      "const": "tracepermit-canonical-json-v1"
+    },
+    "requestBindingProfile": {
+      "type": "string",
+      "const": "tracepermit-mcp-method-params-v1"
+    },
+    "issuer": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "keyId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "audience": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "tokenId": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "issuedAt": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+    },
+    "connectorCredentialFingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "requestHash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "device": {
+      "type": "object",
+      "properties": {
+        "deviceId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "platform": {
+          "type": "string",
+          "enum": [
+            "macos",
+            "linux",
+            "windows"
+          ]
+        },
+        "assurance": {
+          "type": "string",
+          "enum": [
+            "development",
+            "managed",
+            "hardware_backed"
+          ]
+        }
+      },
+      "required": [
+        "deviceId",
+        "platform",
+        "assurance"
+      ],
+      "additionalProperties": false
+    },
+    "process": {
+      "type": "object",
+      "properties": {
+        "executableName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "executableHash": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "parentExecutableName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "startedAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        }
+      },
+      "required": [
+        "executableName",
+        "executableHash",
+        "parentExecutableName",
+        "startedAt"
+      ],
+      "additionalProperties": false
+    },
+    "triggerEvidence": {
+      "type": "object",
+      "properties": {
+        "requestedMode": {
+          "type": "string",
+          "enum": [
+            "interactive",
+            "automation",
+            "unknown"
+          ]
+        },
+        "terminalAttached": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "requestedMode",
+        "terminalAttached"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "version",
+    "type",
+    "canonicalizationProfile",
+    "requestBindingProfile",
+    "issuer",
+    "keyId",
+    "audience",
+    "tokenId",
+    "issuedAt",
+    "expiresAt",
+    "connectorCredentialFingerprint",
+    "requestHash",
+    "device",
+    "process",
+    "triggerEvidence"
+  ],
+  "additionalProperties": false
+}

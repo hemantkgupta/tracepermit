@@ -1,0 +1,33 @@
+{
+  "schemaVersion": "1.0",
+  "id": "pol-aws-production-deletion-demo-001",
+  "version": 1,
+  "name": "Simulated production security-group deletion approval boundary",
+  "description": "Require exact human approval for one production-labelled simulated security-group deletion; block all unmatched actions.",
+  "enabled": true,
+  "defaultDecision": {
+    "outcome": "block",
+    "reasonCode": "NO_EXPLICIT_ALLOW"
+  },
+  "rules": [
+    {
+      "id": "approve-simulated-production-security-group-deletion",
+      "priority": 300,
+      "description": "A verified scheduled workload must obtain independent human approval before deleting the fixed simulated production security group.",
+      "match": {
+        "origins": ["scheduler"],
+        "subjectTypes": ["workload"],
+        "targetSystems": ["aws"],
+        "environments": ["prod"],
+        "actionClasses": ["destructive"],
+        "toolNames": ["aws.ec2.delete_security_group"],
+        "requiredSignals": ["DESTRUCTIVE_VERB", "PRODUCTION_TARGET"]
+      },
+      "decision": {
+        "outcome": "require_approval",
+        "reasonCode": "PRODUCTION_DELETION_REQUIRES_HUMAN_APPROVAL",
+        "approvalGroup": "simulated-production-reviewers"
+      }
+    }
+  ]
+}

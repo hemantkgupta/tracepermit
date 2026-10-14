@@ -1,0 +1,46 @@
+{
+  "schemaVersion": "1.0",
+  "note": "The vector contains only a public key and signature; no endpoint private key is committed.",
+  "canonicalizationProfile": "tracepermit-canonical-json-v1",
+  "requestBindingProfile": "tracepermit-mcp-method-params-v1",
+  "hashAlgorithm": "sha256",
+  "signatureAlgorithm": "Ed25519",
+  "verifiedAt": "2030-01-01T00:00:30.000Z",
+  "request": {
+    "jsonrpc": "2.0",
+    "id": 99,
+    "method": "tools/list",
+    "params": {}
+  },
+  "claims": {
+    "version": "1.0",
+    "type": "tracepermit-source-attestation+jws",
+    "canonicalizationProfile": "tracepermit-canonical-json-v1",
+    "requestBindingProfile": "tracepermit-mcp-method-params-v1",
+    "issuer": "tracepermit-endpoint:device-simulated-001",
+    "keyId": "endpoint-key-001",
+    "audience": "tracepermit-gateway",
+    "tokenId": "018f0000-0000-7000-8000-000000000001",
+    "issuedAt": "2030-01-01T00:00:00.000Z",
+    "expiresAt": "2030-01-01T00:01:00.000Z",
+    "connectorCredentialFingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "requestHash": "sha256:6e62c4a988ed6bb3a19c350ac8a6797a8dad59f3152cfce71e4caf16dc452255",
+    "device": {
+      "deviceId": "device-simulated-001",
+      "platform": "macos",
+      "assurance": "development"
+    },
+    "process": {
+      "executableName": "codex",
+      "executableHash": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "parentExecutableName": "terminal",
+      "startedAt": "2030-01-01T00:00:00.000Z"
+    },
+    "triggerEvidence": {
+      "requestedMode": "interactive",
+      "terminalAttached": true
+    }
+  },
+  "publicKeySpkiBase64": "MCowBQYDK2VwAyEAGXkYmC+giC9ZEYJ8SjLW9evwtiSw9nDPMTqdCkuIBYs=",
+  "expectedCompactAttestation": "eyJhbGciOiJFZERTQSIsImtpZCI6ImVuZHBvaW50LWtleS0wMDEiLCJ0eXAiOiJ0cmFjZXBlcm1pdC1zb3VyY2UtYXR0ZXN0YXRpb24randzIn0.eyJhdWRpZW5jZSI6InRyYWNlcGVybWl0LWdhdGV3YXkiLCJjYW5vbmljYWxpemF0aW9uUHJvZmlsZSI6InRyYWNlcGVybWl0LWNhbm9uaWNhbC1qc29uLXYxIiwiY29ubmVjdG9yQ3JlZGVudGlhbEZpbmdlcnByaW50Ijoic2hhMjU2OjExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTEiLCJkZXZpY2UiOnsiYXNzdXJhbmNlIjoiZGV2ZWxvcG1lbnQiLCJkZXZpY2VJZCI6ImRldmljZS1zaW11bGF0ZWQtMDAxIiwicGxhdGZvcm0iOiJtYWNvcyJ9LCJleHBpcmVzQXQiOiIyMDMwLTAxLTAxVDAwOjAxOjAwLjAwMFoiLCJpc3N1ZWRBdCI6IjIwMzAtMDEtMDFUMDA6MDA6MDAuMDAwWiIsImlzc3VlciI6InRyYWNlcGVybWl0LWVuZHBvaW50OmRldmljZS1zaW11bGF0ZWQtMDAxIiwia2V5SWQiOiJlbmRwb2ludC1rZXktMDAxIiwicHJvY2VzcyI6eyJleGVjdXRhYmxlSGFzaCI6InNoYTI1NjoyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyIiwiZXhlY3V0YWJsZU5hbWUiOiJjb2RleCIsInBhcmVudEV4ZWN1dGFibGVOYW1lIjoidGVybWluYWwiLCJzdGFydGVkQXQiOiIyMDMwLTAxLTAxVDAwOjAwOjAwLjAwMFoifSwicmVxdWVzdEJpbmRpbmdQcm9maWxlIjoidHJhY2VwZXJtaXQtbWNwLW1ldGhvZC1wYXJhbXMtdjEiLCJyZXF1ZXN0SGFzaCI6InNoYTI1Njo2ZTYyYzRhOTg4ZWQ2YmIzYTE5YzM1MGFjOGE2Nzk3YThkYWQ1OWYzMTUyY2ZjZTcxZTRjYWYxNmRjNDUyMjU1IiwidG9rZW5JZCI6IjAxOGYwMDAwLTAwMDAtNzAwMC04MDAwLTAwMDAwMDAwMDAwMSIsInRyaWdnZXJFdmlkZW5jZSI6eyJyZXF1ZXN0ZWRNb2RlIjoiaW50ZXJhY3RpdmUiLCJ0ZXJtaW5hbEF0dGFjaGVkIjp0cnVlfSwidHlwZSI6InRyYWNlcGVybWl0LXNvdXJjZS1hdHRlc3RhdGlvbitqd3MiLCJ2ZXJzaW9uIjoiMS4wIn0.Haw5D_tnz6rvndPM060bdrkb8RShbEmjez3OmGsFd71ugZaGBGVMYQw42Ufw5z0r0kyfpeME-z2K42izWMQSCQ"
+}

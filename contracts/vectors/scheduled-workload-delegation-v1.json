@@ -1,0 +1,101 @@
+{
+  "schemaVersion": "1.0",
+  "note": "Public verification keys and signed examples only; no private key or reusable production credential is committed.",
+  "canonicalizationProfile": "tracepermit-canonical-json-v1",
+  "requestBindingProfile": "tracepermit-scheduled-action-v1",
+  "signatureAlgorithm": "Ed25519",
+  "verifiedAt": "2030-01-01T00:00:30.000Z",
+  "action": {
+    "protocol": "mcp",
+    "toolName": "aws.cost.get",
+    "arguments": {
+      "day": "2030-01-01"
+    },
+    "target": {
+      "system": "aws-simulator",
+      "environment": "test",
+      "accountId": "123456789012",
+      "resourceType": "cost-report"
+    }
+  },
+  "claims": {
+    "workload": {
+      "version": "1.0",
+      "type": "tracepermit-workload-identity+jws",
+      "canonicalizationProfile": "tracepermit-canonical-json-v1",
+      "requestBindingProfile": "tracepermit-scheduled-action-v1",
+      "issuer": "tracepermit-scheduler:primary",
+      "keyId": "scheduler-key-001",
+      "audience": "tracepermit-gateway",
+      "tokenId": "00000000-0000-4000-8000-000000000015",
+      "tenantId": "tenant:acme",
+      "subjectId": "workload:daily-cost-report",
+      "schedulerId": "scheduler:primary",
+      "scheduleId": "schedule:daily-cost-report",
+      "runId": "run:2030-01-01",
+      "eventId": "00000000-0000-4000-8000-000000000016",
+      "traceId": "0123456789abcdef0123456789abcdef",
+      "actionHash": "sha256:1ff61424649809ae7408f5d448a741e0a850c5385042596f1dd5179d200a6f15",
+      "issuedAt": "2030-01-01T00:00:00.000Z",
+      "expiresAt": "2030-01-01T00:02:00.000Z"
+    },
+    "rootDelegation": {
+      "version": "1.0",
+      "type": "tracepermit-delegation-grant+jws",
+      "canonicalizationProfile": "tracepermit-canonical-json-v1",
+      "issuer": "tracepermit-workload:daily-cost-report",
+      "keyId": "workload-key-001",
+      "tenantId": "tenant:acme",
+      "tokenId": "00000000-0000-4000-8000-000000000017",
+      "actorId": "workload:daily-cost-report",
+      "subjectId": "agent:report-builder",
+      "audience": "tracepermit-gateway",
+      "scopes": [
+        "aws.cost.read",
+        "aws.cost.export"
+      ],
+      "resources": [
+        "aws:simulated:account/123456789012/cost-report",
+        "aws:simulated:account/123456789012"
+      ],
+      "purpose": "Generate the scheduled cost report",
+      "traceId": "0123456789abcdef0123456789abcdef",
+      "issuedAt": "2030-01-01T00:00:00.000Z",
+      "expiresAt": "2030-01-01T00:05:00.000Z"
+    },
+    "childDelegation": {
+      "version": "1.0",
+      "type": "tracepermit-delegation-grant+jws",
+      "canonicalizationProfile": "tracepermit-canonical-json-v1",
+      "issuer": "tracepermit-agent:report-builder",
+      "keyId": "agent-key-001",
+      "tenantId": "tenant:acme",
+      "tokenId": "00000000-0000-4000-8000-000000000018",
+      "parentTokenId": "00000000-0000-4000-8000-000000000017",
+      "parentTokenHash": "sha256:ec2053f7b089f8fc29496e45123e409f5647960d64d39c43500146e203721c41",
+      "actorId": "agent:report-builder",
+      "subjectId": "tool:aws-cost-simulator",
+      "audience": "tracepermit-gateway",
+      "scopes": [
+        "aws.cost.read"
+      ],
+      "resources": [
+        "aws:simulated:account/123456789012/cost-report"
+      ],
+      "purpose": "Generate the scheduled cost report",
+      "traceId": "0123456789abcdef0123456789abcdef",
+      "issuedAt": "2030-01-01T00:00:10.000Z",
+      "expiresAt": "2030-01-01T00:04:00.000Z"
+    }
+  },
+  "publicKeysSpkiBase64": {
+    "scheduler": "MCowBQYDK2VwAyEApW4FK8Ate5wDjns05l+GrCuUWI1GGLNvk79SVjiQg1Q=",
+    "workload": "MCowBQYDK2VwAyEApWu3H4G/f/QvyuUhdGyZbV2z0FIl6Pg9DJhJWhd8Wg8=",
+    "agent": "MCowBQYDK2VwAyEAeo9+iHOT48fSjTjI3up3vopB5W09UY1J03qkTcBiQl0="
+  },
+  "expectedCompactCredentials": {
+    "workload": "eyJhbGciOiJFZERTQSIsImtpZCI6InNjaGVkdWxlci1rZXktMDAxIiwidHlwIjoidHJhY2VwZXJtaXQtd29ya2xvYWQtaWRlbnRpdHkrandzIn0.eyJhY3Rpb25IYXNoIjoic2hhMjU2OjFmZjYxNDI0NjQ5ODA5YWU3NDA4ZjVkNDQ4YTc0MWUwYTg1MGM1Mzg1MDQyNTk2ZjFkZDUxNzlkMjAwYTZmMTUiLCJhdWRpZW5jZSI6InRyYWNlcGVybWl0LWdhdGV3YXkiLCJjYW5vbmljYWxpemF0aW9uUHJvZmlsZSI6InRyYWNlcGVybWl0LWNhbm9uaWNhbC1qc29uLXYxIiwiZXZlbnRJZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAxNiIsImV4cGlyZXNBdCI6IjIwMzAtMDEtMDFUMDA6MDI6MDAuMDAwWiIsImlzc3VlZEF0IjoiMjAzMC0wMS0wMVQwMDowMDowMC4wMDBaIiwiaXNzdWVyIjoidHJhY2VwZXJtaXQtc2NoZWR1bGVyOnByaW1hcnkiLCJrZXlJZCI6InNjaGVkdWxlci1rZXktMDAxIiwicmVxdWVzdEJpbmRpbmdQcm9maWxlIjoidHJhY2VwZXJtaXQtc2NoZWR1bGVkLWFjdGlvbi12MSIsInJ1bklkIjoicnVuOjIwMzAtMDEtMDEiLCJzY2hlZHVsZUlkIjoic2NoZWR1bGU6ZGFpbHktY29zdC1yZXBvcnQiLCJzY2hlZHVsZXJJZCI6InNjaGVkdWxlcjpwcmltYXJ5Iiwic3ViamVjdElkIjoid29ya2xvYWQ6ZGFpbHktY29zdC1yZXBvcnQiLCJ0ZW5hbnRJZCI6InRlbmFudDphY21lIiwidG9rZW5JZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAxNSIsInRyYWNlSWQiOiIwMTIzNDU2Nzg5YWJjZGVmMDEyMzQ1Njc4OWFiY2RlZiIsInR5cGUiOiJ0cmFjZXBlcm1pdC13b3JrbG9hZC1pZGVudGl0eStqd3MiLCJ2ZXJzaW9uIjoiMS4wIn0.SsDNalYOqJT5Yc-QjDMH8bYBfkbKM7W4IikylH3DilhBEuG8o7vag7Pb7dmLljbQdU-V5uHCZR52leH2f-n1BA",
+    "rootDelegation": "eyJhbGciOiJFZERTQSIsImtpZCI6Indvcmtsb2FkLWtleS0wMDEiLCJ0eXAiOiJ0cmFjZXBlcm1pdC1kZWxlZ2F0aW9uLWdyYW50K2p3cyJ9.eyJhY3RvcklkIjoid29ya2xvYWQ6ZGFpbHktY29zdC1yZXBvcnQiLCJhdWRpZW5jZSI6InRyYWNlcGVybWl0LWdhdGV3YXkiLCJjYW5vbmljYWxpemF0aW9uUHJvZmlsZSI6InRyYWNlcGVybWl0LWNhbm9uaWNhbC1qc29uLXYxIiwiZXhwaXJlc0F0IjoiMjAzMC0wMS0wMVQwMDowNTowMC4wMDBaIiwiaXNzdWVkQXQiOiIyMDMwLTAxLTAxVDAwOjAwOjAwLjAwMFoiLCJpc3N1ZXIiOiJ0cmFjZXBlcm1pdC13b3JrbG9hZDpkYWlseS1jb3N0LXJlcG9ydCIsImtleUlkIjoid29ya2xvYWQta2V5LTAwMSIsInB1cnBvc2UiOiJHZW5lcmF0ZSB0aGUgc2NoZWR1bGVkIGNvc3QgcmVwb3J0IiwicmVzb3VyY2VzIjpbImF3czpzaW11bGF0ZWQ6YWNjb3VudC8xMjM0NTY3ODkwMTIvY29zdC1yZXBvcnQiLCJhd3M6c2ltdWxhdGVkOmFjY291bnQvMTIzNDU2Nzg5MDEyIl0sInNjb3BlcyI6WyJhd3MuY29zdC5yZWFkIiwiYXdzLmNvc3QuZXhwb3J0Il0sInN1YmplY3RJZCI6ImFnZW50OnJlcG9ydC1idWlsZGVyIiwidGVuYW50SWQiOiJ0ZW5hbnQ6YWNtZSIsInRva2VuSWQiOiIwMDAwMDAwMC0wMDAwLTQwMDAtODAwMC0wMDAwMDAwMDAwMTciLCJ0cmFjZUlkIjoiMDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWYiLCJ0eXBlIjoidHJhY2VwZXJtaXQtZGVsZWdhdGlvbi1ncmFudCtqd3MiLCJ2ZXJzaW9uIjoiMS4wIn0.GTGtZW9glWBZabpHl41agN42EEa5Syr8hLqkPYwwfSdZMI9VPPSji_8gQhjJQ4EarLJUTWkbLBgEd-4vNer1Dw",
+    "childDelegation": "eyJhbGciOiJFZERTQSIsImtpZCI6ImFnZW50LWtleS0wMDEiLCJ0eXAiOiJ0cmFjZXBlcm1pdC1kZWxlZ2F0aW9uLWdyYW50K2p3cyJ9.eyJhY3RvcklkIjoiYWdlbnQ6cmVwb3J0LWJ1aWxkZXIiLCJhdWRpZW5jZSI6InRyYWNlcGVybWl0LWdhdGV3YXkiLCJjYW5vbmljYWxpemF0aW9uUHJvZmlsZSI6InRyYWNlcGVybWl0LWNhbm9uaWNhbC1qc29uLXYxIiwiZXhwaXJlc0F0IjoiMjAzMC0wMS0wMVQwMDowNDowMC4wMDBaIiwiaXNzdWVkQXQiOiIyMDMwLTAxLTAxVDAwOjAwOjEwLjAwMFoiLCJpc3N1ZXIiOiJ0cmFjZXBlcm1pdC1hZ2VudDpyZXBvcnQtYnVpbGRlciIsImtleUlkIjoiYWdlbnQta2V5LTAwMSIsInBhcmVudFRva2VuSGFzaCI6InNoYTI1NjplYzIwNTNmN2IwODlmOGZjMjk0OTZlNDUxMjNlNDA5ZjU2NDc5NjBkNjRkMzljNDM1MDAxNDZlMjAzNzIxYzQxIiwicGFyZW50VG9rZW5JZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAxNyIsInB1cnBvc2UiOiJHZW5lcmF0ZSB0aGUgc2NoZWR1bGVkIGNvc3QgcmVwb3J0IiwicmVzb3VyY2VzIjpbImF3czpzaW11bGF0ZWQ6YWNjb3VudC8xMjM0NTY3ODkwMTIvY29zdC1yZXBvcnQiXSwic2NvcGVzIjpbImF3cy5jb3N0LnJlYWQiXSwic3ViamVjdElkIjoidG9vbDphd3MtY29zdC1zaW11bGF0b3IiLCJ0ZW5hbnRJZCI6InRlbmFudDphY21lIiwidG9rZW5JZCI6IjAwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAxOCIsInRyYWNlSWQiOiIwMTIzNDU2Nzg5YWJjZGVmMDEyMzQ1Njc4OWFiY2RlZiIsInR5cGUiOiJ0cmFjZXBlcm1pdC1kZWxlZ2F0aW9uLWdyYW50K2p3cyIsInZlcnNpb24iOiIxLjAifQ.-eU_eBC_I2xdqL254rYo1Xf7VWaxDnvSao-JZU6Agar7mLeCOqOV6tBykzVAwYP_IytUpB9VTWN1c9eJSiirDQ"
+  }
+}

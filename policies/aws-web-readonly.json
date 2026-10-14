@@ -1,0 +1,59 @@
+{
+  "schemaVersion": "1.0",
+  "id": "pol-aws-web-001",
+  "version": 2,
+  "name": "Web and attested CLI agents: AWS read-only",
+  "description": "Allow authenticated web connectors and source-attested CLI connectors to read CloudWatch logs, but block web AWS mutations and destructive actions.",
+  "enabled": true,
+  "defaultDecision": {
+    "outcome": "require_approval",
+    "reasonCode": "NO_EXPLICIT_ALLOW"
+  },
+  "rules": [
+    {
+      "id": "block-agent-ec2-termination",
+      "priority": 300,
+      "description": "Web and source-attested CLI agents may not terminate even simulated EC2 instances.",
+      "match": {
+        "origins": ["chatgpt-web", "claude-web", "cli"],
+        "targetSystems": ["aws"],
+        "actionClasses": ["destructive"],
+        "toolNames": ["aws.ec2.terminate_instances"]
+      },
+      "decision": {
+        "outcome": "block",
+        "reasonCode": "AGENT_EC2_TERMINATION_BLOCKED"
+      }
+    },
+    {
+      "id": "block-web-aws-mutation",
+      "priority": 200,
+      "description": "Unmodified web agents may not mutate AWS.",
+      "match": {
+        "origins": ["chatgpt-web", "claude-web"],
+        "targetSystems": ["aws"],
+        "actionClasses": ["modify", "destructive", "orchestration"]
+      },
+      "decision": {
+        "outcome": "block",
+        "reasonCode": "WEB_AGENT_AWS_READ_ONLY"
+      }
+    },
+    {
+      "id": "allow-cloudwatch-read",
+      "priority": 100,
+      "description": "Allow an authenticated web user or source-attested CLI user to read bounded CloudWatch log results.",
+      "match": {
+        "origins": ["chatgpt-web", "claude-web", "cli"],
+        "subjectTypes": ["human"],
+        "targetSystems": ["aws"],
+        "actionClasses": ["read"],
+        "toolNames": ["aws.logs.filter_log_events"]
+      },
+      "decision": {
+        "outcome": "allow",
+        "reasonCode": "BOUNDED_LOG_READ"
+      }
+    }
+  ]
+}

@@ -1,0 +1,193 @@
+{
+  "schemaVersion": "1.0",
+  "cases": [
+    {
+      "name": "valid-web-action",
+      "fixture": "fixtures/chatgpt-aws-read.json",
+      "mutation": null,
+      "valid": true
+    },
+    {
+      "name": "subject-lineage-mismatch",
+      "fixture": "fixtures/chatgpt-aws-read.json",
+      "mutation": {
+        "operation": "replace",
+        "path": "/lineage/rootPrincipalId",
+        "value": "user:mallory@example.invalid"
+      },
+      "valid": false,
+      "expectedMessage": "rootPrincipalId must match the identity subject"
+    },
+    {
+      "name": "missing-schedule-id",
+      "fixture": "fixtures/scheduler-aws-read.json",
+      "mutation": {
+        "operation": "remove",
+        "path": "/trigger/scheduleId"
+      },
+      "valid": false,
+      "expectedMessage": "a scheduled trigger requires scheduleId"
+    },
+    {
+      "name": "unverified-delegation",
+      "fixture": "fixtures/api-service-aws-modify.json",
+      "mutation": {
+        "operation": "replace",
+        "path": "/lineage/delegations/0/verification",
+        "value": "unverified"
+      },
+      "valid": false,
+      "expectedMessage": "unverified delegation grants cannot establish authority"
+    },
+    {
+      "name": "missing-delegation-fingerprint",
+      "fixture": "fixtures/api-service-aws-modify.json",
+      "mutation": {
+        "operation": "remove",
+        "path": "/lineage/delegations/0/tokenHash"
+      },
+      "valid": false,
+      "expectedMessage": "verified delegation requires a non-secret token fingerprint"
+    },
+    {
+      "name": "unknown-delegation-token",
+      "fixture": "fixtures/api-service-aws-modify.json",
+      "mutation": {
+        "operation": "replace",
+        "path": "/lineage/hops/1/delegationTokenId",
+        "value": "delegation-missing"
+      },
+      "valid": false,
+      "expectedMessage": "delegated lineage hop requires a known delegation token"
+    },
+    {
+      "name": "valid-narrowed-delegation-chain",
+      "fixture": "fixtures/delegation-chain-valid.json",
+      "mutation": null,
+      "valid": true
+    },
+    {
+      "name": "child-scope-amplification",
+      "fixture": "fixtures/delegation-chain-valid.json",
+      "mutation": {
+        "operation": "replace",
+        "path": "/lineage/delegations/1/scopes",
+        "value": [
+          "aws.ec2.security_group.update",
+          "aws.iam.admin"
+        ]
+      },
+      "valid": false,
+      "expectedMessage": "child delegation cannot amplify parent scopes"
+    },
+    {
+      "name": "child-resource-broadening",
+      "fixture": "fixtures/delegation-chain-valid.json",
+      "mutation": {
+        "operation": "replace",
+        "path": "/lineage/delegations/1/resources",
+        "value": [
+          "aws:real-account:security-group:any"
+        ]
+      },
+      "valid": false,
+      "expectedMessage": "child delegation cannot broaden parent resources"
+    },
+    {
+      "name": "child-audience-change",
+      "fixture": "fixtures/delegation-chain-valid.json",
+      "mutation": {
+        "operation": "replace",
+        "path": "/lineage/delegations/1/audience",
+        "value": "another-executor"
+      },
+      "valid": false,
+      "expectedMessage": "child delegation cannot change parent audience"
+    },
+    {
+      "name": "child-outlives-parent",
+      "fixture": "fixtures/delegation-chain-valid.json",
+      "mutation": {
+        "operation": "replace",
+        "path": "/lineage/delegations/1/expiresAt",
+        "value": "2026-10-08T10:25:00.000Z"
+      },
+      "valid": false,
+      "expectedMessage": "child delegation cannot outlive its parent"
+    },
+    {
+      "name": "child-predates-parent",
+      "fixture": "fixtures/delegation-chain-valid.json",
+      "mutation": {
+        "operation": "replace",
+        "path": "/lineage/delegations/1/issuedAt",
+        "value": "2026-10-08T10:19:30.000Z"
+      },
+      "valid": false,
+      "expectedMessage": "child delegation cannot predate its parent"
+    },
+    {
+      "name": "child-actor-not-parent-subject",
+      "fixture": "fixtures/delegation-chain-valid.json",
+      "mutation": {
+        "operation": "replace",
+        "path": "/lineage/delegations/1/actorId",
+        "value": "user:mallory@example.invalid"
+      },
+      "valid": false,
+      "expectedMessage": "child delegation actor must be the parent subject"
+    },
+    {
+      "name": "dangling-delegation-parent",
+      "fixture": "fixtures/delegation-chain-valid.json",
+      "mutation": {
+        "operation": "replace",
+        "path": "/lineage/delegations/1/parentTokenId",
+        "value": "delegation-missing"
+      },
+      "valid": false,
+      "expectedMessage": "parentTokenId must reference an existing delegation"
+    },
+    {
+      "name": "causal-lineage-cycle",
+      "fixture": "fixtures/delegation-chain-valid.json",
+      "mutation": {
+        "operation": "replace",
+        "path": "/lineage/hops/1/parentHopId",
+        "value": "hop-chain-tool"
+      },
+      "valid": false,
+      "expectedMessage": "causal lineage must not contain a cycle"
+    },
+    {
+      "name": "delegation-cycle",
+      "fixture": "fixtures/delegation-chain-valid.json",
+      "mutation": null,
+      "mutations": [
+        {
+          "operation": "replace",
+          "path": "/lineage/delegations/1/parentTokenId",
+          "value": "delegation-chain-child"
+        },
+        {
+          "operation": "replace",
+          "path": "/lineage/delegations/1/actorId",
+          "value": "tool:security-group-adapter"
+        }
+      ],
+      "valid": false,
+      "expectedMessage": "delegation chain must not contain a cycle"
+    },
+    {
+      "name": "identity-evidence-subject-mismatch",
+      "fixture": "fixtures/chatgpt-aws-read.json",
+      "mutation": {
+        "operation": "replace",
+        "path": "/identity/evidence/0/subjectId",
+        "value": "user:mallory@example.invalid"
+      },
+      "valid": false,
+      "expectedMessage": "authenticated identity requires matching verified evidence"
+    }
+  ]
+}

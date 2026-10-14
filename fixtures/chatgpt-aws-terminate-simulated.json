@@ -1,0 +1,92 @@
+{
+  "schemaVersion": "1.0",
+  "eventId": "018f47a2-f5ce-7a4b-8f54-80e5d3eaf092",
+  "observedAt": "2026-10-08T10:16:30.000Z",
+  "traceId": "8f3a2c1e4b5d67890123456789abcdee",
+  "identity": {
+    "subject": {
+      "id": "user:alice@example.com",
+      "type": "human",
+      "displayName": "Alice",
+      "organizationId": "acme",
+      "authenticationMethod": "oauth",
+      "assurance": "authenticated"
+    },
+    "actor": {
+      "id": "client:chatgpt-web",
+      "type": "orchestrator",
+      "displayName": "ChatGPT Web",
+      "organizationId": "external-provider",
+      "authenticationMethod": "client_metadata",
+      "assurance": "asserted"
+    },
+    "evidence": [
+      {
+        "evidenceId": "evidence-oauth-alice-terminate",
+        "subjectId": "user:alice@example.com",
+        "kind": "oauth_token",
+        "assurance": "authenticated",
+        "issuer": "tracepermit-oauth",
+        "verifiedAt": "2026-10-08T10:16:29.000Z",
+        "credentialFingerprint": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      {
+        "evidenceId": "evidence-client-metadata-terminate",
+        "subjectId": "client:chatgpt-web",
+        "kind": "client_metadata",
+        "assurance": "asserted",
+        "issuer": "mcp-request-metadata"
+      }
+    ]
+  },
+  "trigger": {
+    "kind": "human",
+    "origin": "chatgpt-web",
+    "requestId": "req-1002",
+    "clientName": "ChatGPT"
+  },
+  "declaredIntent": {
+    "goal": "Terminate a simulated EC2 instance",
+    "source": "prompt"
+  },
+  "action": {
+    "protocol": "mcp",
+    "toolName": "aws.ec2.terminate_instances",
+    "arguments": {
+      "instanceIds": ["i-simulated-001"],
+      "region": "us-east-1"
+    },
+    "target": {
+      "system": "aws",
+      "environment": "prod",
+      "accountId": "simulated-123",
+      "resourceType": "ec2-instance"
+    }
+  },
+  "lineage": {
+    "rootPrincipalId": "user:alice@example.com",
+    "hops": [
+      {
+        "hopId": "hop-user-terminate",
+        "kind": "principal",
+        "subjectId": "user:alice@example.com",
+        "assurance": "authenticated",
+        "source": "tracepermit-oauth",
+        "observedAt": "2026-10-08T10:16:29.000Z"
+      },
+      {
+        "hopId": "hop-chatgpt-terminate",
+        "parentHopId": "hop-user-terminate",
+        "kind": "orchestrator",
+        "subjectId": "client:chatgpt-web",
+        "assurance": "asserted",
+        "source": "mcp-request-metadata",
+        "observedAt": "2026-10-08T10:16:30.000Z"
+      }
+    ],
+    "delegations": []
+  },
+  "clientClaims": {
+    "providerWorkspace": "unverified-workspace-label"
+  }
+}

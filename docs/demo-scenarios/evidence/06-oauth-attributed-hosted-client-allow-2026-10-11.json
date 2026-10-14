@@ -1,0 +1,87 @@
+{
+  "schemaVersion": "1.0",
+  "scenario": "06-oauth-attributed-hosted-client",
+  "evidenceKind": "positive-bounded-read",
+  "capturedAt": "2026-10-11T11:14:21.196516Z",
+  "qualificationScope": {
+    "hostedClient": "ChatGPT web",
+    "authorizationServer": "Auth0 development tenant",
+    "transport": "OpenAI Secure MCP Tunnel",
+    "resourceServer": "TracePermit Java loopback OAuth MCP",
+    "downstream": "TracePermit deterministic simulator only",
+    "productionQualification": false
+  },
+  "invocation": {
+    "count": 1,
+    "origin": "chatgpt-web",
+    "triggerKind": "human",
+    "subjectType": "human",
+    "subjectAssurance": "authenticated",
+    "actorType": "orchestrator",
+    "actorAssurance": "asserted",
+    "tool": "aws.logs.filter_log_events",
+    "arguments": {
+      "logGroupName": "/app/staging",
+      "filterPattern": "ERROR",
+      "limit": 2
+    }
+  },
+  "classification": {
+    "actionClass": "read",
+    "severity": "low",
+    "score": 10,
+    "signals": ["READ_VERB"],
+    "semanticIntents": []
+  },
+  "policy": {
+    "outcome": "allow",
+    "reasonCode": "BOUNDED_LOG_READ",
+    "policyId": "pol-aws-agentic-demo-001",
+    "policyVersion": 1,
+    "matchedRuleId": "allow-cloudwatch-read",
+    "latencyMs": 25
+  },
+  "execution": {
+    "status": "succeeded",
+    "simulated": true,
+    "mode": "simulated",
+    "matchingEvents": 0,
+    "realTargetContacted": false
+  },
+  "evidenceIntegrity": {
+    "valid": true,
+    "anchored": false,
+    "eventCount": 3,
+    "issueCode": null,
+    "eventTypes": ["action.observed", "policy.evaluated", "execution.succeeded"]
+  },
+  "boundedMcpDiagnostic": {
+    "protectedToolCallCount": 1,
+    "toolCategory": "AWS_LOGS_FILTER_LOG_EVENTS",
+    "routeCategory": "PROTECTED",
+    "httpStatus": 200,
+    "note": "HTTP success reports a valid MCP exchange; the policy projection separately proves allow."
+  },
+  "clientObservation": {
+    "selectedExpectedTool": true,
+    "reportedOutcome": "allow",
+    "reportedExecutionStatus": "executed",
+    "reportedReasonCode": "BOUNDED_LOG_READ",
+    "reportedSimulatorBoundary": true,
+    "reportedRetry": false,
+    "profileLabelPresentInToolResult": false,
+    "profileLabelInterpretation": "The client correctly did not invent a label. Use tracepermit.get_profile for client-facing profile proof and the Java action projection for enforcement attribution."
+  },
+  "privacy": {
+    "accessTokenCaptured": false,
+    "refreshTokenCaptured": false,
+    "authorizationCodeCaptured": false,
+    "clientSecretCaptured": false,
+    "privateKeyCaptured": false,
+    "emailCaptured": false,
+    "profileIdCaptured": false,
+    "providerSubjectCaptured": false,
+    "tokenFingerprintCaptured": false,
+    "chatConversationUrlCaptured": false
+  }
+}

@@ -1,0 +1,22 @@
+node_modules/
+dist/
+coverage/
+.env
+.env.*
+!.env.example
+.DS_Store
+*.log
+.cache/
+**/.gradle/
+**/build/
+java/**/bin/
+**/__pycache__/
+*.py[cod]
+
+# Generated printable notes and local demo recordings. Keep the Markdown and
+# generator sources in Git; rebuild binary artifacts locally under output/.
+output/
+
+# VitePress cache and build artifacts
+**/.vitepress/cache/
+**/.vitepress/dist/

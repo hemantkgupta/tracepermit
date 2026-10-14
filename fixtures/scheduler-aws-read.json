@@ -1,0 +1,89 @@
+{
+  "schemaVersion": "1.0",
+  "eventId": "018f47a2-f5ce-7a4b-8f54-80e5d3eaf093",
+  "observedAt": "2026-10-08T11:00:00.000Z",
+  "traceId": "af3a2c1e4b5d67890123456789abcdef",
+  "identity": {
+    "subject": {
+      "id": "workload:daily-cost-report",
+      "type": "workload",
+      "displayName": "Daily Cost Report",
+      "organizationId": "acme",
+      "authenticationMethod": "workload_token",
+      "assurance": "authenticated"
+    },
+    "createdBy": {
+      "id": "user:alice@example.com",
+      "type": "human",
+      "displayName": "Alice",
+      "organizationId": "acme",
+      "authenticationMethod": "oidc",
+      "assurance": "authenticated"
+    },
+    "evidence": [
+      {
+        "evidenceId": "evidence-scheduler-workload",
+        "subjectId": "workload:daily-cost-report",
+        "kind": "workload_token",
+        "assurance": "authenticated",
+        "issuer": "acme-scheduler",
+        "verifiedAt": "2026-10-08T10:59:59.000Z",
+        "credentialFingerprint": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+      },
+      {
+        "evidenceId": "evidence-job-creator",
+        "subjectId": "user:alice@example.com",
+        "kind": "oidc_token",
+        "assurance": "authenticated",
+        "issuer": "signed-job-definition",
+        "verifiedAt": "2026-10-01T08:00:00.000Z",
+        "credentialFingerprint": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      }
+    ]
+  },
+  "trigger": {
+    "kind": "scheduled",
+    "origin": "scheduler",
+    "requestId": "run-daily-cost-2026-10-08",
+    "clientName": "acme-scheduler",
+    "clientVersion": "3.2.0",
+    "scheduleId": "daily-cost-report"
+  },
+  "declaredIntent": {
+    "goal": "Generate the daily AWS cost summary",
+    "source": "job_definition"
+  },
+  "action": {
+    "protocol": "http",
+    "toolName": "aws.cost.get_cost_and_usage",
+    "arguments": {
+      "start": "2026-10-07",
+      "end": "2026-10-08",
+      "granularity": "DAILY"
+    },
+    "target": {
+      "system": "aws",
+      "environment": "prod",
+      "accountId": "simulated-123",
+      "resourceType": "cost-report"
+    }
+  },
+  "lineage": {
+    "rootPrincipalId": "workload:daily-cost-report",
+    "hops": [
+      {
+        "hopId": "hop-scheduled-workload",
+        "kind": "principal",
+        "subjectId": "workload:daily-cost-report",
+        "assurance": "authenticated",
+        "source": "acme-scheduler-workload-token",
+        "observedAt": "2026-10-08T10:59:59.000Z"
+      }
+    ],
+    "delegations": []
+  },
+  "clientClaims": {
+    "owningTeam": "finops",
+    "jobDefinitionVersion": "git:3c8f1a2"
+  }
+}

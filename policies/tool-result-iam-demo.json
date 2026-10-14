@@ -1,0 +1,45 @@
+{
+  "schemaVersion": "1.0",
+  "id": "pol-tool-result-iam-demo-001",
+  "version": 1,
+  "name": "Untrusted runbook result cannot authorize IAM mutation",
+  "description": "Allow a fixed simulated runbook read, but block any IAM policy attachment even when a signed workload proposes it after attacker-controlled tool text.",
+  "enabled": true,
+  "defaultDecision": {
+    "outcome": "block",
+    "reasonCode": "NO_EXPLICIT_ALLOW"
+  },
+  "rules": [
+    {
+      "id": "block-simulated-iam-policy-attachment",
+      "priority": 300,
+      "description": "Tool-result instructions and declared goals never override the access-control mutation boundary.",
+      "match": {
+        "targetSystems": ["aws"],
+        "toolNames": ["aws.iam.attach_role_policy"],
+        "actionClasses": ["modify"],
+        "requiredSignals": ["ACCESS_CONTROL_MUTATION"]
+      },
+      "decision": {
+        "outcome": "block",
+        "reasonCode": "IAM_POLICY_ATTACHMENT_BLOCKED"
+      }
+    },
+    {
+      "id": "allow-fixed-simulated-runbook-read",
+      "priority": 100,
+      "description": "The trusted scheduled adapter may read one fixed local runbook, but its bytes are untrusted data.",
+      "match": {
+        "origins": ["scheduler"],
+        "subjectTypes": ["workload"],
+        "targetSystems": ["synthetic-knowledge"],
+        "actionClasses": ["read"],
+        "toolNames": ["demo.knowledge.fetch_runbook"]
+      },
+      "decision": {
+        "outcome": "allow",
+        "reasonCode": "FIXED_SIMULATED_RUNBOOK_READ"
+      }
+    }
+  ]
+}

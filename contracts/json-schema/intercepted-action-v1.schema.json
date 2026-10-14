@@ -1,0 +1,689 @@
+{
+  "$id": "https://schemas.tracepermit.invalid/v1/intercepted-action-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "eventId": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "observedAt": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+    },
+    "traceId": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{32}$"
+    },
+    "identity": {
+      "type": "object",
+      "properties": {
+        "subject": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "displayName": {
+              "type": "string",
+              "minLength": 1
+            },
+            "organizationId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "authenticationMethod": {
+              "type": "string",
+              "enum": [
+                "oauth",
+                "oidc",
+                "mtls",
+                "api_key",
+                "os",
+                "workload_token",
+                "client_metadata",
+                "unknown"
+              ]
+            },
+            "assurance": {
+              "type": "string",
+              "enum": [
+                "asserted",
+                "authenticated",
+                "delegated"
+              ]
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "human",
+                "workload"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "authenticationMethod",
+            "assurance",
+            "type"
+          ],
+          "additionalProperties": false
+        },
+        "actor": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "displayName": {
+              "type": "string",
+              "minLength": 1
+            },
+            "organizationId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "authenticationMethod": {
+              "type": "string",
+              "enum": [
+                "oauth",
+                "oidc",
+                "mtls",
+                "api_key",
+                "os",
+                "workload_token",
+                "client_metadata",
+                "unknown"
+              ]
+            },
+            "assurance": {
+              "type": "string",
+              "enum": [
+                "asserted",
+                "authenticated",
+                "delegated"
+              ]
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "human",
+                "workload",
+                "orchestrator",
+                "agent",
+                "tool"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "authenticationMethod",
+            "assurance",
+            "type"
+          ],
+          "additionalProperties": false
+        },
+        "createdBy": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "displayName": {
+              "type": "string",
+              "minLength": 1
+            },
+            "organizationId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "authenticationMethod": {
+              "type": "string",
+              "enum": [
+                "oauth",
+                "oidc",
+                "mtls",
+                "api_key",
+                "os",
+                "workload_token",
+                "client_metadata",
+                "unknown"
+              ]
+            },
+            "assurance": {
+              "type": "string",
+              "enum": [
+                "asserted",
+                "authenticated",
+                "delegated"
+              ]
+            },
+            "type": {
+              "type": "string",
+              "enum": [
+                "human",
+                "workload"
+              ]
+            }
+          },
+          "required": [
+            "id",
+            "authenticationMethod",
+            "assurance",
+            "type"
+          ],
+          "additionalProperties": false
+        },
+        "evidence": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "evidenceId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "subjectId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "oauth_token",
+                  "oidc_token",
+                  "mtls_certificate",
+                  "api_key",
+                  "os_session",
+                  "workload_token",
+                  "client_metadata"
+                ]
+              },
+              "assurance": {
+                "type": "string",
+                "enum": [
+                  "asserted",
+                  "authenticated",
+                  "delegated"
+                ]
+              },
+              "issuer": {
+                "type": "string",
+                "minLength": 1
+              },
+              "verifiedAt": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              "credentialFingerprint": {
+                "type": "string",
+                "pattern": "^sha256:[a-f0-9]{64}$"
+              }
+            },
+            "required": [
+              "evidenceId",
+              "subjectId",
+              "kind",
+              "assurance",
+              "issuer"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "subject",
+        "evidence"
+      ],
+      "additionalProperties": false
+    },
+    "trigger": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "human",
+            "service",
+            "scheduled"
+          ]
+        },
+        "origin": {
+          "type": "string",
+          "enum": [
+            "chatgpt-web",
+            "claude-web",
+            "cli",
+            "api",
+            "scheduler"
+          ]
+        },
+        "requestId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "clientName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "clientVersion": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scheduleId": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "kind",
+        "origin",
+        "requestId"
+      ],
+      "additionalProperties": false
+    },
+    "declaredIntent": {
+      "type": "object",
+      "properties": {
+        "goal": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source": {
+          "type": "string",
+          "enum": [
+            "prompt",
+            "api_field",
+            "job_definition"
+          ]
+        }
+      },
+      "required": [
+        "goal",
+        "source"
+      ],
+      "additionalProperties": false
+    },
+    "action": {
+      "type": "object",
+      "properties": {
+        "protocol": {
+          "type": "string",
+          "enum": [
+            "mcp",
+            "http",
+            "sdk",
+            "cli"
+          ]
+        },
+        "toolName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "arguments": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {}
+        },
+        "target": {
+          "type": "object",
+          "properties": {
+            "system": {
+              "type": "string",
+              "minLength": 1
+            },
+            "environment": {
+              "type": "string",
+              "enum": [
+                "dev",
+                "test",
+                "staging",
+                "prod"
+              ]
+            },
+            "accountId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "resourceType": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "system",
+            "environment"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "protocol",
+        "toolName",
+        "arguments",
+        "target"
+      ],
+      "additionalProperties": false
+    },
+    "source": {
+      "type": "object",
+      "properties": {
+        "issuer": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "keyId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "keyFingerprint": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
+        "verifiedAt": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        },
+        "device": {
+          "type": "object",
+          "properties": {
+            "deviceId": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "platform": {
+              "type": "string",
+              "enum": [
+                "macos",
+                "linux",
+                "windows"
+              ]
+            },
+            "assurance": {
+              "type": "string",
+              "enum": [
+                "development",
+                "managed",
+                "hardware_backed"
+              ]
+            }
+          },
+          "required": [
+            "deviceId",
+            "platform",
+            "assurance"
+          ],
+          "additionalProperties": false
+        },
+        "process": {
+          "type": "object",
+          "properties": {
+            "executableName": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "executableHash": {
+              "type": "string",
+              "pattern": "^sha256:[a-f0-9]{64}$"
+            },
+            "parentExecutableName": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "startedAt": {
+              "type": "string",
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+            }
+          },
+          "required": [
+            "executableName",
+            "executableHash",
+            "parentExecutableName",
+            "startedAt"
+          ],
+          "additionalProperties": false
+        },
+        "triggerEvidence": {
+          "type": "object",
+          "properties": {
+            "requestedMode": {
+              "type": "string",
+              "enum": [
+                "interactive",
+                "automation",
+                "unknown"
+              ]
+            },
+            "terminalAttached": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "requestedMode",
+            "terminalAttached"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "issuer",
+        "keyId",
+        "keyFingerprint",
+        "verifiedAt",
+        "device",
+        "process",
+        "triggerEvidence"
+      ],
+      "additionalProperties": false
+    },
+    "lineage": {
+      "type": "object",
+      "properties": {
+        "rootPrincipalId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "hops": {
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "hopId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "parentHopId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "principal",
+                  "agent",
+                  "orchestrator",
+                  "gateway",
+                  "tool"
+                ]
+              },
+              "subjectId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "assurance": {
+                "type": "string",
+                "enum": [
+                  "asserted",
+                  "authenticated",
+                  "delegated"
+                ]
+              },
+              "source": {
+                "type": "string",
+                "minLength": 1
+              },
+              "observedAt": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              "delegationTokenId": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "hopId",
+              "kind",
+              "subjectId",
+              "assurance",
+              "source",
+              "observedAt"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "delegations": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "tokenId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "parentTokenId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "issuer": {
+                "type": "string",
+                "minLength": 1
+              },
+              "subjectId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "actorId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "audience": {
+                "type": "string",
+                "minLength": 1
+              },
+              "scopes": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "resources": {
+                "minItems": 1,
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "purpose": {
+                "type": "string",
+                "minLength": 1
+              },
+              "traceId": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{32}$"
+              },
+              "issuedAt": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              "expiresAt": {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+              },
+              "tokenHash": {
+                "type": "string",
+                "pattern": "^sha256:[a-f0-9]{64}$"
+              },
+              "verification": {
+                "type": "string",
+                "enum": [
+                  "verified",
+                  "unverified"
+                ]
+              }
+            },
+            "required": [
+              "tokenId",
+              "issuer",
+              "subjectId",
+              "actorId",
+              "audience",
+              "scopes",
+              "resources",
+              "purpose",
+              "traceId",
+              "issuedAt",
+              "expiresAt",
+              "verification"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "rootPrincipalId",
+        "hops",
+        "delegations"
+      ],
+      "additionalProperties": false
+    },
+    "clientClaims": {
+      "default": {},
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {}
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "eventId",
+    "observedAt",
+    "traceId",
+    "identity",
+    "trigger",
+    "action",
+    "lineage",
+    "clientClaims"
+  ],
+  "additionalProperties": false
+}

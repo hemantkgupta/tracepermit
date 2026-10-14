@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Align repository Gradle home with the CI cache
+        run: echo "TRACEPERMIT_GRADLE_USER_HOME=$HOME/.gradle" >> "$GITHUB_ENV"
+
+      - name: Use Java 21
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      - name: Verify React console and Java backend
+        run: pnpm check
+
+      - name: Install and build static documentation site
+        run: |
+          npm --prefix site ci
+          pnpm site:build
+
+      - name: Verify simulator-only semantic scenarios
+        run: |
+          pnpm demo:verify
+          pnpm demo:scenario:semantic:auto
+          pnpm demo:scenario:qualification
+
+      - name: Verify durable PostgreSQL enforcement state
+        run: pnpm test:java-postgres --rerun-tasks
+
+      - name: Check formatting
+        run: pnpm format:check
+
+      - name: Check documentation links
+        run: pnpm docs:links

@@ -1,0 +1,74 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "TracePermit trusted internal API",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Live"
+          }
+        }
+      }
+    },
+    "/ready": {
+      "get": {
+        "responses": {
+          "200": {
+            "description": "Ready"
+          },
+          "503": {
+            "description": "Required security dependency unavailable"
+          }
+        }
+      }
+    },
+    "/v1/evaluate": {
+      "post": {
+        "description": "Trusted adapter evaluation interface",
+        "responses": {
+          "200": {
+            "description": "Evaluated"
+          },
+          "400": {
+            "description": "Invalid canonical action"
+          },
+          "503": {
+            "description": "Required security dependency unavailable"
+          }
+        }
+      }
+    },
+    "/v1/execute": {
+      "post": {
+        "description": "Trusted adapter simulator execution interface",
+        "responses": {
+          "200": {
+            "description": "Executed"
+          },
+          "202": {
+            "description": "Approval required"
+          },
+          "400": {
+            "description": "Invalid canonical action"
+          },
+          "403": {
+            "description": "Blocked"
+          },
+          "409": {
+            "description": "Already executing"
+          },
+          "502": {
+            "description": "Failed or unknown"
+          },
+          "503": {
+            "description": "Security dependency unavailable"
+          }
+        }
+      }
+    }
+  }
+}

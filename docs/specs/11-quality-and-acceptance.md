@@ -1,0 +1,58 @@
+# Quality and acceptance
+
+**Status:** Current POC gates and separate production targets
+
+Security invariants need executable positive and negative tests. A passing
+local suite proves the named composition, not arbitrary-client coverage or
+production readiness.
+
+## Repository gates
+
+```bash
+pnpm check
+pnpm format:check
+pnpm docs:links
+pnpm portability:check
+pnpm test:endpoint-connector-e2e
+pnpm site:build
+```
+
+`pnpm check` builds, typechecks, and tests the React console, verifies the
+Node/Java environment, and runs the Java aggregate test and coverage gates.
+PostgreSQL integration tests use disposable Testcontainers; Docker is needed
+for those checks. Runtime-affecting changes also need the closest numbered
+simulator scenario or an equivalent protocol smoke test.
+
+## Behavior acceptance
+
+| Boundary         | Required evidence                                                                                                                  |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Authentication   | Invalid, expired, wrong-issuer/audience, replayed, or sender-mismatched credentials stop before protected dispatch                 |
+| Canonicalization | Unknown tools/schemas and client-asserted security fields do not become trusted action context                                     |
+| Policy           | Allow, block, sanitize, and approval each have positive and negative tests; block and unresolved states never invoke the simulator |
+| Sequence         | History is gateway-owned and tenant/subject scoped; injected client history cannot create authority                                |
+| Approval         | Independently authenticated reviewer, exact request binding, expiry, and atomic single-use claim; self-approval and mutation fail  |
+| Permit           | Signature, audience, canonical hash, time, and one-time claim checked before simulated effect                                      |
+| Delegation       | Parent-linked scope, resource, audience, and lifetime narrowing; broadening fails                                                  |
+| Evidence         | Credentials are redacted; integrity/outbox/receipt checks and observer failures cannot turn a denial into an allow                 |
+| Recovery         | Unknown outcome remains unknown until confirmed by read-only lookup; no automatic re-execution                                     |
+| Console          | Read-only projection; it cannot approve, issue permits, or execute                                                                 |
+
+The hosted-client profile has a separately documented single-composition
+Auth0/ChatGPT/private-tunnel qualification. It does not establish general
+provider compatibility. The default demo uses loopback and deterministic
+simulators; no real destructive target is part of acceptance.
+
+## Performance and release qualification
+
+Measure classifier/policy time separately from token/JWKS, persistence,
+network, and simulator time. Record p50/p95/p99, contention, expiry, outage,
+and overload behavior without disabling security checks. Local scenario
+latency is not a production SLO. A production release additionally requires
+managed credentials and key custody, shared security state, target egress
+controls, independent reviewer authentication, external audit integration,
+alerting, rollback, and representative client/load tests.
+
+For a change to a security boundary, update requirement IDs in the
+[traceability matrix](12-traceability-matrix.md), the relevant
+[ADR](../architecture/), and the public architecture/contract documentation.

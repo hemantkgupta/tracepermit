@@ -1,0 +1,35 @@
+{
+  "schemaVersion": "1.0",
+  "note": "Deterministic non-production key material for cross-language tests only.",
+  "fixture": "fixtures/chatgpt-aws-read.json",
+  "evaluation": {
+    "evaluationId": "018f47a2-f5ce-7a4b-8f54-80e5d3eaf099",
+    "evaluatedAt": "2026-10-08T10:15:31.000Z",
+    "eventId": "018f47a2-f5ce-7a4b-8f54-80e5d3eaf091",
+    "classification": {
+      "actionClass": "read",
+      "severity": "low",
+      "score": 10,
+      "operation": "aws.logs.filter_log_events",
+      "signals": [
+        "READ_VERB"
+      ],
+      "classifier": {
+        "kind": "deterministic",
+        "version": "0.1.0"
+      }
+    },
+    "decision": {
+      "outcome": "allow",
+      "policyId": "pol-aws-web-001",
+      "policyVersion": 2,
+      "matchedRuleId": "allow-cloudwatch-read",
+      "reasonCode": "BOUNDED_LOG_READ"
+    },
+    "latencyMs": 1
+  },
+  "audience": "urn:tracepermit:portability-test-executor",
+  "testOnlySigningKeyHex": "2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a",
+  "expectedActionHash": "sha256:97efc87ece3fb5188e998b012a0c19eeadbadf5228bc89d07591cfaca0ec4476",
+  "expectedCompactPermit": "eyJhbGciOiJIUzI1NiIsInR5cCI6InRyYWNlcGVybWl0LWV4ZWN1dGlvbi1wZXJtaXQrandzIiwia2lkIjoicG9ydGFiaWxpdHktdGVzdC1rZXkifQ.eyJzY2hlbWFWZXJzaW9uIjoiMS4wIiwiY2Fub25pY2FsaXphdGlvblByb2ZpbGUiOiJ0cmFjZXBlcm1pdC1jYW5vbmljYWwtanNvbi12MSIsInBlcm1pdElkIjoiMDE4ZjQ3YTItZjVjZS03YTRiLThmNTQtODBlNWQzZWFmMDgwIiwiaXNzdWVyIjoiaHR0cHM6Ly9leGVjdXRpb24tcGVybWl0cy50cmFjZXBlcm1pdC5pbnZhbGlkIiwiYXVkaWVuY2UiOiJ1cm46dHJhY2VwZXJtaXQ6cG9ydGFiaWxpdHktdGVzdC1leGVjdXRvciIsInN1YmplY3RJZCI6InVzZXI6YWxpY2VAZXhhbXBsZS5jb20iLCJldmVudElkIjoiMDE4ZjQ3YTItZjVjZS03YTRiLThmNTQtODBlNWQzZWFmMDkxIiwiZXZhbHVhdGlvbklkIjoiMDE4ZjQ3YTItZjVjZS03YTRiLThmNTQtODBlNWQzZWFmMDk5IiwiYWN0aW9uSGFzaCI6InNoYTI1Njo5N2VmYzg3ZWNlM2ZiNTE4OGU5OThiMDEyYTBjMTllZWFkYmFkZjUyMjhiYzg5ZDA3NTkxY2ZhY2EwZWM0NDc2IiwiZGVjaXNpb24iOnsib3V0Y29tZSI6ImFsbG93IiwicG9saWN5SWQiOiJwb2wtYXdzLXdlYi0wMDEiLCJwb2xpY3lWZXJzaW9uIjoyfSwiaXNzdWVkQXQiOiIyMDI2LTEwLTA4VDEwOjE1OjMxLjAwMFoiLCJleHBpcmVzQXQiOiIyMDI2LTEwLTA4VDEwOjE2OjAxLjAwMFoiLCJtYXhVc2VzIjoxfQ.wfvDTxL2ss7yWwUOgzUmc5IGEfDgvLgSLd0hGtgLjIY"
+}

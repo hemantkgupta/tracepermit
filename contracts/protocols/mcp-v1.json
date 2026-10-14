@@ -1,0 +1,142 @@
+{
+  "schemaVersion": "1.0",
+  "endpoint": "/mcp",
+  "protocols": [
+    "2026-07-28",
+    "2025-stateless-request-response"
+  ],
+  "endpointConnector": {
+    "transport": "newline-delimited-jsonrpc-stdio",
+    "methods": [
+      "initialize",
+      "notifications/initialized",
+      "tools/list",
+      "tools/call"
+    ],
+    "sequential": true,
+    "maximumFrameBytes": 65536,
+    "maximumGatewayResponseBytes": 262144,
+    "gatewayPath": "/mcp",
+    "gatewayLoopbackOnly": true,
+    "redirects": "disabled"
+  },
+  "remoteOAuthTransport": {
+    "status": "hardened-simulator-enforcement-foundation",
+    "transport": "tls-jsonrpc-request-response",
+    "metadataPath": "/.well-known/oauth-protected-resource",
+    "mcpPath": "/mcp",
+    "methods": [
+      "initialize",
+      "notifications/initialized",
+      "ping",
+      "tools/list",
+      "tools/call"
+    ],
+    "protocolVersions": [
+      "2026-07-28",
+      "2025-06-18",
+      "2025-03-26"
+    ],
+    "maximumRequestBytes": 65536,
+    "authenticationBeforeParsing": true,
+    "exactHostAllowlist": true,
+    "exactOriginAllowlist": true,
+    "tlsRequired": true,
+    "toolInvocationEnabled": true,
+    "invocationScopeCheckedIndependently": true,
+    "serverOwnedCanonicalNormalization": true,
+    "policyBeforePermit": true,
+    "executorPermitVerification": true,
+    "simulatorOnly": true,
+    "realTargetsEnabled": false,
+    "evidenceStoresRawArgumentsOrResults": false,
+    "hardenedProfile": {
+      "senderConstraint": "rfc8705-mtls-x5t-s256",
+      "clientCertificateRequired": true,
+      "tokenCertificateBindingBeforeParsing": true,
+      "networkRateLimitBeforeAuthentication": true,
+      "principalRateLimitAfterAuthentication": true,
+      "readinessFailsClosed": true,
+      "readinessDependencies": [
+        "tls_identity",
+        "oauth_trust",
+        "sender_constraint",
+        "rate_limit_state",
+        "durable_enforcement_state",
+        "evidence_store",
+        "security_telemetry",
+        "target_egress_boundary",
+        "connector_qualification"
+      ],
+      "durableEnforcementCompositionTested": true,
+      "sharedRateLimitImplementationIncluded": false,
+      "productionBootstrapIncluded": false
+    },
+    "connectorFixtures": [
+      {
+        "name": "chatgpt-web-compatible",
+        "origin": "https://chatgpt.com",
+        "evidence": "synthetic-protocol-conformance"
+      },
+      {
+        "name": "claude-web-compatible",
+        "origin": "https://claude.ai",
+        "evidence": "synthetic-protocol-conformance"
+      }
+    ]
+  },
+  "sourceAttestation": {
+    "requiredOrigin": "cli",
+    "header": "tracepermit-source-attestation",
+    "type": "tracepermit-source-attestation+jws",
+    "signatureAlgorithm": "Ed25519",
+    "canonicalizationProfile": "tracepermit-canonical-json-v1",
+    "requestBindingProfile": "tracepermit-mcp-method-params-v1",
+    "maximumLifetimeSeconds": 60,
+    "futureClockSkewSeconds": 5
+  },
+  "tools": [
+    {
+      "name": "aws.logs.filter_log_events",
+      "requiredDiscoveryScopes": [
+        "aws.logs.discover",
+        "aws.logs.read"
+      ],
+      "requiredInvocationScope": "aws.logs.read",
+      "arguments": {
+        "logGroupName": [
+          "/app/prod",
+          "/app/staging"
+        ],
+        "filterPatternMaxLength": 128,
+        "limit": {
+          "minimum": 1,
+          "maximum": 100,
+          "default": 20
+        }
+      },
+      "target": "simulator-only"
+    },
+    {
+      "name": "aws.ec2.terminate_instances",
+      "requiredDiscoveryScopes": [
+        "aws.logs.discover",
+        "aws.logs.read"
+      ],
+      "requiredInvocationScope": "aws.logs.read",
+      "arguments": {
+        "instanceIdPattern": "^i-simulated-[a-z0-9-]{1,32}$",
+        "instanceIdCount": {
+          "minimum": 1,
+          "maximum": 10
+        },
+        "regions": [
+          "us-east-1",
+          "us-west-2"
+        ],
+        "defaultRegion": "us-east-1"
+      },
+      "target": "simulator-only-policy-blocked"
+    }
+  ]
+}

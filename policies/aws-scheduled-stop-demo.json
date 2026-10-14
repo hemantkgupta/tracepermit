@@ -1,0 +1,31 @@
+{
+  "schemaVersion": "1.0",
+  "id": "pol-aws-scheduled-stop-demo-001",
+  "version": 1,
+  "name": "Signed scheduled simulated EC2 stop boundary",
+  "description": "Block a production-labelled scheduled EC2 stop before any simulated side effect; deny other unmatched actions.",
+  "enabled": true,
+  "defaultDecision": {
+    "outcome": "block",
+    "reasonCode": "NO_EXPLICIT_ALLOW"
+  },
+  "rules": [
+    {
+      "id": "block-scheduled-ec2-stop",
+      "priority": 320,
+      "description": "A verified scheduled workload may not stop a production-labelled simulated EC2 instance.",
+      "match": {
+        "origins": ["scheduler"],
+        "subjectTypes": ["workload"],
+        "targetSystems": ["aws"],
+        "environments": ["prod"],
+        "actionClasses": ["modify"],
+        "toolNames": ["aws.ec2.stop_instances"]
+      },
+      "decision": {
+        "outcome": "block",
+        "reasonCode": "SCHEDULED_EC2_STOP_BLOCKED"
+      }
+    }
+  ]
+}

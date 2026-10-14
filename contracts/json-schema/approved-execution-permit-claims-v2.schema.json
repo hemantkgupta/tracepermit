@@ -1,0 +1,133 @@
+{
+  "$id": "https://schemas.tracepermit.invalid/v2/approved-execution-permit-claims-v2.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "2.0"
+    },
+    "canonicalizationProfile": {
+      "type": "string",
+      "const": "tracepermit-canonical-json-v1"
+    },
+    "permitId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "issuer": {
+      "type": "string",
+      "minLength": 1
+    },
+    "audience": {
+      "type": "string",
+      "minLength": 1
+    },
+    "subjectId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "eventId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "evaluationId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "actionHash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "decision": {
+      "type": "object",
+      "properties": {
+        "outcome": {
+          "type": "string",
+          "const": "allow"
+        },
+        "policyId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "policyVersion": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "outcome",
+        "policyId",
+        "policyVersion"
+      ],
+      "additionalProperties": false
+    },
+    "authorization": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "human_approval"
+        },
+        "approvalRequestId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "approvalDecisionId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "originalPolicyOutcome": {
+          "type": "string",
+          "const": "require_approval"
+        }
+      },
+      "required": [
+        "kind",
+        "approvalRequestId",
+        "approvalDecisionId",
+        "originalPolicyOutcome"
+      ],
+      "additionalProperties": false
+    },
+    "issuedAt": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+    },
+    "expiresAt": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+    },
+    "maxUses": {
+      "type": "number",
+      "const": 1
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "canonicalizationProfile",
+    "permitId",
+    "issuer",
+    "audience",
+    "subjectId",
+    "eventId",
+    "evaluationId",
+    "actionHash",
+    "decision",
+    "authorization",
+    "issuedAt",
+    "expiresAt",
+    "maxUses"
+  ],
+  "additionalProperties": false
+}

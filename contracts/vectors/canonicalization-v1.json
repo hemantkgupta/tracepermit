@@ -1,0 +1,51 @@
+{
+  "schemaVersion": "1.0",
+  "profile": "tracepermit-canonical-json-v1",
+  "hashAlgorithm": "sha256",
+  "cases": [
+    {
+      "name": "object-key-order",
+      "input": {
+        "zebra": 2,
+        "alpha": 1
+      },
+      "canonical": "{\"alpha\":1,\"zebra\":2}",
+      "hash": "sha256:fde57a18a5695228050aac13d46c0162eb62a46d8c03e6a99a5fdcea980bcc0e"
+    },
+    {
+      "name": "nested-arrays-and-null",
+      "input": {
+        "outer": [
+          {
+            "z": true,
+            "a": null
+          },
+          "value",
+          42
+        ]
+      },
+      "canonical": "{\"outer\":[{\"a\":null,\"z\":true},\"value\",42]}",
+      "hash": "sha256:bb932300e31274400fc99a814e4bb5b49e0b67105fb8179ae72748338b7965eb"
+    },
+    {
+      "name": "unicode-and-escaping",
+      "input": {
+        "text": "TracePermit — \"safe\""
+      },
+      "canonical": "{\"text\":\"TracePermit — \\\"safe\\\"\"}",
+      "hash": "sha256:eaedfc5888441ef3ab3ac69a9d8d46322d3871a7ee6c9f61a997cd7852a53d29"
+    },
+    {
+      "name": "ecmascript-number-boundaries",
+      "input": {
+        "decimal": 1.5,
+        "zero": 0,
+        "lowerPlain": 0.000001,
+        "lowerExponent": 1e-7,
+        "upperExponent": 1e+21
+      },
+      "canonical": "{\"decimal\":1.5,\"lowerExponent\":1e-7,\"lowerPlain\":0.000001,\"upperExponent\":1e+21,\"zero\":0}",
+      "hash": "sha256:5398ec087516d4924672cd935538ce5138d93fbd33297d6e9bbe553d61174ec3"
+    }
+  ]
+}

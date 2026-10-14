@@ -1,0 +1,74 @@
+{
+  "$id": "https://schemas.tracepermit.invalid/v2/approval-decision-v2.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "2.0"
+    },
+    "tenantId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "approvalDecisionId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "approvalRequestId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "requestHash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "reviewerSubjectId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "reviewerAuthenticationMethod": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "reviewerCredentialFingerprint": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "decision": {
+      "type": "string",
+      "enum": [
+        "approve",
+        "deny"
+      ]
+    },
+    "reasonCode": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9_]{0,127}$"
+    },
+    "decidedAt": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "tenantId",
+    "approvalDecisionId",
+    "approvalRequestId",
+    "requestHash",
+    "reviewerSubjectId",
+    "reviewerAuthenticationMethod",
+    "reviewerCredentialFingerprint",
+    "decision",
+    "reasonCode",
+    "decidedAt"
+  ],
+  "additionalProperties": false
+}

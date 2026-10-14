@@ -1,0 +1,275 @@
+{
+  "schemaVersion": "1.0",
+  "errors": [
+    {
+      "code": "INVALID_ACTION",
+      "httpStatus": 400,
+      "executionStatus": "not_executed"
+    },
+    {
+      "code": "MISSING_BEARER_TOKEN",
+      "httpStatus": 401,
+      "executionStatus": "not_executed"
+    },
+    {
+      "code": "MALFORMED_ACCESS_TOKEN",
+      "httpStatus": 401,
+      "executionStatus": "not_executed"
+    },
+    {
+      "code": "INVALID_ACCESS_TOKEN",
+      "httpStatus": 401,
+      "executionStatus": "not_executed"
+    },
+    {
+      "code": "EXPIRED_ACCESS_TOKEN",
+      "httpStatus": 401,
+      "executionStatus": "not_executed"
+    },
+    {
+      "code": "OIDC_CONFIGURATION_UNAVAILABLE",
+      "httpStatus": 503,
+      "executionStatus": "not_executed"
+    },
+    {
+      "code": "OIDC_KEY_SET_UNAVAILABLE",
+      "httpStatus": 503,
+      "executionStatus": "not_executed"
+    },
+    {
+      "code": "AUTHENTICATION_REQUIRED",
+      "httpStatus": 401,
+      "executionStatus": "not_executed"
+    },
+    {
+      "code": "AUTHENTICATION_UNAVAILABLE",
+      "httpStatus": 503,
+      "executionStatus": "not_executed"
+    },
+    {
+      "code": "INVALID_SENDER_CONSTRAINT",
+      "httpStatus": 401,
+      "executionStatus": "not_executed"
+    },
+    {
+      "code": "RATE_LIMITED",
+      "httpStatus": 429,
+      "executionStatus": "not_executed"
+    },
+    {
+      "code": "ABUSE_CONTROL_UNAVAILABLE",
+      "httpStatus": 503,
+      "executionStatus": "not_executed"
+    },
+    {
+      "code": "REMOTE_EDGE_NOT_READY",
+      "httpStatus": 503,
+      "executionStatus": "not_executed"
+    },
+    {
+      "code": "INVALID_HOST",
+      "httpStatus": 400,
+      "executionStatus": "not_executed"
+    },
+    {
+      "code": "ORIGIN_NOT_ALLOWED",
+      "httpStatus": 403,
+      "executionStatus": "not_executed"
+    },
+    {
+      "code": "REQUEST_TOO_LARGE",
+      "httpStatus": 413,
+      "executionStatus": "not_executed"
+    },
+    {
+      "code": "INVALID_MCP_REQUEST",
+      "httpStatus": 400,
+      "executionStatus": "not_executed"
+    },
+    {
+      "code": "UNSUPPORTED_MEDIA_TYPE",
+      "httpStatus": 415,
+      "executionStatus": "not_executed"
+    },
+    {
+      "code": "REMOTE_TOOL_INVOCATION_NOT_CONFIGURED",
+      "httpStatus": 200,
+      "executionStatus": "not_executed"
+    },
+    {
+      "code": "REMOTE_CONNECTOR_ORIGIN_NOT_SUPPORTED",
+      "httpStatus": 200,
+      "executionStatus": "not_executed"
+    },
+    {
+      "code": "TOOL_NOT_FOUND",
+      "httpStatus": 200,
+      "executionStatus": "not_executed"
+    },
+    {
+      "code": "INVALID_TOOL_ARGUMENTS",
+      "httpStatus": 200,
+      "executionStatus": "not_executed"
+    },
+    {
+      "code": "REMOTE_ENFORCEMENT_FAILED",
+      "httpStatus": 200,
+      "executionStatus": "unknown"
+    },
+    {
+      "code": "MISSING_SOURCE_ATTESTATION",
+      "httpStatus": 401,
+      "executionStatus": "not_executed"
+    },
+    {
+      "code": "MALFORMED_SOURCE_ATTESTATION",
+      "httpStatus": 401,
+      "executionStatus": "not_executed"
+    },
+    {
+      "code": "INVALID_SOURCE_ATTESTATION",
+      "httpStatus": 401,
+      "executionStatus": "not_executed"
+    },
+    {
+      "code": "EXPIRED_SOURCE_ATTESTATION",
+      "httpStatus": 401,
+      "executionStatus": "not_executed"
+    },
+    {
+      "code": "SOURCE_ATTESTATION_NOT_ALLOWED",
+      "httpStatus": 400,
+      "executionStatus": "not_executed"
+    },
+    {
+      "code": "SOURCE_TRIGGER_NOT_INTERACTIVE",
+      "httpStatus": 403,
+      "executionStatus": "not_executed"
+    },
+    {
+      "code": "SOURCE_ATTESTATION_REPLAYED",
+      "httpStatus": 409,
+      "executionStatus": "not_executed"
+    },
+    {
+      "code": "SOURCE_ATTESTATION_UNAVAILABLE",
+      "httpStatus": 503,
+      "executionStatus": "not_executed"
+    },
+    {
+      "code": "INVALID_SCHEDULED_ACTION",
+      "httpStatus": 400,
+      "executionStatus": "not_executed"
+    },
+    {
+      "code": "MALFORMED_WORKLOAD_CREDENTIAL",
+      "httpStatus": 401,
+      "executionStatus": "not_executed"
+    },
+    {
+      "code": "INVALID_WORKLOAD_CREDENTIAL",
+      "httpStatus": 401,
+      "executionStatus": "not_executed"
+    },
+    {
+      "code": "EXPIRED_WORKLOAD_CREDENTIAL",
+      "httpStatus": 401,
+      "executionStatus": "not_executed"
+    },
+    {
+      "code": "WORKLOAD_KEY_REVOKED",
+      "httpStatus": 401,
+      "executionStatus": "not_executed"
+    },
+    {
+      "code": "WORKLOAD_CREDENTIAL_REVOKED",
+      "httpStatus": 401,
+      "executionStatus": "not_executed"
+    },
+    {
+      "code": "WORKLOAD_REVOCATION_UNAVAILABLE",
+      "httpStatus": 503,
+      "executionStatus": "not_executed"
+    },
+    {
+      "code": "WORKLOAD_CREDENTIAL_REPLAYED",
+      "httpStatus": 409,
+      "executionStatus": "not_executed"
+    },
+    {
+      "code": "MALFORMED_DELEGATION_CREDENTIAL",
+      "httpStatus": 401,
+      "executionStatus": "not_executed"
+    },
+    {
+      "code": "INVALID_DELEGATION_CREDENTIAL",
+      "httpStatus": 403,
+      "executionStatus": "not_executed"
+    },
+    {
+      "code": "EXPIRED_DELEGATION_CREDENTIAL",
+      "httpStatus": 403,
+      "executionStatus": "not_executed"
+    },
+    {
+      "code": "DELEGATION_KEY_REVOKED",
+      "httpStatus": 403,
+      "executionStatus": "not_executed"
+    },
+    {
+      "code": "DELEGATION_REVOKED",
+      "httpStatus": 403,
+      "executionStatus": "not_executed"
+    },
+    {
+      "code": "DELEGATION_REVOCATION_UNAVAILABLE",
+      "httpStatus": 503,
+      "executionStatus": "not_executed"
+    },
+    {
+      "code": "INVALID_DELEGATION_CHAIN",
+      "httpStatus": 403,
+      "executionStatus": "not_executed"
+    },
+    {
+      "code": "AUTHORIZATION_DENIED",
+      "httpStatus": 403,
+      "executionStatus": "not_executed"
+    },
+    {
+      "code": "SANITIZER_NOT_CONFIGURED",
+      "httpStatus": 503,
+      "executionStatus": "not_executed"
+    },
+    {
+      "code": "EXECUTION_PERMIT_ISSUANCE_FAILED",
+      "httpStatus": 503,
+      "executionStatus": "not_executed"
+    },
+    {
+      "code": "EXECUTION_ALREADY_IN_PROGRESS",
+      "httpStatus": 409,
+      "executionStatus": "executing"
+    },
+    {
+      "code": "EXECUTION_PREVIOUSLY_FAILED",
+      "httpStatus": 502,
+      "executionStatus": "failed"
+    },
+    {
+      "code": "EXECUTION_OUTCOME_UNKNOWN",
+      "httpStatus": 502,
+      "executionStatus": "unknown"
+    },
+    {
+      "code": "TARGET_EXECUTION_FAILED",
+      "httpStatus": 502,
+      "executionStatus": "failed"
+    },
+    {
+      "code": "SECURITY_DEPENDENCY_UNAVAILABLE",
+      "httpStatus": 503,
+      "executionStatus": "not_executed"
+    }
+  ]
+}

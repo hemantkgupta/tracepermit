@@ -1,0 +1,82 @@
+{
+  "schemaVersion": "1.0",
+  "scenario": "06-oauth-attributed-hosted-client",
+  "capturedAt": "2026-10-11T11:03:14.711008Z",
+  "qualificationScope": {
+    "hostedClient": "ChatGPT web",
+    "authorizationServer": "Auth0 development tenant",
+    "transport": "OpenAI Secure MCP Tunnel",
+    "resourceServer": "TracePermit Java loopback OAuth MCP",
+    "downstream": "TracePermit deterministic simulator only",
+    "productionQualification": false
+  },
+  "invocation": {
+    "count": 1,
+    "origin": "chatgpt-web",
+    "triggerKind": "human",
+    "subjectType": "human",
+    "subjectAssurance": "authenticated",
+    "actorType": "orchestrator",
+    "actorAssurance": "asserted",
+    "tool": "aws.ec2.terminate_instances",
+    "arguments": {
+      "instanceIds": ["i-simulated-oauth-demo"],
+      "region": "us-east-1"
+    }
+  },
+  "classification": {
+    "actionClass": "destructive",
+    "severity": "critical",
+    "score": 95,
+    "signals": ["DESTRUCTIVE_VERB", "PRODUCTION_TARGET"],
+    "semanticIntents": ["DATA_DESTRUCTION"]
+  },
+  "policy": {
+    "outcome": "block",
+    "reasonCode": "AGENT_EC2_TERMINATION_BLOCKED",
+    "policyId": "pol-aws-agentic-demo-001",
+    "policyVersion": 1,
+    "matchedRuleId": "block-agent-ec2-termination",
+    "latencyMs": 6
+  },
+  "execution": {
+    "status": "not_executed",
+    "simulated": true,
+    "permitEventPresent": false,
+    "targetDispatchEventPresent": false
+  },
+  "evidenceIntegrity": {
+    "valid": true,
+    "anchored": false,
+    "eventCount": 3,
+    "issueCode": null,
+    "eventTypes": [
+      "action.observed",
+      "policy.evaluated",
+      "execution.not_executed"
+    ]
+  },
+  "boundedMcpDiagnostic": {
+    "protectedToolCallCount": 1,
+    "toolCategory": "AWS_EC2_TERMINATE_INSTANCES",
+    "routeCategory": "PROTECTED",
+    "httpStatus": 200,
+    "note": "HTTP success reports a valid MCP exchange, not policy authorization."
+  },
+  "privacy": {
+    "accessTokenCaptured": false,
+    "refreshTokenCaptured": false,
+    "authorizationCodeCaptured": false,
+    "clientSecretCaptured": false,
+    "privateKeyCaptured": false,
+    "emailCaptured": false,
+    "profileIdCaptured": false,
+    "providerSubjectCaptured": false,
+    "tokenFingerprintCaptured": false,
+    "chatConversationUrlCaptured": false
+  },
+  "knownPresentationIssue": {
+    "clientAlsoRendered": "INVALID_ARGUMENT",
+    "interpretation": "The Java action and integrity projections prove successful normalization and policy evaluation; the extra client rendering is not enforcement evidence."
+  }
+}

@@ -1,0 +1,105 @@
+{
+  "schemaVersion": "1.0",
+  "id": "pol-aws-agentic-demo-001",
+  "version": 1,
+  "name": "Agentic AWS read boundary with semantic sequence control",
+  "description": "Allow bounded authenticated log reads, sanitize oversized result windows, and block rapid extraction sequences, web mutations, and destructive actions.",
+  "enabled": true,
+  "defaultDecision": {
+    "outcome": "require_approval",
+    "reasonCode": "NO_EXPLICIT_ALLOW"
+  },
+  "rules": [
+    {
+      "id": "block-rapid-log-read-sequence",
+      "priority": 400,
+      "description": "Stop a rapid sequence of individually valid log reads before it becomes bulk extraction.",
+      "match": {
+        "targetSystems": ["aws"],
+        "actionClasses": ["read"],
+        "toolNames": ["aws.logs.filter_log_events"],
+        "requiredSignals": ["RAPID_REPEATED_READ_SEQUENCE"]
+      },
+      "decision": {
+        "outcome": "block",
+        "reasonCode": "RAPID_LOG_EXTRACTION_SEQUENCE_BLOCKED"
+      }
+    },
+    {
+      "id": "sanitize-oversized-log-window",
+      "priority": 350,
+      "description": "Reduce an isolated oversized simulated log read to the reviewed maximum of 100 results.",
+      "match": {
+        "targetSystems": ["aws"],
+        "actionClasses": ["read"],
+        "toolNames": ["aws.logs.filter_log_events"],
+        "requiredSignals": ["OVERSIZED_RESULT_WINDOW"]
+      },
+      "decision": {
+        "outcome": "sanitize",
+        "reasonCode": "LOG_RESULT_WINDOW_REQUIRES_SANITIZATION"
+      }
+    },
+    {
+      "id": "block-agent-ec2-termination",
+      "priority": 300,
+      "description": "Web and source-attested CLI agents may not terminate even simulated EC2 instances.",
+      "match": {
+        "origins": ["chatgpt-web", "claude-web", "cli"],
+        "targetSystems": ["aws"],
+        "actionClasses": ["destructive"],
+        "toolNames": ["aws.ec2.terminate_instances"]
+      },
+      "decision": {
+        "outcome": "block",
+        "reasonCode": "AGENT_EC2_TERMINATION_BLOCKED"
+      }
+    },
+    {
+      "id": "block-web-aws-mutation",
+      "priority": 200,
+      "description": "Unmodified web agents may not mutate AWS.",
+      "match": {
+        "origins": ["chatgpt-web", "claude-web"],
+        "targetSystems": ["aws"],
+        "actionClasses": ["modify", "destructive", "orchestration"]
+      },
+      "decision": {
+        "outcome": "block",
+        "reasonCode": "WEB_AGENT_AWS_READ_ONLY"
+      }
+    },
+    {
+      "id": "allow-cloudwatch-read",
+      "priority": 100,
+      "description": "Allow an authenticated web or source-attested CLI human to read bounded simulated logs.",
+      "match": {
+        "origins": ["chatgpt-web", "claude-web", "cli"],
+        "subjectTypes": ["human"],
+        "targetSystems": ["aws"],
+        "actionClasses": ["read"],
+        "toolNames": ["aws.logs.filter_log_events"]
+      },
+      "decision": {
+        "outcome": "allow",
+        "reasonCode": "BOUNDED_LOG_READ"
+      }
+    },
+    {
+      "id": "allow-signed-scheduled-cloudwatch-read",
+      "priority": 90,
+      "description": "Allow a signed workload with adapter-verified delegation to perform a bounded simulated log read.",
+      "match": {
+        "origins": ["scheduler"],
+        "subjectTypes": ["workload"],
+        "targetSystems": ["aws"],
+        "actionClasses": ["read"],
+        "toolNames": ["aws.logs.filter_log_events"]
+      },
+      "decision": {
+        "outcome": "allow",
+        "reasonCode": "SIGNED_WORKLOAD_BOUNDED_LOG_READ"
+      }
+    }
+  ]
+}

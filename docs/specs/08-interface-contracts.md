@@ -1,0 +1,531 @@
+# Interface contracts
+
+**Status:** Current interfaces plus target extensions  
+**Applies to:** MCP, internal HTTP, control plane, and signed artifacts
+
+## 1. Contract rules
+
+- External data is untrusted until validated by its adapter.
+- Schemas are strict at public boundaries; unknown security-relevant fields are
+  rejected rather than silently trusted.
+- Public schemas, signed claims, and canonicalization are versioned.
+- IDs are opaque. Clients must not infer authority from ID format.
+- Errors expose stable codes and safe messages, not tokens, signatures, stack
+  traces, policies, or target credentials.
+- Tenant and subject context come from authenticated evidence, not body fields.
+
+## 2. Current HTTP surfaces
+
+### `GET /health`
+
+Returns service state and active policy identifier/version. It is not a deep
+dependency readiness guarantee.
+
+### `GET /ready`
+
+Returns a versioned snapshot for authentication, policy, permit signing, replay
+storage, and evidence storage. It returns `200` only when all are ready and
+`503` otherwise. The response contains bounded dependency names and states, not
+credentials, endpoints, or configuration values.
+
+### `POST /mcp`
+
+Public MCP Streamable HTTP boundary.
+
+Required controls:
+
+- allowed Host and Origin validation;
+- Bearer authentication before MCP dispatch;
+- request body size limit;
+- tool discovery filtered by trusted scope;
+- independent authorization on `tools/call`; and
+- strict per-tool argument validation.
+
+The development `cli-readonly` profile additionally requires the
+`tracepermit-source-attestation` header. The gateway verifies the compact
+Ed25519 JWS against an independently configured endpoint-key registry, binds it
+to the authenticated connector fingerprint and canonical MCP method/params,
+and atomically consumes its token ID before MCP SDK dispatch. Web profiles must
+not send this header and receive no fabricated endpoint evidence.
+
+Current tools:
+
+```text
+aws.logs.filter_log_events
+aws.ec2.terminate_instances (strictly simulated; policy-blocked for web/CLI)
+```
+
+Current arguments:
+
+```json
+{
+  "logGroupName": "/app/prod",
+  "filterPattern": "ERROR",
+  "limit": 20
+}
+```
+
+Only `/app/prod` and `/app/staging` are accepted. The MCP proposal limit is
+1–1,000 so policy can observe an oversized request. A value above 100 produces
+`OVERSIZED_RESULT_WINDOW`; the reviewed transformer clamps it to 100, creates
+a new canonical event, and requires a second explicit allow. The simulator
+itself still accepts only 1–100. Identity, target account, assurance, sequence,
+sanitization, policy, and approval fields are invalid arguments.
+
+The active policy schema keeps version `1.0` and adds optional
+`match.requiredSignals`: every named operational signal must be present for
+the rule to match. Semantic-intent labels are explanatory projection data;
+policy rules in this slice match stable operational signals rather than model
+prose.
+
+An executed sanitized MCP response reports the initial `sanitize` decision,
+the final `allow` decision, the allowlisted transformer ID, bounded change
+labels, and effective event/hash metadata. It never returns raw credentials or
+stores raw tool arguments in evidence. Unavailable, failing, or non-converging
+sanitization remains not executed.
+
+The simulated termination tool accepts only 1–10 IDs matching
+`i-simulated-*` and `us-east-1` or `us-west-2`. It is normalized as a
+destructive production action and reaches policy, whose explicit deny rule
+prevents executor invocation. An unregistered tool is instead rejected at the
+MCP boundary and does not reach policy.
+
+### Java MCP stdio connector
+
+The development endpoint executable reads one UTF-8 JSON-RPC object per line
+from stdin and writes one JSON-RPC response per line to stdout. It processes
+frames sequentially, preserves string or integer request IDs, treats EOF as a
+clean shutdown, and supports only:
+
+```text
+initialize
+notifications/initialized
+tools/list
+tools/call
+```
+
+The maximum input frame is 64 KiB. Blank lines are ignored. CRLF and a final
+frame without a newline are accepted. Malformed input, invalid request shape,
+unsupported methods, connector failure, and oversized input return bounded
+JSON-RPC errors where a response is permitted. Operational diagnostics are
+code-only on stderr; stdout never contains startup text or logs.
+
+Every accepted frame is independently observed, credential-bound, signed, and
+sent as an HTTP `POST /mcp` with `Authorization: Bearer` and
+`tracepermit-source-attestation`. Only `http://127.0.0.1`, `http://[::1]`, or
+`http://localhost` with exact path `/mcp` is valid. Userinfo, query, fragment,
+HTTPS, non-loopback hosts, redirects, excessive timeouts, requests above 64
+KiB, and responses above 256 KiB fail closed.
+
+### `POST /dev/oauth/token`
+
+Loopback-only development endpoint. It accepts a fixed development profile and
+returns a short-lived Bearer token. It must not be exposed by a non-loopback or
+production runtime.
+
+### Development protected-resource metadata
+
+The loopback MCP listener publishes the same bounded JSON document at:
+
+```text
+GET /.well-known/oauth-protected-resource
+GET /.well-known/oauth-protected-resource/mcp
+```
+
+The path-aware form supports clients that derive RFC 9728 discovery from the
+MCP resource path. The document names the exact loopback `/mcp` resource, the
+simulated development server, its two read-only discovery scopes, and the
+`header` Bearer method. It intentionally omits `authorization_servers`: the
+Scenario 2 no-auth plugin uses a short-lived development bearer injected on the
+local tunnel-client hop, not an end-user OAuth flow.
+
+This public metadata is compatibility and diagnostic information only. It
+does not authenticate the tunnel, identify the signed-in ChatGPT user,
+authorize a tool, or replace the normal pre-parse Bearer check.
+
+### `POST /v1/evaluate`
+
+Trusted internal adapter interface accepting a canonical `InterceptedAction`.
+It validates and evaluates without execution.
+
+### `POST /v1/execute`
+
+Trusted internal adapter interface accepting a canonical `InterceptedAction`.
+It evaluates, issues an execution permit only after allow, and invokes the
+permit-verifying simulator.
+
+`/v1/*` is disabled on non-loopback deployments because request-body schema
+validation does not authenticate identity evidence.
+
+### Signed scheduled-workload foundation
+
+There is currently no network route for this boundary. The in-process Java
+adapter receives an untrusted scheduled action plus compact credentials and a
+separately constructed `TrustedScheduledActionContext`.
+
+`tracepermit-workload-identity+jws` uses canonical JSON, unpadded base64url,
+`alg=EdDSA`, an operator-trusted key ID, a maximum 300-second lifetime, and an
+exact `tracepermit-scheduled-action-v1` binding. A delegation uses
+`tracepermit-delegation-grant+jws`, a maximum 900-second lifetime, and optional
+parent ID plus exact compact-parent SHA-256 hash. The chain maximum is eight.
+
+The adapter rejects unknown fields, versions, algorithms, types, issuers, keys,
+audiences, trust/revocation states, injected trusted fields, binding mismatch,
+replay, incomplete topology, and authority amplification before canonical
+normalization. See [ADR 0014](../architecture/0014-signed-workload-identity-and-delegation.md)
+for the trust boundary and `contracts/` for the claim schemas.
+
+### Production OAuth/OIDC and remote transport foundation
+
+The transport-neutral Java authenticator accepts
+`Authorization: Bearer <compact-JWT>` and
+implements `oauth-access-token-jwt-rs256-v1`: exact `alg=RS256`, `typ=at+jwt`,
+safe `kid`, operator-configured issuer/JWKS/audience/client/tenant/scope
+mapping, signature and time verification, and fingerprint-only projection. The
+audience is either one bounded string or a bounded array of one to four unique
+strings containing the exact configured resource. `iat` and `exp` are required;
+optional `nbf` is validated when present. Malformed or excessive audience sets
+fail closed.
+
+The portable protected-resource metadata contract is RFC 9728-shaped and is
+intended for the configured `/.well-known/oauth-protected-resource` URL:
+
+```text
+resource
+resource_name
+authorization_servers[]
+scopes_supported[]
+bearer_methods_supported=[header]
+```
+
+The Java direct-TLS adapter publishes this metadata and returns a bounded RFC
+6750 Bearer challenge with
+`resource_metadata`, exact scopes, and optionally `error=invalid_token`.
+Metadata and challenges contain no tokens, tenant mapping, JWKS payload, or
+verification internals and do not authorize invocation.
+
+The remote adapter accepts `POST /mcp` only after exact Host/Origin policy and
+Bearer verification. Authentication occurs before bounded strict-UTF-8 JSON
+decoding. It supports `initialize`, `notifications/initialized`, `ping`, and
+scope-gated `tools/list`. The remote OAuth transport implementation `HandshakeOnlyMcpDispatcher` retains
+its `REMOTE_TOOL_INVOCATION_NOT_CONFIGURED` response. The remote MCP enforcement implementation
+`EnforcingMcpDispatcher` additionally supports `tools/call` through an exact
+invocation-scope check, strict per-tool arguments, server-owned canonical
+normalization, policy, request-bound permit issue/verification/consumption,
+and the simulator. Block, approval, sanitize, unknown, malformed, and
+dependency-failure paths do not dispatch. No real target is wired. Its
+ChatGPT/Claude-shaped cases are synthetic conformance fixtures, not live
+external-product qualification.
+
+### Hosted-client OAuth loopback profile
+
+The simulator-only hosted-client profile publishes the same metadata at both
+well-known routes, but the document contains the configured HTTPS resource and
+authorization server. `POST /mcp` permits bounded `initialize`, initialized
+notification, `ping`, and static `tools/list` responses without identity. The
+catalog contains schemas, annotations, and OAuth requirements only; it contains
+no user or tenant data and grants no invocation authority. Every `tools/call`
+requires a provider-issued access token matching
+`oauth-access-token-jwt-rs256-v1` before protected dispatch. `GET /health` and
+`GET /ready` report
+`mode=simulated-oauth-loopback` and `tokenIssuerPresent=false`.
+
+This profile deliberately returns `404` for `/dev/oauth/token`. A missing or
+invalid credential on `tools/call` returns an MCP error result with bounded
+`_meta["mcp/www_authenticate"]`, `resource_metadata`, OAuth error, and error
+description fields. Other protected requests retain the bounded HTTP `401`
+challenge. Provider/JWKS unavailability receives `503`. The tunnel launcher
+supplies no static MCP Authorization header.
+
+Every listed tool declares an OAuth `securitySchemes` array and truthful
+annotations. `tracepermit.get_profile` accepts `{}` only and returns the
+current verified profile in `structuredContent` plus a JSON text item:
+
+```json
+{
+  "id": "prf_<opaque-stable-value>",
+  "name": "<verified-provider-display-name>"
+}
+```
+
+The caller cannot select an ID, email, tenant, or subject. The profile tool is
+read-only and never enters policy, permit issuance, or target dispatch.
+
+The call envelope permits the optional standard `params._meta` object used by
+live MCP clients for progress and correlation. TracePermit treats every value
+inside it as untrusted transport metadata, ignores it for identity and
+authority, and excludes it from canonical actions and evidence. Other unknown
+call-parameter fields remain invalid.
+
+The hardened remote-edge implementation hardened profile additionally requires an access token carrying
+an exact RFC 8705 `cnf.x5t#S256` confirmation and a matching direct TLS peer
+leaf certificate for `POST /mcp`. The token signature is verified before the
+confirmation value is trusted, and certificate matching occurs before the MCP
+body is read. Protected-resource metadata remains public. The profile applies
+a network-peer rate limit before authentication, a verified-principal limit
+after sender binding, and an exact fail-closed readiness snapshot. These are
+injected library contracts; no production runtime is configured.
+
+## 3. Canonical action contract
+
+The canonical action contains:
+
+```text
+schemaVersion
+eventId, observedAt, traceId
+identity.subject, optional actor/createdBy, evidence[]
+trigger
+optional declaredIntent
+action.protocol, toolName, arguments, target
+optional verified source device/process/trigger projection
+lineage.hops[], lineage.delegations[]
+clientClaims
+```
+
+Adapters construct trusted fields. Policy and executors consume the canonical
+contract and do not reinterpret raw transport input.
+
+## 3A. Java development control-plane reads
+
+The Java development adapter exposes these loopback-only reads:
+
+```text
+GET /health
+GET /ready
+GET /api/v1/overview
+GET /api/v1/actions
+GET /api/v1/actions/{eventId}
+GET /api/v1/simulator/state
+```
+
+The overview counts include all current in-memory projection records. Its
+latency fields deliberately describe only actions observed after the current
+Java process started serving live requests:
+
+```text
+p95LatencyMs
+latencySampleSize
+latencySampleScope=current_run
+```
+
+Seeded historical fixtures are excluded from the current-run latency sample.
+A sample size of zero means that no live latency measurement is available; it
+must not be rendered as a measured zero-latency result.
+
+The action list accepts only `decision`, `severity`, `origin`, `q`, and `limit`
+query parameters. The action projection omits raw arguments, results,
+credential fingerprints, delegation token hashes, and client claims. Every
+demo response is marked simulated. See
+[current-state baseline](03-current-state-baseline.md) for the local
+contract and security limitations.
+
+This surface has no remote authentication or tenant authorization. It refuses
+non-loopback binding and provides no mutation endpoint. It is not the target
+enterprise control-plane API described below.
+
+The initial React console calls only the overview and action-list GET routes.
+Its deny and approval controls are disabled and do not construct HTTP requests.
+
+## 4. Current error semantics
+
+| Code                                       | Meaning                                                 | Execution state      |
+| ------------------------------------------ | ------------------------------------------------------- | -------------------- |
+| `INVALID_ACTION`                           | Schema, identity, or lineage validation failed          | `not_executed`       |
+| `MISSING_BEARER_TOKEN`                     | Authentication header missing/invalid form              | No dispatch          |
+| `MALFORMED_ACCESS_TOKEN`                   | Token encoding or JSON cannot be safely parsed          | No dispatch          |
+| `INVALID_ACCESS_TOKEN`                     | Token claims or signature invalid                       | No dispatch          |
+| `EXPIRED_ACCESS_TOKEN`                     | Token lifetime elapsed                                  | No dispatch          |
+| `OIDC_CONFIGURATION_UNAVAILABLE`           | Trusted provider registry could not answer              | No dispatch          |
+| `OIDC_KEY_SET_UNAVAILABLE`                 | Configured OIDC verification keys unavailable           | No dispatch          |
+| `AUTHENTICATION_REQUIRED`                  | Remote OAuth credential is missing                      | No dispatch          |
+| `AUTHENTICATION_UNAVAILABLE`               | Remote OAuth trust dependency is unavailable            | No dispatch          |
+| `INVALID_SENDER_CONSTRAINT`                | Token certificate binding is absent or does not match   | No dispatch          |
+| `RATE_LIMITED`                             | Network or authenticated-principal quota is exhausted   | No dispatch          |
+| `ABUSE_CONTROL_UNAVAILABLE`                | Required rate/abuse state cannot be claimed             | No dispatch          |
+| `REMOTE_EDGE_NOT_READY`                    | A hardened deployment prerequisite is unavailable       | No dispatch          |
+| `INVALID_HOST`                             | Remote request Host is outside the exact allowlist      | No dispatch          |
+| `ORIGIN_NOT_ALLOWED`                       | Present remote request Origin is not allowed            | No dispatch          |
+| `REQUEST_TOO_LARGE`                        | Remote MCP body exceeds its configured bound            | No dispatch          |
+| `INVALID_MCP_REQUEST`                      | Remote MCP JSON/framing is malformed or ambiguous       | No dispatch          |
+| `UNSUPPORTED_MEDIA_TYPE`                   | Remote MCP body is not JSON                             | No dispatch          |
+| `REMOTE_TOOL_INVOCATION_NOT_CONFIGURED`    | Remote foundation intentionally has no tools/call path  | No dispatch          |
+| `REMOTE_CONNECTOR_ORIGIN_NOT_SUPPORTED`    | Connector origin requires another trusted adapter       | No dispatch          |
+| `TOOL_NOT_FOUND`                           | Remote tool is not registered                           | No dispatch          |
+| `INVALID_TOOL_ARGUMENTS`                   | Remote tool arguments violate the exact schema          | No dispatch          |
+| `REMOTE_ENFORCEMENT_FAILED`                | Remote action failed safely inside enforcement          | Not executed/unknown |
+| `MISSING_SOURCE_ATTESTATION`               | Required CLI source proof is absent                     | No dispatch          |
+| `MALFORMED_SOURCE_ATTESTATION`             | Source JWS encoding is malformed                        | No dispatch          |
+| `INVALID_SOURCE_ATTESTATION`               | Source signature, claims, or binding is invalid         | No dispatch          |
+| `EXPIRED_SOURCE_ATTESTATION`               | Source proof lifetime elapsed                           | No dispatch          |
+| `SOURCE_ATTESTATION_NOT_ALLOWED`           | A web profile attempted to supply endpoint proof        | No dispatch          |
+| `SOURCE_TRIGGER_NOT_INTERACTIVE`           | Current CLI profile lacks interactive evidence          | No dispatch          |
+| `SOURCE_ATTESTATION_REPLAYED`              | Source proof token ID was already consumed              | No dispatch          |
+| `SOURCE_ATTESTATION_UNAVAILABLE`           | Required endpoint verifier/replay port is absent        | No dispatch          |
+| `INVALID_SCHEDULED_ACTION`                 | Scheduled envelope or trusted-field boundary invalid    | No dispatch          |
+| `MALFORMED_WORKLOAD_CREDENTIAL`            | Workload compact encoding is malformed                  | No dispatch          |
+| `INVALID_WORKLOAD_CREDENTIAL`              | Workload signature, trust, claims, or binding invalid   | No dispatch          |
+| `EXPIRED_WORKLOAD_CREDENTIAL`              | Workload proof lifetime elapsed                         | No dispatch          |
+| `WORKLOAD_KEY_REVOKED`                     | Registered workload-verification key is revoked         | No dispatch          |
+| `WORKLOAD_CREDENTIAL_REVOKED`              | Workload credential token is revoked                    | No dispatch          |
+| `WORKLOAD_REVOCATION_UNAVAILABLE`          | Workload revocation status is unknown                   | No dispatch          |
+| `WORKLOAD_CREDENTIAL_REPLAYED`             | Workload token ID was already consumed                  | No dispatch          |
+| `MALFORMED_DELEGATION_CREDENTIAL`          | Delegation compact encoding is malformed                | No dispatch          |
+| `INVALID_DELEGATION_CREDENTIAL`            | Delegation signature, trust, claims, or binding invalid | No dispatch          |
+| `EXPIRED_DELEGATION_CREDENTIAL`            | Delegation lifetime elapsed                             | No dispatch          |
+| `DELEGATION_KEY_REVOKED`                   | Registered delegation-signing key is revoked            | No dispatch          |
+| `DELEGATION_REVOKED`                       | Delegation grant is revoked                             | No dispatch          |
+| `DELEGATION_REVOCATION_UNAVAILABLE`        | Delegation revocation status is unknown                 | No dispatch          |
+| `INVALID_DELEGATION_CHAIN`                 | Complete chain/topology/narrowing/leaf check failed     | No dispatch          |
+| `ENDPOINT_OBSERVATION_UNAVAILABLE`         | Required process/session facts could not be read        | No dispatch          |
+| `ENDPOINT_EXECUTABLE_CHANGED`              | Observed executable changed before forwarding           | No dispatch          |
+| `ENDPOINT_KEY_UNAVAILABLE`                 | Development signing provider is unavailable             | No dispatch          |
+| `CONNECTOR_CREDENTIAL_UNAVAILABLE`         | Connector credential is absent or unsafe                | No dispatch          |
+| `GATEWAY_UNAVAILABLE`                      | Loopback gateway could not be reached safely            | No dispatch          |
+| `AUTHORIZATION_DENIED`                     | Authenticated identity lacks invocation authority       | `not_executed`       |
+| `SANITIZER_NOT_CONFIGURED`                 | Policy required unavailable transformation              | `not_executed`       |
+| `EXECUTION_PERMIT_ISSUANCE_FAILED`         | Allow could not become execution authority              | `not_executed`       |
+| `TARGET_EXECUTION_FAILED`                  | Executor or target path failed                          | `failed`             |
+| `EXECUTION_ALREADY_IN_PROGRESS`            | Same logical event is currently running                 | `executing`          |
+| `EXECUTION_PREVIOUSLY_FAILED`              | Prior attempt has a confirmed failure                   | `failed`             |
+| `EXECUTION_OUTCOME_UNKNOWN`                | Prior target outcome requires reconciliation            | `unknown`            |
+| `DURABLE_STATE_UNAVAILABLE`                | Required claim/evidence transaction failed              | Not dispatched       |
+| `DURABLE_STATE_UNAVAILABLE_AFTER_DISPATCH` | Outcome could not be durably recorded after dispatch    | `executing`/unknown  |
+| `SECURITY_DEPENDENCY_UNAVAILABLE`          | A required enforcement dependency is unavailable        | `not_executed`       |
+
+Production evidence should retain a more precise internal reason while public
+responses stay bounded.
+
+## 5. Execution permit contract
+
+Current claims:
+
+```text
+schemaVersion, permitId
+issuer, audience, subjectId
+eventId, evaluationId, actionHash
+decision.outcome=allow, policyId, policyVersion
+issuedAt, expiresAt, maxUses=1
+```
+
+The current compact token uses an HS256 header with an ephemeral key. The
+enterprise format must add an explicit canonicalization profile and use a
+reviewed asymmetric/KMS-backed signing configuration.
+
+## 6. Audit evidence contract
+
+The current internal evidence record contains:
+
+```text
+payload:
+  schemaVersion, evidenceEventId, streamId, sequence, kind
+  occurredAt, recordedAt, producer
+  trace/event/evaluation/permit/attempt/idempotency correlation
+  subjectId, actionHash, policy, decision, execution status/reason
+  credentialFingerprints[]
+integrity:
+  algorithm=sha256, previousEventHash, eventHash
+```
+
+The contract intentionally has no arbitrary payload field. Raw action
+arguments, target results, access tokens, and reusable credentials are not
+accepted. A valid local chain does not establish semantic truth or prove that
+the chain was not wholly replaced; production verification requires an
+independently retained signed checkpoint.
+
+### Durable Java persistence projection
+
+The Java `DurableEnforcementState` port accepts a trusted tenant separately
+from the canonical action. Its PostgreSQL adapter stores bounded permit,
+attempt, idempotency, policy, transition, evidence-hash, and outbox fields.
+There is no raw-action, raw-result, compact-token, source-attestation, private-
+key, or reusable-credential persistence field. This is an internal application
+port, not a remotely callable control-plane API.
+
+### Java approval application contracts
+
+The request-bound approval implementation adds version-2 language-neutral schemas for an approval request, a
+trusted reviewer decision, and an approval-derived execution permit. The
+request binds tenant, request/action hashes, event/evaluation, subject,
+actor-lineage hash, immutable policy ID/version, original
+`require_approval`, tool/resource hash, expiry, and `maxUses=1`.
+
+The permit retains `decision.outcome=allow` for executor compatibility and
+adds this signed object:
+
+```text
+authorization.kind=human_approval
+authorization.approvalRequestId
+authorization.approvalDecisionId
+authorization.originalPolicyOutcome=require_approval
+```
+
+These are application/domain and persistence contracts. No HTTP request may
+construct `TrustedReviewerContext`, and no Java HTTP route accepts an approval
+decision. The React console remains GET-only and its approval controls remain
+disabled.
+
+The Scenario 3 development harness composes these contracts directly inside a
+local Java process and supplies a fixed trusted reviewer from a separate
+development adapter. Its terminal keypress is only a presentation pause. The
+harness creates no network approval contract and therefore does not implement
+any of the target endpoints below.
+
+### Evidence anchor receipt v1
+
+The portable `evidence-anchor-receipt-v1` schema contains only
+`schemaVersion`, tenant/outbox/stream/sequence/event binding, `payloadHash`,
+provider/key/anchor identifiers, `anchoredAt`, exact `Ed25519` algorithm, and
+an unpadded base64url signature. The signing input is UTF-8 lines prefixed by
+`tracepermit-evidence-anchor-v1` in that exact field order. Unknown fields,
+versions, algorithms, malformed hashes/signatures, or unconfigured
+provider/key pairs fail closed.
+
+## 7. Target control-plane APIs
+
+Exact OpenAPI shapes will be specified with their implementation slice. The
+target resources are:
+
+```text
+POST   /api/v1/actions/evaluate
+POST   /api/v1/actions/{eventId}/execute
+GET    /api/v1/actions/{eventId}
+GET    /api/v1/actions
+
+POST   /api/v1/approval-requests
+GET    /api/v1/approval-requests/{id}
+POST   /api/v1/approval-requests/{id}/decisions
+
+POST   /api/v1/policies/{policyId}/versions
+POST   /api/v1/policy-versions/{id}/simulate
+POST   /api/v1/policy-versions/{id}/activate
+
+GET    /api/v1/execution-attempts/{id}
+POST   /api/v1/execution-attempts/{id}/reconcile
+GET    /api/v1/evidence
+```
+
+Control-plane APIs require tenant-aware authorization distinct from an agent's
+tool-execution authority.
+
+The listed approval endpoints remain target APIs. The request-bound approval implementation deliberately does
+not expose them until production reviewer authentication, tenant roles, CSRF/
+session behavior, concurrency/idempotency responses, and mutation audit are
+specified and implemented.
+
+## 8. Pagination and concurrency
+
+- List APIs use opaque cursor pagination.
+- Mutable control-plane resources use version/ETag or explicit expected-version
+  checks.
+- Approval decisions and permit claims are idempotent by client request ID.
+- Duplicate idempotent requests return the original result or a conflict with
+  a safe reference.
+
+## 9. Protocol compatibility
+
+The current MCP implementation supports the 2026-07-28 protocol and a stateless
+request/response fallback for 2025-era clients. Legacy session GET/DELETE,
+resumability, and server-initiated notifications are outside the POC.
+
+Connector compatibility tests must pin observed handshake behavior before a
+remote deployment is declared supported.

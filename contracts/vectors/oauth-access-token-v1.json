@@ -1,0 +1,70 @@
+{
+  "schemaVersion": "1.0",
+  "note": "Public JWKS material and one fixed-time non-production test credential only; no private key or reusable production credential is committed.",
+  "profile": "oauth-access-token-jwt-rs256-v1",
+  "verifiedAt": "2030-01-01T00:00:30.000Z",
+  "provider": {
+    "issuer": "https://identity.example.invalid",
+    "audience": "https://mcp.tracepermit.example.invalid",
+    "jwksUri": "https://identity.example.invalid/.well-known/jwks.json",
+    "resourceMetadataUri": "https://mcp.tracepermit.example.invalid/.well-known/oauth-protected-resource",
+    "tenantClaim": "org_id",
+    "tenantMappings": {
+      "enterprise-acme": "tenant:acme"
+    },
+    "clientNames": {
+      "chatgpt-connector": "ChatGPT Web"
+    },
+    "maximumTokenLifetimeSeconds": 300,
+    "jwksCacheLifetimeSeconds": 60,
+    "forcedRefreshCooldownSeconds": 30
+  },
+  "protectedResourceMetadata": {
+    "resource": "https://mcp.tracepermit.example.invalid",
+    "resource_name": "TracePermit MCP",
+    "authorization_servers": [
+      "https://identity.example.invalid"
+    ],
+    "scopes_supported": [
+      "aws.logs.discover",
+      "aws.logs.read"
+    ],
+    "bearer_methods_supported": [
+      "header"
+    ]
+  },
+  "bearerChallenges": {
+    "missing": "Bearer resource_metadata=\"https://mcp.tracepermit.example.invalid/.well-known/oauth-protected-resource\", scope=\"aws.logs.discover aws.logs.read\"",
+    "invalid": "Bearer resource_metadata=\"https://mcp.tracepermit.example.invalid/.well-known/oauth-protected-resource\", scope=\"aws.logs.discover aws.logs.read\", error=\"invalid_token\""
+  },
+  "publicJwks": {
+    "keys": [
+      {
+        "kty": "RSA",
+        "n": "pJ72lkXUHDQEWmkIbYnHw_n4hsRqxHaKdO9m2_57EfAFjlcuFUe6R5AgBxXaGNuawMQyx8OZ_7vQef6DX7gqZ5EYhvLvEEbg3VOb73ckCOXfdk-EnE4QEMdTHblp1PbROcSS-Vf932MbJjBcA2Lg9qdvacVeURSBZK3mSVLJA8fkoRoqUE3NxRYh_ycc8JpNCgzcJKcjHai6uC9sE8_mUXS1yQHV4s7Uay4ts9Lixd2C9EFVEUzQ3ZbzL7wZsnOE4PhJKkvoMdnwQ6pBi4L7wL-6XjbMkX0_uOygDT0xj02xfwctPCVA1QGBsXKRTj4mxH-YyPVqMHumq6D-B7QpIw",
+        "e": "AQAB",
+        "use": "sig",
+        "alg": "RS256",
+        "kid": "oidc-key-vector-001"
+      }
+    ]
+  },
+  "expectedCompactAccessToken": "eyJhbGciOiJSUzI1NiIsInR5cCI6ImF0K2p3dCIsImtpZCI6Im9pZGMta2V5LXZlY3Rvci0wMDEifQ.eyJpc3MiOiJodHRwczovL2lkZW50aXR5LmV4YW1wbGUuaW52YWxpZCIsImF1ZCI6Imh0dHBzOi8vbWNwLnRyYWNlcGVybWl0LmV4YW1wbGUuaW52YWxpZCIsInN1YiI6InVzZXI6YWxpY2VAZXhhbXBsZS5pbnZhbGlkIiwibmFtZSI6IkFsaWNlIEV4YW1wbGUiLCJjbGllbnRfaWQiOiJjaGF0Z3B0LWNvbm5lY3RvciIsIm9yZ19pZCI6ImVudGVycHJpc2UtYWNtZSIsInNjb3BlIjoiYXdzLmxvZ3MuZGlzY292ZXIgYXdzLmxvZ3MucmVhZCIsImlhdCI6MTg5MzQ1NjAwMCwibmJmIjoxODkzNDU2MDAwLCJleHAiOjE4OTM0NTYzMDAsImp0aSI6IjAxOGY0N2EyLWY1Y2UtN2E0Yi04ZjU0LTgwZTVkM2VhZjA5MCJ9.YKn9ir1FAoU1FHKXMifIV9Tx6vY70-cC1WtyUGmsLO_CYJlPDvEvrdDcgNYfcNF0CKTcz7hW_OnFFVDFX5AcTSJKCMOWJVXq4C32Pje_LpDHVgl_O2pFTvDXfhOaLDXdsTGtwSAgPin_ErLLLAwUbanHZMyYjQZBQjE_3rEL7o17csecYko7G2ICEnc8L312MKYCW2KjH3HP2zqYd0ZKIGXoGhRecEbBHZuDLXCPTjun4WY-OnTVmtsQeSAe4qlvN4gbJEn8vW-8iz00zSMEcC7gBAfd_B9tmXYLIGvxrh99RxiRu51obxQiiXp_nhyVLwiwfhafqtBPmEG8DMgdYw",
+  "expectedIdentity": {
+    "subjectId": "https://identity.example.invalid#user:alice@example.invalid",
+    "displayName": "Alice Example",
+    "organizationId": "tenant:acme",
+    "origin": "chatgpt-web",
+    "clientId": "chatgpt-connector",
+    "clientName": "ChatGPT Web",
+    "issuer": "https://identity.example.invalid",
+    "authenticationProfile": "oauth-access-token-jwt-rs256-v1",
+    "verificationKeyId": "oidc-key-vector-001",
+    "credentialFingerprint": "sha256:cf4ce22035f7d52d4cc4bd7b60e5ee7652122dc8e4c2c51612ccbf6254e1c5df",
+    "scopes": [
+      "aws.logs.discover",
+      "aws.logs.read"
+    ],
+    "expiresAt": "2030-01-01T00:05:00Z"
+  }
+}

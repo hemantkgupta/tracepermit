@@ -1,0 +1,58 @@
+{
+  "$id": "https://schemas.tracepermit.invalid/v1/oauth-protected-resource-metadata-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "resource": {
+      "type": "string",
+      "maxLength": 512,
+      "format": "uri"
+    },
+    "resource_name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "authorization_servers": {
+      "minItems": 1,
+      "maxItems": 8,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 512,
+        "format": "uri"
+      }
+    },
+    "scopes_supported": {
+      "minItems": 1,
+      "maxItems": 64,
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256,
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/+\\-=]*$"
+      }
+    },
+    "bearer_methods_supported": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "type": "string",
+          "const": "header"
+        }
+      ],
+      "items": false,
+      "minItems": 1,
+      "maxItems": 1
+    }
+  },
+  "required": [
+    "resource",
+    "resource_name",
+    "authorization_servers",
+    "scopes_supported",
+    "bearer_methods_supported"
+  ],
+  "additionalProperties": false
+}

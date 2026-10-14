@@ -1,0 +1,42 @@
+{
+  "schemaVersion": "1.0",
+  "note": "Deterministic local-development key material for cross-language tests only.",
+  "profile": "chatgpt-readonly",
+  "now": "2026-10-08T10:15:31.000Z",
+  "issuer": "tracepermit-development-issuer",
+  "audience": "tracepermit-mcp",
+  "keyId": "ephemeral-development-key",
+  "tokenLifetimeSeconds": 300,
+  "testOnlySigningKeyHex": "3333333333333333333333333333333333333333333333333333333333333333",
+  "expectedCompactToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCIsImtpZCI6ImVwaGVtZXJhbC1kZXZlbG9wbWVudC1rZXkifQ.eyJpc3MiOiJ0cmFjZXBlcm1pdC1kZXZlbG9wbWVudC1pc3N1ZXIiLCJhdWQiOiJ0cmFjZXBlcm1pdC1tY3AiLCJzdWIiOiJ1c2VyOmFsaWNlQGV4YW1wbGUuaW52YWxpZCIsIm5hbWUiOiJBbGljZSAoZGV2ZWxvcG1lbnQpIiwib3JnIjoidHJhY2VwZXJtaXQtZGV2ZWxvcG1lbnQiLCJvcmlnaW4iOiJjaGF0Z3B0LXdlYiIsImNsaWVudF9pZCI6ImNsaWVudDpjaGF0Z3B0LXdlYiIsImNsaWVudF9uYW1lIjoiQ2hhdEdQVCBXZWIgKGRldmVsb3BtZW50KSIsInNjb3BlIjpbImF3cy5sb2dzLmRpc2NvdmVyIiwiYXdzLmxvZ3MucmVhZCJdLCJpYXQiOjE3OTE0NTQ1MzEsImV4cCI6MTc5MTQ1NDgzMSwianRpIjoiMDE4ZjQ3YTItZjVjZS03YTRiLThmNTQtODBlNWQzZWFmMDgxIn0.RC9yPEnZ_lJ7bA3LWy2YFapO3khO78cjA_T8yeAGk0w",
+  "expectedIdentity": {
+    "subjectId": "user:alice@example.invalid",
+    "displayName": "Alice (development)",
+    "organizationId": "tracepermit-development",
+    "origin": "chatgpt-web",
+    "clientId": "client:chatgpt-web",
+    "clientName": "ChatGPT Web (development)",
+    "issuer": "tracepermit-development-issuer",
+    "verifiedAt": "2026-10-08T10:15:31.000Z",
+    "credentialFingerprint": "sha256:8aa655e55dbb41c0dc9569181f3cfaa89f23452bfd61efada4256d215ca3996b",
+    "scopes": [
+      "aws.logs.discover",
+      "aws.logs.read"
+    ],
+    "expiresAt": 1791454831
+  },
+  "requiredScopeChecks": [
+    {
+      "scope": "aws.logs.discover",
+      "allowed": true
+    },
+    {
+      "scope": "aws.logs.read",
+      "allowed": true
+    },
+    {
+      "scope": "aws.ec2.write",
+      "allowed": false
+    }
+  ]
+}

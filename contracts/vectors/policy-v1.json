@@ -1,0 +1,102 @@
+{
+  "schemaVersion": "1.0",
+  "policy": "policies/aws-web-readonly.json",
+  "cases": [
+    {
+      "fixture": "fixtures/chatgpt-aws-read.json",
+      "actionHash": "sha256:97efc87ece3fb5188e998b012a0c19eeadbadf5228bc89d07591cfaca0ec4476",
+      "expected": {
+        "classification": {
+          "actionClass": "read",
+          "severity": "low",
+          "score": 10,
+          "operation": "aws.logs.filter_log_events",
+          "signals": [
+            "READ_VERB"
+          ],
+          "classifier": {
+            "kind": "deterministic",
+            "version": "0.1.0"
+          }
+        },
+        "decision": {
+          "outcome": "allow",
+          "reasonCode": "BOUNDED_LOG_READ",
+          "matchedRuleId": "allow-cloudwatch-read"
+        }
+      }
+    },
+    {
+      "fixture": "fixtures/chatgpt-aws-terminate-simulated.json",
+      "actionHash": "sha256:9bc2348055e3ab2174c15b56cd9d10a85b49be8df03fcd8105d22b33ebf871a4",
+      "expected": {
+        "classification": {
+          "actionClass": "destructive",
+          "severity": "critical",
+          "score": 95,
+          "operation": "aws.ec2.terminate_instances",
+          "signals": [
+            "DESTRUCTIVE_VERB",
+            "PRODUCTION_TARGET"
+          ],
+          "classifier": {
+            "kind": "deterministic",
+            "version": "0.1.0"
+          }
+        },
+        "decision": {
+          "outcome": "block",
+          "reasonCode": "AGENT_EC2_TERMINATION_BLOCKED",
+          "matchedRuleId": "block-agent-ec2-termination"
+        }
+      }
+    },
+    {
+      "fixture": "fixtures/api-service-aws-modify.json",
+      "actionHash": "sha256:ff0ab3e51dbcf02dcba13c9d0366d5731c7215119e0c6b705e5d82f8c843602e",
+      "expected": {
+        "classification": {
+          "actionClass": "modify",
+          "severity": "medium",
+          "score": 55,
+          "operation": "aws.ec2.update_security_group",
+          "signals": [
+            "MUTATION_VERB",
+            "PRODUCTION_TARGET"
+          ],
+          "classifier": {
+            "kind": "deterministic",
+            "version": "0.1.0"
+          }
+        },
+        "decision": {
+          "outcome": "require_approval",
+          "reasonCode": "NO_EXPLICIT_ALLOW"
+        }
+      }
+    },
+    {
+      "fixture": "fixtures/scheduler-aws-read.json",
+      "actionHash": "sha256:1dd1269a32ddc5007fe4bb939c59ef659e2a13edbc7b7cb6cd94172addcb6be2",
+      "expected": {
+        "classification": {
+          "actionClass": "read",
+          "severity": "low",
+          "score": 10,
+          "operation": "aws.cost.get_cost_and_usage",
+          "signals": [
+            "READ_VERB"
+          ],
+          "classifier": {
+            "kind": "deterministic",
+            "version": "0.1.0"
+          }
+        },
+        "decision": {
+          "outcome": "require_approval",
+          "reasonCode": "NO_EXPLICIT_ALLOW"
+        }
+      }
+    }
+  ]
+}
