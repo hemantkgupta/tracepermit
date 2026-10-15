@@ -28,14 +28,13 @@ flowchart TD
   Gateway -->|2. Canonical Action (SHA-256 hash)| Policy["Policy Engine<br/>(risk, classification, sliding history)"]
 
   Policy -->|allow| Permit["Issue Request-Bound<br/>Execution Permit"]
+  Policy -->|require_approval| Reviewer["Human Reviewer<br/>Independent Signoff"]
+  Policy -->|block| Deny["Deny & Record<br/>Audit Evidence"]
+
+  Reviewer -->|approved| Permit
   Permit --> Claim["Atomic Claim (1x in DB)"]
   Claim --> Simulator["Deterministic Simulator"]
-
-  Policy -->|block| Deny["Deny & Record<br/>Audit Evidence"]
-  Deny --> Ledger["Evidence Ledger & Console<br/>(Zero Dispatches)"]
-
-  Policy -->|require_approval| Reviewer["Human Reviewer<br/>Independent Signoff"]
-  Reviewer -->|approved| Permit
+  Deny --> Ledger["Zero Dispatches<br/>(Target Untouched)"]
 ```
 
 </details>
