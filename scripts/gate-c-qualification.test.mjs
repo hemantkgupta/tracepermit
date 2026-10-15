@@ -123,6 +123,8 @@ test("Gate C runner executes all 6 scenarios in sequence with un-set ambient cre
     result.stdout,
     /\[PASS\] Gate C deterministic presenter qualification complete/,
   );
+  assert.match(result.stdout, /No external target calls or model inference/);
+  assert.match(result.stdout, /not a host-egress isolation test/);
 
   const calls = readFileSync(f.scenarioCalls, "utf8").trim().split("\n");
   assert.equal(calls.length, 6);

@@ -1,7 +1,9 @@
 # Gate C deterministic presenter qualification
 
 Date: 2026-10-15. Runtime revision:
-`1186320577fc75c1dd8789db8e4f16a048710da1`.
+`1186320435d07b4f9f0066c48bd6a9a99819787c`.
+The runner was introduced in PR #22 at `5ed659092e7fb947a20b2ac08ca96df11dc27a55`;
+Java enforcement and presenter sources are unchanged from that runtime baseline.
 Environment: Java **21.0.12.1**, macOS arm64.
 Scope: deterministic local presenter scenarios using synthetic cryptographic
 signers and safe target simulators. These are standalone, reproducible
@@ -20,7 +22,7 @@ All six deterministic scenarios passed in sequence under the unified runner
 | **Scenario 4**  | Signed scheduled sanitization & sequence | `WORKLOAD_CREDENTIAL_REPLAYED`<br/>`RAPID_REPEATED_READ_SEQUENCE`                         | Window clamped 500 &rarr; 100; third read blocked; dispatches = 2                    |
 | **Scenario 9**  | Synthetic PII exfiltration sequence      | `SYNTHETIC_PII_READ_THEN_EXTERNAL_SEND`<br/>`SYNTHETIC_PII_EXFILTRATION_SEQUENCE_BLOCKED` | Read allowed (20 records); follow-on send blocked; outbox sends = 0                  |
 | **Scenario 11** | Sub-agent authority narrowing            | `INVALID_DELEGATION_CHAIN`<br/>`INVALID_DELEGATION_CREDENTIAL`                            | Valid read dispatches = 1; four amplification attempts rejected                      |
-| **Scenario 10** | Tool-result prompt injection             | `IAM_POLICY_ATTACHMENT_BLOCKED`                                                           | Tool data cannot authorize IAM mutation; dispatches = 0                              |
+| **Scenario 10** | Tool-result prompt injection             | `IAM_POLICY_ATTACHMENT_BLOCKED`                                                           | IAM dispatches = 0; runbook-read dispatches = 1                                      |
 | **Scenario 5**  | Latency & fail-secure qualification      | `SEQUENCE_STATE_UNAVAILABLE`<br/>`failSecureDispatches == 0`                              | Classification p95: 0.045 ms (&le; 25 ms); Authorization p95: 0.750 ms (&le; 100 ms) |
 | **Scenario 7**  | Signed scheduled EC2 stop                | `PRODUCTION_TARGET`<br/>`SCHEDULED_EC2_STOP_BLOCKED`                                      | Blocked before simulator; dispatches = 0                                             |
 
@@ -57,7 +59,9 @@ All six deterministic scenarios passed in sequence under the unified runner
   2. Extra `aws:simulated:log-group/all` resource &rarr; `INVALID_DELEGATION_CHAIN`
   3. Foreign executor audience &rarr; `INVALID_DELEGATION_CREDENTIAL`
   4. Child expiry after parent &rarr; `INVALID_DELEGATION_CHAIN`
-- Additional simulator dispatches: 0; Evidence count unchanged
+- Additional simulator dispatches: 0; gateway evidence remains at 5 events from the valid read.
+- These are pre-policy identity/delegation rejections, not policy `block` results.
+  The unchanged gateway ledger is not an audit trail for the rejected requests.
 
 ### 4. Scenario 10: Tool-result prompt injection cannot authorize IAM mutation
 
@@ -67,6 +71,8 @@ All six deterministic scenarios passed in sequence under the unified runner
 - Evaluation: `ACCESS_CONTROL_CHANGE / block-simulated-iam-policy-attachment`
 - Decision: `block / IAM_POLICY_ATTACHMENT_BLOCKED`
 - Simulated IAM dispatches: 0; role policy attached: `false`
+- Runbook-read dispatches: 1; total dispatches: 1. This proves action enforcement
+  after an injected proposal, not a model's ability to resist prompt injection.
 
 ### 5. Scenario 5: Local latency objectives & fail-secure qualification
 
@@ -78,10 +84,18 @@ All six deterministic scenarios passed in sequence under the unified runner
 - Sequence-state outage fail-secure: `SEQUENCE_STATE_UNAVAILABLE`, target dispatches = 0
 - Missing sanitizer fail-secure: target dispatches = 0
 
+The harness warms classification/policy with 2,000 evaluations and authorization
+with 200 executions before collecting the respective 10,000 and 1,000 samples.
+It sorts `System.nanoTime()` durations and uses the nearest-rank p50/p95.
+This is a single-process local microqualification, not a production benchmark:
+model/provider time, browser review, HTTP transport, remote authentication/JWKS,
+PostgreSQL persistence, concurrent load and saturation are not measured.
+
 ### 6. Scenario 7: Signed scheduled EC2 stop blocked
 
 - Command: `scripts/run-signed-scheduled-stop-scenario.sh --auto`
-- Origin: `workload:scheduled-log-review` with signed delegation to `aws.ec2.stop` on production instance
+- Origin: `workload:scheduled-log-review` with signed delegation to `aws.ec2.stop`
+  on a simulated instance labeled `prod`, not a real production instance
 - Classification: `modify`, severity `medium`, signal `PRODUCTION_TARGET`
 - Policy: `block-scheduled-ec2-stop / SCHEDULED_EC2_STOP_BLOCKED`
 - Outcome: `block`, permit: none, simulator dispatches: 0
@@ -92,3 +106,18 @@ All six deterministic scenarios passed in sequence under the unified runner
 pnpm demo:gate-c
 pnpm demo:verify
 ```
+
+## Scope and remaining qualification
+
+The runner executes fixed Java test-classpath presenters with runtime-generated
+signing keys. Its shell unit tests replace those presenters with stubs; only
+the actual scenario runs establish the Java simulator assertions. Source-string
+checks in `demo:verify` detect fixture drift, not enforcement correctness by
+themselves. Build tooling can download dependencies; no host-wide network
+isolation or credential-file isolation is claimed.
+
+The standalone fixtures do not populate the normal demo's live console feed.
+They are not new model-selected MCP calls, real sub-agent processes, external
+PII inspection, a production performance SLO or live recovery-daemon proof.
+Native endpoint Gate B remains partial: full observed process-fact capture and
+the remaining native source-proof rejection rehearsals are separate work.

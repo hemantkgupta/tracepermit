@@ -35,7 +35,8 @@ echo
 echo "TracePermit Gate C — Deterministic Scenario Presenter Refresh"
 echo "=============================================================="
 echo "Scope: simulator-only presenters using synthetic cryptographic signers."
-echo "No external network, model inference, or production credentials."
+echo "No external target calls or model inference; no production credentials used."
+echo "Build tooling may download dependencies; this is not a host-egress isolation test."
 echo
 
 start_time="$(date +%s)"
