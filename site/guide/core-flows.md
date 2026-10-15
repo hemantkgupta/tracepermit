@@ -17,31 +17,28 @@ This document represents the public, architectural reference for TracePermit's c
 
 > **No agent ever touches an enterprise target directly.** Every tool call is intercepted, authenticated, normalized into a canonical action, evaluated by policy, and requires an exact, single-use, cryptographically verified **Execution Permit** before a safe simulator can execute.
 
-```text
-AI Agent / CLI / Workload
-           | 1. Structured Tool Proposal
-           v
-   Trusted Gateway Adapter
-   (authenticates caller, derives identity facts)
-           | 2. Canonical Action (SHA-256 hash)
-           v
-     Policy Engine
-     (evaluates risk, classification, server-owned history)
-           |
-     +-----+--------------------+--------------------+
-     |                          |                    |
-   allow                      block           require_approval
-     |                          |                    |
-     v                          v                    v
-Issue Request-Bound       Deny & Record       Human Reviewer
-Execution Permit          Audit Evidence      Independent Signoff
-     |                          |                    | (approved)
-     v                          |                    +----> Issue Permit
-Atomic Claim (1x)               |
-     |                          |
-     v                          v
-Deterministic Simulator   Evidence Ledger & Read-Only Console
+![The Central Invariant Flow](/images/flows/central-invariant.svg)
+
+<details>
+<summary>View Mermaid Flowchart (for Notion / GitHub)</summary>
+
+```mermaid
+flowchart TD
+  Agent["AI Agent / CLI / Workload"] -->|1. Structured Tool Proposal| Gateway["Trusted Gateway Adapter<br/>(authenticates caller, derives identity)"]
+  Gateway -->|2. Canonical Action (SHA-256 hash)| Policy["Policy Engine<br/>(risk, classification, sliding history)"]
+
+  Policy -->|allow| Permit["Issue Request-Bound<br/>Execution Permit"]
+  Permit --> Claim["Atomic Claim (1x in DB)"]
+  Claim --> Simulator["Deterministic Simulator"]
+
+  Policy -->|block| Deny["Deny & Record<br/>Audit Evidence"]
+  Deny --> Ledger["Evidence Ledger & Console<br/>(Zero Dispatches)"]
+
+  Policy -->|require_approval| Reviewer["Human Reviewer<br/>Independent Signoff"]
+  Reviewer -->|approved| Permit
 ```
+
+</details>
 
 ---
 
