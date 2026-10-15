@@ -34,6 +34,16 @@ tasks.test {
   systemProperty("tracepermit.approvalRuntimeClasspath", sourceSets["main"].runtimeClasspath.asPath)
 }
 
+tasks.register<JavaExec>("runApprovalBrowserQualification") {
+  group = "verification"
+  description = "Runs a test-classpath-only synthetic IdP and disposable simulator inbox for browser qualification."
+  dependsOn(tasks.named("testClasses"))
+  classpath = sourceSets["test"].runtimeClasspath
+  mainClass = "io.tracepermit.adapters.http.SimulatorApprovalBrowserQualificationMain"
+  standardInput = System.`in`
+  systemProperty("tracepermit.repositoryRoot", rootDir.parentFile.absolutePath)
+}
+
 tasks.register<JavaExec>("runHostedClientOAuth") {
   group = "application"
   description = "Runs the simulator-only hosted-client OAuth profile behind a private tunnel."

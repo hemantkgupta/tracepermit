@@ -35,7 +35,14 @@ login. A separate `pnpm dev:approvals` entry point accepts explicit private
 operator configuration; `--check` validates files and trust configuration
 offline, not IdP or database readiness. It is not started by existing demo launchers. See the
 [API qualification runbook](https://github.com/hemantkgupta/tracepermit/blob/main/docs/runbooks/authenticated-approval-api-foundation.md).
-The React console remains read-only.
+The default demo console remains read-only. An optional same-origin Java
+browser adapter now provides OIDC code/PKCE sign-in and a role-scoped React
+approval inbox over the fixed simulator. Tokens stay server-side; all API
+role, scope, ownership and exact-request checks still apply. Run
+`pnpm demo:approvals:browser` for the test-only synthetic IdP/disposable DB
+qualification. It is not a public browser deployment or live external-IdP
+qualification. See the
+[browser runbook](https://github.com/hemantkgupta/tracepermit/blob/main/docs/runbooks/browser-approval-inbox.md).
 [Scenario 3](https://github.com/hemantkgupta/tracepermit/blob/main/docs/demo-scenarios/03-request-bound-human-approval.md)
 and [Scenario 8](https://github.com/hemantkgupta/tracepermit/blob/main/docs/demo-scenarios/08-production-deletion-request-bound-approval.md)
 exercise the approval boundary with safe simulators and disposable state.

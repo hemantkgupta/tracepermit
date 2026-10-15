@@ -11,7 +11,11 @@ has an additional authenticated HTTP flow: verify JWT and operator membership
 action snapshot and evidence → distinct authorized reviewer decides against
 the request hash → original requester executes the stored action once. It
 rechecks active reviewer enrollment and policy binding before the durable
-claim. It is not wired into the MCP or read-only React flows described below.
+claim. The optional browser inbox signs in through the Java adapter, keeps
+tokens in server memory, and reaches these same checks through cookie/CSRF
+protected `/browser/api/v1/approvals` routes. It is not wired into the MCP or
+default read-only React flows described below. See
+[ADR 0036](../architecture/0036-local-browser-approval-boundary.md).
 
 This flow is implemented by the Java loopback development backend and the Java
 authenticated remote OAuth-to-simulator composition.

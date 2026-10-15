@@ -61,7 +61,7 @@ private tunnel; it is not needed for the default demo.
 
 ## What is qualified
 
-- Java 21 is the sole backend. The React/TypeScript console is a read-only
+- Java 21 is the sole backend. The React/TypeScript console is a
   frontend; `contracts/` contains checked-in language-neutral schemas and
   conformance vectors.
 - Local loopback MCP, endpoint stdio connector, signed scheduled-workload
@@ -72,14 +72,19 @@ private tunnel; it is not needed for the default demo.
   behavior. This does **not** qualify Claude web, every ChatGPT environment,
   or a production public edge.
 - The React console displays bounded Java action, evidence, lineage, and
-  policy projections. It cannot approve or execute actions.
+  policy projections in the default read-only demo. A separate authenticated
+  browser profile provides exact-action simulator approvals.
 - A separate loopback-only authenticated approval API foundation is exercised
   with signed synthetic identities, PostgreSQL, exact action snapshots and
   simulators. Run `pnpm test:approval-api --rerun-tasks`; see the
   [API qualification runbook](docs/runbooks/authenticated-approval-api-foundation.md).
   An optional `pnpm dev:approvals` operator entry point requires private local
   configuration; `--check` validates it offline. It is not enabled by the demo
-  launchers and provides no browser login or React approval inbox yet.
+  launchers. Optional browser configuration adds same-origin OIDC sign-in and
+  a role-scoped React inbox; tokens stay in Java session memory. Try the
+  test-classpath-only synthetic profile with `pnpm demo:approvals:browser`.
+  See the [browser inbox runbook](docs/runbooks/browser-approval-inbox.md).
+  External browser IdP compatibility is not yet live-qualified.
 
 The [current-state capability matrix](docs/specs/03-current-state-baseline.md)
 distinguishes implemented code, local demonstrations, live-client
@@ -92,7 +97,7 @@ reviewer authentication, and production evidence anchoring remain future work.
 | Path                                                    | Role                                                                                         |
 | ------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
 | [`java/`](java/)                                        | Canonical contracts, identity, policy, enforcement, adapters, simulators, persistence, tests |
-| [`apps/console/`](apps/console/)                        | Read-only React UI                                                                           |
+| [`apps/console/`](apps/console/)                        | Read console and separate authenticated simulator approval inbox                             |
 | [`contracts/`](contracts/)                              | Frozen language-neutral schemas, protocol snapshots, vectors                                 |
 | [`docs/specs/`](docs/specs/README.md)                   | Requirements, HLD/LLD, interfaces, threat model, traceability                                |
 | [`docs/architecture/`](docs/architecture/)              | Architecture decision records                                                                |

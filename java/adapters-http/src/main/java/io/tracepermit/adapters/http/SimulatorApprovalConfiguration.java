@@ -49,22 +49,27 @@ final class SimulatorApprovalConfiguration {
   private final PGSimpleDataSource database;
   private final KeyPair permitKey;
   private final String keyId;
+  private final BrowserConfiguration browser;
 
   private SimulatorApprovalConfiguration(int port, OidcProviderConfiguration provider,
-      ApprovalMemberships memberships, PGSimpleDataSource database, KeyPair permitKey, String keyId) {
+      ApprovalMemberships memberships, PGSimpleDataSource database, KeyPair permitKey, String keyId,
+      BrowserConfiguration browser) {
     this.port = port;
     this.provider = provider;
     this.memberships = memberships;
     this.database = database;
     this.permitKey = permitKey;
     this.keyId = keyId;
+    this.browser = browser;
   }
 
   static SimulatorApprovalConfiguration load(Path path) {
     try {
       Path config = path.toAbsolutePath().normalize();
       JsonNode root = JSON.readTree(utf8(readPrivateFile(config, 65_536)));
-      fields(root, Set.of("schemaVersion", "port", "postgres", "oidc", "memberships", "permit"));
+      fields(root, root.has("browser")
+          ? Set.of("schemaVersion", "port", "postgres", "oidc", "memberships", "permit", "browser")
+          : Set.of("schemaVersion", "port", "postgres", "oidc", "memberships", "permit"));
       require("1.0".equals(text(root, "schemaVersion", 8)));
       int port = integer(root, "port", 1, 65_535);
       JsonNode oidc = root.path("oidc");
@@ -77,7 +82,9 @@ final class SimulatorApprovalConfiguration {
           URI.create(text(oidc, "jwksUri", 768)), URI.create(audience), List.of(issuer),
           "TracePermit local simulator approvals", Map.of(clientId, "Approval API client"),
           text(oidc, "tenantClaim", 256), Map.of(tokenIdentifier(oidc, "tenantValue", false), tenant.value()),
-          SCOPES, ConnectorOrigin.CLI, Duration.ofMinutes(15), Duration.ofMinutes(1), Duration.ofSeconds(5));
+          root.has("browser") ? java.util.stream.Stream.concat(SCOPES.stream(),
+              java.util.stream.Stream.of(ConnectorScope.of("openid"))).collect(java.util.stream.Collectors.toUnmodifiableSet()) : SCOPES,
+          ConnectorOrigin.CLI, Duration.ofMinutes(15), Duration.ofMinutes(1), Duration.ofSeconds(5));
       // Constructor validates the exact URL syntax without resolving DNS or opening a connection.
       new SsrfSafeHttpsJwkSetSource(Set.of(provider.jwksUri()), Duration.ofSeconds(3), Duration.ofSeconds(5));
       // This API has no OAuth discovery/browser flow. Metadata/origin fields above are verifier context only.
@@ -115,8 +122,23 @@ final class SimulatorApprovalConfiguration {
       proof.initVerify(publicKey);
       proof.update(challenge);
       require(proof.verify(signature));
+      BrowserConfiguration browser = null;
+      if (root.has("browser")) {
+        JsonNode web = root.path("browser");
+        fields(web, Set.of("authorizationUri", "tokenUri", "clientSecretFile", "consoleDirectory"));
+        URI authorizationUri = URI.create(text(web, "authorizationUri", 768));
+        URI tokenUri = URI.create(text(web, "tokenUri", 768));
+        new SsrfSafeHttpsJwkSetSource(Set.of(authorizationUri, tokenUri),
+            Duration.ofSeconds(3), Duration.ofSeconds(5));
+        String secret = utf8(readPrivateFile(reference(config, web, "clientSecretFile"), 4096));
+        if (secret.endsWith("\n")) secret = secret.substring(0, secret.length() - 1);
+        require(secret.length() >= 16 && secret.chars().noneMatch(Character::isISOControl));
+        Path console = reference(config, web, "consoleDirectory").toRealPath();
+        require(Files.isDirectory(console) && Files.isRegularFile(console.resolve("index.html")));
+        browser = new BrowserConfiguration(authorizationUri, tokenUri, secret, console);
+      }
       return new SimulatorApprovalConfiguration(port, provider, memberships, database,
-          new KeyPair(publicKey, privateKey), keyId);
+          new KeyPair(publicKey, privateKey), keyId, browser);
     } catch (IOException | GeneralSecurityException | RuntimeException failure) {
       // Do not attach parser/driver exceptions: they may include subjects, paths, keys or secret contents.
       throw new IllegalArgumentException("INVALID_APPROVAL_CONFIGURATION");
@@ -218,4 +240,19 @@ final class SimulatorApprovalConfiguration {
   PGSimpleDataSource database() { return database; }
   KeyPair permitKey() { return permitKey; }
   String keyId() { return keyId; }
+  BrowserConfiguration browser() { return browser; }
+
+  /** Not a record: never generate a client-secret-bearing toString. */
+  static final class BrowserConfiguration {
+    final URI authorizationUri;
+    final URI tokenUri;
+    final String clientSecret;
+    final Path consoleDirectory;
+    BrowserConfiguration(URI authorizationUri, URI tokenUri, String clientSecret, Path consoleDirectory) {
+      this.authorizationUri = authorizationUri;
+      this.tokenUri = tokenUri;
+      this.clientSecret = clientSecret;
+      this.consoleDirectory = consoleDirectory;
+    }
+  }
 }

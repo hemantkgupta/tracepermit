@@ -242,6 +242,15 @@ Every downstream effect remains a local simulator.
 
 ## 9. Current implementation boundary
 
+The separate local approval runtime optionally serves built React at `/approvals`
+and owns same-origin OIDC code/PKCE login and cookie/CSRF-protected browser APIs.
+Server-held sessions converge with bearer API requests before the same current
+role/scope/tenant/owner and exact approval checks. This browser profile is numeric
+loopback HTTP only, separate from the default read console and hosted MCP tunnel.
+Its synthetic IdP qualifier is test-classpath-only; an external browser provider
+and a public TLS deployment are not qualified. See
+[ADR 0036](../architecture/0036-local-browser-approval-boundary.md).
+
 The supported POC backend is Java. The default runtime binds to loopback and
 uses development credentials, process-local state, a deterministic simulator,
 and a read-only React console. Its CLI connector verifies exact request and

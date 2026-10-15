@@ -87,6 +87,28 @@ final class SimulatorApprovalBootstrapTest {
     assertThat(SimulatorApprovalMain.policy().path("defaultDecision").path("outcome").asText()).isEqualTo("block");
   }
 
+  @Test void optionalOperatorBrowserModeServesBuiltAssetsAndStartsConfiguredLoginWithoutIdpTraffic() throws Exception {
+    Path console = directory.resolve("console"); Files.createDirectory(console);
+    Files.writeString(console.resolve("index.html"), "<!doctype html><html>synthetic-console</html>");
+    fixture.write("browser.secret", "synthetic-browser-client-secret".getBytes(StandardCharsets.UTF_8));
+    fixture.json.putObject("browser").put("authorizationUri", "https://idp.example.invalid/authorize")
+        .put("tokenUri", "https://idp.example.invalid/token").put("clientSecretFile", "browser.secret")
+        .put("consoleDirectory", console.toString());
+    server = SimulatorApprovalMain.start(fixture.load(), Clock.systemUTC(),
+        (p, kid, alg, now) -> { throw new AssertionError("Anonymous page/login must not fetch JWKS."); });
+    URI base = URI.create("http://127.0.0.1:" + server.port());
+    var page = client.send(HttpRequest.newBuilder(base.resolve("/approvals")).GET().build(), HttpResponse.BodyHandlers.ofString());
+    assertThat(page.statusCode()).isEqualTo(200);
+    assertThat(page.body()).contains("synthetic-console").doesNotContain("client-secret");
+    var login = client.send(HttpRequest.newBuilder(base.resolve("/auth/login")).GET().build(), HttpResponse.BodyHandlers.ofString());
+    assertThat(login.statusCode()).isEqualTo(303);
+    assertThat(login.headers().firstValue("Location").orElseThrow()).startsWith("https://idp.example.invalid/authorize?")
+        .contains("code_challenge_method=S256", "scope=openid", "client_id=approval-client")
+        .doesNotContain("synthetic-browser-client-secret");
+    var session = client.send(HttpRequest.newBuilder(base.resolve("/browser/session")).GET().build(), HttpResponse.BodyHandlers.ofString());
+    assertThat(session.statusCode()).isEqualTo(401);
+  }
+
   @Test void mainCheckIsOfflineThenMainRunsAndTerminatesGracefully() throws Exception {
     // Unreachable DB and .invalid IdP are deliberate: check-only must not contact either.
     fixture.json.withObject("/postgres").put("port", 1); fixture.save();
