@@ -140,6 +140,24 @@ An engineer asks ChatGPT or a local CLI assistant: _"Check the last 50 error log
 
 #### Sequence Diagram
 
+```text
+Agent / Client               Trusted Gateway                Policy Engine               Simulator
+      │                             │                             │                         │
+      │── 1. tools/call (Token) ───>│                             │                         │
+      │                             │── 2. Canonical Action ─────>│                         │
+      │                             │      (actionHash: sha256)   │                         │
+      │                             │                             │── 3. Decision: "allow" ─│
+      │                             │<─ 4. Issue Single-Use Permit│                         │
+      │                             │                             │                         │
+      │                             │── 5. execute(action, permit) ────────────────────────>│
+      │                             │                                                       │ Claim single-use
+      │                             │<── 6. Simulated Log Results ──────────────────────────│
+      │<─ 7. MCP Tool Result ───────│                                                       │
+```
+
+<details>
+<summary>View Mermaid Syntax (for Notion / GitHub)</summary>
+
 ```mermaid
 sequenceDiagram
   autonumber
@@ -163,6 +181,8 @@ sequenceDiagram
   Gateway-->>Agent: MCP tool result
 ```
 
+</details>
+
 #### Security Takeaways
 
 - **No Blanket Access**: The agent is never handed an AWS IAM credential.
@@ -179,6 +199,22 @@ sequenceDiagram
 An agent is misled by an adversarial prompt injection or a hallucinated instruction and proposes terminating an EC2 instance: `aws.ec2.terminate_instances`. TracePermit verifies the caller's identity, but **authentication is not blanket authorization**. The classifier flags the operation as `critical` severity. Policy returns `block`. TracePermit records `not_executed` evidence and halts. **Zero permits are minted and no target API is called.**
 
 #### Sequence Diagram
+
+```text
+Agent / Client               Trusted Gateway                Policy Engine               Simulator
+      │                             │                             │                         │
+      │── 1. terminate_instances ──>│                             │                         │
+      │                             │── 2. Canonical Action ─────>│                         │
+      │                             │                             │── 3. Decision: "block" ─│
+      │                             │                             │      (critical risk)    │
+      │                             │   4. Append audit evidence  │                         │
+      │                             │      (not_executed)         │                         │
+      │<─ 5. Error: Action Blocked ─│                             │     [Zero Dispatches]   │
+      │      (no permit issued)     │                             │     (Never Called) ─────┼── X
+```
+
+<details>
+<summary>View Mermaid Syntax (for Notion / GitHub)</summary>
 
 ```mermaid
 sequenceDiagram
@@ -197,6 +233,8 @@ sequenceDiagram
   Gateway-->>Agent: Error: Action blocked by policy (no permit issued)
   Note over Simulator: Simulator is NEVER called
 ```
+
+</details>
 
 #### Decision Payload
 
@@ -240,6 +278,27 @@ TracePermit freezes the exact canonical action hash and registers a pending appr
 
 #### Sequence Diagram
 
+```text
+Agent (Workload)             Gateway / Approvals            PostgreSQL DB        Human Reviewer      Simulator
+      │                             │                             │                    │                 │
+      │── 1. update_sec_group ─────>│                             │                    │                 │
+      │                             │── Decision: require_approval│                    │                 │
+      │                             │── 2. Store Pending Hash ───>│                    │                 │
+      │<─ 3. PENDING (appr-101) ────│                             │                    │                 │
+      │                             │                             │                    │                 │
+      │── 4. Self-approval ────────>│ (REJECTED: No self-review)  │                    │                 │
+      │                             │                             │                    │                 │
+      │                             │<── 5. Review & Approve ──────────────────────────│ (Independent)   │
+      │                             │── 6. Mark Approved ────────>│                    │                 │
+      │                             │── 7. Claim Permit (1x) ────>│                    │                 │
+      │                             │                             │                    │                 │
+      │                             │── 8. execute(approved permit) ────────────────────────────────────>│
+      │                             │<── 9. Simulated Update OK ────────────────────────────────────────│
+```
+
+<details>
+<summary>View Mermaid Syntax (for Notion / GitHub)</summary>
+
 ```mermaid
 sequenceDiagram
   autonumber
@@ -264,6 +323,8 @@ sequenceDiagram
   Simulator-->>Gateway: Simulated update successful
   Gateway->>DB: Record outcome evidence
 ```
+
+</details>
 
 #### Approval Binding Payload
 
@@ -300,6 +361,26 @@ An allowlisted transformer clamps `limit` down to `100`, creates a **derived can
 
 #### Sequence Diagram
 
+```text
+Agent / Workload             Trusted Gateway                Policy Engine        Allowlisted Sanitizer   Simulator
+      │                             │                             │                    │                     │
+      │── 1. read(limit: 50000) ───>│                             │                    │                     │
+      │                             │── 2. evaluate(original) ───>│                    │                     │
+      │                             │<─ 3. outcome: "sanitize" ───│                    │                     │
+      │                             │                             │                    │                     │
+      │                             │── 4. transform(original) ───────────────────────>│                     │
+      │                             │<── 5. Derived Action (limit: 100, new hash) ─────│                     │
+      │                             │                             │                    │                     │
+      │                             │── 6. evaluate(derived) ────>│                    │                     │
+      │                             │<─ 7. outcome: "allow" ──────│                    │                     │
+      │                             │                             │                    │                     │
+      │                             │── 8. execute(derived action, permit) ─────────────────────────────────>│
+      │<─ 9. Result (100 logs) ─────│                                                                        │
+```
+
+<details>
+<summary>View Mermaid Syntax (for Notion / GitHub)</summary>
+
 ```mermaid
 sequenceDiagram
   autonumber
@@ -321,6 +402,8 @@ sequenceDiagram
   Simulator-->>Gateway: 100 log lines
   Gateway-->>Agent: Result with 100 events + sanitization notice
 ```
+
+</details>
 
 #### Derived Action Payload
 
@@ -362,6 +445,31 @@ Neither tool call is inherently forbidden on its own. TracePermit maintains **se
 
 #### Sequence Diagram
 
+```text
+Workload (Sub-Agent)         Gateway & History Store        Policy Engine        CRM Simulator       Egress Outbox
+      │                             │                             │                    │                   │
+      │ [STEP 1: Bulk Customer Read]│                             │                    │                   │
+      │── 1. crm.get_records ──────>│                             │                    │                   │
+      │                             │── 2. evaluate(read) ───────>│                    │                   │
+      │                             │<─ 3. outcome: "allow" ──────│                    │                   │
+      │                             │   (Record in history)       │                    │                   │
+      │                             │── 4. execute read ──────────────────────────────>│                   │
+      │<─ 5. 20 Customer Records ───│                                                  │                   │
+      │                             │                             │                    │                   │
+      │ [STEP 2: External Send Attempt]                           │                    │                   │
+      │── 6. send_external_webhook ─>│                            │                    │                   │
+      │                             │── 7. evaluate(send, history)│                    │                   │
+      │                             │   (Detects: PII -> Send)    │                    │                   │
+      │                             │<─ 8. outcome: "block" ──────│                    │                   │
+      │                             │      (SYNTHETIC_PII_EXFIL)  │                    │                   │
+      │                             │                             │                    │                   │
+      │<─ 9. Error: Action Blocked ─│                             │                    │ [Zero Dispatches] │
+      │      (no permit issued)     │                             │                    │ (Never Called) ───┼── X
+```
+
+<details>
+<summary>View Mermaid Syntax (for Notion / GitHub)</summary>
+
 ```mermaid
 sequenceDiagram
   autonumber
@@ -388,6 +496,8 @@ sequenceDiagram
   Gateway-->>Workload: Error: Blocked by sequence policy
   Note over Outbox: Outbox is NEVER called - zero data leaves
 ```
+
+</details>
 
 #### Sequence Block Payload
 
