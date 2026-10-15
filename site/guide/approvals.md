@@ -48,9 +48,12 @@ qualification. See the
 
 The separate Codex MCP composition exposes only request, status and explicit
 resume tools over that same durable service. It cannot approve its own request.
-Native app-server MCP calls and a synthetic browser review have been qualified;
-model-driven Codex prompt selection remains a separate rehearsal gate. It is a
-bearer-only local profile, not endpoint source attestation or hosted OAuth.
+Native app-server MCP calls and a synthetic browser review have been qualified.
+The separate [model-driven record](https://github.com/hemantkgupta/tracepermit/blob/main/docs/demo-scenarios/evidence/codex-model-driven-approval-2026-10-15.md)
+qualifies Codex 0.162.1/`gpt-5.6-sol` request/review/resume, replay, expiry and
+explicit reviewer-denial rejection. This is one bearer-only
+local profile, not arbitrary prompt/client compatibility, endpoint source
+attestation or hosted OAuth.
 See [Flow 3](core-flows.md#flow-3-human-review-then-explicit-resume) and the
 [Codex runbook](https://github.com/hemantkgupta/tracepermit/blob/main/docs/runbooks/codex-durable-approvals.md).
 

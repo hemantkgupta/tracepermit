@@ -56,6 +56,11 @@ uses a clearly synthetic test-classpath-only IdP and disposable PostgreSQL.
 The same local listener now composes authenticated Codex-candidate MCP
 request/status/resume tools with the durable approval service and browser inbox.
 See the [MCP approval runbook](../runbooks/codex-durable-approvals.md).
+The [2026-10-15 model-driven rehearsal](../demo-scenarios/evidence/codex-model-driven-approval-2026-10-15.md)
+qualifies Codex CLI 0.162.1/`gpt-5.6-sol` request → synthetic Bob browser review →
+explicit resume, replay/approval-expiry rejection and rejected resume after
+explicit Bob denial for this local profile. No dispatch counter was captured
+in that manual run. Existing automated claim/concurrency tests are separate proof.
 It does not compose hosted OAuth MCP approvals, qualify an external browser IdP,
 authenticate the default read API, or provide a public product bootstrap.
 The default demo/hosted behavior and limitations are unchanged. See the

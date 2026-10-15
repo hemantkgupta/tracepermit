@@ -9,16 +9,17 @@ Status values: **Implemented**, **Partial**, **Target**, or **Proposed**.
 
 The [nine-flow developer guide](../flows-guide.md), corresponding public guide
 and [single diagram catalog](../design/flow-diagrams.json) explain these existing
-controls. This documentation update adds no runtime behavior or qualification.
+controls. The guides add no runtime behavior; dated qualification records below
+distinguish protocol tests from actual client/model and reviewer observations.
 
-| Flows                    | Requirements                             | Explicit qualification boundary                                                                      |
-| ------------------------ | ---------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| 1–2: read/block          | FR-001/002/005/006/008/009/012           | Configured simulator paths, not universal interception                                               |
-| 3: request/review/resume | FR-007/008/009; SEC-005/006; REL-002/004 | Native MCP protocol qualified; model-driven prompt rehearsal separate                                |
-| 4–5: sanitize/sequence   | FR-005/006; SEC-001/002                  | Derived action re-evaluated; bounded in-memory proposal history, not global data-flow tracking       |
-| 6–7: source/OAuth        | FR-003/014; SEC-001/013/014              | Development source evidence and one hosted OAuth composition; profiles not interchangeable           |
-| 8: delegation            | FR-011; SEC-002                          | Narrowing verified before policy; fixture signers, not deployed sub-agents                           |
-| 9: uncertainty           | REL-002/005/008; SEC-019                 | Failure/restart and lookup worker separately tested; no automatic sweeper/worker in browser launcher |
+| Flows                    | Requirements                             | Explicit qualification boundary                                                                           |
+| ------------------------ | ---------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| 1–2: read/block          | FR-001/002/005/006/008/009/012           | Configured simulator paths, not universal interception                                                    |
+| 3: request/review/resume | FR-007/008/009; SEC-005/006; REL-002/004 | Native protocol plus named local Codex model-driven success/replay/expiry/explicit-denial cases qualified |
+| 4–5: sanitize/sequence   | FR-005/006; SEC-001/002                  | Derived action re-evaluated; bounded in-memory proposal history, not global data-flow tracking            |
+| 6–7: source/OAuth        | FR-003/014; SEC-001/013/014              | Development source evidence and one hosted OAuth composition; profiles not interchangeable                |
+| 8: delegation            | FR-011; SEC-002                          | Narrowing verified before policy; fixture signers, not deployed sub-agents                                |
+| 9: uncertainty           | REL-002/005/008; SEC-019                 | Failure/restart and lookup worker separately tested; no automatic sweeper/worker in browser launcher      |
 
 See the [rehearsal plan](../runbooks/flow-rehearsal-plan.md) for remaining manual gates.
 
@@ -32,6 +33,12 @@ See the [rehearsal plan](../runbooks/flow-rehearsal-plan.md) for remaining manua
 
 See [ADR 0037](../architecture/0037-mcp-durable-simulator-approval-composition.md)
 and the [Codex qualification runbook](../runbooks/codex-durable-approvals.md).
+The [2026-10-15 model-driven evidence](../demo-scenarios/evidence/codex-model-driven-approval-2026-10-15.md)
+adds one Codex 0.162.1/`gpt-5.6-sol` synthetic-browser profile: successful explicit
+resume, rejected replay, rejected expired approval and rejected resume after
+Bob's explicit denial, corroborated by a fresh read-only server projection.
+Screenshots are not measured dispatch counts, production identity
+proof or an exactly-once claim; automated claim tests remain separate evidence.
 
 ## Local browser approval slice
 

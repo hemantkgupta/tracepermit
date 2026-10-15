@@ -9,8 +9,12 @@ The numbered files are the source of detailed commands, expected output, and
 safety boundaries. Distinguish live-qualified compositions from independently
 tested foundations and future production work using the
 [current capability matrix](../specs/03-current-state-baseline.md).
-The latest secret-free local rehearsal is recorded in
+The multi-origin rehearsal is recorded in
 [qualification evidence for 2026-10-11](QUALIFICATION-EVIDENCE-2026-10-11.md).
+The separate [2026-10-15 model-driven Codex approval record](evidence/codex-model-driven-approval-2026-10-15.md)
+captures request/review/resume, replay, expiry and explicit reviewer-denial
+evidence for the named local durable approval profile. Native source-attested
+connector qualification remains separate.
 
 ## Safety and claim boundary
 
