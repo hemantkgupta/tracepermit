@@ -28,8 +28,8 @@ exact returned request hash; execution reloads the immutable stored action.
 
 PostgreSQL V6 commits that operational snapshot with the pending approval and
 evidence/outbox metadata. It remains separate from the argument-free audit
-ledger. There is no browser session/CORS, public startup profile or React
-approval UI. Neither existing launcher starts these routes. See the
+ledger. Bearer routes reject Cookie and Origin headers. Neither existing demo
+launcher starts these routes. See the
 [API runbook](../runbooks/authenticated-approval-api-foundation.md) and
 [ADR 0034](../architecture/0034-authenticated-loopback-approval-api.md).
 
@@ -40,6 +40,27 @@ Ed25519 files, fixed default-block policy and migration behavior are specified
 in [ADR 0035](../architecture/0035-local-approval-operator-bootstrap.md).
 The `/health`, `/ready` and `/mcp` surfaces below belong to other compositions,
 not to this approval listener.
+
+### Optional local browser approval boundary
+
+`SimulatorApprovalMain` accepts an optional strict `browser` object with
+`authorizationUri`, `tokenUri`, `clientSecretFile` and `consoleDirectory`.
+Java serves the built React inbox at `/approvals`. `GET /auth/login` starts
+code/S256 PKCE with state, nonce and a browser-binding cookie;
+`GET /auth/callback?code=...&state=...&iss=...` consumes the login state and
+verifies separate access/ID token profiles before creating an in-memory session.
+No reusable token is returned to React. `GET /browser/session` returns opaque
+principal, internal tenant, current roles/scopes, expiry and session CSRF value.
+`POST /browser/logout` invalidates the local session.
+
+`/browser/api/v1/approvals` and its detail/decision/execute suffixes use the
+same bodies/projections and shared authorization/approval logic as the bearer
+API, but require a current server-held session. Browser mutations require
+exact Origin plus `X-CSRF-Token`; bearer headers are forbidden. Unknown or
+duplicate callback parameters fail. No CORS, proxy header trust, refresh,
+public TLS profile, administrator endpoint or real target is added.
+See [ADR 0036](../architecture/0036-local-browser-approval-boundary.md) and the
+[browser runbook](../runbooks/browser-approval-inbox.md).
 
 ### `GET /health`
 
@@ -485,9 +506,10 @@ authorization.originalPolicyOutcome=require_approval
 ```
 
 These are application/domain and persistence contracts. No HTTP request may
-construct `TrustedReviewerContext`, and no Java HTTP route accepts an approval
-decision. The React console remains GET-only and its approval controls remain
-disabled.
+construct `TrustedReviewerContext` directly. The separate authenticated
+approval API derives that context after verification and role/scope checks.
+The optional browser inbox can review only through that boundary; the default
+development read console remains GET-only.
 
 The Scenario 3 development harness composes these contracts directly inside a
 local Java process and supplies a fixed trusted reviewer from a separate

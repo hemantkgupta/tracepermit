@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App.js";
+import { ApprovalInbox } from "./ApprovalInbox.js";
 import "./styles.css";
 
 const root = document.getElementById("root");
@@ -11,6 +12,6 @@ if (!root) {
 
 createRoot(root).render(
   <StrictMode>
-    <App />
+    {window.location.pathname === "/approvals" ? <ApprovalInbox /> : <App />}
   </StrictMode>,
 );

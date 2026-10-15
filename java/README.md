@@ -49,7 +49,8 @@ development credentials and the simulator. The separate `pnpm dev:approvals`
 entry point uses strict private operator configuration, a local PostgreSQL DB,
 external OIDC verification and persistent Ed25519 file keys. See the
 [approval runbook](../docs/runbooks/authenticated-approval-api-foundation.md);
-no browser login or approval UI is provided. No main includes a real AWS/Jira
+optional same-origin browser sign-in and React inbox are described in the
+[browser runbook](../docs/runbooks/browser-approval-inbox.md). No main includes a real AWS/Jira
 SDK, target credential, Spring runtime or deployable public bootstrap. The
 direct-TLS remote edge is configured only by tests/library composition; the
 separate hosted OAuth demo has its own loopback main. PostgreSQL qualifications
