@@ -41,6 +41,7 @@ export default defineConfig({
 
     nav: [
       { text: "Guide", link: "/guide/what-is-tracepermit" },
+      { text: "Core Flows", link: "/guide/core-flows" },
       { text: "Local Demo", link: "/guide/getting-started" },
       { text: "Architecture", link: "/guide/architecture" },
       { text: "GitHub", link: "https://github.com/hemantkgupta/tracepermit" },
@@ -62,6 +63,7 @@ export default defineConfig({
         text: "Architecture & Engine",
         items: [
           { text: "End-to-End Architecture", link: "/guide/architecture" },
+          { text: "Core Action Flows", link: "/guide/core-flows" },
           { text: "Model Context Protocol (MCP)", link: "/guide/mcp-gateway" },
           { text: "Cryptographic Permits", link: "/guide/permits" },
           {

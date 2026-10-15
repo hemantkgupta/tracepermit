@@ -2,6 +2,11 @@
 
 Welcome to **TracePermit**! This guide is designed to get any new engineer up to speed on the product vision, core use cases, data models, and codebase architecture in 15 minutes.
 
+> [!NOTE]
+> **Drift Prevention & Public Documentation:**
+> A public-facing edition of these flows is published on the documentation website at [`site/guide/core-flows.md`](../site/guide/core-flows.md) (served at [tracepermit.org/guide/core-flows](https://tracepermit.org/guide/core-flows)).
+> When modifying contracts, sequence diagrams, or enforcement logic, ensure both this developer runbook and the public site guide are maintained in tandem.
+
 ---
 
 ## 1. The Core Mental Model
