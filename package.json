@@ -51,6 +51,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "docs:links": "node --test scripts/doc-link-target.test.mjs && node scripts/check-doc-links.mjs",
+    "docs:flows:generate": "node scripts/generate-flow-diagrams.mjs",
+    "docs:flows:check": "node --test scripts/flow-diagrams.test.mjs && node scripts/generate-flow-diagrams.mjs --check",
     "portability:check": "scripts/run-java-portability-check.sh",
     "java:check": "scripts/run-java-check.sh",
     "test:java-postgres": "scripts/run-java-postgres-tests.sh",

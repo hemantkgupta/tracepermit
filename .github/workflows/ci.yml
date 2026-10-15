@@ -64,3 +64,6 @@ jobs:
 
       - name: Check documentation links
         run: pnpm docs:links
+
+      - name: Check generated flow diagrams and guide synchronization
+        run: pnpm docs:flows:check

@@ -1,0 +1,27 @@
+.VPDoc:has(.flow-diagram) .content-container {
+  max-width: 1000px;
+}
+
+.vp-doc .flow-diagram {
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 24px 0 12px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 12px;
+  background: white;
+}
+
+.vp-doc .flow-diagram:focus-visible {
+  outline: 3px solid var(--vp-c-brand-1);
+  outline-offset: 3px;
+}
+
+.vp-doc .flow-diagram p {
+  margin: 0;
+}
+
+.vp-doc .flow-diagram img {
+  width: 100%;
+  min-width: 900px;
+  max-width: none;
+}

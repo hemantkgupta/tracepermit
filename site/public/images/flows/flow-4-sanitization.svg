@@ -1,110 +1,64 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="920" height="520" viewBox="0 0 920 520" role="img" aria-labelledby="f4-title f4-desc">
-  <title id="f4-title">Flow 4: Action Sanitization (Self-Healing Guardrails)</title>
-  <desc id="f4-desc">Sequence diagram illustrating argument transformation, derived canonical action minting, and re-evaluation before execution.</desc>
-  <defs>
-    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
-      <path d="M0 1 L8 5 L0 9" fill="none" stroke="#475569" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-    </marker>
-    <marker id="arrow-blue" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
-      <path d="M0 1 L8 5 L0 9" fill="none" stroke="#2563eb" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-    </marker>
-    <marker id="arrow-green" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
-      <path d="M0 1 L8 5 L0 9" fill="none" stroke="#16a34a" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-    </marker>
-    <style>
-      text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-      .p-box { fill: #f8fafc; stroke: #94a3b8; stroke-width: 1.5; rx: 8px; }
-      .p-head { fill: #0f172a; font-size: 13.5px; font-weight: 750; text-anchor: middle; }
-      .p-sub { fill: #64748b; font-size: 11px; text-anchor: middle; }
-      .line { stroke: #cbd5e1; stroke-width: 1.5; stroke-dasharray: 5 4; }
-      .msg-line { stroke: #475569; stroke-width: 1.8; fill: none; }
-      .msg-dash { stroke: #475569; stroke-width: 1.8; stroke-dasharray: 5 4; fill: none; }
-      .msg-dash-blue { stroke: #2563eb; stroke-width: 1.8; stroke-dasharray: 5 4; fill: none; }
-      .msg-dash-green { stroke: #16a34a; stroke-width: 1.8; stroke-dasharray: 5 4; fill: none; }
-      .msg-text { fill: #0f172a; font-size: 12.5px; font-weight: 600; }
-      .step-bg { fill: #087b87; }
-      .step-num { fill: #ffffff; font-size: 10.5px; font-weight: 750; text-anchor: middle; }
-      .badge-blue { fill: #dbeafe; stroke: #2563eb; stroke-width: 1.2; rx: 5px; }
-      .badge-green { fill: #dcfce7; stroke: #16a34a; stroke-width: 1.2; rx: 5px; }
-    </style>
-  </defs>
-
-  <!-- Background Canvas -->
-  <rect width="920" height="520" rx="12" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5"/>
-
-  <!-- Lifelines -->
-  <line x1="90" y1="68" x2="90" y2="495" class="line"/>
-  <line x1="270" y1="68" x2="270" y2="495" class="line"/>
-  <line x1="450" y1="68" x2="450" y2="495" class="line"/>
-  <line x1="630" y1="68" x2="630" y2="495" class="line"/>
-  <line x1="810" y1="68" x2="810" y2="495" class="line"/>
-
-  <!-- Participants -->
-  <rect x="20" y="18" width="140" height="50" class="p-box"/>
-  <text x="90" y="39" class="p-head">Agent / Workload</text>
-  <text x="90" y="55" class="p-sub">Oversized Request</text>
-
-  <rect x="200" y="18" width="140" height="50" class="p-box" style="stroke: #087b87; stroke-width: 2; fill: #f0fdfa;"/>
-  <text x="270" y="39" class="p-head" style="fill: #087b87;">Trusted Gateway</text>
-  <text x="270" y="55" class="p-sub">Mediator &amp; Coordinator</text>
-
-  <rect x="380" y="18" width="140" height="50" class="p-box"/>
-  <text x="450" y="39" class="p-head">Policy Engine</text>
-  <text x="450" y="55" class="p-sub">Classifier &amp; Rules</text>
-
-  <rect x="560" y="18" width="140" height="50" class="p-box"/>
-  <text x="630" y="39" class="p-head">Allowlisted Sanitizer</text>
-  <text x="630" y="55" class="p-sub">Deterministic Clamper</text>
-
-  <rect x="740" y="18" width="140" height="50" class="p-box"/>
-  <text x="810" y="39" class="p-head">Target Simulator</text>
-  <text x="810" y="55" class="p-sub">Safe AWS Logs Target</text>
-
-  <!-- Step 1: Oversized call -->
-  <circle cx="105" cy="100" r="8.5" class="step-bg"/><text x="105" y="104" class="step-num">1</text>
-  <text x="120" y="104" class="msg-text">tools/call filter_log_events (limit: 50000)</text>
-  <line x1="90" y1="112" x2="262" y2="112" class="msg-line" marker-end="url(#arrow)"/>
-
-  <!-- Step 2: Evaluate Original -->
-  <circle cx="285" cy="140" r="8.5" class="step-bg"/><text x="285" y="144" class="step-num">2</text>
-  <text x="300" y="144" class="msg-text">evaluate(original action)</text>
-  <line x1="270" y1="152" x2="442" y2="152" class="msg-line" marker-end="url(#arrow)"/>
-
-  <!-- Step 3: SANITIZE Outcome -->
-  <rect x="295" y="168" width="160" height="22" class="badge-blue"/>
-  <text x="375" y="183" text-anchor="middle" style="fill: #1d4ed8; font-size: 11.5px; font-weight: 750;">⚙ SANITIZE (OVERSIZED)</text>
-  <line x1="450" y1="198" x2="278" y2="198" class="msg-dash-blue" marker-end="url(#arrow-blue)"/>
-
-  <!-- Step 4: Transform -->
-  <circle cx="285" cy="228" r="8.5" class="step-bg"/><text x="285" y="232" class="step-num">3</text>
-  <text x="300" y="232" class="msg-text">transform(original action) · Clamp limit: 100</text>
-  <line x1="270" y1="240" x2="622" y2="240" class="msg-line" marker-end="url(#arrow)"/>
-
-  <!-- Step 5: Derived Action -->
-  <text x="450" y="270" text-anchor="middle" class="msg-text" style="fill: #2563eb;">Derived Action (limit: 100, new actionHash, parentEventId)</text>
-  <line x1="630" y1="278" x2="278" y2="278" class="msg-dash-blue" marker-end="url(#arrow-blue)"/>
-
-  <!-- Step 6: Re-evaluate Derived -->
-  <circle cx="285" cy="308" r="8.5" class="step-bg"/><text x="285" y="312" class="step-num">4</text>
-  <text x="300" y="312" class="msg-text">evaluate(derived canonical action)</text>
-  <line x1="270" y1="320" x2="442" y2="320" class="msg-line" marker-end="url(#arrow)"/>
-
-  <!-- Step 7: ALLOW Outcome -->
-  <rect x="295" y="336" width="160" height="22" class="badge-green"/>
-  <text x="375" y="351" text-anchor="middle" style="fill: #15803d; font-size: 11.5px; font-weight: 750;">✓ ALLOW (BOUNDED_READ)</text>
-  <line x1="450" y1="366" x2="278" y2="366" class="msg-dash-green" marker-end="url(#arrow-green)"/>
-
-  <!-- Step 8: Execute Derived -->
-  <circle cx="285" cy="396" r="8.5" class="step-bg"/><text x="285" y="400" class="step-num">5</text>
-  <text x="300" y="400" class="msg-text">execute(derived action, permit bound to new hash)</text>
-  <line x1="270" y1="408" x2="802" y2="408" class="msg-line" marker-end="url(#arrow)"/>
-
-  <!-- Step 9: 100 logs -->
-  <text x="540" y="440" text-anchor="middle" class="msg-text" style="fill: #475569;">100 simulated log lines returned</text>
-  <line x1="810" y1="448" x2="278" y2="448" class="msg-dash" marker-end="url(#arrow)"/>
-
-  <!-- Step 10: Client Result -->
-  <circle cx="105" cy="468" r="8.5" class="step-bg"/><text x="105" y="472" class="step-num">6</text>
-  <text x="120" y="472" class="msg-text">Tool result: 100 events + sanitization notice</text>
-  <line x1="270" y1="480" x2="98" y2="480" class="msg-dash" marker-end="url(#arrow)"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="844" viewBox="0 0 1000 844" role="img" aria-labelledby="flow-4-sanitization-title flow-4-sanitization-desc">
+<title id="flow-4-sanitization-title">Flow 4: derive, re-evaluate, then authorize</title>
+<desc id="flow-4-sanitization-desc">Propose a simulated log read with limit 500 (valid schema, oversized window). Evaluate original action, observe OVERSIZED_RESULT_WINDOW. SANITIZE: LOG_RESULT_WINDOW_REQUIRES_SANITIZATION. Run only bounded-log-read/v1, clamp limit to 100. Return new event identity and original/effective hash linkage. Re-evaluate the effective action, sanitization is not permission. ALLOW the bounded derived request under current policy. Issue and verify effective-action permit, claim once, then read. Return up to 100 matching simulated events plus sanitization summary. Unknown transformer, invalid output or failed re-evaluation: no dispatch. Limit 50000 fails schema validation.</desc>
+<!-- Generated from docs/design/flow-diagrams.json. Do not edit this SVG directly. -->
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1 L9 5 L1 9" fill="none" stroke="#087b87" stroke-width="1.7"/></marker></defs>
+<style>text{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#17243b}.label{font-size:16px}.heading{font-size:15px;font-weight:650}.step{font-size:13px;font-weight:700;fill:white}.life{stroke:#cbd5e1;stroke-dasharray:5 5}.arrow{stroke:#087b87;stroke-width:1.8;fill:none;marker-end:url(#arrow)}</style>
+<rect x="1" y="1" width="998" height="842" rx="12" fill="white" stroke="#dbe3ed"/>
+<text x="28" y="34" font-size="19" font-weight="700">Flow 4: derive, re-evaluate, then authorize</text>
+<line x1="122" y1="109" x2="122" y2="820" class="life"/>
+<rect x="38" y="54" width="168" height="55" rx="8" fill="#eff8fa" stroke="#b6d9de"/>
+<text x="122" y="77" text-anchor="middle" class="heading">Verified workload</text>
+<line x1="311" y1="109" x2="311" y2="820" class="life"/>
+<rect x="227" y="54" width="168" height="55" rx="8" fill="#eff8fa" stroke="#b6d9de"/>
+<text x="311" y="77" text-anchor="middle" class="heading">Enforcement service</text>
+<line x1="500" y1="109" x2="500" y2="820" class="life"/>
+<rect x="416" y="54" width="168" height="55" rx="8" fill="#eff8fa" stroke="#b6d9de"/>
+<text x="500" y="77" text-anchor="middle" class="heading">Policy evaluator</text>
+<line x1="689" y1="109" x2="689" y2="820" class="life"/>
+<rect x="605" y="54" width="168" height="55" rx="8" fill="#eff8fa" stroke="#b6d9de"/>
+<text x="689" y="77" text-anchor="middle" class="heading">Reviewed</text>
+<text x="689" y="96" text-anchor="middle" class="heading">transformer</text>
+<line x1="878" y1="109" x2="878" y2="820" class="life"/>
+<rect x="794" y="54" width="168" height="55" rx="8" fill="#eff8fa" stroke="#b6d9de"/>
+<text x="878" y="77" text-anchor="middle" class="heading">Log simulator</text>
+<circle cx="28" cy="140" r="12" fill="#087b87"/>
+<text x="28" y="145" text-anchor="middle" class="step">1</text>
+<text x="68" y="146" class="label">Propose a simulated log read with limit 500 (valid schema, oversized window)</text>
+<path d="M122 160 H311" class="arrow"/>
+<circle cx="28" cy="208" r="12" fill="#087b87"/>
+<text x="28" y="213" text-anchor="middle" class="step">2</text>
+<text x="68" y="214" class="label">Evaluate original action, observe OVERSIZED_RESULT_WINDOW</text>
+<path d="M311 228 H500" class="arrow"/>
+<circle cx="28" cy="276" r="12" fill="#087b87"/>
+<text x="28" y="281" text-anchor="middle" class="step">3</text>
+<text x="68" y="282" class="label">SANITIZE: LOG_RESULT_WINDOW_REQUIRES_SANITIZATION</text>
+<path d="M500 296 H311" class="arrow" stroke-dasharray="6 4"/>
+<circle cx="28" cy="344" r="12" fill="#087b87"/>
+<text x="28" y="349" text-anchor="middle" class="step">4</text>
+<text x="68" y="350" class="label">Run only bounded-log-read/v1, clamp limit to 100</text>
+<path d="M311 364 H689" class="arrow"/>
+<circle cx="28" cy="412" r="12" fill="#087b87"/>
+<text x="28" y="417" text-anchor="middle" class="step">5</text>
+<text x="68" y="418" class="label">Return new event identity and original/effective hash linkage</text>
+<path d="M689 432 H311" class="arrow" stroke-dasharray="6 4"/>
+<circle cx="28" cy="480" r="12" fill="#087b87"/>
+<text x="28" y="485" text-anchor="middle" class="step">6</text>
+<text x="68" y="486" class="label">Re-evaluate the effective action, sanitization is not permission</text>
+<path d="M311 500 H500" class="arrow"/>
+<circle cx="28" cy="548" r="12" fill="#087b87"/>
+<text x="28" y="553" text-anchor="middle" class="step">7</text>
+<text x="68" y="554" class="label">ALLOW the bounded derived request under current policy</text>
+<path d="M500 568 H311" class="arrow" stroke-dasharray="6 4"/>
+<circle cx="28" cy="616" r="12" fill="#087b87"/>
+<text x="28" y="621" text-anchor="middle" class="step">8</text>
+<text x="68" y="622" class="label">Issue and verify effective-action permit, claim once, then read</text>
+<path d="M311 636 H878" class="arrow"/>
+<circle cx="28" cy="684" r="12" fill="#087b87"/>
+<text x="28" y="689" text-anchor="middle" class="step">9</text>
+<text x="68" y="690" class="label">Return up to 100 matching simulated events plus sanitization summary</text>
+<path d="M311 704 H122" class="arrow" stroke-dasharray="6 4"/>
+<rect x="55" y="739" width="920" height="73" rx="8" fill="#f1f5f9" stroke="#dbe3ed"/>
+<text x="68" y="758" class="label">Unknown transformer, invalid output or failed re-evaluation: no dispatch. Limit 50000 fails schema</text>
+<text x="68" y="778" class="label">validation.</text>
 </svg>

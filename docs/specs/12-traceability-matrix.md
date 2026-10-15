@@ -5,6 +5,23 @@
 
 Status values: **Implemented**, **Partial**, **Target**, or **Proposed**.
 
+## Flow documentation mapping
+
+The [nine-flow developer guide](../flows-guide.md), corresponding public guide
+and [single diagram catalog](../design/flow-diagrams.json) explain these existing
+controls. This documentation update adds no runtime behavior or qualification.
+
+| Flows                    | Requirements                             | Explicit qualification boundary                                                                      |
+| ------------------------ | ---------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| 1–2: read/block          | FR-001/002/005/006/008/009/012           | Configured simulator paths, not universal interception                                               |
+| 3: request/review/resume | FR-007/008/009; SEC-005/006; REL-002/004 | Native MCP protocol qualified; model-driven prompt rehearsal separate                                |
+| 4–5: sanitize/sequence   | FR-005/006; SEC-001/002                  | Derived action re-evaluated; bounded in-memory proposal history, not global data-flow tracking       |
+| 6–7: source/OAuth        | FR-003/014; SEC-001/013/014              | Development source evidence and one hosted OAuth composition; profiles not interchangeable           |
+| 8: delegation            | FR-011; SEC-002                          | Narrowing verified before policy; fixture signers, not deployed sub-agents                           |
+| 9: uncertainty           | REL-002/005/008; SEC-019                 | Failure/restart and lookup worker separately tested; no automatic sweeper/worker in browser launcher |
+
+See the [rehearsal plan](../runbooks/flow-rehearsal-plan.md) for remaining manual gates.
+
 ## Local MCP to durable approval composition
 
 | Requirements                                 | Implementation and verification                                                                                                                                                                                      | Boundary                                                                                                       |
@@ -42,7 +59,7 @@ See [ADR 0036](../architecture/0036-local-browser-approval-boundary.md) and
 | FR-006 | Policy schema `requiredSignals`, four outcomes, resolved derived-action sanitization, Scenario 7 deny, Scenario 8 approval, Scenario 9 exfil deny, and Scenario 10 IAM deny                                               | Allow/block/approval/sanitize, stop no-dispatch, deletion approval, exfil zero-send, injected IAM zero-dispatch, sanitizer and behavior-drift tests | Implemented for current Java policy path                                                          |
 | FR-007 | ADRs 0013/0034, approval service, PostgreSQL V2/V6, immutable action snapshot, separate authenticated loopback API and Scenarios 3/8; `SimulatorApprovalBootstrapTest` operator-file restart/replay composition           | Reviewer/owner/tenant, hash mutation, expiry, stale policy, replay, concurrency, rollback, restart and nanosecond precision tests                   | Implemented local simulator API/browser foundation; external IdP qualification pending            |
 | FR-008 | Direct/v2 permits, optional Ed25519 issuer/verifier-only separation, remote Java path, approval, and derived-action permit after sanitize; local bootstrap loads matching persistent Ed25519 file keys                    | HMAC/vector compatibility, Ed25519 issue/verify, algorithm-confusion, verifier-only, approval, PostgreSQL claim, one-effect, and replay tests       | Partial: production key custody and deployment isolation pending                                  |
-| FR-009 | Permit-verifying simulator behind Java development/remote paths                                                                                                                                                           | Permit mutation/audience/replay and remote allow/block tests                                                                                        | Implemented for simulator                                                                         |
+| FR-009 | Trusted executor verifies and claims permit before invoking simulator behind Java development/remote paths                                                                                                                | Permit mutation/audience/replay and remote allow/block tests                                                                                        | Implemented for simulator                                                                         |
 | FR-010 | Durable evidence/outbox, signed receipts, bounded edge telemetry, approval lifecycle, and live POC projection                                                                                                             | Chain, receipt, approval-scenario integrity, redaction, timezone/latency, observer-isolation, OTel, and no-dispatch tests                           | Partial: real anchor/exporter pending                                                             |
 | FR-011 | ADR 0014, signed grant schemas, Java complete-chain verifier, signed-origin Scenario 8, and Scenario 11 sub-agent presenter                                                                                               | Signature, parent, narrowing, topology, revocation/replay tests; one narrow read and four signed amplification rejections before policy             | Implemented Java foundation; production pending                                                   |
 | FR-012 | Stateful Java AWS/Jira simulator plus fixed customer/outbox and runbook/IAM simulators, including one in-memory security-group deletion; operator approval main has one fixed simulator mutation and default-block policy | Java MCP, simulator state, fixed target/argument bounds, denial, zero-outbox, and zero-IAM-mutation tests                                           | Implemented for current simulated adapters                                                        |
@@ -85,7 +102,7 @@ See [ADR 0036](../architecture/0036-local-browser-approval-boundary.md) and
 | REL-002 | Durable approval/execution transitions plus Scenario 3 lifecycle evidence                                                                                                    | Partial: production adapter/runtime pending             |
 | REL-003 | Tenant/adapter/idempotency unique key and duplicate no-dispatch test                                                                                                         | Partial: real target propagation pending                |
 | REL-004 | 32-way permit/approval/workload tests, rate-claim contention and eight concurrent authenticated API execution requests                                                       | Implemented in selected Java adapters                   |
-| REL-005 | Durable append-only unknown queue and automatic lookup-only worker                                                                                                           | Implemented simulator foundation                        |
+| REL-005 | Durable append-only unknown queue and lookup-only worker foundation (not wired into browser launcher)                                                                        | Implemented simulator foundation                        |
 | REL-006 | Policy version plus bounded OAuth claim/JWKS cache/rotation foundation                                                                                                       | Partial: operational rollout pending                    |
 | REL-007 | PostgreSQL outbox leases, stable IDs, retry schedule, and 32-way claim test                                                                                                  | Implemented Java/PostgreSQL foundation                  |
 | REL-008 | PostgreSQL reconciliation queue, leases, retry, restart, and 32-way test                                                                                                     | Implemented Java/PostgreSQL foundation                  |

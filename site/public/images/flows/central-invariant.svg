@@ -1,150 +1,55 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="920" height="740" viewBox="0 0 920 740" role="img" aria-labelledby="ci-title ci-desc">
-  <title id="ci-title">TracePermit: The Central Invariant Flow</title>
-  <desc id="ci-desc">Every AI agent tool proposal must pass through authentication, canonical normalization, and policy evaluation before single-use execution permits or denials are issued.</desc>
-  <defs>
-    <marker id="ci-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
-      <path d="M0 1 L8 5 L0 9" fill="none" stroke="#475569" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-    </marker>
-    <marker id="ci-arrow-green" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
-      <path d="M0 1 L8 5 L0 9" fill="none" stroke="#16a34a" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-    </marker>
-    <marker id="ci-arrow-red" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
-      <path d="M0 1 L8 5 L0 9" fill="none" stroke="#dc2626" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-    </marker>
-    <marker id="ci-arrow-amber" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
-      <path d="M0 1 L8 5 L0 9" fill="none" stroke="#d97706" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-    </marker>
-    <style>
-      text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-      .ci-title { fill: #0f172a; font-size: 15px; font-weight: 750; }
-      .ci-sub { fill: #475569; font-size: 12px; }
-      .ci-label { fill: #087b87; font-size: 12px; font-weight: 700; }
-      .ci-box { fill: #f8fafc; stroke: #cbd5e1; stroke-width: 1.5; rx: 8px; }
-      .ci-box-teal { fill: #f0fdfa; stroke: #087b87; stroke-width: 2; rx: 8px; }
-      .ci-box-green { fill: #f0fdf4; stroke: #22c55e; stroke-width: 1.5; rx: 8px; }
-      .ci-box-red { fill: #fef2f2; stroke: #ef4444; stroke-width: 1.5; rx: 8px; }
-      .ci-box-amber { fill: #fffbeb; stroke: #f59e0b; stroke-width: 1.5; rx: 8px; }
-      .ci-flow-line { stroke: #64748b; stroke-width: 2; fill: none; }
-      .ci-badge-green { fill: #16a34a; }
-      .ci-badge-red { fill: #dc2626; }
-      .ci-badge-amber { fill: #d97706; }
-      .badge-text { fill: #ffffff; font-size: 11px; font-weight: 750; text-anchor: middle; }
-    </style>
-  </defs>
-
-  <!-- Background Canvas -->
-  <rect width="920" height="740" rx="12" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5"/>
-
-  <!-- Top Invariant Header Bar -->
-  <rect x="24" y="20" width="872" height="42" rx="8" fill="#173c57"/>
-  <text x="44" y="47" fill="#ffffff" font-size="14.5" font-weight="750" letter-spacing="0.5px">THE CENTRAL INVARIANT</text>
-  <text x="876" y="46" text-anchor="end" fill="#99f6e4" font-size="12.5" font-weight="600">Zero Direct Target Access · Evaluated Before Execution</text>
-
-  <!-- 1. Origin: AI Agent / Workload -->
-  <rect x="290" y="80" width="340" height="54" class="ci-box"/>
-  <text x="460" y="103" text-anchor="middle" class="ci-title">AI Agent / CLI / Workload</text>
-  <text x="460" y="122" text-anchor="middle" class="ci-sub">ChatGPT, Claude, Autonomous CLI, Scheduled Job</text>
-
-  <!-- Arrow 1: Structured Tool Proposal -->
-  <line x1="460" y1="134" x2="460" y2="162" class="ci-flow-line" marker-end="url(#ci-arrow)"/>
-  <rect x="365" y="140" width="190" height="18" rx="4" fill="#ffffff" stroke="#cbd5e1" stroke-width="1"/>
-  <text x="460" y="153" text-anchor="middle" class="ci-label">1. Structured Tool Proposal</text>
-
-  <!-- 2. Trusted Gateway Adapter -->
-  <rect x="250" y="170" width="420" height="64" class="ci-box-teal"/>
-  <text x="460" y="195" text-anchor="middle" class="ci-title" style="fill: #087b87;">Trusted Gateway Adapter (Java Data Plane)</text>
-  <text x="460" y="214" text-anchor="middle" class="ci-sub">Verifies cryptographic token / transport · Derives verified caller facts</text>
-
-  <!-- Arrow 2: Canonical Action -->
-  <line x1="460" y1="234" x2="460" y2="262" class="ci-flow-line" marker-end="url(#ci-arrow)"/>
-  <rect x="350" y="240" width="220" height="18" rx="4" fill="#ffffff" stroke="#cbd5e1" stroke-width="1"/>
-  <text x="460" y="253" text-anchor="middle" class="ci-label">2. Canonical Action (SHA-256 Hash)</text>
-
-  <!-- 3. Policy Engine -->
-  <rect x="250" y="270" width="420" height="64" class="ci-box"/>
-  <text x="460" y="295" text-anchor="middle" class="ci-title">Policy Engine &amp; Sequence Classifier</text>
-  <text x="460" y="314" text-anchor="middle" class="ci-sub">Evaluates actionClass, severity, and server-owned sliding history</text>
-
-  <!-- Branch Split Lines: Left (Allow), Middle (Require Approval), Right (Block) -->
-  <path d="M 460 334 V 356 H 170 V 382" class="ci-flow-line" style="stroke: #16a34a;" marker-end="url(#ci-arrow-green)"/>
-  <line x1="460" y1="334" x2="460" y2="382" class="ci-flow-line" style="stroke: #d97706;" marker-end="url(#ci-arrow-amber)"/>
-  <path d="M 460 334 V 356 H 750 V 382" class="ci-flow-line" style="stroke: #dc2626;" marker-end="url(#ci-arrow-red)"/>
-
-  <!-- Decision Badges -->
-  <rect x="115" y="345" width="110" height="22" rx="11" class="ci-badge-green"/>
-  <text x="170" y="360" class="badge-text">✓ ALLOW</text>
-
-  <rect x="380" y="345" width="160" height="22" rx="11" class="ci-badge-amber"/>
-  <text x="460" y="360" class="badge-text">⚠ REQUIRE_APPROVAL</text>
-
-  <rect x="695" y="345" width="110" height="22" rx="11" class="ci-badge-red"/>
-  <text x="750" y="360" class="badge-text">✕ BLOCK</text>
-
-  <!-- ==================== COLUMN 1: ALLOW (Left) ==================== -->
-  <rect x="40" y="390" width="260" height="66" class="ci-box-green"/>
-  <text x="170" y="413" text-anchor="middle" class="ci-title" style="fill: #15803d;">Issue Execution Permit</text>
-  <text x="170" y="432" text-anchor="middle" class="ci-sub">Signed JWS bound to exact</text>
-  <text x="170" y="447" text-anchor="middle" class="ci-sub">actionHash &amp; audience</text>
-
-  <line x1="170" y1="456" x2="170" y2="484" class="ci-flow-line" style="stroke: #16a34a;" marker-end="url(#ci-arrow-green)"/>
-
-  <rect x="40" y="490" width="260" height="66" class="ci-box-green"/>
-  <text x="170" y="513" text-anchor="middle" class="ci-title" style="fill: #15803d;">Atomic Claim (1x)</text>
-  <text x="170" y="532" text-anchor="middle" class="ci-sub">PostgreSQL transaction claims</text>
-  <text x="170" y="547" text-anchor="middle" class="ci-sub">permit · Replays rejected</text>
-
-  <line x1="170" y1="556" x2="170" y2="584" class="ci-flow-line" style="stroke: #16a34a;" marker-end="url(#ci-arrow-green)"/>
-
-  <rect x="40" y="590" width="260" height="58" class="ci-box-green" style="fill: #dcfce7; stroke-width: 2;"/>
-  <text x="170" y="614" text-anchor="middle" class="ci-title" style="fill: #14532d;">Target Simulator</text>
-  <text x="170" y="633" text-anchor="middle" class="ci-sub" style="fill: #166534;">Safe simulated execution (1x)</text>
-
-  <!-- ==================== COLUMN 2: REQUIRE_APPROVAL (Middle) ==================== -->
-  <rect x="330" y="390" width="260" height="66" class="ci-box-amber"/>
-  <text x="460" y="413" text-anchor="middle" class="ci-title" style="fill: #b45309;">Dual-Control Review</text>
-  <text x="460" y="432" text-anchor="middle" class="ci-sub">State frozen on exact actionHash</text>
-  <text x="460" y="447" text-anchor="middle" class="ci-sub">Self-approval forbidden</text>
-
-  <line x1="460" y1="456" x2="460" y2="484" class="ci-flow-line" style="stroke: #d97706;" marker-end="url(#ci-arrow-amber)"/>
-
-  <rect x="330" y="490" width="260" height="66" class="ci-box-amber"/>
-  <text x="460" y="513" text-anchor="middle" class="ci-title" style="fill: #b45309;">Independent Signoff</text>
-  <text x="460" y="532" text-anchor="middle" class="ci-sub">Privileged reviewer verifies request</text>
-  <text x="460" y="547" text-anchor="middle" class="ci-sub">and grants single-use approval</text>
-
-  <!-- Clear Adjacent Connection from Col 2 to Col 1 Issue Permit (in the open gap) -->
-  <path d="M 330 523 H 315 V 423 H 308" class="ci-flow-line" style="stroke: #16a34a; stroke-width: 2;" marker-end="url(#ci-arrow-green)"/>
-  <rect x="235" y="463" width="155" height="20" rx="4" fill="#ffffff" stroke="#16a34a" stroke-width="1.2"/>
-  <text x="312" y="477" text-anchor="middle" style="fill: #15803d; font-size: 10.5px; font-weight: 750;">Approved → Mint Permit</text>
-
-  <line x1="460" y1="556" x2="460" y2="584" class="ci-flow-line" style="stroke: #d97706;" marker-end="url(#ci-arrow-amber)"/>
-
-  <rect x="330" y="590" width="260" height="58" class="ci-box-amber" style="fill: #fef3c7; stroke-width: 2;"/>
-  <text x="460" y="614" text-anchor="middle" class="ci-title" style="fill: #78350f;">Human Accountability</text>
-  <text x="460" y="633" text-anchor="middle" class="ci-sub" style="fill: #92400e;">Dual-party identity bound in ledger</text>
-
-  <!-- ==================== COLUMN 3: BLOCK (Right) ==================== -->
-  <rect x="620" y="390" width="260" height="66" class="ci-box-red"/>
-  <text x="750" y="413" text-anchor="middle" class="ci-title" style="fill: #b91c1c;">Halt &amp; Reject Proposal</text>
-  <text x="750" y="432" text-anchor="middle" class="ci-sub">Zero permits minted · Target API</text>
-  <text x="750" y="447" text-anchor="middle" class="ci-sub">is never called</text>
-
-  <line x1="750" y1="456" x2="750" y2="484" class="ci-flow-line" style="stroke: #dc2626;" marker-end="url(#ci-arrow-red)"/>
-
-  <rect x="620" y="490" width="260" height="66" class="ci-box-red"/>
-  <text x="750" y="513" text-anchor="middle" class="ci-title" style="fill: #b91c1c;">Append Audit Evidence</text>
-  <text x="750" y="532" text-anchor="middle" class="ci-sub">Ledger records attempt,</text>
-  <text x="750" y="547" text-anchor="middle" class="ci-sub">provenance &amp; reason code</text>
-
-  <line x1="750" y1="556" x2="750" y2="584" class="ci-flow-line" style="stroke: #dc2626;" marker-end="url(#ci-arrow-red)"/>
-
-  <rect x="620" y="590" width="260" height="58" class="ci-box-red" style="fill: #fee2e2; stroke-width: 2;"/>
-  <text x="750" y="614" text-anchor="middle" class="ci-title" style="fill: #991b1b;">Zero Dispatches</text>
-  <text x="750" y="633" text-anchor="middle" class="ci-sub" style="fill: #b91c1c;">Target remains completely untouched</text>
-
-  <!-- ==================== Bottom Common Bar: Audit & Evidence ==================== -->
-  <rect x="40" y="675" width="840" height="44" rx="8" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.5"/>
-  <text x="460" y="702" text-anchor="middle" class="ci-title" style="fill: #334155;">
-    Immutable Evidence Ledger &amp; Read-Only React Console: All outcomes recorded with cryptographic provenance
-  </text>
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="776" viewBox="0 0 1000 776" role="img" aria-labelledby="central-invariant-title central-invariant-desc">
+<title id="central-invariant-title">Supported actions: authorize before simulator execution</title>
+<desc id="central-invariant-desc">Propose a registered tool action, request data is untrusted. Verify identity and required origin evidence, validate and normalize. Evaluate current tool, arguments, target and available sequence context. BLOCK: no permit or dispatch. SANITIZE: derive a new action and evaluate again.. APPROVAL: persist pending, require distinct review, then explicit owner resume. ALLOW: continue.. Verify the exact permit and claim single use before any target effect. Invoke only the fixed simulator after authorization and claim. Record outcome separately, the read-only console queries bounded projections. Configured-path control only. No real target credentials, universal agent interception or host-wide anti-bypass.</desc>
+<!-- Generated from docs/design/flow-diagrams.json. Do not edit this SVG directly. -->
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1 L9 5 L1 9" fill="none" stroke="#087b87" stroke-width="1.7"/></marker></defs>
+<style>text{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#17243b}.label{font-size:16px}.heading{font-size:15px;font-weight:650}.step{font-size:13px;font-weight:700;fill:white}.life{stroke:#cbd5e1;stroke-dasharray:5 5}.arrow{stroke:#087b87;stroke-width:1.8;fill:none;marker-end:url(#arrow)}</style>
+<rect x="1" y="1" width="998" height="774" rx="12" fill="white" stroke="#dbe3ed"/>
+<text x="28" y="34" font-size="19" font-weight="700">Supported actions: authorize before simulator execution</text>
+<line x1="122" y1="109" x2="122" y2="752" class="life"/>
+<rect x="38" y="54" width="168" height="55" rx="8" fill="#eff8fa" stroke="#b6d9de"/>
+<text x="122" y="77" text-anchor="middle" class="heading">Configured client</text>
+<line x1="311" y1="109" x2="311" y2="752" class="life"/>
+<rect x="227" y="54" width="168" height="55" rx="8" fill="#eff8fa" stroke="#b6d9de"/>
+<text x="311" y="77" text-anchor="middle" class="heading">Trusted adapter</text>
+<line x1="500" y1="109" x2="500" y2="752" class="life"/>
+<rect x="416" y="54" width="168" height="55" rx="8" fill="#eff8fa" stroke="#b6d9de"/>
+<text x="500" y="77" text-anchor="middle" class="heading">Policy / executor</text>
+<line x1="689" y1="109" x2="689" y2="752" class="life"/>
+<rect x="605" y="54" width="168" height="55" rx="8" fill="#eff8fa" stroke="#b6d9de"/>
+<text x="689" y="77" text-anchor="middle" class="heading">Security state</text>
+<line x1="878" y1="109" x2="878" y2="752" class="life"/>
+<rect x="794" y="54" width="168" height="55" rx="8" fill="#eff8fa" stroke="#b6d9de"/>
+<text x="878" y="77" text-anchor="middle" class="heading">Safe simulator</text>
+<circle cx="28" cy="140" r="12" fill="#087b87"/>
+<text x="28" y="145" text-anchor="middle" class="step">1</text>
+<text x="68" y="146" class="label">Propose a registered tool action, request data is untrusted</text>
+<path d="M122 160 H311" class="arrow"/>
+<circle cx="28" cy="208" r="12" fill="#087b87"/>
+<text x="28" y="213" text-anchor="middle" class="step">2</text>
+<text x="68" y="214" class="label">Verify identity and required origin evidence, validate and normalize</text>
+<path d="M311 228 h30 v17 h-30" class="arrow"/>
+<circle cx="28" cy="276" r="12" fill="#087b87"/>
+<text x="28" y="281" text-anchor="middle" class="step">3</text>
+<text x="68" y="282" class="label">Evaluate current tool, arguments, target and available sequence context</text>
+<path d="M311 296 H500" class="arrow"/>
+<rect x="55" y="331" width="920" height="53" rx="8" fill="#f1f5f9" stroke="#dbe3ed"/>
+<text x="68" y="350" class="label">BLOCK: no permit or dispatch. SANITIZE: derive a new action and evaluate again.</text>
+<rect x="55" y="399" width="920" height="53" rx="8" fill="#f1f5f9" stroke="#dbe3ed"/>
+<text x="68" y="418" class="label">APPROVAL: persist pending, require distinct review, then explicit owner resume. ALLOW: continue.</text>
+<circle cx="28" cy="480" r="12" fill="#087b87"/>
+<text x="28" y="485" text-anchor="middle" class="step">4</text>
+<text x="68" y="486" class="label">Verify the exact permit and claim single use before any target effect</text>
+<path d="M500 500 H689" class="arrow"/>
+<circle cx="28" cy="548" r="12" fill="#087b87"/>
+<text x="28" y="553" text-anchor="middle" class="step">5</text>
+<text x="68" y="554" class="label">Invoke only the fixed simulator after authorization and claim</text>
+<path d="M500 568 H878" class="arrow"/>
+<circle cx="28" cy="616" r="12" fill="#087b87"/>
+<text x="28" y="621" text-anchor="middle" class="step">6</text>
+<text x="68" y="622" class="label">Record outcome separately, the read-only console queries bounded projections</text>
+<path d="M500 636 H689" class="arrow"/>
+<rect x="55" y="671" width="920" height="73" rx="8" fill="#f1f5f9" stroke="#dbe3ed"/>
+<text x="68" y="690" class="label">Configured-path control only. No real target credentials, universal agent interception or host-wide</text>
+<text x="68" y="710" class="label">anti-bypass.</text>
 </svg>

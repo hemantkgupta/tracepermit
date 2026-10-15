@@ -1,504 +1,576 @@
-# TracePermit Core Flows & Architecture: A New Engineer's Guide
+# TracePermit: architecture and action flows
 
-Welcome to **TracePermit**! This guide is designed to get any new engineer up to speed on the product vision, core use cases, data models, and codebase architecture in 15 minutes.
+TracePermit is an Agentic Visibility & Control (AVC) proof of concept. Its Java
+enforcement data plane evaluates supported tool proposals before a safe simulator
+can execute them. The React console displays evidence; the separately authenticated
+approval inbox lets an authorized reviewer decide an exact pending request.
 
-> [!NOTE]
-> **Drift Prevention & Public Documentation:**
-> A public-facing edition of these flows is published on the documentation website at [`site/guide/core-flows.md`](../site/guide/core-flows.md) (served at [tracepermit.org/guide/core-flows](https://tracepermit.org/guide/core-flows)).
-> When modifying contracts, sequence diagrams, or enforcement logic, ensure both this developer runbook and the public site guide are maintained in tandem.
+This guide maps the running implementation to nine flows. The shorter
+[public guide](../site/guide/core-flows.md) uses the same generated diagrams.
+See the [specification baseline](specs/03-current-state-baseline.md) for the full
+implemented/qualified/future distinction.
 
----
+## The central invariant
 
-## 1. The Core Mental Model
+Every supported simulator action routed through TracePermit must pass the required
+identity, schema, policy and authority checks before dispatch. A blocked proposal
+has no execution permit and no target invocation. An approval is not execution.
 
-### The Problem
+This is **configured-path control**, not universal interception of every agent,
+host-wide egress prevention or a real AWS credential broker. All downstream effects
+in these flows are simulated. The public website hosts documentation, not this API.
 
-AI agents (ChatGPT, Claude, autonomous CLI scripts, scheduled cron jobs) are increasingly empowered to invoke tools—calling cloud APIs, modifying databases, updating Jira tickets, and sending messages. Today, tools are usually given broad API keys, meaning **one prompt injection or agent hallucination can delete production infrastructure or leak customer data**.
-
-### The Solution: Agentic Visibility & Control (AVC)
-
-TracePermit sits directly between the agent and enterprise tools as an inline enforcement control plane.
-
-> [!IMPORTANT]
-> **The Central Invariant:**
-> **No agent ever touches an enterprise target directly.** Every tool call is intercepted, authenticated, normalized into a canonical action, evaluated by policy, and requires an exact, single-use, cryptographically verified **Execution Permit** before a safe simulator can execute.
+<!-- diagram:central-invariant -->
 
 ```mermaid
-flowchart LR
-    A["AI Agent / CLI / Workload"] -->|1. Tool Call Proposal| B["Trusted Gateway Adapter"]
-    B -->|2. Authenticate & Normalize| C["Canonical Action (SHA-256)"]
-    C -->|3. Risk & Sequence Scoring| D{"Policy Engine"}
-    D -->|Allow| E["Issue Execution Permit"]
-    D -->|Block| F["Deny & Record Evidence"]
-    D -->|Require Approval| G["Human Reviewer Signoff"]
-    D -->|Sanitize| H["Transform Arguments & Re-evaluate"]
-    G -->|Approved| E
-    E -->|4. Verify & Claim (1x)| I["Deterministic Simulator"]
-    I -->|5. Audit Trail| J["Evidence Ledger & React Console"]
+sequenceDiagram
+  autonumber
+  participant C as Configured client
+  participant G as Trusted adapter
+  participant E as Policy / executor
+  participant D as Security state
+  participant S as Safe simulator
+  C->>G: Propose a registered tool action, request data is untrusted
+  G->>G: Verify identity and required origin evidence, validate and normalize
+  G->>E: Evaluate current tool, arguments, target and available sequence context
+  Note over C,S: BLOCK: no permit or dispatch. SANITIZE: derive a new action and evaluate again.
+  Note over C,S: APPROVAL: persist pending, require distinct review, then explicit owner resume. ALLOW: continue.
+  E->>D: Verify the exact permit and claim single use before any target effect
+  E->>S: Invoke only the fixed simulator after authorization and claim
+  E->>D: Record outcome separately, the read-only console queries bounded projections
+  Note over C,S: Configured-path control only. No real target credentials, universal agent interception or host-wide anti-bypass.
 ```
 
----
+<!-- /diagram:central-invariant -->
 
-## 2. The 3 Core Data Contracts
+The trusted executor verifies the exact permit and claims single use **before**
+calling the simulator. The simulator is not the permit authority. Evidence is
+recorded server-side; the read-only console queries projections outside the
+synchronous execution path. Neither a dashboard nor an audit record prevents a
+side effect by itself.
 
-Before diving into the flows, here are the three JSON contracts that flow through the entire system:
+## Entry points and trust boundaries
 
-### 1. Canonical Action (`CanonicalAction`)
+These profiles share Java components, but are not one interchangeable deployment.
 
-The normalized representation of what the agent wants to do. It strips client quirks, canonicalizes arguments, and calculates a deterministic SHA-256 hash.
+| Entry profile        | What establishes identity                                                               | Important boundary                                                          |
+| -------------------- | --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| Local endpoint MCP   | Bearer verification plus an enrolled endpoint key signing request-bound source evidence | Development OS/process evidence; not managed-device assurance               |
+| Hosted OAuth MCP     | Configured issuer, signature, audience, client, tenant mapping and scope checks         | Tunnel reachability is not identity; provider actor remains asserted        |
+| Signed workload      | Verified workload credential and independently verified, narrowing delegation chain     | A scheduled label or causal parent ID grants no authority                   |
+| Durable approval MCP | Enrolled bearer principal, client, origin and operation scopes                          | Separate bearer-only fixture; does not accept the endpoint proof header     |
+| Approval browser     | Browser sign-in, server-owned membership, scoped session and CSRF checks                | A distinct authorized reviewer decides; only the original requester resumes |
+
+Read Flows 6 and 7 first for origin attribution; Flows 1–5 explain action control;
+Flows 8 and 9 explain delegated authority and uncertain execution.
+
+## Contracts: what is actually bound
+
+The checked-in [contracts](../contracts/) define complete envelopes. The JSON below
+is an **illustrative field projection**, not a complete valid action, evaluation
+or signed permit. Never accept trusted assurance fields just because a client
+puts them in JSON.
 
 ```json
 {
-  "eventId": "018f47a2-f5ce-7a4b-8f54-80e5d3eaf091",
-  "traceId": "8f3a2c1e4b5d67890123456789abcdef",
-  "identity": {
-    "subject": {
-      "id": "user:alice@example.com",
-      "type": "human",
-      "assurance": "authenticated"
-    },
-    "actor": {
-      "id": "client:chatgpt-web",
-      "type": "orchestrator",
-      "assurance": "asserted"
-    }
-  },
-  "trigger": { "kind": "human", "origin": "chatgpt-web" },
   "action": {
-    "protocol": "mcp",
     "toolName": "aws.logs.filter_log_events",
     "arguments": {
-      "logGroupName": "/app/prod",
+      "logGroupName": "/app/staging",
       "filterPattern": "ERROR",
-      "limit": 50
-    },
-    "target": {
-      "system": "aws",
-      "environment": "prod",
-      "resourceType": "cloudwatch-log-group"
+      "limit": 2
     }
-  }
-}
-```
-
-### 2. Policy Evaluation (`PolicyEvaluation`)
-
-The decision produced by the policy engine after classifying the action's risk and checking server-owned sequence history.
-
-```json
-{
-  "evaluationId": "018f47a2-f5ce-7a4b-8f54-80e5d3eaf099",
-  "classification": {
-    "actionClass": "read",
-    "severity": "low",
-    "operation": "aws.logs.filter_log_events"
   },
-  "decision": {
-    "outcome": "allow",
-    "policyId": "pol-aws-web-001",
-    "policyVersion": 2,
-    "matchedRuleId": "allow-cloudwatch-read",
-    "reasonCode": "BOUNDED_LOG_READ"
-  }
+  "classification": { "actionClass": "read", "severity": "low" },
+  "decision": { "outcome": "allow", "reasonCode": "BOUNDED_LOG_READ" }
 }
 ```
 
-### 3. Execution Permit (`ExecutionPermit`)
+- The adapter constructs the canonical action only after required verification.
+  Subject, actor, trigger and delegation retain their own assurance levels.
+- [Action validation](../java/contracts/src/main/java/io/tracepermit/contracts/ActionValidator.java)
+  and [canonical JSON](../java/contracts/src/main/java/io/tracepermit/contracts/CanonicalJson.java)
+  use the frozen `tracepermit-canonical-json-v1` profile and vectors. Do not
+  substitute an arbitrary serializer or assume full RFC 8785 compatibility.
+- [PolicyEvaluator](../java/policy/src/main/java/io/tracepermit/policy/PolicyEvaluator.java)
+  classifies tool + arguments + target + available sequence context. The action
+  classes are `read`, `modify`, `destructive` and `orchestration`; severity is
+  separate. This is deterministic semantic classification, not access to a
+  model's private reasoning or a universal arbitrary-code analyzer.
+- An [execution permit](../java/security/src/main/java/io/tracepermit/security/ExecutionPermitAuthority.java)
+  binds the authorized action and decision context, trusted issuer, audience,
+  subject and short validity. Signature verification detects alteration under
+  the configured key. A signature alone does not prevent replay: the selected
+  consumption/claim store must enforce single use. In-memory and PostgreSQL
+  compositions have different restart guarantees.
+- Causal lineage answers “what caused this?”; verified delegation answers “what
+  authority was granted?”. Neither valid identity nor a valid signature makes
+  every requested action safe.
 
-A tamper-proof, short-lived JWT/JWS minted only when an action is allowed or approved. The executor verifies the cryptographic signature, checks that the `actionHash` matches the request, and atomically claims it so it can never be reused.
+## Flow 1: bounded read allowed
 
-```json
-{
-  "permitId": "018f47a2-f5ce-7a4b-8f54-80e5d3eaf080",
-  "issuer": "https://execution-permits.tracepermit.invalid",
-  "audience": "urn:tracepermit:executor:aws",
-  "subjectId": "user:alice@example.com",
-  "actionHash": "sha256:97efc87ece3fb5188e998b012a0c19eeadbadf5228bc89d07591cfaca0ec4476",
-  "decision": { "outcome": "allow", "policyId": "pol-aws-web-001" },
-  "maxUses": 1,
-  "expiresAt": "2026-10-08T10:16:01.000Z"
-}
-```
+An authenticated configured client proposes `aws.logs.filter_log_events`. The
+`allow-cloudwatch-read` rule in [the AWS web policy](../policies/aws-web-readonly.json)
+allows a bounded read with `BOUNDED_LOG_READ`. After permit verification and claim,
+the fixed log simulator returns **up to** the requested number of matching events.
+The result is not a real CloudWatch response or a production latency guarantee.
 
----
-
-## 3. The 5 Main Product & Execution Flows
-
----
-
-### Flow 1: Safe Read (Autonomous Allow)
-
-#### Product Story
-
-Alice asks ChatGPT or a local CLI assistant: _"Check the last 50 error logs for the production app."_ The agent invokes the `aws.logs.filter_log_events` tool. TracePermit verifies Alice's identity, determines this is a low-risk bounded read permitted by policy, issues an execution permit, executes against the simulator, and returns the log lines to the agent in milliseconds.
-
-#### Sequence Diagram
+<!-- diagram:flow-1-safe-read -->
 
 ```mermaid
 sequenceDiagram
   autonumber
-  participant Agent as Agent / Client
-  participant Gateway as Trusted Adapter & Gateway
-  participant Policy as Classifier & Policy
-  participant Issuer as Permit Authority
-  participant Simulator as AWS Simulator
-  participant Console as React Console (Audit)
-
-  Agent->>Gateway: tools/call aws.logs.filter_log_events (Bearer token)
-  Gateway->>Gateway: Authenticate token & build Canonical Action
-  Gateway->>Policy: evaluate(canonical action)
-  Policy-->>Gateway: allow (low risk, BOUNDED_LOG_READ)
-  Gateway->>Issuer: issuePermit(actionHash, subject, audience)
-  Issuer-->>Gateway: signed single-use permit
-  Gateway->>Simulator: execute(canonical action, permit)
-  Simulator->>Simulator: Verify permit signature, hash & claim single-use
-  Simulator-->>Gateway: Simulated log results
-  Gateway->>Console: Append audit evidence (ALLOW, executed)
-  Gateway-->>Agent: MCP tool result
+  participant C as Agent / client
+  participant G as Trusted adapter
+  participant E as Policy / executor
+  participant S as Log simulator
+  participant D as Evidence / view
+  C->>G: Propose aws.logs.filter_log_events with a bounded limit
+  G->>G: Authenticate and verify the source proof when the CLI profile requires it
+  G->>E: Construct the canonical action and evaluate the active policy
+  E->>E: ALLOW: issue and verify an exact short-lived permit, claim single use
+  E->>S: Invoke the simulator with the verified action, not a credential-bearing cloud API
+  S-->>E: Return up to the requested number of matching simulated log events
+  E->>D: Persist bounded decision and outcome evidence in the selected profile
+  E-->>C: Return the MCP result, the console is outside the execution path
 ```
 
-#### Where in the Code
+<!-- /diagram:flow-1-safe-read -->
 
-| Step                     | Class / File                                                                                                            | Description                                                        |
-| :----------------------- | :---------------------------------------------------------------------------------------------------------------------- | :----------------------------------------------------------------- |
-| **Ingress & Auth**       | [`OidcAccessTokenVerifier.java`](../java/identity/src/main/java/io/tracepermit/identity/OidcAccessTokenVerifier.java)   | Authenticates token and extracts verified subject/scopes.          |
-| **Action Normalization** | [`ActionNormalizer.java`](../java/contracts/src/main/java/io/tracepermit/contracts/ActionNormalizer.java)               | Validates schema and produces canonical action + hash.             |
-| **Risk & Policy**        | [`PolicyEvaluator.java`](../java/policy/src/main/java/io/tracepermit/policy/PolicyEvaluator.java)                       | Classifies `actionClass="read"`, evaluates rules, returns `allow`. |
-| **Permit & Execution**   | [`InMemoryExecutionLedger.java`](../java/execution/src/main/java/io/tracepermit/execution/InMemoryExecutionLedger.java) | Atomically claims permit ID so it cannot be re-executed.           |
-| **Simulator**            | [`StatefulTargetSimulator.java`](../java/simulator/src/main/java/io/tracepermit/simulator/StatefulTargetSimulator.java) | Returns simulated CloudWatch logs.                                 |
+Code: [remote dispatcher](../java/adapters-remote/src/main/java/io/tracepermit/adapters/remote/EnforcingMcpDispatcher.java),
+[secure execution](../java/application/src/main/java/io/tracepermit/application/SecureExecutionService.java),
+[stateful target simulator](../java/simulator/src/main/java/io/tracepermit/simulator/StatefulTargetSimulator.java).
+Tests: [execution conformance](../java/conformance/src/test/java/io/tracepermit/conformance/SecureExecutionServiceTest.java)
+and [remote OAuth MCP](../java/adapters-remote/src/test/java/io/tracepermit/adapters/remote/RemoteOAuthMcpServerTest.java).
 
-#### Try It Locally
+Try: follow [Scenario 1](demo-scenarios/01-attested-cli-allow-block.md) after starting
+`pnpm demo`. A hosted OAuth read also has [dated qualification evidence](demo-scenarios/QUALIFICATION-EVIDENCE-2026-10-11.md);
+it is not a fresh live-hosted test from this documentation change.
 
-```bash
-pnpm demo:scenario:cli:auto
-```
+## Flow 2: destructive proposal blocked
 
----
+The same authenticated client proposes `aws.ec2.terminate_instances`. The explicit
+`block-agent-ec2-termination` rule returns
+`AGENT_EC2_TERMINATION_BLOCKED`: class `destructive`, severity `critical`.
+The result is `block` / `not_executed`. No permit is issued and no simulator call
+occurs. Authentication establishes who asked, not permission for every action.
 
-### Flow 2: Destructive Action (Policy Block)
-
-#### Product Story
-
-An assistant is tricked by a rogue prompt or makes an error and proposes terminating an EC2 instance: `aws.ec2.terminate_instances`. TracePermit attributes the request to Alice, but **authentication is not blanket authorization**. The classifier rates this action as `critical` severity infrastructure destruction. Policy returns `block`. TracePermit emits a `not_executed` evidence event and halts. **Zero permits are minted and no target API is called.**
-
-#### Sequence Diagram
+<!-- diagram:flow-2-destructive-block -->
 
 ```mermaid
 sequenceDiagram
   autonumber
-  participant Agent as Agent / Client
-  participant Gateway as Trusted Adapter & Gateway
-  participant Policy as Classifier & Policy
-  participant Simulator as AWS Simulator
-  participant Console as React Console (Audit)
-
-  Agent->>Gateway: tools/call aws.ec2.terminate_instances
-  Gateway->>Gateway: Authenticate & build Canonical Action
-  Gateway->>Policy: evaluate(canonical action)
-  Policy-->>Gateway: block (critical risk, UNAUTHORIZED_DESTRUCTION)
-  Gateway->>Console: Append audit evidence (BLOCK, not_executed)
-  Gateway-->>Agent: Error: Action blocked by policy (no permit issued)
-  Note over Simulator: Simulator is NEVER called
+  participant C as Agent / client
+  participant G as Trusted adapter
+  participant P as Classifier / policy
+  participant D as Evidence state
+  participant S as Safe simulator
+  C->>G: Propose aws.ec2.terminate_instances on a simulated instance
+  G->>P: Authenticate, validate and evaluate the canonical action
+  P-->>G: BLOCK: destructive / critical, AGENT_EC2_TERMINATION_BLOCKED
+  G->>D: Record the policy denial without an execution permit or target attempt
+  G-->>C: Return block and not_executed
+  Note over C,S: The simulator is not invoked. Valid identity does not authorize every action.
 ```
 
-#### Compact Data Payload (Decision)
+<!-- /diagram:flow-2-destructive-block -->
 
-```json
-{
-  "evaluationId": "018f47a2-f5ce-7a4b-8f54-80e5d3eaf102",
-  "classification": {
-    "actionClass": "delete",
-    "severity": "critical",
-    "operation": "aws.ec2.terminate_instances"
-  },
-  "decision": {
-    "outcome": "block",
-    "policyId": "pol-aws-web-001",
-    "matchedRuleId": "deny-destructive-ops",
-    "reasonCode": "UNAUTHORIZED_INFRASTRUCTURE_DELETION"
-  }
-}
-```
+Code and tests: the same policy/executor boundary as Flow 1. Try the blocked half
+of [Scenario 1](demo-scenarios/01-attested-cli-allow-block.md). The separate
+[scheduled-stop scenario](demo-scenarios/07-signed-scheduled-ec2-stop-block.md) uses a
+different tool, policy and signed-workload origin; do not describe it as this
+termination rule.
 
-#### Where in the Code
+## Flow 3: durable human approval and explicit resume
 
-| Step               | Class / File                                                                                                          | Description                                                                  |
-| :----------------- | :-------------------------------------------------------------------------------------------------------------------- | :--------------------------------------------------------------------------- |
-| **Classification** | [`Classification.java`](../java/policy/src/main/java/io/tracepermit/policy/Classification.java)                       | Maps `terminate_instances` to `delete` action class and `critical` severity. |
-| **Policy Engine**  | [`PolicyEvaluator.java`](../java/policy/src/main/java/io/tracepermit/policy/PolicyEvaluator.java)                     | Evaluates deny rule; halts processing immediately.                           |
-| **Audit Ledger**   | [`InMemoryEvidenceLedger.java`](../java/execution/src/main/java/io/tracepermit/execution/InMemoryEvidenceLedger.java) | Records immutable `not_executed` evidence row with decision reason.          |
+In the separate simulator-only approval profile, Codex's MCP client can request a
+fixed `sg-demo` security-group change with a port and documentation-range CIDR.
+The current allowlisted approval policy does not approve arbitrary AWS changes.
 
-#### Try It Locally
-
-```bash
-pnpm demo:scenario:scheduled-stop:auto
-```
-
----
-
-### Flow 3: Request-Bound Human Approval (Two-Man Rule)
-
-#### Product Story
-
-An agent attempts a sensitive configuration update (e.g. updating an AWS Security Group or attaching an IAM role). The policy requires human approval. TracePermit doesn't just show a generic button; it **freezes the exact canonical action hash** and creates a pending approval record.
-
-- The requesting agent **cannot self-approve**.
-- An independent human approver with the required security role reviews the exact parameters and approves.
-- Approval alone does not execute. The original requester explicitly resumes with ID/hash; TracePermit rechecks the current binding and atomically claims single use before simulator dispatch. This is **at most one dispatch per approval**, not a distributed exactly-once target guarantee. Changed arguments and replay cannot dispatch.
-
-The local Codex path supports only the fixed `sg-demo` mutation, not arbitrary
-IAM/cloud changes. See the [Codex approval runbook](runbooks/codex-durable-approvals.md).
-The example below is a compact projection, not the complete stored binding.
-
-#### Sequence Diagram
+<!-- diagram:flow-3-human-approval -->
 
 ```mermaid
 sequenceDiagram
   autonumber
-  participant Agent as Agent (Workload)
-  participant Gateway as Gateway and Approval Service
-  participant DB as PostgreSQL State
-  participant Approver as Human Reviewer
-  participant Simulator as AWS Simulator
-
-  Agent->>Gateway: tools/call tracepermit_request_simulated_change (sg-demo)
-  Gateway->>Gateway: Policy evaluation (outcome: require_approval)
-  Gateway->>DB: Store pending approval bound to exact actionHash
-  Gateway-->>Agent: pending + approvalRequestId + requestHash + not_executed
-
-  Note over Agent,Gateway: Self-approval rejected (SELF_APPROVAL_DENIED)
-
-  Approver->>Gateway: POST /browser/api/v1/approvals/{id}/decision (approve + requestHash + CSRF)
-  Gateway->>Gateway: Verify approver != requester, verify role and tenant
-  Gateway->>DB: Atomically mark approval APPROVED
-  Gateway-->>Approver: approved, still not_executed
-  Agent->>Gateway: tools/call tracepermit_resume_approval (id + hash)
-  Gateway->>Gateway: Recheck owner, client, reviewer, expiry and current policy
-  Gateway->>DB: Atomically consume approval and claim permit (single use)
-  Gateway->>Simulator: execute(canonical action, approved permit)
-  Simulator-->>Gateway: Simulated update successful
-  Gateway->>DB: Record outcome evidence
+  participant C as Codex MCP client
+  participant G as Java approval API
+  participant D as PostgreSQL
+  participant R as Browser reviewer
+  participant S as Safe simulator
+  C->>G: tracepermit_request_simulated_change: sg-demo, port, documentation CIDR
+  G->>D: After token, enrollment, scope and policy checks, store pending plus exact snapshot
+  G-->>C: Return approvalRequestId, requestHash, pending and not_executed
+  R->>G: Sign in separately, review exact arguments and submit hash-bound decision with CSRF
+  G->>D: Verify distinct current human reviewer and atomically record approve or deny
+  G-->>R: Approved is still not_executed, there is no automatic dispatch
+  C->>G: tracepermit_resume_approval: original ID plus requestHash, no replacement arguments
+  G->>G: Recheck owner, client, origin, reviewer, policy, expiry and immutable action
+  G->>D: Verify permit, atomically consume approval and claim execution
+  G->>S: Invoke the approved simulator action only after the claim commits
+  G->>D: Commit the confirmed completion separately
+  G-->>C: Return consumed / succeeded, replay cannot dispatch again
+  Note over C,S: Self-review, wrong hash/owner/client, revoked reviewer, expiry or stale policy: reject before dispatch.
 ```
 
-#### Compact Data Payload (Approval Binding)
+<!-- /diagram:flow-3-human-approval -->
 
-```json
-{
-  "mode": "simulated",
-  "approvalRequestId": "c24d2efb-7f69-4cc6-b45c-ec82e55d9149",
-  "requestHash": "sha256:4c373ad2aadad911a33a4964c10c425ac8a748dc3d3ff841fbc164c1cf0f6f07",
-  "status": "approved",
-  "executionStatus": "not_executed",
-  "originalPolicyOutcome": "require_approval"
-}
-```
+The three tools are `tracepermit_request_simulated_change`,
+`tracepermit_get_approval` and `tracepermit_resume_approval`.
+The request stores an exact action snapshot and hash in PostgreSQL. A distinct,
+currently enrolled human reviewer signs in to the role-scoped browser inbox and
+decides the same request hash. Approving leaves it **approved / not_executed**.
+The browser cannot dispatch a tool action.
 
-#### Where in the Code
+The original requester explicitly resumes using only the ID and hash, not new
+arguments. The server rechecks owner, client, origin, reviewer authority, policy,
+expiry and immutable action. Approval consumption and execution claim commit
+before dispatch; completion is a separate write. Replays, self-review, wrong hash,
+wrong owner/client, reviewer revocation, expiry and stale policy fail before
+execution. This is at-most-one dispatch per claim, **not exactly-once target
+effects across a database and an external system**.
 
-| Step                      | Class / File                                                                                                          | Description                                                             |
-| :------------------------ | :-------------------------------------------------------------------------------------------------------------------- | :---------------------------------------------------------------------- |
-| **Approval Lifecycle**    | [`ApprovalBinding.java`](../java/execution/src/main/java/io/tracepermit/execution/ApprovalBinding.java)               | Defines immutable link between request hash, reviewer, and decision.    |
-| **Approval Verification** | [`ApprovalDecision.java`](../java/execution/src/main/java/io/tracepermit/execution/ApprovalDecision.java)             | Validates reviewer identity, prevents self-approval, checks expiration. |
-| **Durable Claims**        | [`ApprovalExecutionClaim.java`](../java/execution/src/main/java/io/tracepermit/execution/ApprovalExecutionClaim.java) | Manages atomic transactional claim in PostgreSQL.                       |
+Code: [MCP adapter](../java/adapters-http/src/main/java/io/tracepermit/adapters/http/ApprovalMcpAdapter.java),
+[browser adapter](../java/adapters-http/src/main/java/io/tracepermit/adapters/http/ApprovalBrowserAdapter.java),
+[approval service](../java/application/src/main/java/io/tracepermit/application/HumanApprovalService.java),
+[PostgreSQL state](../java/persistence-postgres/src/main/java/io/tracepermit/persistence/postgres/PostgresDurableEnforcementState.java),
+[React inbox](../apps/console/src/ApprovalInbox.tsx).
+Tests: [browser lifecycle](../java/adapters-http/src/test/java/io/tracepermit/adapters/http/SimulatorApprovalBrowserTest.java)
+and [server failure/restart](../java/adapters-http/src/test/java/io/tracepermit/adapters/http/SimulatorApprovalServerTest.java).
 
-#### Try It Locally
+Try: [Codex durable approvals runbook](runbooks/codex-durable-approvals.md),
+starting `pnpm demo:approvals:codex` in its own terminal. Do not tunnel the numeric
+loopback browser fixture. The native Codex app-server MCP protocol path and a
+synthetic browser reviewer have been qualified; a **model-driven Codex prompt**
+rehearsal and external browser IdP/HTTPS qualification remain separate work.
+This bearer-only profile does not prove native endpoint source attestation.
 
-```bash
-pnpm demo:scenario:approval:auto
-```
+## Flow 4: sanitize, then evaluate again
 
----
+A verified scheduled workload requests logs with `limit: 500`. This is valid tool
+schema but raises `OVERSIZED_RESULT_WINDOW`. The policy returns `sanitize` with
+`LOG_RESULT_WINDOW_REQUIRES_SANITIZATION`. Only the reviewed
+`bounded-log-read/v1` transformer may derive `limit: 100`.
 
-### Flow 4: Parameter Sanitization (Self-Healing Guardrails)
-
-#### Product Story
-
-An agent queries logs but asks for `limit: 50000`, which would overwhelm downstream APIs and incur massive data transfer costs. Instead of a frustrating hard failure, TracePermit's policy specifies `sanitize`. An allowlisted sanitizer intercepts the parameters, clamps `limit` down to `100`, mints a **derived canonical action** with a new event ID, links it back to the original event in the lineage graph, and re-evaluates. The derived action passes policy, receives a permit, and completes smoothly.
-
-#### Sequence Diagram
+<!-- diagram:flow-4-sanitization -->
 
 ```mermaid
 sequenceDiagram
   autonumber
-  participant Agent as Agent / Workload
-  participant Gateway as Trusted Adapter
-  participant Policy as Policy Engine
-  participant Sanitizer as Allowlisted Sanitizer
-  participant Simulator as Target Simulator
-
-  Agent->>Gateway: tools/call filter_log_events (limit: 50000)
-  Gateway->>Policy: evaluate(original action)
-  Policy-->>Gateway: sanitize (OVERSIZED_RESULT_WINDOW)
-  Gateway->>Sanitizer: transform(original action)
-  Sanitizer->>Sanitizer: Clamp limit: 100, generate derived actionHash
-  Sanitizer-->>Gateway: Derived Canonical Action (parentEventId = original)
-  Gateway->>Policy: evaluate(derived action)
-  Policy-->>Gateway: allow (BOUNDED_LOG_READ)
-  Gateway->>Simulator: execute(derived action, permit)
-  Simulator-->>Gateway: 100 log lines
-  Gateway-->>Agent: Result with 100 events + sanitization notice
+  participant C as Verified workload
+  participant E as Enforcement service
+  participant P as Policy evaluator
+  participant T as Reviewed transformer
+  participant S as Log simulator
+  C->>E: Propose a simulated log read with limit 500 (valid schema, oversized window)
+  E->>P: Evaluate original action, observe OVERSIZED_RESULT_WINDOW
+  P-->>E: SANITIZE: LOG_RESULT_WINDOW_REQUIRES_SANITIZATION
+  E->>T: Run only bounded-log-read/v1, clamp limit to 100
+  T-->>E: Return new event identity and original/effective hash linkage
+  E->>P: Re-evaluate the effective action, sanitization is not permission
+  P-->>E: ALLOW the bounded derived request under current policy
+  E->>S: Issue and verify effective-action permit, claim once, then read
+  E-->>C: Return up to 100 matching simulated events plus sanitization summary
+  Note over C,S: Unknown transformer, invalid output or failed re-evaluation: no dispatch. Limit 50000 fails schema validation.
 ```
 
-#### Compact Data Payload (Derived Action Transformation)
+<!-- /diagram:flow-4-sanitization -->
 
-```json
-{
-  "eventId": "018f47a2-f5ce-derived-0002",
-  "parentEventId": "018f47a2-f5ce-original-0001",
-  "arguments": {
-    "logGroupName": "/app/prod",
-    "filterPattern": "ERROR",
-    "limit": 100
-  },
-  "sanitization": {
-    "transformerId": "clamp-query-limit",
-    "changes": ["limit clamped from 50000 to 100"],
-    "finalOutcome": "allow"
-  }
-}
-```
+The transformer creates a new event identity and returns original/effective
+action hashes in the sanitization summary; it does **not** invent a new causal
+`parentEventId`. The derived action is validated and re-evaluated, then receives
+its own permit if allowed. Unknown transformer, malformed output or a denied
+re-evaluation means no dispatch. `limit: 50000` is rejected by tool schema before
+this flow; it is not a sanitization example. Up to 100 matching fixture events
+may be returned, not necessarily 100.
 
-#### Where in the Code
+Code: [bounded sanitizer](../java/application/src/main/java/io/tracepermit/application/BoundedLogReadSanitizer.java)
+and [summary](../java/application/src/main/java/io/tracepermit/application/SanitizationSummary.java).
+Tests: [semantic enforcement](../java/application/src/test/java/io/tracepermit/application/SemanticEnforcementTest.java).
+Try `pnpm demo:scenario:semantic:auto`; see [Scenario 4](demo-scenarios/04-signed-workload-semantic-sequence.md).
+This fixture signs a workload; it is not a deployed cron integration.
 
-| Step                   | Class / File                                                                                              | Description                                                           |
-| :--------------------- | :-------------------------------------------------------------------------------------------------------- | :-------------------------------------------------------------------- |
-| **Sanitizer Rule**     | [`PolicyEvaluator.java`](../java/policy/src/main/java/io/tracepermit/policy/PolicyEvaluator.java)         | Matches `OVERSIZED_RESULT_WINDOW` and returns `sanitize`.             |
-| **Action Derivation**  | [`ActionNormalizer.java`](../java/contracts/src/main/java/io/tracepermit/contracts/ActionNormalizer.java) | Creates derived canonical action preserving parent lineage.           |
-| **Console Projection** | [`EvidenceView.tsx`](../apps/console/src/EvidenceView.tsx)                                                | Displays both the original request and the sanitized derived outcome. |
+## Flow 5: read-then-send sequence denied
 
-#### Try It Locally
+The signed-workload fixture uses `demo.customer.bulk_read` against `synthetic-crm`
+and `demo.egress.send_external` against `synthetic-egress`. They are dedicated
+synthetic tools, not real CRM or networking adapters.
 
-```bash
-pnpm demo:scenario:semantic:auto
-```
-
----
-
-### Flow 5: Semantic Sequence & Multi-Step Defense (Anti-Exfiltration)
-
-#### Product Story
-
-Evaluating tool calls in isolation is not enough. Consider an agent that does two things:
-
-1. Calls `crm.get_customer_records` to read 20 customer contact details (Allowed: benign read).
-2. Immediately calls `messaging.send_external_webhook` with those details (Malicious or prompt injection: exfiltration!).
-
-Neither tool call is suspicious on its own. TracePermit maintains **server-owned recent action history** per subject. When the second tool call arrives, the classifier detects the toxic sequence: `SYNTHETIC_PII_READ_THEN_EXTERNAL_SEND`. Policy immediately blocks the external transmission.
-
-#### Sequence Diagram
+<!-- diagram:flow-5-sequence-exfiltration -->
 
 ```mermaid
 sequenceDiagram
   autonumber
-  participant Workload as Workload (Sub-Agent)
-  participant Gateway as Gateway and History Store
-  participant Policy as Classifier and Policy
-  participant CRM as CRM Simulator
-  participant Outbox as External Webhook Simulator
-
-  Note over Workload,CRM: Step 1: Bulk Customer Read
-  Workload->>Gateway: tools/call crm.get_customer_records
-  Gateway->>Policy: evaluate(read)
-  Policy-->>Gateway: allow
-  Gateway->>Gateway: Record observation in server-owned history
-  Gateway->>CRM: execute read
-  CRM-->>Workload: 20 synthetic customer records
-
-  Note over Workload,Outbox: Step 2: Immediate External Send Attempt
-  Workload->>Gateway: tools/call messaging.send_external_webhook
-  Gateway->>Gateway: Load recent history for subject
-  Gateway->>Policy: evaluate(send, historyContext)
-  Policy->>Policy: Detect sequence: PII read followed by external send
-  Policy-->>Gateway: block (SYNTHETIC_PII_EXFILTRATION_SEQUENCE_BLOCKED)
-  Gateway-->>Workload: Error: Blocked by sequence policy
-  Note over Outbox: Outbox is NEVER called - zero data leaves
+  participant W as Signed workload
+  participant E as Gateway / policy
+  participant H as Owned history
+  participant C as Synthetic CRM
+  participant O as Local egress outbox
+  W->>E: Baseline demo.egress.send_external without read history
+  E-->>W: BLOCK: EXTERNAL_SEND_NOT_AUTHORIZED, no target dispatch
+  W->>E: Independently signed demo.customer.bulk_read
+  E->>H: After allow, record authorized read proposal for tenant plus verified subject
+  E->>C: Execute permit-bound fixed read, receive 20 invented records
+  W->>E: Independently signed demo.egress.send_external after the read
+  E->>H: Load cross-target history, derive SYNTHETIC_PII_READ_THEN_EXTERNAL_SEND
+  E-->>W: BLOCK: SYNTHETIC_PII_EXFILTRATION_SEQUENCE_BLOCKED, critical severity
+  Note over W,O: Neither send reaches the outbox. Sequence history adds a specific reason, not permission to send without history.
 ```
 
-#### Compact Data Payload (Sequence Block)
+<!-- /diagram:flow-5-sequence-exfiltration -->
 
-```json
-{
-  "classification": {
-    "actionClass": "send",
-    "severity": "high",
-    "signals": ["EXTERNAL_EGRESS", "SYNTHETIC_PII_READ_THEN_EXTERNAL_SEND"]
-  },
-  "decision": {
-    "outcome": "block",
-    "policyId": "pol-sequence-rules",
-    "matchedRuleId": "block-pii-exfiltration-chain",
-    "reasonCode": "SYNTHETIC_PII_EXFILTRATION_SEQUENCE_BLOCKED"
-  }
-}
+An external-send proposal **without** read history is already blocked as
+`EXTERNAL_SEND_NOT_AUTHORIZED`. After an allowed bulk read, the server-owned
+tenant/subject history adds `SYNTHETIC_PII_READ_THEN_EXTERNAL_SEND`; the subsequent
+send is critical and denied as `SYNTHETIC_PII_EXFILTRATION_SEQUENCE_BLOCKED`.
+Both blocked sends leave the local outbox empty. The sequence provides a more
+specific reason; it does not make a standalone send permissible.
+
+History records the authorized read **proposal before dispatch**, not proof of a
+completed read. It is bounded, cross-target and in-memory in this fixture. It can
+therefore conservatively retain a read whose later execution failed; it is not
+durable global data-flow tracking or inspection of arbitrary PII contents.
+
+Code: [sequence store](../java/application/src/main/java/io/tracepermit/application/InMemoryActionSequenceStore.java),
+[policy evaluator](../java/policy/src/main/java/io/tracepermit/policy/PolicyEvaluator.java),
+[synthetic exfil simulator](../java/simulator/src/main/java/io/tracepermit/simulator/SyntheticExfilTargetSimulator.java).
+Tests: [semantic enforcement](../java/application/src/test/java/io/tracepermit/application/SemanticEnforcementTest.java).
+Try `pnpm demo:scenario:pii-exfil:auto`; see [Scenario 9](demo-scenarios/09-synthetic-pii-read-external-send-block.md).
+
+## Flow 6: endpoint attribution and source proof
+
+The local Java connector is the endpoint software. It accepts strict MCP over
+stdio, observes its immediate parent process, and forwards to the configured
+loopback gateway. It does not host the model or intercept a prompt before a
+provider backend sees it.
+
+<!-- diagram:flow-6-endpoint-attribution -->
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant A as Local MCP client
+  participant C as Java connector
+  participant O as OS / process observer
+  participant G as Loopback gateway
+  participant E as Policy / executor
+  A->>C: Send strict MCP JSON-RPC over stdio, no trusted identity fields in arguments
+  C->>O: Observe immediate parent, executable hash/start time, device and terminal facts
+  C->>C: Sign short-lived Ed25519 proof bound to canonical MCP request and bearer fingerprint
+  C->>O: Check observed process stability immediately before forwarding
+  C->>G: POST exact loopback /mcp with bearer and separate source-attestation header
+  G->>G: Authenticate, verify enrolled key, audience, time, request/credential bindings and single use
+  G->>E: Build canonical action with bounded verified source facts, then evaluate policy
+  Note over A,E: Invalid or replayed proof stops before protected tool dispatch. A valid proof still does not authorize an action.
+  Note over A,E: Development origin evidence only. This is not the separate bearer-only Codex approval profile or managed-device assurance.
 ```
 
-#### Where in the Code
+<!-- /diagram:flow-6-endpoint-attribution -->
 
-| Step                    | Class / File                                                                                                  | Description                                                              |
-| :---------------------- | :------------------------------------------------------------------------------------------------------------ | :----------------------------------------------------------------------- |
-| **History Context**     | [`ClassificationContext.java`](../java/policy/src/main/java/io/tracepermit/policy/ClassificationContext.java) | Loads sliding-window history of actions for the same tenant and subject. |
-| **Sequence Classifier** | [`Classification.java`](../java/policy/src/main/java/io/tracepermit/policy/Classification.java)               | Detects toxic combinations (e.g., read PII followed by external send).   |
-| **Sequence Denial**     | [`PolicyEvaluator.java`](../java/policy/src/main/java/io/tracepermit/policy/PolicyEvaluator.java)             | Enforces sequence-aware deny rules before permit generation.             |
+The short-lived Ed25519 proof binds the exact canonical MCP request **and** bearer
+credential fingerprint, audience, nonce and observed source context. The gateway
+independently verifies the bearer and the enrolled endpoint key, freshness,
+bindings and single use. A proof from another request or credential cannot be
+substituted. The connector rechecks process stability immediately before sending.
 
-#### Try It Locally
+An observed terminal is evidence of an interactive process, not proof that a
+human authorized each tool. The parent in a scripted test may be Node rather
+than native Codex. Development file keys and local process observations are not
+hardware-backed managed-device attestation; source replay/revocation is not a
+shared production service. Valid origin evidence is still subject to policy.
 
-```bash
-pnpm demo:scenario:pii-exfil:auto
+Code: [connector](../java/endpoint-connector/src/main/java/io/tracepermit/endpoint/EndpointConnector.java),
+[proof factory](../java/endpoint-connector/src/main/java/io/tracepermit/endpoint/SourceAttestationFactory.java),
+[source verifier](../java/identity/src/main/java/io/tracepermit/identity/SourceAttestationVerifier.java).
+Tests: [source verification](../java/identity/src/test/java/io/tracepermit/identity/SourceAttestationVerifierTest.java).
+Try [Scenario 0](demo-scenarios/00-connector-origin-and-egress.md) after `pnpm demo`:
+`pnpm demo:scenario:connector:auto` requires an attached terminal. Native Codex
+registration of this source-attested connector still needs qualification.
+
+## Flow 7: hosted OAuth identity through a tunnel
+
+A normal hosted UI sends the prompt to its provider backend **first**. The model
+there proposes a configured MCP tool call. TracePermit controls the downstream
+tool action; it does not inspect private model reasoning or preempt that initial
+provider request.
+
+<!-- diagram:flow-7-hosted-oauth -->
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant H as Human / hosted UI
+  participant P as Provider backend
+  participant I as Configured IdP
+  participant G as Tunnel / Java edge
+  participant E as Policy / simulator
+  H->>P: Send prompt to provider backend, the hosted model proposes a configured MCP tool
+  P->>I: During app connection, obtain a TracePermit resource access token through OAuth
+  I-->>P: Return issuer-signed access token, TracePermit does not receive the IdP password
+  P->>G: Send MCP proposal and bearer through the configured private tunnel
+  G->>G: Verify issuer, signature, audience, time, client, tenant mapping and scopes before dispatch
+  G->>E: Normalize authenticated subject and asserted provider actor, evaluate the tool action
+  E-->>P: Return allowed simulated read or blocked/not_executed destruction
+  P-->>H: Display the tool result in the unmodified hosted client
+  Note over H,E: One Auth0 + ChatGPT + tunnel profile qualified. Reachability is not identity, endpoint proof or provider-plan attribution.
 ```
 
----
+<!-- /diagram:flow-7-hosted-oauth -->
 
-## 4. Master Codebase Navigation Cheat Sheet
+OAuth connection setup establishes the resource token before subsequent tool
+calls. The private tunnel carries traffic to the Java MCP edge. The edge verifies
+the configured access token and derives its authenticated subject. Provider/client
+metadata has only its supported assurance; a tunnel does not establish identity,
+an enterprise-vs-personal provider subscription, or endpoint process facts.
 
-When you need to modify or trace code, this table maps product concepts directly to repository modules:
+The qualified profile used Auth0 and an unmodified ChatGPT client. That specific
+live profile is evidence, not a claim about every ChatGPT/Claude plan or native
+client. TracePermit receives a resource access token, not the user's IdP password,
+Gmail token or mailbox access. It records credential fingerprints, not raw bearer
+credentials, in evidence. This is not a claim that no token exists transiently in
+process memory or that the configured identity provider stores no identity data.
 
-```text
-tracepermit/
-├── contracts/             # Frozen JSON Schemas & portability vectors (RFC 8785)
-├── java/                  # Core backend (Java 21)
-│   ├── identity/          # Token verification, Ed25519 source signatures, delegation
-│   ├── contracts/         # Canonical action normalization & JSON validation
-│   ├── policy/            # Risk classification & ordered rule evaluator
-│   ├── execution/         # Permit issuance, replay prevention, approval bindings
-│   ├── persistence-postgres/ # Flyway migrations & durable PostgreSQL state
-│   ├── simulator/         # Deterministic mock AWS & Jira handlers (no real credentials!)
-│   └── application/       # Spring Boot / local composition wiring
-├── apps/console/          # Read-only React console for audit, lineage & policy view
-└── docs/demo-scenarios/   # Reproducible numbered demo scripts
+Code: [OAuth MCP edge](../java/adapters-remote/src/main/java/io/tracepermit/adapters/remote/RemoteOAuthMcpServer.java)
+and [OIDC verifier](../java/identity/src/main/java/io/tracepermit/identity/OidcAccessTokenVerifier.java).
+Tests: [remote OAuth MCP](../java/adapters-remote/src/test/java/io/tracepermit/adapters/remote/RemoteOAuthMcpServerTest.java).
+Try only with the separate configuration and login steps in
+[Scenario 6](demo-scenarios/06-oauth-attributed-hosted-client.md). The historical
+[qualification record](demo-scenarios/QUALIFICATION-EVIDENCE-2026-10-11.md) is dated;
+a new live hosted-client rehearsal must collect new evidence.
+
+## Flow 8: sub-agent authority must narrow
+
+The workload adapter verifies an action-bound workload credential and signed
+delegation chain. A child links to the exact signed parent hash. Valid signatures
+are necessary but not sufficient: scopes and resources must be subsets, audience
+must remain allowed, and the child lifetime must not exceed its parent.
+
+<!-- diagram:flow-8-delegation -->
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant W as Workload signer
+  participant A as Sub-agent signer
+  participant V as Trusted adapter
+  participant E as Policy / permit
+  participant S as Safe simulator
+  W->>V: Supply action-bound workload credential and signed parent grant
+  A->>V: Supply child grant linked to the exact signed parent hash
+  V->>V: Verify trusted issuers/keys, signatures, action context, audience, expiry and chain links
+  V->>V: Require child scopes/resources to be subsets and lifetime not to exceed parent
+  V->>E: Valid narrowed chain: construct canonical action, then evaluate organizational policy
+  E->>S: Only a separate allow plus verified permit enables one simulated read
+  Note over W,S: Separate negative cases: widen scope, resource, audience or lifetime. Reject before canonical policy evaluation.
+  Note over W,S: These are identity-boundary failures, not policy-block results. Causal lineage alone grants no authority.
 ```
 
-| Layer                      | Responsibility                                                                                  | Key Classes / Packages                                                                                                                                            |
-| :------------------------- | :---------------------------------------------------------------------------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **1. Ingress & Auth**      | Verifies OAuth/OIDC tokens, Ed25519 source attestations, and parent-linked delegation chains.   | `io.tracepermit.identity.OidcAccessTokenVerifier`<br/>`io.tracepermit.identity.SourceAttestationVerifier`<br/>`io.tracepermit.identity.ScheduledWorkloadVerifier` |
-| **2. Canonical Contracts** | Schema validation, RFC 8785 canonical JSON sorting, SHA-256 action hashing.                     | `io.tracepermit.contracts.ActionNormalizer`<br/>`io.tracepermit.contracts.ActionValidator`<br/>`io.tracepermit.contracts.CanonicalJson`                           |
-| **3. Policy & Risk**       | Evaluates rules, action severity, and server-owned sliding-window sequence context.             | `io.tracepermit.policy.PolicyEvaluator`<br/>`io.tracepermit.policy.ClassificationContext`<br/>`io.tracepermit.policy.PolicyDecision`                              |
-| **4. Permits & Claims**    | Issues single-use execution permits, enforces atomic claims, manages PostgreSQL approval state. | `io.tracepermit.execution.ApprovalBinding`<br/>`io.tracepermit.execution.DurableExecutionClaim`<br/>`io.tracepermit.execution.InMemoryExecutionLedger`            |
-| **5. Simulators**          | Credential-free safe execution targets (AWS EC2, S3, CloudWatch, Jira).                         | `io.tracepermit.simulator.StatefulTargetSimulator`                                                                                                                |
-| **6. Audit Console**       | Read-only React frontend displaying action feed, lineage graphs, and evidence integrity.        | `apps/console/src/App.tsx`<br/>`apps/console/src/LineageView.tsx`<br/>`apps/console/src/EvidenceView.tsx`                                                         |
+<!-- /diagram:flow-8-delegation -->
 
----
+The valid narrowed chain reaches policy and one permitted simulated read. Four
+independently signed negative cases widen scope, resource, audience or lifetime.
+They are rejected at the identity boundary **before canonical action construction,
+policy evaluation and ordinary action evidence**, not reported as policy blocks.
+The demo uses fixture signers, not a real autonomous sub-agent or a production
+workload identity issuer. Key custody and revocation are development foundations.
 
-## 5. Quick Verification Commands
+Code: [workload verifier](../java/identity/src/main/java/io/tracepermit/identity/ScheduledWorkloadVerifier.java)
+and [trusted adapter](../java/identity/src/main/java/io/tracepermit/identity/ScheduledActionAdapter.java).
+Tests: [delegation scenario](../java/adapters-http/src/test/java/io/tracepermit/adapters/http/SignedScheduledDelegationDemoTest.java)
+and [identity verification](../java/identity/src/test/java/io/tracepermit/identity/ScheduledWorkloadVerifierTest.java).
+Try `pnpm demo:scenario:delegation:auto`; see [Scenario 11](demo-scenarios/11-sub-agent-delegation-amplification-rejected.md).
 
-To verify that your local setup is healthy:
+## Flow 9: uncertain outcome, restart and lookup-only recovery
 
-```bash
-# 1. Install dependencies
-corepack enable && pnpm install --frozen-lockfile
+A database completion failure after simulator dispatch is not evidence that the
+effect failed. The approval may remain consumed and its attempt `executing`.
+The server must not invent success, restore the authority or retry the effect.
 
-# 2. Run static analysis & tests
-pnpm check
-pnpm format:check
+<!-- diagram:flow-9-unknown-outcome -->
 
-# 3. Launch the full local demo (Terminal 1)
-pnpm demo
-
-# 4. Open the console
-# Navigate to http://127.0.0.1:5173
-
-# 5. Run any scenario (Terminal 2)
-pnpm demo:scenario:cli:auto
-pnpm demo:scenario:approval:auto
-pnpm demo:scenario:semantic:auto
-pnpm demo:scenario:pii-exfil:auto
+```mermaid
+sequenceDiagram
+  autonumber
+  participant C as Original requester
+  participant E as Durable executor
+  participant D as PostgreSQL
+  participant S as Safe simulator
+  participant W as Lookup-only worker
+  E->>D: Commit approval consumption and executing claim before dispatch
+  E->>S: Invoke the approved simulator action
+  E->>D: Attempt separate completion write, a fault can leave consumed/executing
+  E-->>C: Return safe error, not invented failure or success, inspect durable status
+  C->>E: After restart, attempt resume of the same approval
+  E-->>C: Reject redispatch because the authority is already consumed
+  Note over C,W: Separate tested recovery foundation: only persisted UNKNOWN attempts enter the leased lookup worker.
+  W->>D: Lease unknown candidates bound to tenant, adapter and idempotency identity
+  W->>S: Perform reviewed read-only outcome lookup, never invoke the original effect
+  W->>D: Append terminal outcome only when confirmed, otherwise defer and remain unknown
+  Note over C,W: No automatic executing-to-unknown sweep or worker is wired into the browser approval launcher, real-target lookup remains future work.
 ```
+
+<!-- /diagram:flow-9-unknown-outcome -->
+
+There are **two separately tested foundations**, not one fully wired daemon:
+
+1. The approval failure/restart test proves that consumed authority cannot dispatch
+   again after a lost completion write.
+2. The reconciliation worker leases already-persisted `UNKNOWN` attempts and uses
+   a read-only target outcome resolver. Confirmed evidence permits a terminal
+   completion; no answer or lookup failure defers the attempt. The worker has no
+   original invocation port.
+
+No automatic `executing` → `UNKNOWN` sweeper or reconciliation worker is composed
+into the browser approval launcher. Real-target lookup adapters remain future
+work. Restart safety prevents redispatch; it does not magically discover an
+external outcome or give a PostgreSQL transaction control over target effects.
+
+Code: [durable executor](../java/application/src/main/java/io/tracepermit/application/DurableExecutionService.java),
+[approval service](../java/application/src/main/java/io/tracepermit/application/HumanApprovalService.java),
+[lookup-only worker](../java/application/src/main/java/io/tracepermit/application/ExecutionReconciliationWorker.java).
+Tests: [approval server](../java/adapters-http/src/test/java/io/tracepermit/adapters/http/SimulatorApprovalServerTest.java),
+[durable execution](../java/application/src/test/java/io/tracepermit/application/DurableExecutionServiceTest.java),
+[reconciliation](../java/application/src/test/java/io/tracepermit/application/ExecutionReconciliationWorkerTest.java).
+See [recovery ADR](architecture/0020-reconcile-by-lookup-never-reexecution.md).
+Run `pnpm test:approval-api --rerun-tasks` with Docker for the approval failure path;
+`pnpm check` includes the worker's unit tests, not a live recovery service.
+
+## Further control paths
+
+- [Tool-result injection → IAM block](demo-scenarios/10-tool-result-injection-iam-block.md):
+  untrusted tool output is data, never new authority. The fixture emulates the
+  follow-up proposal deterministically; it does not prove an LLM will resist all
+  injections.
+- [Leased evidence outbox and verified receipt](architecture/0019-leased-outbox-and-external-evidence-receipts.md):
+  publication is retriable and receipt-bound; a local chain is not independently
+  anchored until a configured external verifier confirms the receipt. This does
+  not claim a production anchor provider is deployed.
+- [Dependency failures and latency qualification](demo-scenarios/05-latency-and-fail-secure-qualification.md):
+  pre-dispatch verification/state failures prevent execution. A post-dispatch
+  completion outage is different: its outcome may be uncertain. Local measured
+  checks are not a production p99 SLO or proof that every profile shares a store.
+
+## Java module map
+
+| Module                             | Responsibility                                                                                |
+| ---------------------------------- | --------------------------------------------------------------------------------------------- |
+| `contracts`                        | Strict canonical envelopes, normalization and frozen hashing vectors                          |
+| `identity`, `endpoint-connector`   | Verified principal/delegation/source evidence; stdio transport and local observation          |
+| `policy`                           | Deterministic classification and organizational decisions                                     |
+| `security`                         | Permit issuance/verification and consumption interfaces                                       |
+| `application`                      | Framework-independent execution, approval, sanitization, sequence and recovery services/ports |
+| `persistence-postgres`             | Durable approval/claim/evidence state and transactional adapters                              |
+| `adapters-http`, `adapters-remote` | Composition, strict HTTP/MCP/browser boundaries and profile-specific authentication           |
+| `simulator`                        | Fixed, clearly synthetic target behavior; no cloud credentials                                |
+| `apps/console`                     | React evidence views and separately authenticated reviewer UI                                 |
+
+## Maintain and rehearse
+
+The source of all ten diagrams is [flow-diagrams.json](design/flow-diagrams.json).
+Do not hand-edit generated Mermaid or SVGs. See the
+[diagram maintenance instructions](design/README.md). `pnpm docs:flows:check`
+detects drift in both guides and the public images; it does not replace a semantic
+review against source and tests.
+
+Use the [rehearsal plan](runbooks/flow-rehearsal-plan.md) to distinguish historical
+evidence, local deterministic scenarios and the remaining model-driven/native
+qualification. A successful documentation build does not qualify a client.
