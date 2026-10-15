@@ -17,31 +17,27 @@ This document represents the public, architectural reference for TracePermit's c
 
 > **No agent ever touches an enterprise target directly.** Every tool call is intercepted, authenticated, normalized into a canonical action, evaluated by policy, and requires an exact, single-use, cryptographically verified **Execution Permit** before a safe simulator can execute.
 
-```text
-AI Agent / CLI / Workload
-           | 1. Structured Tool Proposal
-           v
-   Trusted Gateway Adapter
-   (authenticates caller, derives identity facts)
-           | 2. Canonical Action (SHA-256 hash)
-           v
-     Policy Engine
-     (evaluates risk, classification, server-owned history)
-           |
-     +-----+--------------------+--------------------+
-     |                          |                    |
-   allow                      block           require_approval
-     |                          |                    |
-     v                          v                    v
-Issue Request-Bound       Deny & Record       Human Reviewer
-Execution Permit          Audit Evidence      Independent Signoff
-     |                          |                    | (approved)
-     v                          |                    +----> Issue Permit
-Atomic Claim (1x)               |
-     |                          |
-     v                          v
-Deterministic Simulator   Evidence Ledger & Read-Only Console
+![The Central Invariant Flow](/images/flows/central-invariant.svg)
+
+<details>
+<summary>View Mermaid Flowchart (for Notion / GitHub)</summary>
+
+```mermaid
+flowchart TD
+  Agent["AI Agent / CLI / Workload"] -->|1. Structured Tool Proposal| Gateway["Trusted Gateway Adapter<br/>(authenticates caller, derives identity)"]
+  Gateway -->|2. Canonical Action (SHA-256 hash)| Policy["Policy Engine<br/>(risk, classification, sliding history)"]
+
+  Policy -->|allow| Permit["Issue Request-Bound<br/>Execution Permit"]
+  Policy -->|require_approval| Reviewer["Human Reviewer<br/>Independent Signoff"]
+  Policy -->|block| Deny["Deny & Record<br/>Audit Evidence"]
+
+  Reviewer -->|approved| Permit
+  Permit --> Claim["Atomic Claim (1x in DB)"]
+  Claim --> Simulator["Deterministic Simulator"]
+  Deny --> Ledger["Zero Dispatches<br/>(Target Untouched)"]
 ```
+
+</details>
 
 ---
 
@@ -140,6 +136,11 @@ An engineer asks ChatGPT or a local CLI assistant: _"Check the last 50 error log
 
 #### Sequence Diagram
 
+![Flow 1: Safe Read (Autonomous Allow)](/images/flows/flow-1-safe-read.svg)
+
+<details>
+<summary>View Mermaid Syntax (for Notion / GitHub)</summary>
+
 ```mermaid
 sequenceDiagram
   autonumber
@@ -163,6 +164,8 @@ sequenceDiagram
   Gateway-->>Agent: MCP tool result
 ```
 
+</details>
+
 #### Security Takeaways
 
 - **No Blanket Access**: The agent is never handed an AWS IAM credential.
@@ -179,6 +182,11 @@ sequenceDiagram
 An agent is misled by an adversarial prompt injection or a hallucinated instruction and proposes terminating an EC2 instance: `aws.ec2.terminate_instances`. TracePermit verifies the caller's identity, but **authentication is not blanket authorization**. The classifier flags the operation as `critical` severity. Policy returns `block`. TracePermit records `not_executed` evidence and halts. **Zero permits are minted and no target API is called.**
 
 #### Sequence Diagram
+
+![Flow 2: Destructive Side Effect (Policy Block)](/images/flows/flow-2-destructive-block.svg)
+
+<details>
+<summary>View Mermaid Syntax (for Notion / GitHub)</summary>
 
 ```mermaid
 sequenceDiagram
@@ -197,6 +205,8 @@ sequenceDiagram
   Gateway-->>Agent: Error: Action blocked by policy (no permit issued)
   Note over Simulator: Simulator is NEVER called
 ```
+
+</details>
 
 #### Decision Payload
 
@@ -245,6 +255,11 @@ not the complete stored binding. Follow the
 
 #### Sequence Diagram
 
+![Flow 3: Dual-Control Human Approval (Two-Man Rule)](/images/flows/flow-3-human-approval.svg)
+
+<details>
+<summary>View Mermaid Syntax (for Notion / GitHub)</summary>
+
 ```mermaid
 sequenceDiagram
   autonumber
@@ -272,6 +287,8 @@ sequenceDiagram
   Simulator-->>Gateway: Simulated update successful
   Gateway->>DB: Record outcome evidence
 ```
+
+</details>
 
 #### Approval Binding Payload
 
@@ -304,6 +321,11 @@ An allowlisted transformer clamps `limit` down to `100`, creates a **derived can
 
 #### Sequence Diagram
 
+![Flow 4: Action Sanitization (Self-Healing Guardrails)](/images/flows/flow-4-sanitization.svg)
+
+<details>
+<summary>View Mermaid Syntax (for Notion / GitHub)</summary>
+
 ```mermaid
 sequenceDiagram
   autonumber
@@ -325,6 +347,8 @@ sequenceDiagram
   Simulator-->>Gateway: 100 log lines
   Gateway-->>Agent: Result with 100 events + sanitization notice
 ```
+
+</details>
 
 #### Derived Action Payload
 
@@ -366,6 +390,11 @@ Neither tool call is inherently forbidden on its own. TracePermit maintains **se
 
 #### Sequence Diagram
 
+![Flow 5: Semantic Sequence & Multi-Step Defense](/images/flows/flow-5-sequence-exfiltration.svg)
+
+<details>
+<summary>View Mermaid Syntax (for Notion / GitHub)</summary>
+
 ```mermaid
 sequenceDiagram
   autonumber
@@ -392,6 +421,8 @@ sequenceDiagram
   Gateway-->>Workload: Error: Blocked by sequence policy
   Note over Outbox: Outbox is NEVER called - zero data leaves
 ```
+
+</details>
 
 #### Sequence Block Payload
 

@@ -1,0 +1,110 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="520" viewBox="0 0 920 520" role="img" aria-labelledby="f4-title f4-desc">
+  <title id="f4-title">Flow 4: Action Sanitization (Self-Healing Guardrails)</title>
+  <desc id="f4-desc">Sequence diagram illustrating argument transformation, derived canonical action minting, and re-evaluation before execution.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0 1 L8 5 L0 9" fill="none" stroke="#475569" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <marker id="arrow-blue" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0 1 L8 5 L0 9" fill="none" stroke="#2563eb" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <marker id="arrow-green" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0 1 L8 5 L0 9" fill="none" stroke="#16a34a" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <style>
+      text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+      .p-box { fill: #f8fafc; stroke: #94a3b8; stroke-width: 1.5; rx: 8px; }
+      .p-head { fill: #0f172a; font-size: 13.5px; font-weight: 750; text-anchor: middle; }
+      .p-sub { fill: #64748b; font-size: 11px; text-anchor: middle; }
+      .line { stroke: #cbd5e1; stroke-width: 1.5; stroke-dasharray: 5 4; }
+      .msg-line { stroke: #475569; stroke-width: 1.8; fill: none; }
+      .msg-dash { stroke: #475569; stroke-width: 1.8; stroke-dasharray: 5 4; fill: none; }
+      .msg-dash-blue { stroke: #2563eb; stroke-width: 1.8; stroke-dasharray: 5 4; fill: none; }
+      .msg-dash-green { stroke: #16a34a; stroke-width: 1.8; stroke-dasharray: 5 4; fill: none; }
+      .msg-text { fill: #0f172a; font-size: 12.5px; font-weight: 600; }
+      .step-bg { fill: #087b87; }
+      .step-num { fill: #ffffff; font-size: 10.5px; font-weight: 750; text-anchor: middle; }
+      .badge-blue { fill: #dbeafe; stroke: #2563eb; stroke-width: 1.2; rx: 5px; }
+      .badge-green { fill: #dcfce7; stroke: #16a34a; stroke-width: 1.2; rx: 5px; }
+    </style>
+  </defs>
+
+  <!-- Background Canvas -->
+  <rect width="920" height="520" rx="12" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5"/>
+
+  <!-- Lifelines -->
+  <line x1="90" y1="68" x2="90" y2="495" class="line"/>
+  <line x1="270" y1="68" x2="270" y2="495" class="line"/>
+  <line x1="450" y1="68" x2="450" y2="495" class="line"/>
+  <line x1="630" y1="68" x2="630" y2="495" class="line"/>
+  <line x1="810" y1="68" x2="810" y2="495" class="line"/>
+
+  <!-- Participants -->
+  <rect x="20" y="18" width="140" height="50" class="p-box"/>
+  <text x="90" y="39" class="p-head">Agent / Workload</text>
+  <text x="90" y="55" class="p-sub">Oversized Request</text>
+
+  <rect x="200" y="18" width="140" height="50" class="p-box" style="stroke: #087b87; stroke-width: 2; fill: #f0fdfa;"/>
+  <text x="270" y="39" class="p-head" style="fill: #087b87;">Trusted Gateway</text>
+  <text x="270" y="55" class="p-sub">Mediator &amp; Coordinator</text>
+
+  <rect x="380" y="18" width="140" height="50" class="p-box"/>
+  <text x="450" y="39" class="p-head">Policy Engine</text>
+  <text x="450" y="55" class="p-sub">Classifier &amp; Rules</text>
+
+  <rect x="560" y="18" width="140" height="50" class="p-box"/>
+  <text x="630" y="39" class="p-head">Allowlisted Sanitizer</text>
+  <text x="630" y="55" class="p-sub">Deterministic Clamper</text>
+
+  <rect x="740" y="18" width="140" height="50" class="p-box"/>
+  <text x="810" y="39" class="p-head">Target Simulator</text>
+  <text x="810" y="55" class="p-sub">Safe AWS Logs Target</text>
+
+  <!-- Step 1: Oversized call -->
+  <circle cx="105" cy="100" r="8.5" class="step-bg"/><text x="105" y="104" class="step-num">1</text>
+  <text x="120" y="104" class="msg-text">tools/call filter_log_events (limit: 50000)</text>
+  <line x1="90" y1="112" x2="262" y2="112" class="msg-line" marker-end="url(#arrow)"/>
+
+  <!-- Step 2: Evaluate Original -->
+  <circle cx="285" cy="140" r="8.5" class="step-bg"/><text x="285" y="144" class="step-num">2</text>
+  <text x="300" y="144" class="msg-text">evaluate(original action)</text>
+  <line x1="270" y1="152" x2="442" y2="152" class="msg-line" marker-end="url(#arrow)"/>
+
+  <!-- Step 3: SANITIZE Outcome -->
+  <rect x="295" y="168" width="160" height="22" class="badge-blue"/>
+  <text x="375" y="183" text-anchor="middle" style="fill: #1d4ed8; font-size: 11.5px; font-weight: 750;">⚙ SANITIZE (OVERSIZED)</text>
+  <line x1="450" y1="198" x2="278" y2="198" class="msg-dash-blue" marker-end="url(#arrow-blue)"/>
+
+  <!-- Step 4: Transform -->
+  <circle cx="285" cy="228" r="8.5" class="step-bg"/><text x="285" y="232" class="step-num">3</text>
+  <text x="300" y="232" class="msg-text">transform(original action) · Clamp limit: 100</text>
+  <line x1="270" y1="240" x2="622" y2="240" class="msg-line" marker-end="url(#arrow)"/>
+
+  <!-- Step 5: Derived Action -->
+  <text x="450" y="270" text-anchor="middle" class="msg-text" style="fill: #2563eb;">Derived Action (limit: 100, new actionHash, parentEventId)</text>
+  <line x1="630" y1="278" x2="278" y2="278" class="msg-dash-blue" marker-end="url(#arrow-blue)"/>
+
+  <!-- Step 6: Re-evaluate Derived -->
+  <circle cx="285" cy="308" r="8.5" class="step-bg"/><text x="285" y="312" class="step-num">4</text>
+  <text x="300" y="312" class="msg-text">evaluate(derived canonical action)</text>
+  <line x1="270" y1="320" x2="442" y2="320" class="msg-line" marker-end="url(#arrow)"/>
+
+  <!-- Step 7: ALLOW Outcome -->
+  <rect x="295" y="336" width="160" height="22" class="badge-green"/>
+  <text x="375" y="351" text-anchor="middle" style="fill: #15803d; font-size: 11.5px; font-weight: 750;">✓ ALLOW (BOUNDED_READ)</text>
+  <line x1="450" y1="366" x2="278" y2="366" class="msg-dash-green" marker-end="url(#arrow-green)"/>
+
+  <!-- Step 8: Execute Derived -->
+  <circle cx="285" cy="396" r="8.5" class="step-bg"/><text x="285" y="400" class="step-num">5</text>
+  <text x="300" y="400" class="msg-text">execute(derived action, permit bound to new hash)</text>
+  <line x1="270" y1="408" x2="802" y2="408" class="msg-line" marker-end="url(#arrow)"/>
+
+  <!-- Step 9: 100 logs -->
+  <text x="540" y="440" text-anchor="middle" class="msg-text" style="fill: #475569;">100 simulated log lines returned</text>
+  <line x1="810" y1="448" x2="278" y2="448" class="msg-dash" marker-end="url(#arrow)"/>
+
+  <!-- Step 10: Client Result -->
+  <circle cx="105" cy="468" r="8.5" class="step-bg"/><text x="105" y="472" class="step-num">6</text>
+  <text x="120" y="472" class="msg-text">Tool result: 100 events + sanitization notice</text>
+  <line x1="270" y1="480" x2="98" y2="480" class="msg-dash" marker-end="url(#arrow)"/>
+</svg>
