@@ -1,115 +1,75 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="920" height="540" viewBox="0 0 920 540" role="img" aria-labelledby="f3-title f3-desc">
-  <title id="f3-title">Flow 3: Dual-Control Human Approval (Two-Man Rule)</title>
-  <desc id="f3-desc">Sequence diagram illustrating a request-bound human approval flow with independent reviewer signoff and atomic permit claim.</desc>
-  <defs>
-    <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
-      <path d="M0 1 L8 5 L0 9" fill="none" stroke="#475569" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-    </marker>
-    <marker id="arrow-amber" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
-      <path d="M0 1 L8 5 L0 9" fill="none" stroke="#d97706" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-    </marker>
-    <marker id="arrow-green" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
-      <path d="M0 1 L8 5 L0 9" fill="none" stroke="#16a34a" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-    </marker>
-    <marker id="arrow-red" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
-      <path d="M0 1 L8 5 L0 9" fill="none" stroke="#dc2626" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-    </marker>
-    <style>
-      text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
-      .p-box { fill: #f8fafc; stroke: #94a3b8; stroke-width: 1.5; rx: 8px; }
-      .p-head { fill: #0f172a; font-size: 13.5px; font-weight: 750; text-anchor: middle; }
-      .p-sub { fill: #64748b; font-size: 11px; text-anchor: middle; }
-      .line { stroke: #cbd5e1; stroke-width: 1.5; stroke-dasharray: 5 4; }
-      .msg-line { stroke: #475569; stroke-width: 1.8; fill: none; }
-      .msg-dash { stroke: #475569; stroke-width: 1.8; stroke-dasharray: 5 4; fill: none; }
-      .msg-dash-amber { stroke: #d97706; stroke-width: 1.8; stroke-dasharray: 5 4; fill: none; }
-      .msg-dash-green { stroke: #16a34a; stroke-width: 1.8; stroke-dasharray: 5 4; fill: none; }
-      .msg-text { fill: #0f172a; font-size: 12.5px; font-weight: 600; }
-      .step-bg { fill: #087b87; }
-      .step-num { fill: #ffffff; font-size: 10.5px; font-weight: 750; text-anchor: middle; }
-      .badge-amber { fill: #fef3c7; stroke: #d97706; stroke-width: 1.2; rx: 5px; }
-      .badge-green { fill: #dcfce7; stroke: #16a34a; stroke-width: 1.2; rx: 5px; }
-    </style>
-  </defs>
-
-  <!-- Background Canvas -->
-  <rect width="920" height="540" rx="12" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5"/>
-
-  <!-- Lifelines -->
-  <line x1="90" y1="68" x2="90" y2="515" class="line"/>
-  <line x1="270" y1="68" x2="270" y2="515" class="line"/>
-  <line x1="450" y1="68" x2="450" y2="515" class="line"/>
-  <line x1="630" y1="68" x2="630" y2="515" class="line"/>
-  <line x1="810" y1="68" x2="810" y2="515" class="line"/>
-
-  <!-- Participants -->
-  <rect x="20" y="18" width="140" height="50" class="p-box"/>
-  <text x="90" y="39" class="p-head">Agent (Workload)</text>
-  <text x="90" y="55" class="p-sub">Signed Proposer</text>
-
-  <rect x="200" y="18" width="140" height="50" class="p-box" style="stroke: #087b87; stroke-width: 2; fill: #f0fdfa;"/>
-  <text x="270" y="39" class="p-head" style="fill: #087b87;">Gateway / Policy</text>
-  <text x="270" y="55" class="p-sub">Approval Authority</text>
-
-  <rect x="380" y="18" width="140" height="50" class="p-box"/>
-  <text x="450" y="39" class="p-head">PostgreSQL DB</text>
-  <text x="450" y="55" class="p-sub">Durable Claims Ledger</text>
-
-  <rect x="560" y="18" width="140" height="50" class="p-box"/>
-  <text x="630" y="39" class="p-head">Human Reviewer</text>
-  <text x="630" y="55" class="p-sub">Independent Approver</text>
-
-  <rect x="740" y="18" width="140" height="50" class="p-box"/>
-  <text x="810" y="39" class="p-head">Target Simulator</text>
-  <text x="810" y="55" class="p-sub">AWS Security Group</text>
-
-  <!-- Step 1: Proposal -->
-  <circle cx="105" cy="100" r="8.5" class="step-bg"/><text x="105" y="104" class="step-num">1</text>
-  <text x="120" y="104" class="msg-text">tools/call update_security_group (sg-demo)</text>
-  <line x1="90" y1="112" x2="262" y2="112" class="msg-line" marker-end="url(#arrow)"/>
-
-  <!-- Step 2: Policy Require Approval -->
-  <rect x="280" y="128" width="170" height="22" class="badge-amber"/>
-  <text x="365" y="143" text-anchor="middle" style="fill: #92400e; font-size: 11.5px; font-weight: 750;">⚠ REQUIRE_APPROVAL</text>
-
-  <!-- Step 3: Store Pending in DB -->
-  <circle cx="285" cy="166" r="8.5" class="step-bg"/><text x="285" y="170" class="step-num">2</text>
-  <text x="300" y="170" class="msg-text">Store pending approval bound to exact actionHash</text>
-  <line x1="270" y1="178" x2="442" y2="178" class="msg-line" marker-end="url(#arrow)"/>
-
-  <!-- Step 4: Return Pending to Proposer -->
-  <text x="180" y="206" text-anchor="middle" class="msg-text" style="fill: #b45309;">PENDING_APPROVAL (requestId: appr-101)</text>
-  <line x1="270" y1="214" x2="98" y2="214" class="msg-dash-amber" marker-end="url(#arrow-amber)"/>
-
-  <!-- Step 5: Self-Approval Attempt REJECTED -->
-  <circle cx="105" cy="242" r="8.5" class="step-bg"/><text x="105" y="246" class="step-num">3</text>
-  <text x="120" y="246" class="msg-text">Proposer attempts self-approval → <tspan style="fill: #dc2626; font-weight: 750;">REJECTED</tspan></text>
-  <line x1="90" y1="254" x2="262" y2="254" class="msg-line" marker-end="url(#arrow)"/>
-
-  <!-- Step 6: Independent Reviewer Approves -->
-  <circle cx="455" cy="286" r="8.5" class="step-bg"/><text x="455" y="290" class="step-num">4</text>
-  <text x="470" y="290" class="msg-text">Independent Human Approver decides: "approved"</text>
-  <line x1="630" y1="298" x2="278" y2="298" class="msg-line" marker-end="url(#arrow)"/>
-
-  <!-- Step 7: Atomic Claim in DB -->
-  <circle cx="285" cy="330" r="8.5" class="step-bg"/><text x="285" y="334" class="step-num">5</text>
-  <text x="300" y="334" class="msg-text">TX: Verify reviewer != proposer &amp; Claim Permit ID (1x)</text>
-  <line x1="270" y1="342" x2="442" y2="342" class="msg-line" marker-end="url(#arrow)"/>
-
-  <rect x="380" y="356" width="140" height="20" class="badge-green"/>
-  <text x="450" y="370" text-anchor="middle" style="fill: #15803d; font-size: 11px; font-weight: 750;">✓ CLAIM COMMITTED</text>
-
-  <!-- Step 8: Execute Against Simulator -->
-  <circle cx="285" cy="398" r="8.5" class="step-bg"/><text x="285" y="402" class="step-num">6</text>
-  <text x="300" y="402" class="msg-text">execute(canonical action, approved permit)</text>
-  <line x1="270" y1="410" x2="802" y2="410" class="msg-line" marker-end="url(#arrow)"/>
-
-  <!-- Step 9: Simulated Result -->
-  <text x="540" y="444" text-anchor="middle" class="msg-text" style="fill: #15803d;">Simulated Security Group update successful</text>
-  <line x1="810" y1="452" x2="278" y2="452" class="msg-dash-green" marker-end="url(#arrow-green)"/>
-
-  <!-- Step 10: Record Outcome Evidence -->
-  <circle cx="285" cy="480" r="8.5" class="step-bg"/><text x="285" y="484" class="step-num">7</text>
-  <text x="300" y="484" class="msg-text">Append outcome evidence &amp; publish outbox</text>
-  <line x1="270" y1="492" x2="442" y2="492" class="msg-line" marker-end="url(#arrow)"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1048" viewBox="0 0 1000 1048" role="img" aria-labelledby="flow-3-human-approval-title flow-3-human-approval-desc">
+<title id="flow-3-human-approval-title">Flow 3: Codex request, human review, explicit resume</title>
+<desc id="flow-3-human-approval-desc">tracepermit_request_simulated_change: sg-demo, port, documentation CIDR. After token, enrollment, scope and policy checks, store pending plus exact snapshot. Return approvalRequestId, requestHash, pending and not_executed. Sign in separately, review exact arguments and submit hash-bound decision with CSRF. Verify distinct current human reviewer and atomically record approve or deny. Approved is still not_executed, there is no automatic dispatch. tracepermit_resume_approval: original ID plus requestHash, no replacement arguments. Recheck owner, client, origin, reviewer, policy, expiry and immutable action. Verify permit, atomically consume approval and claim execution. Invoke the approved simulator action only after the claim commits. Commit the confirmed completion separately. Return consumed / succeeded, replay cannot dispatch again. Self-review, wrong hash/owner/client, revoked reviewer, expiry or stale policy: reject before dispatch.</desc>
+<!-- Generated from docs/design/flow-diagrams.json. Do not edit this SVG directly. -->
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1 L9 5 L1 9" fill="none" stroke="#087b87" stroke-width="1.7"/></marker></defs>
+<style>text{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#17243b}.label{font-size:16px}.heading{font-size:15px;font-weight:650}.step{font-size:13px;font-weight:700;fill:white}.life{stroke:#cbd5e1;stroke-dasharray:5 5}.arrow{stroke:#087b87;stroke-width:1.8;fill:none;marker-end:url(#arrow)}</style>
+<rect x="1" y="1" width="998" height="1046" rx="12" fill="white" stroke="#dbe3ed"/>
+<text x="28" y="34" font-size="19" font-weight="700">Flow 3: Codex request, human review, explicit resume</text>
+<line x1="122" y1="109" x2="122" y2="1024" class="life"/>
+<rect x="38" y="54" width="168" height="55" rx="8" fill="#eff8fa" stroke="#b6d9de"/>
+<text x="122" y="77" text-anchor="middle" class="heading">Codex MCP client</text>
+<line x1="311" y1="109" x2="311" y2="1024" class="life"/>
+<rect x="227" y="54" width="168" height="55" rx="8" fill="#eff8fa" stroke="#b6d9de"/>
+<text x="311" y="77" text-anchor="middle" class="heading">Java approval API</text>
+<line x1="500" y1="109" x2="500" y2="1024" class="life"/>
+<rect x="416" y="54" width="168" height="55" rx="8" fill="#eff8fa" stroke="#b6d9de"/>
+<text x="500" y="77" text-anchor="middle" class="heading">PostgreSQL</text>
+<line x1="689" y1="109" x2="689" y2="1024" class="life"/>
+<rect x="605" y="54" width="168" height="55" rx="8" fill="#eff8fa" stroke="#b6d9de"/>
+<text x="689" y="77" text-anchor="middle" class="heading">Browser reviewer</text>
+<line x1="878" y1="109" x2="878" y2="1024" class="life"/>
+<rect x="794" y="54" width="168" height="55" rx="8" fill="#eff8fa" stroke="#b6d9de"/>
+<text x="878" y="77" text-anchor="middle" class="heading">Safe simulator</text>
+<circle cx="28" cy="140" r="12" fill="#087b87"/>
+<text x="28" y="145" text-anchor="middle" class="step">1</text>
+<text x="68" y="146" class="label">tracepermit_request_simulated_change: sg-demo, port, documentation CIDR</text>
+<path d="M122 160 H311" class="arrow"/>
+<circle cx="28" cy="208" r="12" fill="#087b87"/>
+<text x="28" y="213" text-anchor="middle" class="step">2</text>
+<text x="68" y="214" class="label">After token, enrollment, scope and policy checks, store pending plus exact snapshot</text>
+<path d="M311 228 H500" class="arrow"/>
+<circle cx="28" cy="276" r="12" fill="#087b87"/>
+<text x="28" y="281" text-anchor="middle" class="step">3</text>
+<text x="68" y="282" class="label">Return approvalRequestId, requestHash, pending and not_executed</text>
+<path d="M311 296 H122" class="arrow" stroke-dasharray="6 4"/>
+<circle cx="28" cy="344" r="12" fill="#087b87"/>
+<text x="28" y="349" text-anchor="middle" class="step">4</text>
+<text x="68" y="350" class="label">Sign in separately, review exact arguments and submit hash-bound decision with CSRF</text>
+<path d="M689 364 H311" class="arrow"/>
+<circle cx="28" cy="412" r="12" fill="#087b87"/>
+<text x="28" y="417" text-anchor="middle" class="step">5</text>
+<text x="68" y="418" class="label">Verify distinct current human reviewer and atomically record approve or deny</text>
+<path d="M311 432 H500" class="arrow"/>
+<circle cx="28" cy="480" r="12" fill="#087b87"/>
+<text x="28" y="485" text-anchor="middle" class="step">6</text>
+<text x="68" y="486" class="label">Approved is still not_executed, there is no automatic dispatch</text>
+<path d="M311 500 H689" class="arrow" stroke-dasharray="6 4"/>
+<circle cx="28" cy="548" r="12" fill="#087b87"/>
+<text x="28" y="553" text-anchor="middle" class="step">7</text>
+<text x="68" y="554" class="label">tracepermit_resume_approval: original ID plus requestHash, no replacement arguments</text>
+<path d="M122 568 H311" class="arrow"/>
+<circle cx="28" cy="616" r="12" fill="#087b87"/>
+<text x="28" y="621" text-anchor="middle" class="step">8</text>
+<text x="68" y="622" class="label">Recheck owner, client, origin, reviewer, policy, expiry and immutable action</text>
+<path d="M311 636 h30 v17 h-30" class="arrow"/>
+<circle cx="28" cy="684" r="12" fill="#087b87"/>
+<text x="28" y="689" text-anchor="middle" class="step">9</text>
+<text x="68" y="690" class="label">Verify permit, atomically consume approval and claim execution</text>
+<path d="M311 704 H500" class="arrow"/>
+<circle cx="28" cy="752" r="12" fill="#087b87"/>
+<text x="28" y="757" text-anchor="middle" class="step">10</text>
+<text x="68" y="758" class="label">Invoke the approved simulator action only after the claim commits</text>
+<path d="M311 772 H878" class="arrow"/>
+<circle cx="28" cy="820" r="12" fill="#087b87"/>
+<text x="28" y="825" text-anchor="middle" class="step">11</text>
+<text x="68" y="826" class="label">Commit the confirmed completion separately</text>
+<path d="M311 840 H500" class="arrow"/>
+<circle cx="28" cy="888" r="12" fill="#087b87"/>
+<text x="28" y="893" text-anchor="middle" class="step">12</text>
+<text x="68" y="894" class="label">Return consumed / succeeded, replay cannot dispatch again</text>
+<path d="M311 908 H122" class="arrow" stroke-dasharray="6 4"/>
+<rect x="55" y="943" width="920" height="73" rx="8" fill="#f1f5f9" stroke="#dbe3ed"/>
+<text x="68" y="962" class="label">Self-review, wrong hash/owner/client, revoked reviewer, expiry or stale policy: reject before</text>
+<text x="68" y="982" class="label">dispatch.</text>
 </svg>

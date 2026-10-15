@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="796" viewBox="0 0 1000 796" role="img" aria-labelledby="flow-6-endpoint-attribution-title flow-6-endpoint-attribution-desc">
+<title id="flow-6-endpoint-attribution-title">Flow 6: endpoint evidence bound to request and credential</title>
+<desc id="flow-6-endpoint-attribution-desc">Send strict MCP JSON-RPC over stdio, no trusted identity fields in arguments. Observe immediate parent, executable hash/start time, device and terminal facts. Sign short-lived Ed25519 proof bound to canonical MCP request and bearer fingerprint. Check observed process stability immediately before forwarding. POST exact loopback /mcp with bearer and separate source-attestation header. Authenticate, verify enrolled key, audience, time, request/credential bindings and single use. Build canonical action with bounded verified source facts, then evaluate policy. Invalid or replayed proof stops before protected tool dispatch. A valid proof still does not authorize an action.. Development origin evidence only. This is not the separate bearer-only Codex approval profile or managed-device assurance.</desc>
+<!-- Generated from docs/design/flow-diagrams.json. Do not edit this SVG directly. -->
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1 L9 5 L1 9" fill="none" stroke="#087b87" stroke-width="1.7"/></marker></defs>
+<style>text{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#17243b}.label{font-size:16px}.heading{font-size:15px;font-weight:650}.step{font-size:13px;font-weight:700;fill:white}.life{stroke:#cbd5e1;stroke-dasharray:5 5}.arrow{stroke:#087b87;stroke-width:1.8;fill:none;marker-end:url(#arrow)}</style>
+<rect x="1" y="1" width="998" height="794" rx="12" fill="white" stroke="#dbe3ed"/>
+<text x="28" y="34" font-size="19" font-weight="700">Flow 6: endpoint evidence bound to request and credential</text>
+<line x1="122" y1="109" x2="122" y2="772" class="life"/>
+<rect x="38" y="54" width="168" height="55" rx="8" fill="#eff8fa" stroke="#b6d9de"/>
+<text x="122" y="77" text-anchor="middle" class="heading">Local MCP client</text>
+<line x1="311" y1="109" x2="311" y2="772" class="life"/>
+<rect x="227" y="54" width="168" height="55" rx="8" fill="#eff8fa" stroke="#b6d9de"/>
+<text x="311" y="77" text-anchor="middle" class="heading">Java connector</text>
+<line x1="500" y1="109" x2="500" y2="772" class="life"/>
+<rect x="416" y="54" width="168" height="55" rx="8" fill="#eff8fa" stroke="#b6d9de"/>
+<text x="500" y="77" text-anchor="middle" class="heading">OS / process</text>
+<text x="500" y="96" text-anchor="middle" class="heading">observer</text>
+<line x1="689" y1="109" x2="689" y2="772" class="life"/>
+<rect x="605" y="54" width="168" height="55" rx="8" fill="#eff8fa" stroke="#b6d9de"/>
+<text x="689" y="77" text-anchor="middle" class="heading">Loopback gateway</text>
+<line x1="878" y1="109" x2="878" y2="772" class="life"/>
+<rect x="794" y="54" width="168" height="55" rx="8" fill="#eff8fa" stroke="#b6d9de"/>
+<text x="878" y="77" text-anchor="middle" class="heading">Policy / executor</text>
+<circle cx="28" cy="140" r="12" fill="#087b87"/>
+<text x="28" y="145" text-anchor="middle" class="step">1</text>
+<text x="68" y="146" class="label">Send strict MCP JSON-RPC over stdio, no trusted identity fields in arguments</text>
+<path d="M122 160 H311" class="arrow"/>
+<circle cx="28" cy="208" r="12" fill="#087b87"/>
+<text x="28" y="213" text-anchor="middle" class="step">2</text>
+<text x="68" y="214" class="label">Observe immediate parent, executable hash/start time, device and terminal facts</text>
+<path d="M311 228 H500" class="arrow"/>
+<circle cx="28" cy="276" r="12" fill="#087b87"/>
+<text x="28" y="281" text-anchor="middle" class="step">3</text>
+<text x="68" y="282" class="label">Sign short-lived Ed25519 proof bound to canonical MCP request and bearer fingerprint</text>
+<path d="M311 296 h30 v17 h-30" class="arrow"/>
+<circle cx="28" cy="344" r="12" fill="#087b87"/>
+<text x="28" y="349" text-anchor="middle" class="step">4</text>
+<text x="68" y="350" class="label">Check observed process stability immediately before forwarding</text>
+<path d="M311 364 H500" class="arrow"/>
+<circle cx="28" cy="412" r="12" fill="#087b87"/>
+<text x="28" y="417" text-anchor="middle" class="step">5</text>
+<text x="68" y="418" class="label">POST exact loopback /mcp with bearer and separate source-attestation header</text>
+<path d="M311 432 H689" class="arrow"/>
+<circle cx="28" cy="480" r="12" fill="#087b87"/>
+<text x="28" y="485" text-anchor="middle" class="step">6</text>
+<text x="68" y="486" class="label">Authenticate, verify enrolled key, audience, time, request/credential bindings and single use</text>
+<path d="M689 500 h30 v17 h-30" class="arrow"/>
+<circle cx="28" cy="548" r="12" fill="#087b87"/>
+<text x="28" y="553" text-anchor="middle" class="step">7</text>
+<text x="68" y="554" class="label">Build canonical action with bounded verified source facts, then evaluate policy</text>
+<path d="M689 568 H878" class="arrow"/>
+<rect x="55" y="603" width="920" height="73" rx="8" fill="#f1f5f9" stroke="#dbe3ed"/>
+<text x="68" y="622" class="label">Invalid or replayed proof stops before protected tool dispatch. A valid proof still does not authorize</text>
+<text x="68" y="642" class="label">an action.</text>
+<rect x="55" y="691" width="920" height="73" rx="8" fill="#f1f5f9" stroke="#dbe3ed"/>
+<text x="68" y="710" class="label">Development origin evidence only. This is not the separate bearer-only Codex approval profile or</text>
+<text x="68" y="730" class="label">managed-device assurance.</text>
+</svg>

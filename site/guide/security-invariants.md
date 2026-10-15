@@ -63,4 +63,9 @@ credential.
 
 ### 10. Audit Honesty
 
-If a target operation times out or returns an ambiguous network error, TracePermit marks the outcome as `UNKNOWN`. It does not guess or blindly retry. A read-only reconciliation worker probes the target to verify the actual state before appending a terminal event.
+An ambiguous result is not proof of failure and must not trigger blind
+re-execution. A completion-write failure can leave consumed authority and an
+`executing` attempt. The separately tested reconciliation worker handles persisted
+`UNKNOWN` attempts by read-only lookup and appends a terminal result only when
+confirmed. No automatic executing-to-unknown sweeper or worker is wired into the
+browser approval launcher. See [Flow 9](core-flows.md#flow-9-uncertainty-is-not-permission-to-retry).

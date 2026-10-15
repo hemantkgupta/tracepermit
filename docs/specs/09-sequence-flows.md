@@ -3,6 +3,11 @@
 **Status:** Current and target flows  
 **Applies to:** Design, implementation, review, and testing
 
+For a code/test map and synchronized public diagrams, see the
+[nine-flow guide](../flows-guide.md). Separate deployment profiles and their
+qualification limits are explicit there; the diagrams below do not imply every
+foundation is composed into one running service.
+
 ## 1. Authenticated MCP allow and execution
 
 The separate [loopback approval API foundation](../runbooks/authenticated-approval-api-foundation.md)
@@ -80,8 +85,9 @@ sequenceDiagram
 
 ## 1B. SSRF-safe JWKS and authenticated remote MCP handshake
 
-This Java flow is implemented with runtime-generated TLS/RSA test keys. A
-deployable production main and remote `tools/call` remain absent.
+This handshake-only composition uses runtime-generated TLS/RSA test keys and
+intentionally has no `tools/call` handler. The separate enforcing dispatcher is
+described in 1C; a deployable production main remains absent.
 
 ```mermaid
 sequenceDiagram
@@ -125,7 +131,7 @@ sequenceDiagram
   participant M as Enforcing MCP dispatcher
   participant A as Java application
   participant P as Policy and permit authority
-  participant S as Permit-verifying simulator
+  participant S as Safe target simulator
   participant E as Evidence ledger
 
   C->>H: tools/call + Bearer + strict arguments

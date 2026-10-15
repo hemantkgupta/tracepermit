@@ -1,0 +1,662 @@
+{
+  "schemaVersion": 1,
+  "diagrams": [
+    {
+      "id": "central-invariant",
+      "title": "Supported actions: authorize before simulator execution",
+      "participants": [
+        ["C", "Configured client"],
+        ["G", "Trusted adapter"],
+        ["E", "Policy / executor"],
+        ["D", "Security state"],
+        ["S", "Safe simulator"]
+      ],
+      "steps": [
+        [
+          "C",
+          "G",
+          "Propose a registered tool action, request data is untrusted",
+          "call"
+        ],
+        [
+          "G",
+          "G",
+          "Verify identity and required origin evidence, validate and normalize",
+          "call"
+        ],
+        [
+          "G",
+          "E",
+          "Evaluate current tool, arguments, target and available sequence context",
+          "call"
+        ],
+        [
+          "",
+          "",
+          "BLOCK: no permit or dispatch. SANITIZE: derive a new action and evaluate again.",
+          "note"
+        ],
+        [
+          "",
+          "",
+          "APPROVAL: persist pending, require distinct review, then explicit owner resume. ALLOW: continue.",
+          "note"
+        ],
+        [
+          "E",
+          "D",
+          "Verify the exact permit and claim single use before any target effect",
+          "call"
+        ],
+        [
+          "E",
+          "S",
+          "Invoke only the fixed simulator after authorization and claim",
+          "call"
+        ],
+        [
+          "E",
+          "D",
+          "Record outcome separately, the read-only console queries bounded projections",
+          "call"
+        ],
+        [
+          "",
+          "",
+          "Configured-path control only. No real target credentials, universal agent interception or host-wide anti-bypass.",
+          "note"
+        ]
+      ]
+    },
+    {
+      "id": "flow-1-safe-read",
+      "title": "Flow 1: bounded read allowed by policy",
+      "participants": [
+        ["C", "Agent / client"],
+        ["G", "Trusted adapter"],
+        ["E", "Policy / executor"],
+        ["S", "Log simulator"],
+        ["D", "Evidence / view"]
+      ],
+      "steps": [
+        [
+          "C",
+          "G",
+          "Propose aws.logs.filter_log_events with a bounded limit",
+          "call"
+        ],
+        [
+          "G",
+          "G",
+          "Authenticate and verify the source proof when the CLI profile requires it",
+          "call"
+        ],
+        [
+          "G",
+          "E",
+          "Construct the canonical action and evaluate the active policy",
+          "call"
+        ],
+        [
+          "E",
+          "E",
+          "ALLOW: issue and verify an exact short-lived permit, claim single use",
+          "call"
+        ],
+        [
+          "E",
+          "S",
+          "Invoke the simulator with the verified action, not a credential-bearing cloud API",
+          "call"
+        ],
+        [
+          "S",
+          "E",
+          "Return up to the requested number of matching simulated log events",
+          "return"
+        ],
+        [
+          "E",
+          "D",
+          "Persist bounded decision and outcome evidence in the selected profile",
+          "call"
+        ],
+        [
+          "E",
+          "C",
+          "Return the MCP result, the console is outside the execution path",
+          "return"
+        ]
+      ]
+    },
+    {
+      "id": "flow-2-destructive-block",
+      "title": "Flow 2: authenticated destructive proposal blocked",
+      "participants": [
+        ["C", "Agent / client"],
+        ["G", "Trusted adapter"],
+        ["P", "Classifier / policy"],
+        ["D", "Evidence state"],
+        ["S", "Safe simulator"]
+      ],
+      "steps": [
+        [
+          "C",
+          "G",
+          "Propose aws.ec2.terminate_instances on a simulated instance",
+          "call"
+        ],
+        [
+          "G",
+          "P",
+          "Authenticate, validate and evaluate the canonical action",
+          "call"
+        ],
+        [
+          "P",
+          "G",
+          "BLOCK: destructive / critical, AGENT_EC2_TERMINATION_BLOCKED",
+          "return"
+        ],
+        [
+          "G",
+          "D",
+          "Record the policy denial without an execution permit or target attempt",
+          "call"
+        ],
+        ["G", "C", "Return block and not_executed", "return"],
+        [
+          "",
+          "",
+          "The simulator is not invoked. Valid identity does not authorize every action.",
+          "note"
+        ]
+      ]
+    },
+    {
+      "id": "flow-3-human-approval",
+      "title": "Flow 3: Codex request, human review, explicit resume",
+      "participants": [
+        ["C", "Codex MCP client"],
+        ["G", "Java approval API"],
+        ["D", "PostgreSQL"],
+        ["R", "Browser reviewer"],
+        ["S", "Safe simulator"]
+      ],
+      "steps": [
+        [
+          "C",
+          "G",
+          "tracepermit_request_simulated_change: sg-demo, port, documentation CIDR",
+          "call"
+        ],
+        [
+          "G",
+          "D",
+          "After token, enrollment, scope and policy checks, store pending plus exact snapshot",
+          "call"
+        ],
+        [
+          "G",
+          "C",
+          "Return approvalRequestId, requestHash, pending and not_executed",
+          "return"
+        ],
+        [
+          "R",
+          "G",
+          "Sign in separately, review exact arguments and submit hash-bound decision with CSRF",
+          "call"
+        ],
+        [
+          "G",
+          "D",
+          "Verify distinct current human reviewer and atomically record approve or deny",
+          "call"
+        ],
+        [
+          "G",
+          "R",
+          "Approved is still not_executed, there is no automatic dispatch",
+          "return"
+        ],
+        [
+          "C",
+          "G",
+          "tracepermit_resume_approval: original ID plus requestHash, no replacement arguments",
+          "call"
+        ],
+        [
+          "G",
+          "G",
+          "Recheck owner, client, origin, reviewer, policy, expiry and immutable action",
+          "call"
+        ],
+        [
+          "G",
+          "D",
+          "Verify permit, atomically consume approval and claim execution",
+          "call"
+        ],
+        [
+          "G",
+          "S",
+          "Invoke the approved simulator action only after the claim commits",
+          "call"
+        ],
+        ["G", "D", "Commit the confirmed completion separately", "call"],
+        [
+          "G",
+          "C",
+          "Return consumed / succeeded, replay cannot dispatch again",
+          "return"
+        ],
+        [
+          "",
+          "",
+          "Self-review, wrong hash/owner/client, revoked reviewer, expiry or stale policy: reject before dispatch.",
+          "note"
+        ]
+      ]
+    },
+    {
+      "id": "flow-4-sanitization",
+      "title": "Flow 4: derive, re-evaluate, then authorize",
+      "participants": [
+        ["C", "Verified workload"],
+        ["E", "Enforcement service"],
+        ["P", "Policy evaluator"],
+        ["T", "Reviewed transformer"],
+        ["S", "Log simulator"]
+      ],
+      "steps": [
+        [
+          "C",
+          "E",
+          "Propose a simulated log read with limit 500 (valid schema, oversized window)",
+          "call"
+        ],
+        [
+          "E",
+          "P",
+          "Evaluate original action, observe OVERSIZED_RESULT_WINDOW",
+          "call"
+        ],
+        [
+          "P",
+          "E",
+          "SANITIZE: LOG_RESULT_WINDOW_REQUIRES_SANITIZATION",
+          "return"
+        ],
+        ["E", "T", "Run only bounded-log-read/v1, clamp limit to 100", "call"],
+        [
+          "T",
+          "E",
+          "Return new event identity and original/effective hash linkage",
+          "return"
+        ],
+        [
+          "E",
+          "P",
+          "Re-evaluate the effective action, sanitization is not permission",
+          "call"
+        ],
+        [
+          "P",
+          "E",
+          "ALLOW the bounded derived request under current policy",
+          "return"
+        ],
+        [
+          "E",
+          "S",
+          "Issue and verify effective-action permit, claim once, then read",
+          "call"
+        ],
+        [
+          "E",
+          "C",
+          "Return up to 100 matching simulated events plus sanitization summary",
+          "return"
+        ],
+        [
+          "",
+          "",
+          "Unknown transformer, invalid output or failed re-evaluation: no dispatch. Limit 50000 fails schema validation.",
+          "note"
+        ]
+      ]
+    },
+    {
+      "id": "flow-5-sequence-exfiltration",
+      "title": "Flow 5: synthetic read followed by external-send denial",
+      "participants": [
+        ["W", "Signed workload"],
+        ["E", "Gateway / policy"],
+        ["H", "Owned history"],
+        ["C", "Synthetic CRM"],
+        ["O", "Local egress outbox"]
+      ],
+      "steps": [
+        [
+          "W",
+          "E",
+          "Baseline demo.egress.send_external without read history",
+          "call"
+        ],
+        [
+          "E",
+          "W",
+          "BLOCK: EXTERNAL_SEND_NOT_AUTHORIZED, no target dispatch",
+          "return"
+        ],
+        ["W", "E", "Independently signed demo.customer.bulk_read", "call"],
+        [
+          "E",
+          "H",
+          "After allow, record authorized read proposal for tenant plus verified subject",
+          "call"
+        ],
+        [
+          "E",
+          "C",
+          "Execute permit-bound fixed read, receive 20 invented records",
+          "call"
+        ],
+        [
+          "W",
+          "E",
+          "Independently signed demo.egress.send_external after the read",
+          "call"
+        ],
+        [
+          "E",
+          "H",
+          "Load cross-target history, derive SYNTHETIC_PII_READ_THEN_EXTERNAL_SEND",
+          "call"
+        ],
+        [
+          "E",
+          "W",
+          "BLOCK: SYNTHETIC_PII_EXFILTRATION_SEQUENCE_BLOCKED, critical severity",
+          "return"
+        ],
+        [
+          "",
+          "",
+          "Neither send reaches the outbox. Sequence history adds a specific reason, not permission to send without history.",
+          "note"
+        ]
+      ]
+    },
+    {
+      "id": "flow-6-endpoint-attribution",
+      "title": "Flow 6: endpoint evidence bound to request and credential",
+      "participants": [
+        ["A", "Local MCP client"],
+        ["C", "Java connector"],
+        ["O", "OS / process observer"],
+        ["G", "Loopback gateway"],
+        ["E", "Policy / executor"]
+      ],
+      "steps": [
+        [
+          "A",
+          "C",
+          "Send strict MCP JSON-RPC over stdio, no trusted identity fields in arguments",
+          "call"
+        ],
+        [
+          "C",
+          "O",
+          "Observe immediate parent, executable hash/start time, device and terminal facts",
+          "call"
+        ],
+        [
+          "C",
+          "C",
+          "Sign short-lived Ed25519 proof bound to canonical MCP request and bearer fingerprint",
+          "call"
+        ],
+        [
+          "C",
+          "O",
+          "Check observed process stability immediately before forwarding",
+          "call"
+        ],
+        [
+          "C",
+          "G",
+          "POST exact loopback /mcp with bearer and separate source-attestation header",
+          "call"
+        ],
+        [
+          "G",
+          "G",
+          "Authenticate, verify enrolled key, audience, time, request/credential bindings and single use",
+          "call"
+        ],
+        [
+          "G",
+          "E",
+          "Build canonical action with bounded verified source facts, then evaluate policy",
+          "call"
+        ],
+        [
+          "",
+          "",
+          "Invalid or replayed proof stops before protected tool dispatch. A valid proof still does not authorize an action.",
+          "note"
+        ],
+        [
+          "",
+          "",
+          "Development origin evidence only. This is not the separate bearer-only Codex approval profile or managed-device assurance.",
+          "note"
+        ]
+      ]
+    },
+    {
+      "id": "flow-7-hosted-oauth",
+      "title": "Flow 7: hosted model proposes, OAuth attributes, tunnel carries",
+      "participants": [
+        ["H", "Human / hosted UI"],
+        ["P", "Provider backend"],
+        ["I", "Configured IdP"],
+        ["G", "Tunnel / Java edge"],
+        ["E", "Policy / simulator"]
+      ],
+      "steps": [
+        [
+          "H",
+          "P",
+          "Send prompt to provider backend, the hosted model proposes a configured MCP tool",
+          "call"
+        ],
+        [
+          "P",
+          "I",
+          "During app connection, obtain a TracePermit resource access token through OAuth",
+          "call"
+        ],
+        [
+          "I",
+          "P",
+          "Return issuer-signed access token, TracePermit does not receive the IdP password",
+          "return"
+        ],
+        [
+          "P",
+          "G",
+          "Send MCP proposal and bearer through the configured private tunnel",
+          "call"
+        ],
+        [
+          "G",
+          "G",
+          "Verify issuer, signature, audience, time, client, tenant mapping and scopes before dispatch",
+          "call"
+        ],
+        [
+          "G",
+          "E",
+          "Normalize authenticated subject and asserted provider actor, evaluate the tool action",
+          "call"
+        ],
+        [
+          "E",
+          "P",
+          "Return allowed simulated read or blocked/not_executed destruction",
+          "return"
+        ],
+        [
+          "P",
+          "H",
+          "Display the tool result in the unmodified hosted client",
+          "return"
+        ],
+        [
+          "",
+          "",
+          "One Auth0 + ChatGPT + tunnel profile qualified. Reachability is not identity, endpoint proof or provider-plan attribution.",
+          "note"
+        ]
+      ]
+    },
+    {
+      "id": "flow-8-delegation",
+      "title": "Flow 8: signed child authority must narrow its parent",
+      "participants": [
+        ["W", "Workload signer"],
+        ["A", "Sub-agent signer"],
+        ["V", "Trusted adapter"],
+        ["E", "Policy / permit"],
+        ["S", "Safe simulator"]
+      ],
+      "steps": [
+        [
+          "W",
+          "V",
+          "Supply action-bound workload credential and signed parent grant",
+          "call"
+        ],
+        [
+          "A",
+          "V",
+          "Supply child grant linked to the exact signed parent hash",
+          "call"
+        ],
+        [
+          "V",
+          "V",
+          "Verify trusted issuers/keys, signatures, action context, audience, expiry and chain links",
+          "call"
+        ],
+        [
+          "V",
+          "V",
+          "Require child scopes/resources to be subsets and lifetime not to exceed parent",
+          "call"
+        ],
+        [
+          "V",
+          "E",
+          "Valid narrowed chain: construct canonical action, then evaluate organizational policy",
+          "call"
+        ],
+        [
+          "E",
+          "S",
+          "Only a separate allow plus verified permit enables one simulated read",
+          "call"
+        ],
+        [
+          "",
+          "",
+          "Separate negative cases: widen scope, resource, audience or lifetime. Reject before canonical policy evaluation.",
+          "note"
+        ],
+        [
+          "",
+          "",
+          "These are identity-boundary failures, not policy-block results. Causal lineage alone grants no authority.",
+          "note"
+        ]
+      ]
+    },
+    {
+      "id": "flow-9-unknown-outcome",
+      "title": "Flow 9: lost completion is not permission to repeat",
+      "participants": [
+        ["C", "Original requester"],
+        ["E", "Durable executor"],
+        ["D", "PostgreSQL"],
+        ["S", "Safe simulator"],
+        ["W", "Lookup-only worker"]
+      ],
+      "steps": [
+        [
+          "E",
+          "D",
+          "Commit approval consumption and executing claim before dispatch",
+          "call"
+        ],
+        ["E", "S", "Invoke the approved simulator action", "call"],
+        [
+          "E",
+          "D",
+          "Attempt separate completion write, a fault can leave consumed/executing",
+          "call"
+        ],
+        [
+          "E",
+          "C",
+          "Return safe error, not invented failure or success, inspect durable status",
+          "return"
+        ],
+        [
+          "C",
+          "E",
+          "After restart, attempt resume of the same approval",
+          "call"
+        ],
+        [
+          "E",
+          "C",
+          "Reject redispatch because the authority is already consumed",
+          "return"
+        ],
+        [
+          "",
+          "",
+          "Separate tested recovery foundation: only persisted UNKNOWN attempts enter the leased lookup worker.",
+          "note"
+        ],
+        [
+          "W",
+          "D",
+          "Lease unknown candidates bound to tenant, adapter and idempotency identity",
+          "call"
+        ],
+        [
+          "W",
+          "S",
+          "Perform reviewed read-only outcome lookup, never invoke the original effect",
+          "call"
+        ],
+        [
+          "W",
+          "D",
+          "Append terminal outcome only when confirmed, otherwise defer and remain unknown",
+          "call"
+        ],
+        [
+          "",
+          "",
+          "No automatic executing-to-unknown sweep or worker is wired into the browser approval launcher, real-target lookup remains future work.",
+          "note"
+        ]
+      ]
+    }
+  ]
+}

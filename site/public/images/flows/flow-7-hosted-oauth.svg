@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="776" viewBox="0 0 1000 776" role="img" aria-labelledby="flow-7-hosted-oauth-title flow-7-hosted-oauth-desc">
+<title id="flow-7-hosted-oauth-title">Flow 7: hosted model proposes, OAuth attributes, tunnel carries</title>
+<desc id="flow-7-hosted-oauth-desc">Send prompt to provider backend, the hosted model proposes a configured MCP tool. During app connection, obtain a TracePermit resource access token through OAuth. Return issuer-signed access token, TracePermit does not receive the IdP password. Send MCP proposal and bearer through the configured private tunnel. Verify issuer, signature, audience, time, client, tenant mapping and scopes before dispatch. Normalize authenticated subject and asserted provider actor, evaluate the tool action. Return allowed simulated read or blocked/not_executed destruction. Display the tool result in the unmodified hosted client. One Auth0 + ChatGPT + tunnel profile qualified. Reachability is not identity, endpoint proof or provider-plan attribution.</desc>
+<!-- Generated from docs/design/flow-diagrams.json. Do not edit this SVG directly. -->
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1 L9 5 L1 9" fill="none" stroke="#087b87" stroke-width="1.7"/></marker></defs>
+<style>text{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#17243b}.label{font-size:16px}.heading{font-size:15px;font-weight:650}.step{font-size:13px;font-weight:700;fill:white}.life{stroke:#cbd5e1;stroke-dasharray:5 5}.arrow{stroke:#087b87;stroke-width:1.8;fill:none;marker-end:url(#arrow)}</style>
+<rect x="1" y="1" width="998" height="774" rx="12" fill="white" stroke="#dbe3ed"/>
+<text x="28" y="34" font-size="19" font-weight="700">Flow 7: hosted model proposes, OAuth attributes, tunnel carries</text>
+<line x1="122" y1="109" x2="122" y2="752" class="life"/>
+<rect x="38" y="54" width="168" height="55" rx="8" fill="#eff8fa" stroke="#b6d9de"/>
+<text x="122" y="77" text-anchor="middle" class="heading">Human / hosted UI</text>
+<line x1="311" y1="109" x2="311" y2="752" class="life"/>
+<rect x="227" y="54" width="168" height="55" rx="8" fill="#eff8fa" stroke="#b6d9de"/>
+<text x="311" y="77" text-anchor="middle" class="heading">Provider backend</text>
+<line x1="500" y1="109" x2="500" y2="752" class="life"/>
+<rect x="416" y="54" width="168" height="55" rx="8" fill="#eff8fa" stroke="#b6d9de"/>
+<text x="500" y="77" text-anchor="middle" class="heading">Configured IdP</text>
+<line x1="689" y1="109" x2="689" y2="752" class="life"/>
+<rect x="605" y="54" width="168" height="55" rx="8" fill="#eff8fa" stroke="#b6d9de"/>
+<text x="689" y="77" text-anchor="middle" class="heading">Tunnel / Java edge</text>
+<line x1="878" y1="109" x2="878" y2="752" class="life"/>
+<rect x="794" y="54" width="168" height="55" rx="8" fill="#eff8fa" stroke="#b6d9de"/>
+<text x="878" y="77" text-anchor="middle" class="heading">Policy / simulator</text>
+<circle cx="28" cy="140" r="12" fill="#087b87"/>
+<text x="28" y="145" text-anchor="middle" class="step">1</text>
+<text x="68" y="146" class="label">Send prompt to provider backend, the hosted model proposes a configured MCP tool</text>
+<path d="M122 160 H311" class="arrow"/>
+<circle cx="28" cy="208" r="12" fill="#087b87"/>
+<text x="28" y="213" text-anchor="middle" class="step">2</text>
+<text x="68" y="214" class="label">During app connection, obtain a TracePermit resource access token through OAuth</text>
+<path d="M311 228 H500" class="arrow"/>
+<circle cx="28" cy="276" r="12" fill="#087b87"/>
+<text x="28" y="281" text-anchor="middle" class="step">3</text>
+<text x="68" y="282" class="label">Return issuer-signed access token, TracePermit does not receive the IdP password</text>
+<path d="M500 296 H311" class="arrow" stroke-dasharray="6 4"/>
+<circle cx="28" cy="344" r="12" fill="#087b87"/>
+<text x="28" y="349" text-anchor="middle" class="step">4</text>
+<text x="68" y="350" class="label">Send MCP proposal and bearer through the configured private tunnel</text>
+<path d="M311 364 H689" class="arrow"/>
+<circle cx="28" cy="412" r="12" fill="#087b87"/>
+<text x="28" y="417" text-anchor="middle" class="step">5</text>
+<text x="68" y="418" class="label">Verify issuer, signature, audience, time, client, tenant mapping and scopes before dispatch</text>
+<path d="M689 432 h30 v17 h-30" class="arrow"/>
+<circle cx="28" cy="480" r="12" fill="#087b87"/>
+<text x="28" y="485" text-anchor="middle" class="step">6</text>
+<text x="68" y="486" class="label">Normalize authenticated subject and asserted provider actor, evaluate the tool action</text>
+<path d="M689 500 H878" class="arrow"/>
+<circle cx="28" cy="548" r="12" fill="#087b87"/>
+<text x="28" y="553" text-anchor="middle" class="step">7</text>
+<text x="68" y="554" class="label">Return allowed simulated read or blocked/not_executed destruction</text>
+<path d="M878 568 H311" class="arrow" stroke-dasharray="6 4"/>
+<circle cx="28" cy="616" r="12" fill="#087b87"/>
+<text x="28" y="621" text-anchor="middle" class="step">8</text>
+<text x="68" y="622" class="label">Display the tool result in the unmodified hosted client</text>
+<path d="M311 636 H122" class="arrow" stroke-dasharray="6 4"/>
+<rect x="55" y="671" width="920" height="73" rx="8" fill="#f1f5f9" stroke="#dbe3ed"/>
+<text x="68" y="690" class="label">One Auth0 + ChatGPT + tunnel profile qualified. Reachability is not identity, endpoint proof or</text>
+<text x="68" y="710" class="label">provider-plan attribution.</text>
+</svg>

@@ -13,11 +13,13 @@ and expiry; PostgreSQL atomically consumes it with the execution claim before
 simulator dispatch.
 
 ```text
-Agent proposes fixed simulated deletion
+Agent proposes an allowlisted simulated change
           ↓
 Policy requires approval → pending durable request
           ↓
 Separate trusted reviewer approves exact request
+          ↓
+Approved / not executed → original requester explicitly resumes
           ↓
 Atomic approval + permit claim → simulator execution
 ```
@@ -43,6 +45,15 @@ role, scope, ownership and exact-request checks still apply. Run
 qualification. It is not a public browser deployment or live external-IdP
 qualification. See the
 [browser runbook](https://github.com/hemantkgupta/tracepermit/blob/main/docs/runbooks/browser-approval-inbox.md).
+
+The separate Codex MCP composition exposes only request, status and explicit
+resume tools over that same durable service. It cannot approve its own request.
+Native app-server MCP calls and a synthetic browser review have been qualified;
+model-driven Codex prompt selection remains a separate rehearsal gate. It is a
+bearer-only local profile, not endpoint source attestation or hosted OAuth.
+See [Flow 3](core-flows.md#flow-3-human-review-then-explicit-resume) and the
+[Codex runbook](https://github.com/hemantkgupta/tracepermit/blob/main/docs/runbooks/codex-durable-approvals.md).
+
 [Scenario 3](https://github.com/hemantkgupta/tracepermit/blob/main/docs/demo-scenarios/03-request-bound-human-approval.md)
 and [Scenario 8](https://github.com/hemantkgupta/tracepermit/blob/main/docs/demo-scenarios/08-production-deletion-request-bound-approval.md)
 exercise the approval boundary with safe simulators and disposable state.
