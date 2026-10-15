@@ -16,7 +16,8 @@ Modules:
 - `application`: fail-closed orchestration around a simulator port; and
 - `adapters-http`: the combined loopback-only development MCP backend plus
   action, evidence-integrity, policy-version, lineage, health, and simulator
-  read projections;
+  read projections; a separate operator-configured loopback approval main with durable exact
+  snapshots, independently authenticated reviewer membership and simulator execution;
 - `adapters-remote`: SSRF-safe live JWKS HTTPS plus a direct-TLS authenticated
   MCP boundary with handshake/discovery and an explicit simulator-only
   enforcement composition;
@@ -39,15 +40,20 @@ pnpm test:java-postgres --rerun-tasks
 pnpm demo:scenario:approval:auto
 pnpm demo:scenario:semantic:auto
 pnpm demo:scenario:qualification
+pnpm test:approval-api --rerun-tasks
 ```
 
 The Java implementation is the supported local POC backend, not a production
-service. Its runnable main binds only to loopback, composes ephemeral
-development credentials and the simulator, and includes no AWS/Jira SDK,
-credentials, externally managed database, Spring runtime, or deployable public
-bootstrap. The remote adapter is configured only by tests/library
-composition. The optional persistence module uses an ephemeral
-real PostgreSQL Testcontainer and never falls back to memory. Default local
+service. Its default runnable main binds only to loopback and composes ephemeral
+development credentials and the simulator. The separate `pnpm dev:approvals`
+entry point uses strict private operator configuration, a local PostgreSQL DB,
+external OIDC verification and persistent Ed25519 file keys. See the
+[approval runbook](../docs/runbooks/authenticated-approval-api-foundation.md);
+no browser login or approval UI is provided. No main includes a real AWS/Jira
+SDK, target credential, Spring runtime or deployable public bootstrap. The
+direct-TLS remote edge is configured only by tests/library composition; the
+separate hosted OAuth demo has its own loopback main. PostgreSQL qualifications
+use disposable real Testcontainers and never fall back to memory. Default local
 stores and symmetric execution-permit test signing are not production-grade
 custody or multi-replica state.
 

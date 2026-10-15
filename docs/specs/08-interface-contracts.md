@@ -33,6 +33,14 @@ approval UI. Neither existing launcher starts these routes. See the
 [API runbook](../runbooks/authenticated-approval-api-foundation.md) and
 [ADR 0034](../architecture/0034-authenticated-loopback-approval-api.md).
 
+The optional `pnpm dev:approvals` command starts only this separate local API
+from private operator JSON. `--check` validates offline, not IdP/DB readiness.
+Its numeric-loopback listener/database, one-client/tenant enrollment, persistent
+Ed25519 files, fixed default-block policy and migration behavior are specified
+in [ADR 0035](../architecture/0035-local-approval-operator-bootstrap.md).
+The `/health`, `/ready` and `/mcp` surfaces below belong to other compositions,
+not to this approval listener.
+
 ### `GET /health`
 
 Returns service state and active policy identifier/version. It is not a deep

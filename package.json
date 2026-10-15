@@ -17,6 +17,7 @@
     "dev:java-api": "scripts/run-java-development-backend.sh",
     "dev:java-endpoint": "scripts/run-java-endpoint-connector.sh",
     "dev:console": "pnpm --filter @tracepermit/console dev",
+    "dev:approvals": "scripts/run-java-simulator-approvals.sh",
     "site:dev": "npm --prefix site run dev",
     "site:build": "npm --prefix site run build",
     "site:preview": "npm --prefix site run preview",

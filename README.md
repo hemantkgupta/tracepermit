@@ -77,8 +77,9 @@ private tunnel; it is not needed for the default demo.
   with signed synthetic identities, PostgreSQL, exact action snapshots and
   simulators. Run `pnpm test:approval-api --rerun-tasks`; see the
   [API qualification runbook](docs/runbooks/authenticated-approval-api-foundation.md).
-  It is not enabled by the demo launchers and provides no browser login or
-  React approval inbox yet.
+  An optional `pnpm dev:approvals` operator entry point requires private local
+  configuration; `--check` validates it offline. It is not enabled by the demo
+  launchers and provides no browser login or React approval inbox yet.
 
 The [current-state capability matrix](docs/specs/03-current-state-baseline.md)
 distinguishes implemented code, local demonstrations, live-client

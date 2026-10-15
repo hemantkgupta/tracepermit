@@ -1,0 +1,37 @@
+{
+  "schemaVersion": "1.0",
+  "port": 8085,
+  "postgres": {
+    "host": "127.0.0.1",
+    "port": 5432,
+    "database": "tracepermit_approvals",
+    "user": "tracepermit_approvals",
+    "passwordFile": "database.secret"
+  },
+  "oidc": {
+    "issuer": "https://idp.example.invalid",
+    "audience": "https://approval.example.invalid",
+    "jwksUri": "https://idp.example.invalid/.well-known/jwks.json",
+    "clientId": "replace-with-registered-client",
+    "tenantClaim": "org_id",
+    "tenantValue": "replace-with-verified-tenant-claim",
+    "tenantId": "simulated-local"
+  },
+  "memberships": [
+    {
+      "subject": "replace-with-requester-sub",
+      "human": true,
+      "roles": ["REQUESTER"]
+    },
+    {
+      "subject": "replace-with-reviewer-sub",
+      "human": true,
+      "roles": ["REVIEWER"]
+    }
+  ],
+  "permit": {
+    "keyId": "local-simulator-1",
+    "privateKeyFile": "permit.pk8",
+    "publicKeyFile": "permit.spki"
+  }
+}
