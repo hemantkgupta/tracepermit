@@ -91,8 +91,16 @@ this test.
 
 ## Gate C: deterministic presenter refresh
 
-Run the standalone commands one at a time; these scripts use synthetic signers
-and fixed local targets. They are not native model calls.
+The [2026-10-15 Gate C qualification record](../demo-scenarios/evidence/gate-c-deterministic-presenters-2026-10-15.md)
+documents the refreshed execution and verified invariants across all six
+deterministic presenter scenarios. `pnpm demo:gate-c` packages these scripts into
+one unified, automated runner:
+
+```bash
+pnpm demo:gate-c
+```
+
+The individual standalone commands remain available for step-by-step presentation:
 
 ```bash
 pnpm demo:scenario:semantic:auto
@@ -100,6 +108,7 @@ pnpm demo:scenario:pii-exfil:auto
 pnpm demo:scenario:delegation:auto
 pnpm demo:scenario:prompt-injection:auto
 pnpm demo:scenario:qualification
+pnpm demo:scenario:scheduled-stop:auto
 ```
 
 For durable approval failure/restart and recovery foundations, use

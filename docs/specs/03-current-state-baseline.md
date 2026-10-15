@@ -86,6 +86,8 @@ See the [API runbook](../runbooks/authenticated-approval-api-foundation.md).
   console. [Scenarios 0–11](../demo-scenarios/README.md) cover source proof,
   allow/block, secure tunnel, exact approval, scheduled identity, semantic
   sequence, and fail-secure behavior. They use simulators only.
+- `pnpm demo:gate-c` executes the automated Gate C deterministic presenter
+  qualification suite (Scenarios 4, 5, 7, 9, 10, 11) with verified assertions.
 - `pnpm demo:oauth` starts a separate hosted-client OAuth profile and requires
   external IdP configuration. It is not part of normal CI.
 - `pnpm check` builds/types/tests the console and runs the Java suite. CI also

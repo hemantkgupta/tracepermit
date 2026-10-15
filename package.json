@@ -46,6 +46,8 @@
     "demo:scenario:delegation": "scripts/run-sub-agent-delegation-scenario.sh",
     "demo:scenario:delegation:auto": "scripts/run-sub-agent-delegation-scenario.sh --auto",
     "demo:scenario:qualification": "scripts/run-semantic-qualification.sh",
+    "demo:gate-c": "scripts/run-gate-c-qualification.sh",
+    "test:gate-c": "node --test scripts/gate-c-qualification.test.mjs",
     "demo:tunnel": "scripts/run-openai-tunnel-demo.sh",
     "demo:oauth": "scripts/run-hosted-client-oauth-demo.sh",
     "demo:tunnel:oauth": "scripts/run-openai-oauth-tunnel-demo.sh",
