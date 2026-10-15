@@ -1,6 +1,6 @@
 # Current-state capability matrix
 
-**As of:** 2026-10-14
+**As of:** 2026-10-15
 **Scope:** public Java-backend/React-console proof of concept
 
 This is the authoritative boundary between running POC behavior and product
@@ -33,6 +33,24 @@ requirement-to-test mapping is in the [traceability matrix](12-traceability-matr
 | Downstream targets          | Deterministic, stateful AWS/Jira simulators support the numbered scenarios.                                                                                                                                                                                                          | No real AWS/Jira SDK, cloud credential, or production side-effect route is present.                                                                                                       |
 
 ## Runnable paths
+
+### Authenticated approval API foundation
+
+`SimulatorApprovalServer` is a separate, loopback-only Java HTTP factory,
+not part of either current demo launcher. Its executable integration tests
+combine strict RS256 access-token verification, operator-owned human/workload
+memberships and per-call scopes with PostgreSQL V6 exact action snapshots and
+durable approval/execution state. They exercise independent review, owner-only
+execution, restart, expiry, stale policy, replay, concurrency and snapshot
+rollback without a real target. Run `pnpm test:approval-api --rerun-tasks`.
+
+This adds a tested authenticated local API boundary; it does not turn the
+read-only console into an approval UI, compose the hosted MCP path into it,
+qualify an external IdP login, or provide a public product bootstrap. The
+default demo/hosted behavior and limitations in the matrix above are unchanged.
+Snapshots are operational state with bounded simulated arguments and credential
+fingerprints; the audit ledger still omits raw arguments and reusable secrets.
+See the [API runbook](../runbooks/authenticated-approval-api-foundation.md).
 
 - `pnpm demo` starts the combined loopback Java backend and read-only React
   console. [Scenarios 0–11](../demo-scenarios/README.md) cover source proof,

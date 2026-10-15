@@ -39,6 +39,20 @@ final class HumanApprovalServiceTest {
   private static final TenantPartition ACME = new TenantPartition("acme");
 
   @Test
+  void snapshotRequestCannotSilentlyFallBackToAStoreWithoutSnapshotSupport() {
+    FakeState state = new FakeState();
+    AtomicInteger targetCalls = new AtomicInteger();
+    HumanApprovalService service = service(state, action -> {
+      targetCalls.incrementAndGet();
+      return JsonSupport.MAPPER.nullNode();
+    });
+    assertThatThrownBy(() -> service.requestApprovalWithSnapshot(
+        new TrustedTenantContext(ACME), event())).hasMessage("APPROVAL_SNAPSHOT_UNAVAILABLE");
+    assertThat(state.state).isNull();
+    assertThat(targetCalls).hasValue(0);
+  }
+
+  @Test
   void pendingApprovalAndTrustedReviewerAuthorizationRemainSeparateFromTargetExecution() {
     FakeState state = new FakeState();
     AtomicInteger targetCalls = new AtomicInteger();

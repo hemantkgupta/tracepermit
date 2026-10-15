@@ -26,8 +26,14 @@ Atomic approval + permit claim → simulator execution
 
 ![TracePermit Claim Boundary](/images/03-claim-boundary.png)
 
-The POC does **not** expose an authenticated remote approval API, editable
-console control, or Slack/Teams notification workflow. The React console is
-read-only. [Scenario 3](https://github.com/hemantkgupta/tracepermit/blob/main/docs/demo-scenarios/03-request-bound-human-approval.md)
+The default POC does **not** expose a public approval API, editable console
+control, or Slack/Teams notification workflow. A separate loopback-only Java
+API foundation verifies access tokens plus operator-owned reviewer membership
+and persists exact action snapshots with pending approvals. Its automated
+qualification uses a synthetic IdP and safe simulator, not a live browser
+login. It is not started by the existing demo launchers. See the
+[API qualification runbook](https://github.com/hemantkgupta/tracepermit/blob/main/docs/runbooks/authenticated-approval-api-foundation.md).
+The React console remains read-only.
+[Scenario 3](https://github.com/hemantkgupta/tracepermit/blob/main/docs/demo-scenarios/03-request-bound-human-approval.md)
 and [Scenario 8](https://github.com/hemantkgupta/tracepermit/blob/main/docs/demo-scenarios/08-production-deletion-request-bound-approval.md)
 exercise the approval boundary with safe simulators and disposable state.

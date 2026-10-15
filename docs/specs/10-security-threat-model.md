@@ -119,6 +119,15 @@
 
 ### Policy/approval to executor
 
+The separate authenticated loopback approval API adds verified access tokens
+plus operator-owned membership to this boundary. It never accepts requester,
+tenant, reviewer role or canonical action claims from HTTP bodies. Only one
+bounded simulator operation is normalized. Immutable action snapshots commit
+with pending approval and are checked again before execution. The original
+requester and a still-enrolled distinct human reviewer are required. Browser
+sessions, public-edge protection, durable identity administration and real
+targets remain unqualified; see [ADR 0034](../architecture/0034-authenticated-loopback-approval-api.md).
+
 - Signed request-bound capability
 - Audience, subject, policy version, expiry, and use limit
 - Executor recomputes action hash and atomically consumes authority

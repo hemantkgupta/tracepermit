@@ -63,6 +63,14 @@ verifies signed anchor receipts before storing immutable delivery evidence.
 
 ## Cryptographic and data boundaries
 
+The separate loopback `SimulatorApprovalServer` derives reviewer authority
+from verified access tokens plus operator-owned `ApprovalMemberships`.
+`DurableApprovalActionState` extends approval persistence with an atomic exact
+action snapshot and tenant-scoped reads. PostgreSQL V6 implements this port;
+`HumanApprovalService.requestApprovalWithSnapshot` requires it. Execution uses
+the original stored canonical action rather than a new client submission.
+The existing console and demo launchers do not use this foundation yet.
+
 Signed artifacts use named canonicalization and algorithm profiles with
 allowlisted keys. An endpoint source proof binds the exact MCP method/params
 and the authenticated connector credential fingerprint. Delegation grants
