@@ -401,8 +401,12 @@ sequenceDiagram
 **Proof boundary:** development process/device evidence and file keys, not
 hardware-backed managed endpoints. An attached terminal does not prove each call
 was human-authorized. Scripted tests may observe Node, not Codex, as the parent.
-Native Codex source-attested connector qualification remains to be done; the
-separate bearer-only approval profile does not establish it.
+The [2026-10-15 native Codex record](https://github.com/hemantkgupta/tracepermit/blob/main/docs/demo-scenarios/evidence/codex-native-endpoint-2026-10-15.md)
+qualifies model-selected simulator read/block for CLI 0.162.1/`gpt-5.6-sol` on
+macOS, correlated with Java CLI-origin events. Use `pnpm demo:endpoint:codex`
+with the same-checkout `pnpm demo`; full native process-fact capture, remaining
+source-negative rehearsal and managed endpoint controls are still separate.
+This is not the bearer-only durable approval profile.
 [Connector scenario](https://github.com/hemantkgupta/tracepermit/blob/main/docs/demo-scenarios/00-connector-origin-and-egress.md).
 
 ## Flow 7: hosted OAuth through a tunnel

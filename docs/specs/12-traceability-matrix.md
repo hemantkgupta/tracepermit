@@ -23,6 +23,22 @@ distinguish protocol tests from actual client/model and reviewer observations.
 
 See the [rehearsal plan](../runbooks/flow-rehearsal-plan.md) for remaining manual gates.
 
+## Named native endpoint rehearsal
+
+The [2026-10-15 native Codex evidence](../demo-scenarios/evidence/codex-native-endpoint-2026-10-15.md)
+adds one CLI 0.162.1/`gpt-5.6-sol` macOS model-selected simulator read/block pair,
+correlated with Java action-feed events at runtime revision `50937a7`.
+
+| Requirements                                             | Evidence added                                                                                                                                                                                                                  | Boundary                                                                                                                                               |
+| -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| FR-001/003/006/009/010/014/016/017; SEC-004/014; REL-002 | Native model calls returned `allow / executed` and `block / denied`; fresh server projections agreed; expired-token rejection recorded separately                                                                               | Named development profile only; full process-fact transcript and independent live invocation counter not captured                                      |
+| SEC-003/011; OPS-004                                     | `run-codex-endpoint-demo.sh`, `codex-endpoint-preflight.mjs`, isolated launcher tests and CI step; same-checkout session/key, matching build/readiness, explicit Java forwarding, symlink resolution and environment-only token | Ergonomic preflight, not backend authentication; no global config, token persistence, automatic refresh or tool retry; Java trust boundaries unchanged |
+
+The remaining source-proof negatives have separate automated verifier/E2E
+coverage, not manual native-model proof from this pair. Gate B, production key
+custody, enrollment and anti-bypass remain partial; no existing status below is
+upgraded to production-qualified.
+
 ## Local MCP to durable approval composition
 
 | Requirements                                 | Implementation and verification                                                                                                                                                                                      | Boundary                                                                                                       |

@@ -24,6 +24,8 @@
     "site:build": "npm --prefix site run build",
     "site:preview": "npm --prefix site run preview",
     "demo": "scripts/run-demo.sh",
+    "demo:endpoint:codex": "/bin/bash scripts/run-codex-endpoint-demo.sh",
+    "test:endpoint-launcher": "node --test scripts/codex-endpoint-demo.test.mjs",
     "demo:run": "scripts/run-demo-scenarios.sh",
     "demo:scenario:connector": "scripts/run-connector-origin-scenario.sh",
     "demo:scenario:connector:auto": "scripts/run-connector-origin-scenario.sh --auto",

@@ -43,6 +43,9 @@ jobs:
       - name: Verify React console and Java backend
         run: pnpm check
 
+      - name: Verify simulator-only native client launcher
+        run: pnpm test:endpoint-launcher
+
       - name: Install and build static documentation site
         run: |
           npm --prefix site ci

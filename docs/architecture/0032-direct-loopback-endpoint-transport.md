@@ -30,3 +30,14 @@ configuration convenience in exchange for a simple, reviewable route for
 credential- and proof-bearing requests. It does not prevent a same-user local
 process from attacking an unprotected development machine; managed endpoint
 identity and anti-bypass remain future work.
+
+## Development launcher note (2026-10-15)
+
+`pnpm demo:endpoint:codex` keeps this route unchanged: fixed numeric-loopback
+metadata/token URLs, curl configuration/proxy/redirect/retry disabled, ephemeral
+credential forwarded only through the environment, and Java source verification
+still required. Matching build/session/key preflight is a convenience check,
+not backend authentication. Resolving the native client's final symlink and
+forwarding selected Java 21 avoid setup failures without weakening the Java
+observer. The launcher retains a measurable shell ancestor and never asserts
+terminal/human facts. See the [bounded native proof](../demo-scenarios/evidence/codex-native-endpoint-2026-10-15.md).

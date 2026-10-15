@@ -1,0 +1,64 @@
+{
+  "schemaVersion": "1.0",
+  "capturedAt": "2026-10-15T16:53:01.275Z",
+  "source": "GET /api/v1/actions?limit=50 on numeric loopback; selected projection fields only",
+  "runtimeCommit": "50937a768b2eecba53d795ffe1a3bfc176ed7350",
+  "independentSignedAuditLedger": false,
+  "liveDispatchCounterCaptured": false,
+  "items": [
+    {
+      "eventId": "e3ed5bfd-8545-4dda-b118-06ace0c170e7",
+      "observedAt": "2026-10-15T16:41:48.623042Z",
+      "traceId": "ea71898a5729836ef1abb03e16139c13",
+      "trigger": {
+        "kind": "human",
+        "origin": "cli",
+        "clientName": "TracePermit managed CLI (development)"
+      },
+      "target": {
+        "system": "aws",
+        "environment": "prod",
+        "accountId": "simulated-123",
+        "resourceType": "ec2-instance",
+        "toolName": "aws.ec2.terminate_instances"
+      },
+      "decision": {
+        "outcome": "block",
+        "reasonCode": "AGENT_EC2_TERMINATION_BLOCKED",
+        "policyId": "pol-aws-agentic-demo-001",
+        "policyVersion": 1,
+        "matchedRuleId": "block-agent-ec2-termination"
+      },
+      "executionStatus": "not_executed",
+      "simulated": true,
+      "latencyMs": 2
+    },
+    {
+      "eventId": "40b1bfd9-8a15-40d2-97fd-0aab08119fbf",
+      "observedAt": "2026-10-15T16:30:14.221706Z",
+      "traceId": "34b701475a65cb5ed5953a3b26beba58",
+      "trigger": {
+        "kind": "human",
+        "origin": "cli",
+        "clientName": "TracePermit managed CLI (development)"
+      },
+      "target": {
+        "system": "aws",
+        "environment": "staging",
+        "accountId": "simulated-123",
+        "resourceType": "cloudwatch-log-group",
+        "toolName": "aws.logs.filter_log_events"
+      },
+      "decision": {
+        "outcome": "allow",
+        "reasonCode": "BOUNDED_LOG_READ",
+        "policyId": "pol-aws-agentic-demo-001",
+        "policyVersion": 1,
+        "matchedRuleId": "allow-cloudwatch-read"
+      },
+      "executionStatus": "succeeded",
+      "simulated": true,
+      "latencyMs": 15
+    }
+  ]
+}

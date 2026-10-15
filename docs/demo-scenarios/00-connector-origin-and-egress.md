@@ -114,9 +114,11 @@ The connector performs these operations for each supported MCP frame:
    compact source proof in separate headers.
 
 In this demo harness the observed immediate parent is normally `node`, because
-the Node launcher starts the Java connector. A separately qualified native
-Codex or Claude Code registration would be expected to show that product's
-actual parent executable; this POC does not claim that qualification yet.
+the Node launcher starts the Java connector. The separate
+[native Codex read/block rehearsal](evidence/codex-native-endpoint-2026-10-15.md)
+used direct native stdio registration, not this Node harness. That dated client
+proof does not include a retained full executable-hash/start-time transcript or
+qualify Claude Code, managed endpoint identity or arbitrary native clients.
 
 ## What leaves the connector
 
@@ -210,6 +212,7 @@ After the server result:
   managed key custody.
 - Replay state is not yet a shared multi-replica production service.
 - Executable allowlisting and platform-signature policy are planned.
-- Native Codex/Claude version qualification remains planned.
+- One native Codex version/model passed local read/block; full native process-fact
+  capture, remaining negative-path rehearsal and Claude qualification remain separate.
 - Transport is loopback HTTP for the local composition; production remote
   connectors require TLS and sender constraint.
