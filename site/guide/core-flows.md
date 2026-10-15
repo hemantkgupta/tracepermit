@@ -140,20 +140,7 @@ An engineer asks ChatGPT or a local CLI assistant: _"Check the last 50 error log
 
 #### Sequence Diagram
 
-```text
-Agent / Client               Trusted Gateway                Policy Engine               Simulator
-      │                             │                             │                         │
-      │── 1. tools/call (Token) ───>│                             │                         │
-      │                             │── 2. Canonical Action ─────>│                         │
-      │                             │      (actionHash: sha256)   │                         │
-      │                             │                             │── 3. Decision: "allow" ─│
-      │                             │<─ 4. Issue Single-Use Permit│                         │
-      │                             │                             │                         │
-      │                             │── 5. execute(action, permit) ────────────────────────>│
-      │                             │                                                       │ Claim single-use
-      │                             │<── 6. Simulated Log Results ──────────────────────────│
-      │<─ 7. MCP Tool Result ───────│                                                       │
-```
+![Flow 1: Safe Read (Autonomous Allow)](/images/flows/flow-1-safe-read.svg)
 
 <details>
 <summary>View Mermaid Syntax (for Notion / GitHub)</summary>
@@ -200,18 +187,7 @@ An agent is misled by an adversarial prompt injection or a hallucinated instruct
 
 #### Sequence Diagram
 
-```text
-Agent / Client               Trusted Gateway                Policy Engine               Simulator
-      │                             │                             │                         │
-      │── 1. terminate_instances ──>│                             │                         │
-      │                             │── 2. Canonical Action ─────>│                         │
-      │                             │                             │── 3. Decision: "block" ─│
-      │                             │                             │      (critical risk)    │
-      │                             │   4. Append audit evidence  │                         │
-      │                             │      (not_executed)         │                         │
-      │<─ 5. Error: Action Blocked ─│                             │     [Zero Dispatches]   │
-      │      (no permit issued)     │                             │     (Never Called) ─────┼── X
-```
+![Flow 2: Destructive Side Effect (Policy Block)](/images/flows/flow-2-destructive-block.svg)
 
 <details>
 <summary>View Mermaid Syntax (for Notion / GitHub)</summary>
@@ -278,23 +254,7 @@ TracePermit freezes the exact canonical action hash and registers a pending appr
 
 #### Sequence Diagram
 
-```text
-Agent (Workload)             Gateway / Approvals            PostgreSQL DB        Human Reviewer      Simulator
-      │                             │                             │                    │                 │
-      │── 1. update_sec_group ─────>│                             │                    │                 │
-      │                             │── Decision: require_approval│                    │                 │
-      │                             │── 2. Store Pending Hash ───>│                    │                 │
-      │<─ 3. PENDING (appr-101) ────│                             │                    │                 │
-      │                             │                             │                    │                 │
-      │── 4. Self-approval ────────>│ (REJECTED: No self-review)  │                    │                 │
-      │                             │                             │                    │                 │
-      │                             │<── 5. Review & Approve ──────────────────────────│ (Independent)   │
-      │                             │── 6. Mark Approved ────────>│                    │                 │
-      │                             │── 7. Claim Permit (1x) ────>│                    │                 │
-      │                             │                             │                    │                 │
-      │                             │── 8. execute(approved permit) ────────────────────────────────────>│
-      │                             │<── 9. Simulated Update OK ────────────────────────────────────────│
-```
+![Flow 3: Dual-Control Human Approval (Two-Man Rule)](/images/flows/flow-3-human-approval.svg)
 
 <details>
 <summary>View Mermaid Syntax (for Notion / GitHub)</summary>
@@ -361,22 +321,7 @@ An allowlisted transformer clamps `limit` down to `100`, creates a **derived can
 
 #### Sequence Diagram
 
-```text
-Agent / Workload             Trusted Gateway                Policy Engine        Allowlisted Sanitizer   Simulator
-      │                             │                             │                    │                     │
-      │── 1. read(limit: 50000) ───>│                             │                    │                     │
-      │                             │── 2. evaluate(original) ───>│                    │                     │
-      │                             │<─ 3. outcome: "sanitize" ───│                    │                     │
-      │                             │                             │                    │                     │
-      │                             │── 4. transform(original) ───────────────────────>│                     │
-      │                             │<── 5. Derived Action (limit: 100, new hash) ─────│                     │
-      │                             │                             │                    │                     │
-      │                             │── 6. evaluate(derived) ────>│                    │                     │
-      │                             │<─ 7. outcome: "allow" ──────│                    │                     │
-      │                             │                             │                    │                     │
-      │                             │── 8. execute(derived action, permit) ─────────────────────────────────>│
-      │<─ 9. Result (100 logs) ─────│                                                                        │
-```
+![Flow 4: Action Sanitization (Self-Healing Guardrails)](/images/flows/flow-4-sanitization.svg)
 
 <details>
 <summary>View Mermaid Syntax (for Notion / GitHub)</summary>
@@ -445,27 +390,7 @@ Neither tool call is inherently forbidden on its own. TracePermit maintains **se
 
 #### Sequence Diagram
 
-```text
-Workload (Sub-Agent)         Gateway & History Store        Policy Engine        CRM Simulator       Egress Outbox
-      │                             │                             │                    │                   │
-      │ [STEP 1: Bulk Customer Read]│                             │                    │                   │
-      │── 1. crm.get_records ──────>│                             │                    │                   │
-      │                             │── 2. evaluate(read) ───────>│                    │                   │
-      │                             │<─ 3. outcome: "allow" ──────│                    │                   │
-      │                             │   (Record in history)       │                    │                   │
-      │                             │── 4. execute read ──────────────────────────────>│                   │
-      │<─ 5. 20 Customer Records ───│                                                  │                   │
-      │                             │                             │                    │                   │
-      │ [STEP 2: External Send Attempt]                           │                    │                   │
-      │── 6. send_external_webhook ─>│                            │                    │                   │
-      │                             │── 7. evaluate(send, history)│                    │                   │
-      │                             │   (Detects: PII -> Send)    │                    │                   │
-      │                             │<─ 8. outcome: "block" ──────│                    │                   │
-      │                             │      (SYNTHETIC_PII_EXFIL)  │                    │                   │
-      │                             │                             │                    │                   │
-      │<─ 9. Error: Action Blocked ─│                             │                    │ [Zero Dispatches] │
-      │      (no permit issued)     │                             │                    │ (Never Called) ───┼── X
-```
+![Flow 5: Semantic Sequence & Multi-Step Defense](/images/flows/flow-5-sequence-exfiltration.svg)
 
 <details>
 <summary>View Mermaid Syntax (for Notion / GitHub)</summary>
