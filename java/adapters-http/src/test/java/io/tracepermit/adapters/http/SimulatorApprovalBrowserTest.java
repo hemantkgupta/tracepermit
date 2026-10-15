@@ -147,6 +147,138 @@ final class SimulatorApprovalBrowserTest {
     assertThat(call("GET", fixture.origin() + "/assets/missing.js", null, null, Map.of()).statusCode()).isEqualTo(404);
   }
 
+  @Test void mcpRequestBrowserReviewRestartAndExplicitResumeUseOneDurableWorkflow() throws Exception {
+    String bearer = fixture.accessToken("alice");
+    var pending = mcp(bearer, ApprovalMcpAdapter.REQUEST, SimulatorApprovalBrowserFixture.ACTION);
+    assertThat(pending.path("status").asText()).isEqualTo("pending");
+    assertThat(pending.path("executionStatus").asText()).isEqualTo("not_executed");
+    assertThat(pending.path("action").path("protocol").asText()).isEqualTo("mcp");
+    assertThat(pending.toString()).doesNotContain(bearer, "credentialFingerprint", "#alice");
+    String id = pending.path("approvalRequestId").asText();
+    var snapshot = fixture.state.findAction(new io.tracepermit.execution.TenantPartition("simulated-alpha"), id);
+    assertThat(snapshot.path("trigger").path("origin").asText()).isEqualTo("cli");
+    assertThat(snapshot.path("trigger").path("kind").asText()).isEqualTo("service");
+    assertThat(snapshot.path("identity").path("actor").path("assurance").asText()).isEqualTo("asserted");
+    assertThat(snapshot.has("source")).isFalse();
+    String resume = resume(pending);
+    assertThat(mcp(bearer, ApprovalMcpAdapter.RESUME, resume).path("errorCode").asText()).isEqualTo("APPROVAL_NOT_EXECUTABLE");
+    assertThat(rules()).isZero();
+    fixture.restart(); // approvals/snapshots persist; login sessions do not
+    Login bob = login("bob");
+    var inbox = json(call("GET", fixture.origin() + ApprovalBrowserAdapter.API, bob.cookie(), null, Map.of()));
+    assertThat(inbox.path("items").get(0).path("requestHash")).isEqualTo(pending.path("requestHash"));
+    mutate(bob, "/" + id + "/decision", decision(pending, "approve"), 200);
+    assertThat(mcp(bearer, ApprovalMcpAdapter.STATUS, "{\"approvalRequestId\":\"" + id + "\"}")
+        .path("executionStatus").asText()).isEqualTo("not_executed");
+    assertThat(rules()).isZero();
+    var results = new java.util.ArrayList<java.util.concurrent.CompletableFuture<JsonNode>>();
+    for (int index = 0; index < 8; index++) results.add(java.util.concurrent.CompletableFuture.supplyAsync(() -> {
+      try { return mcp(bearer, ApprovalMcpAdapter.RESUME, resume); }
+      catch (Exception failure) { throw new IllegalStateException(failure); }
+    }));
+    long successes = results.stream().map(java.util.concurrent.CompletableFuture::join)
+        .filter(value -> "succeeded".equals(value.path("executionStatus").asText())).count();
+    assertThat(successes).isEqualTo(1);
+    assertThat(rules()).isEqualTo(1);
+    fixture.restart();
+    assertThat(mcp(bearer, ApprovalMcpAdapter.RESUME, resume).path("errorCode").asText()).isEqualTo("APPROVAL_NOT_EXECUTABLE");
+    var status = mcp(bearer, ApprovalMcpAdapter.STATUS, "{\"approvalRequestId\":\"" + id + "\"}");
+    assertThat(status.path("status").asText()).isEqualTo("consumed");
+    assertThat(status.path("executionStatus").asText()).isEqualTo("succeeded");
+    assertThat(fixture.state.readEvidence(new io.tracepermit.execution.TenantPartition("simulated-alpha")).toString())
+        .doesNotContain(bearer, "192.0.2.0", "privateKey");
+  }
+
+  @Test void mcpHasNoApprovalToolAndCannotSubstituteOwnerHashOrArguments() throws Exception {
+    String alice = fixture.accessToken("alice");
+    var pending = mcp(alice, ApprovalMcpAdapter.REQUEST, SimulatorApprovalBrowserFixture.ACTION);
+    var tools = rpc(alice, "tools/list", "{}").path("result").path("tools");
+    assertThat(tools).hasSize(3);
+    assertThat(tools.toString()).doesNotContain("approvals.decide", "tracepermit_approve");
+    assertThat(rpc(fixture.accessToken("bob"), "tools/list", "{}").path("result").path("tools")).isEmpty();
+    assertThat(mcp(fixture.accessToken("bob"), ApprovalMcpAdapter.RESUME, resume(pending)).path("errorCode").asText()).isEqualTo("NOT_AUTHORIZED");
+    assertThat(mcp(fixture.accessToken("dave"), ApprovalMcpAdapter.RESUME, resume(pending)).path("errorCode").asText()).isEqualTo("REQUESTER_REQUIRED");
+    assertThat(mcp(alice, ApprovalMcpAdapter.RESUME, resume(pending).replace(pending.path("requestHash").asText(), "changed"))
+        .path("errorCode").asText()).isEqualTo("APPROVAL_BINDING_MISMATCH");
+    assertThat(rpc(alice, "tools/call", "{\"name\":\"tracepermit_approve\",\"arguments\":{}}").path("error").path("message").asText()).isEqualTo("TOOL_NOT_FOUND");
+    assertThat(rpc(alice, "tools/call", "{\"name\":\"" + ApprovalMcpAdapter.RESUME + "\",\"arguments\":"
+        + resume(pending).replace("}", ",\"port\":22}") + "}").path("error").path("message").asText()).isEqualTo("INVALID_PARAMS");
+    assertThat(mcp(alice, ApprovalMcpAdapter.REQUEST, SimulatorApprovalBrowserFixture.ACTION.replace("sg-demo", "sg-real"))
+        .path("errorCode").asText()).isEqualTo("INVALID_REQUEST");
+    assertThat(rules()).isZero();
+  }
+
+  @Test void mcpNarrowedScopeRevokedReviewerAndDeniedApprovalNeverDispatch() throws Exception {
+    String alice = fixture.accessToken("alice");
+    var pending = mcp(alice, ApprovalMcpAdapter.REQUEST, SimulatorApprovalBrowserFixture.ACTION);
+    fixture.accessClaims = claims -> claims.put("scope", "approvals.read");
+    String readOnly = fixture.accessToken("alice");
+    fixture.accessClaims = claims -> {};
+    assertThat(rpc(readOnly, "tools/list", "{}").path("result").path("tools")).hasSize(1);
+    assertThat(mcp(readOnly, ApprovalMcpAdapter.RESUME, resume(pending)).path("errorCode").asText()).isEqualTo("NOT_AUTHORIZED");
+    Login bob = login("bob");
+    mutate(bob, "/" + pending.path("approvalRequestId").asText() + "/decision", decision(pending, "deny"), 200);
+    assertThat(mcp(alice, ApprovalMcpAdapter.RESUME, resume(pending)).path("errorCode").asText()).isEqualTo("APPROVAL_NOT_EXECUTABLE");
+    var next = mcp(alice, ApprovalMcpAdapter.REQUEST, SimulatorApprovalBrowserFixture.ACTION);
+    mutate(bob, "/" + next.path("approvalRequestId").asText() + "/decision", decision(next, "approve"), 200);
+    fixture.config.memberships().replace(java.util.List.of(new ApprovalMemberships.Entry(
+        SimulatorApprovalBrowserFixture.ISSUER + "#alice", SimulatorApprovalBrowserFixture.CLIENT,
+        new io.tracepermit.execution.TenantPartition("simulated-alpha"), true,
+        java.util.Set.of(ApprovalMemberships.Role.REQUESTER))));
+    assertThat(mcp(alice, ApprovalMcpAdapter.RESUME, resume(next)).path("errorCode").asText()).isEqualTo("REVIEWER_AUTHORITY_REVOKED");
+    assertThat(rules()).isZero();
+  }
+
+  @Test void mcpTransportCannotUseBrowserCookiesOriginsUnverifiedTokensOrUnsupportedVersion() throws Exception {
+    Login alice = login("alice");
+    String bearer = fixture.accessToken("alice");
+    String ping = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}";
+    for (Map<String, String> extra : java.util.List.of(Map.of("Origin", fixture.origin()),
+        Map.of("Cookie", alice.cookie()))) {
+      var headers = new HashMap<>(extra); headers.put("Authorization", "Bearer " + bearer);
+      assertThat(call("POST", fixture.origin() + "/mcp", null, ping, headers).statusCode()).isEqualTo(403);
+    }
+    assertThat(call("POST", fixture.origin() + "/mcp", null, ping, Map.of()).statusCode()).isEqualTo(401);
+    assertThat(call("POST", fixture.origin() + "/mcp", null, ping, Map.of("Authorization", "Bearer bad")).statusCode()).isEqualTo(401);
+    assertThat(call("POST", fixture.origin() + "/mcp", null, ping, Map.of("Authorization", "Bearer " + bearer,
+        "MCP-Protocol-Version", "unknown")).statusCode()).isEqualTo(400);
+    assertThat(call("GET", fixture.origin() + "/mcp", null, null, Map.of("Authorization", "Bearer " + bearer)).statusCode()).isEqualTo(405);
+    assertThat(call("POST", fixture.origin() + "/mcp", null, ping, Map.of("Authorization", "Bearer " + bearer,
+        "tracepermit-source-attestation", "unverified")).statusCode()).isEqualTo(403);
+    assertThat(call("POST", fixture.origin() + "/mcp", null, ping.replace("1,", "1,\"id\":2,"), Map.of("Authorization", "Bearer " + bearer)).statusCode()).isEqualTo(400);
+  }
+
+  @Test void mcpExpiredApprovalAndSelfReviewerAreRejected() throws Exception {
+    String dave = fixture.accessToken("dave");
+    var pending = mcp(dave, ApprovalMcpAdapter.REQUEST, SimulatorApprovalBrowserFixture.ACTION);
+    mutate(login("dave"), "/" + pending.path("approvalRequestId").asText() + "/decision", decision(pending, "approve"), 403);
+    mutate(login("bob"), "/" + pending.path("approvalRequestId").asText() + "/decision", decision(pending, "approve"), 200);
+    fixture.clock.now = fixture.clock.now.plusSeconds(301);
+    assertThat(mcp(fixture.accessToken("dave"), ApprovalMcpAdapter.RESUME, resume(pending)).path("errorCode").asText()).isEqualTo("APPROVAL_EXPIRED");
+    assertThat(rules()).isZero();
+  }
+
+  private int rules() { return fixture.simulator.snapshot().path("aws").path("securityGroups").path("sg-demo").size(); }
+  private static String resume(JsonNode pending) {
+    return "{\"approvalRequestId\":\"" + pending.path("approvalRequestId").asText()
+        + "\",\"requestHash\":\"" + pending.path("requestHash").asText() + "\"}";
+  }
+  private static String decision(JsonNode pending, String outcome) {
+    return "{\"requestHash\":\"" + pending.path("requestHash").asText() + "\",\"decision\":\"" + outcome + "\"}";
+  }
+  private JsonNode mcp(String bearer, String name, String arguments) throws Exception {
+    var result = rpc(bearer, "tools/call", "{\"name\":\"" + name + "\",\"arguments\":" + arguments + "}").path("result");
+    assertThat(result.isObject()).isTrue();
+    return result.path("structuredContent");
+  }
+  private JsonNode rpc(String bearer, String method, String params) throws Exception {
+    var response = call("POST", fixture.origin() + "/mcp", null,
+        "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"" + method + "\",\"params\":" + params + "}",
+        Map.of("Authorization", "Bearer " + bearer, "MCP-Protocol-Version", "2025-03-26"));
+    assertThat(response.statusCode()).describedAs(response.body()).isEqualTo(200);
+    return json(response);
+  }
+
   private Login login(String subject) throws Exception {
     var start = call("GET", fixture.origin() + "/auth/login", null, null, Map.of());
     var callback = call("GET", authorize(start, subject), cookie(start, "tp_local_login"), null, Map.of());

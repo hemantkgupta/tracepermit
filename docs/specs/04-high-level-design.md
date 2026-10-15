@@ -36,6 +36,14 @@ Provider transport supplies reachability, not TracePermit user identity or
 authority. A hosted-client path needs independently verified application
 OAuth/OIDC evidence before it may claim the signed-in human as the subject.
 
+The separate local durable-approval composition now accepts a bounded MCP
+request/status/resume workflow. It converges with bearer/browser approval APIs
+on the existing application service and PostgreSQL exact snapshot/claim, not a
+parallel approval engine. A distinct browser reviewer decides, and the original
+MCP principal/client explicitly resumes. See
+[ADR 0037](../architecture/0037-mcp-durable-simulator-approval-composition.md).
+This does not compose the hosted OAuth runtime or establish device assurance.
+
 ## 3. Target logical architecture
 
 ```mermaid

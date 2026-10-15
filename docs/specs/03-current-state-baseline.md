@@ -53,7 +53,10 @@ code/PKCE/state/nonce sign-in on the same numeric-loopback origin. Server-held
 tokens, opaque expiring cookies, per-mutation CSRF and per-request token/role
 checks protect requester/reviewer/viewer flows. `pnpm demo:approvals:browser`
 uses a clearly synthetic test-classpath-only IdP and disposable PostgreSQL.
-It does not compose hosted MCP approvals, qualify an external browser IdP,
+The same local listener now composes authenticated Codex-candidate MCP
+request/status/resume tools with the durable approval service and browser inbox.
+See the [MCP approval runbook](../runbooks/codex-durable-approvals.md).
+It does not compose hosted OAuth MCP approvals, qualify an external browser IdP,
 authenticate the default read API, or provide a public product bootstrap.
 The default demo/hosted behavior and limitations are unchanged. See the
 [browser runbook](../runbooks/browser-approval-inbox.md) and

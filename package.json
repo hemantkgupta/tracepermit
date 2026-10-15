@@ -19,6 +19,7 @@
     "dev:console": "pnpm --filter @tracepermit/console dev",
     "dev:approvals": "scripts/run-java-simulator-approvals.sh",
     "demo:approvals:browser": "bash scripts/run-approval-browser-qualification.sh",
+    "demo:approvals:codex": "bash scripts/run-approval-codex-qualification.sh",
     "site:dev": "npm --prefix site run dev",
     "site:build": "npm --prefix site run build",
     "site:preview": "npm --prefix site run preview",
