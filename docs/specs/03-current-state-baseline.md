@@ -34,6 +34,18 @@ requirement-to-test mapping is in the [traceability matrix](12-traceability-matr
 
 ## Runnable paths
 
+### Named native endpoint rehearsal
+
+The [2026-10-15 native Codex proof](../demo-scenarios/evidence/codex-native-endpoint-2026-10-15.md)
+correlates CLI 0.162.1/`gpt-5.6-sol` model-selected simulated read/block with Java
+CLI-origin action-feed events. `pnpm demo:endpoint:codex` adds development-only
+preflight and invocation-scoped stdio configuration alongside `pnpm demo`.
+It forwards selected Java 21, resolves the native executable and issues one
+five-minute synthetic credential; it neither refreshes nor retries tool calls.
+This is separate from bearer-only durable approvals. Full retained process facts,
+manual proof-negative rehearsal, measured live dispatch counts, protected keys,
+managed enrollment and host-wide anti-bypass are not established by this pair.
+
 ### Authenticated approval API foundation
 
 `SimulatorApprovalServer` is a separate, loopback-only Java HTTP factory,
@@ -90,7 +102,7 @@ replay state for a deployed edge, real target credential brokerage/egress
 isolation, a reviewed external evidence sink, production SLOs, or broad
 third-party client qualification. These require separate threat modeling,
 implementation, and release evidence; they must not be inferred from local
-tests, the static website, or the one live-qualified hosted-client profile.
+tests, the static website, or the named live-qualified client profiles.
 
 ## Trust limitation
 

@@ -385,8 +385,11 @@ Code: [connector](../java/endpoint-connector/src/main/java/io/tracepermit/endpoi
 [source verifier](../java/identity/src/main/java/io/tracepermit/identity/SourceAttestationVerifier.java).
 Tests: [source verification](../java/identity/src/test/java/io/tracepermit/identity/SourceAttestationVerifierTest.java).
 Try [Scenario 0](demo-scenarios/00-connector-origin-and-egress.md) after `pnpm demo`:
-`pnpm demo:scenario:connector:auto` requires an attached terminal. Native Codex
-registration of this source-attested connector still needs qualification.
+`pnpm demo:scenario:connector:auto` requires an attached terminal. The separate
+`pnpm demo:endpoint:codex` launcher supports native read/block rehearsal; the
+[dated Codex 0.162.1/`gpt-5.6-sol` record](demo-scenarios/evidence/codex-native-endpoint-2026-10-15.md)
+correlates both model calls with server events. Full native process-fact capture,
+remaining source-negative rehearsal and production endpoint controls remain separate.
 
 ## Flow 7: hosted OAuth identity through a tunnel
 

@@ -11,21 +11,23 @@ tests; the [scenario index](../demo-scenarios/README.md) has independent present
 
 ## Current proof levels
 
-| Flow             | Existing evidence                                                                                                                                                | Next manual gate                                                                                     |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| 1–2: read/block  | Deterministic adapter/executor tests; prior CLI and hosted-client simulator qualification                                                                        | Refresh the chosen client proof on the final demo revision                                           |
-| 3: approval      | Native protocol proof plus Codex 0.162.1/`gpt-5.6-sol` model-selected request/resume, browser review, replay, expiry and explicit-denial rejection on 2026-10-15 | Named local approval cases complete; native source-attested connector is a separate gate             |
-| 4: sanitization  | Signed-workload deterministic fixture and application tests                                                                                                      | Presenter rehearsal of 500 → 100, re-evaluation and distinct hashes                                  |
-| 5: sequence deny | Synthetic bulk-read/external-send fixture and tests                                                                                                              | Presenter rehearsal of both baseline and sequence-specific denies                                    |
-| 6: endpoint      | Local process/source-proof harness and verifier/connector tests                                                                                                  | Register the actual source-attested connector with native Codex, then qualify observed process facts |
-| 7: hosted OAuth  | One dated Auth0 + unmodified ChatGPT + private-tunnel composition                                                                                                | Reconnect/rehearse only that configured profile; collect fresh evidence if used                      |
-| 8: delegation    | Signed narrow-chain fixture plus four amplification rejects                                                                                                      | Presenter rehearsal; do not call fixture signers real sub-agents                                     |
-| 9: uncertainty   | Approval lost-completion/restart test plus separate unknown-queue worker tests                                                                                   | Test-guided explanation; no live automatic recovery daemon is qualified                              |
+| Flow             | Existing evidence                                                                                                                                                | Next manual gate                                                                                 |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| 1–2: read/block  | Deterministic adapter/executor tests; prior CLI and hosted-client simulator qualification                                                                        | Refresh the chosen client proof on the final demo revision                                       |
+| 3: approval      | Native protocol proof plus Codex 0.162.1/`gpt-5.6-sol` model-selected request/resume, browser review, replay, expiry and explicit-denial rejection on 2026-10-15 | Named local approval cases complete; native source-attested connector is a separate gate         |
+| 4: sanitization  | Signed-workload deterministic fixture and application tests                                                                                                      | Presenter rehearsal of 500 → 100, re-evaluation and distinct hashes                              |
+| 5: sequence deny | Synthetic bulk-read/external-send fixture and tests                                                                                                              | Presenter rehearsal of both baseline and sequence-specific denies                                |
+| 6: endpoint      | Named native Codex 0.162.1/`gpt-5.6-sol` model read/block correlated with Java events; separate verifier/connector tests                                         | Retain exact observed process-fact evidence and distinguish remaining source-negative rehearsals |
+| 7: hosted OAuth  | One dated Auth0 + unmodified ChatGPT + private-tunnel composition                                                                                                | Reconnect/rehearse only that configured profile; collect fresh evidence if used                  |
+| 8: delegation    | Signed narrow-chain fixture plus four amplification rejects                                                                                                      | Presenter rehearsal; do not call fixture signers real sub-agents                                 |
+| 9: uncertainty   | Approval lost-completion/restart test plus separate unknown-queue worker tests                                                                                   | Test-guided explanation; no live automatic recovery daemon is qualified                          |
 
 Historical records: [hosted/semantic qualification](../demo-scenarios/QUALIFICATION-EVIDENCE-2026-10-11.md)
 and [native Codex approval qualification](../demo-scenarios/evidence/codex-durable-approval-2026-10-15.md).
 The separate [model-driven record](../demo-scenarios/evidence/codex-model-driven-approval-2026-10-15.md)
 preserves the later prompt rehearsal and its bounded screenshot evidence.
+The [native endpoint record](../demo-scenarios/evidence/codex-native-endpoint-2026-10-15.md)
+adds model-selected read/block through the Java stdio connector on the same date.
 Do not overwrite dated evidence or convert an automated protocol test into a
 claim that the model selected a tool.
 
@@ -69,6 +71,17 @@ Start from [Scenario 0](../demo-scenarios/00-connector-origin-and-egress.md) and
 [connector runbook](java-mcp-endpoint-connector.md). This is **not** the bearer-only
 approval MCP profile. First agree the installed native client's stdio registration
 and key/profile configuration; do not silently change global client settings.
+
+The [2026-10-15 named native rehearsal](../demo-scenarios/evidence/codex-native-endpoint-2026-10-15.md)
+passed model-selected `allow / executed` and `block / denied`, independently
+correlated with `succeeded` and `not_executed` action-feed events. An earlier
+`EXPIRED_ACCESS_TOKEN` was correctly kept separate from the policy denial.
+`pnpm demo:endpoint:codex` now packages same-checkout/build/key/readiness preflight,
+explicit Java forwarding, resolved native executable and a fresh synthetic token.
+Its isolated launcher tests are not additional model-selection evidence.
+
+**Gate B remains partial:** no full executable-hash/start-time transcript or
+independent live dispatch counter was retained for these model calls.
 
 Capture actual parent executable/start-time/hash facts and verifier outcomes,
 then exercise missing, changed-request, wrong-credential and replayed proof

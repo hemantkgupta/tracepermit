@@ -59,6 +59,11 @@ semantic-sequence controls, and fail-secure behavior. The hosted-client OAuth
 scenario is a separate, optional profile requiring an external test IdP and
 private tunnel; it is not needed for the default demo.
 
+For native Codex read/block through the Java endpoint connector, keep `pnpm demo`
+running and use `pnpm demo:endpoint:codex` from a second attached terminal in the
+same checkout. See the [connector runbook](docs/runbooks/java-mcp-endpoint-connector.md)
+for preflight, five-minute credential handling and exact simulator prompts.
+
 For a coding-agent approval workflow, run `pnpm demo:approvals:codex`. This
 disposable synthetic environment connects authenticated MCP request/status/resume
 to the existing independent browser review and PostgreSQL single-use claim.
@@ -74,6 +79,11 @@ and model-driven rehearsal are separate from protocol tests.
 - Local loopback MCP, endpoint stdio connector, signed scheduled-workload
   adapter, PostgreSQL-backed approval/execution tests, and AWS/Jira simulators
   are exercised in CI and the numbered scenarios.
+- Codex CLI 0.162.1/`gpt-5.6-sol` on macOS passed model-selected simulator
+  read/block through the native endpoint connector on 2026-10-15. The
+  [dated proof](docs/demo-scenarios/evidence/codex-native-endpoint-2026-10-15.md)
+  does not establish protected key custody, full native process-fact capture
+  or host-wide anti-bypass.
 - One Auth0 + unmodified ChatGPT + OpenAI private-tunnel profile was
   live-qualified on 2026-10-11 for OAuth attribution and simulated read/block
   behavior. This does **not** qualify Claude web, every ChatGPT environment,

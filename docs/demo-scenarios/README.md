@@ -13,8 +13,10 @@ The multi-origin rehearsal is recorded in
 [qualification evidence for 2026-10-11](QUALIFICATION-EVIDENCE-2026-10-11.md).
 The separate [2026-10-15 model-driven Codex approval record](evidence/codex-model-driven-approval-2026-10-15.md)
 captures request/review/resume, replay, expiry and explicit reviewer-denial
-evidence for the named local durable approval profile. Native source-attested
-connector qualification remains separate.
+evidence for the named local durable approval profile. The separate
+[native endpoint record](evidence/codex-native-endpoint-2026-10-15.md) correlates
+model-selected read/block with Java CLI-origin events; remaining endpoint
+security qualification is not implied.
 
 ## Safety and claim boundary
 
