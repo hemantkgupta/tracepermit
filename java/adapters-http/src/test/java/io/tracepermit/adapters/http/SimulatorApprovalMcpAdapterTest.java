@@ -35,7 +35,7 @@ final class SimulatorApprovalMcpAdapterTest {
     assertThat(dispatch("unsupported", "{}").path("error").path("code").asInt()).isEqualTo(-32601);
   }
 
-  @ParameterizedTest @ValueSource(strings = {"[]", "{}", "{\"jsonrpc\":\"1.0\",\"id\":1,\"method\":\"ping\"}",
+  @ParameterizedTest @ValueSource(strings = {"[]", "{}", "{\"jsonrpc\":2.0,\"id\":1,\"method\":\"ping\"}",
       "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":1}", "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\",\"params\":[]}",
       "{\"jsonrpc\":\"2.0\",\"id\":null,\"method\":\"ping\"}", "{\"jsonrpc\":\"2.0\",\"id\":true,\"method\":\"ping\"}",
       "{\"jsonrpc\":\"2.0\",\"id\":1.5,\"method\":\"ping\"}", "{\"jsonrpc\":\"2.0\",\"id\":\" \",\"method\":\"ping\"}",
@@ -48,7 +48,7 @@ final class SimulatorApprovalMcpAdapterTest {
 
   @ParameterizedTest @ValueSource(strings = {"{}", "{\"name\":1}", "{\"name\":\"unknown\",\"arguments\":{}}",
       "{\"name\":\"tracepermit_get_approval\",\"arguments\":{}}",
-      "{\"name\":\"tracepermit_get_approval\",\"arguments\":{\"approvalRequestId\":\"invalid\"}}",
+      "{\"name\":\"tracepermit_get_approval\",\"arguments\":{\"approvalRequestId\":123456789012345678901234567890123456}}",
       "{\"name\":\"tracepermit_get_approval\",\"arguments\":{\"approvalRequestId\":\"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa\",\"subject\":\"admin\"}}",
       "{\"name\":\"tracepermit_get_approval\",\"arguments\":[],\"_meta\":{}}",
       "{\"name\":\"tracepermit_resume_approval\",\"arguments\":{\"approvalRequestId\":\"aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa\",\"requestHash\":1}}",

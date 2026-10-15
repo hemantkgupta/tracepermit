@@ -28,7 +28,8 @@ final class ApprovalMcpAdapter {
 
   Response dispatch(JsonNode request) {
     JsonNode id = request.get("id");
-    if (!only(request, ROOT_FIELDS) || !"2.0".equals(request.path("jsonrpc").asText())
+    if (!only(request, ROOT_FIELDS) || !request.path("jsonrpc").isTextual()
+        || !"2.0".equals(request.path("jsonrpc").asText())
         || !request.path("method").isTextual()
         || (request.has("params") && !request.path("params").isObject())) {
       return error(id, -32600, "INVALID_REQUEST");
@@ -78,7 +79,8 @@ final class ApprovalMcpAdapter {
         if (!allowedTools.contains(name)) return toolError(id, "NOT_AUTHORIZED");
         JsonNode arguments = params.path("arguments");
         if (!only(arguments, fields) || arguments.size() != fields.size()
-            || (!REQUEST.equals(name) && !arguments.path("approvalRequestId").asText().matches("[a-f0-9-]{36}"))
+            || (!REQUEST.equals(name) && (!arguments.path("approvalRequestId").isTextual()
+                || !arguments.path("approvalRequestId").asText().matches("[a-f0-9-]{36}")))
             || (RESUME.equals(name) && (!arguments.path("requestHash").isTextual()
                 || arguments.path("requestHash").asText().length() > 128))) {
           return error(id, -32602, "INVALID_PARAMS");
