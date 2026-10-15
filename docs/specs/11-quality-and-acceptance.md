@@ -14,6 +14,7 @@ pnpm format:check
 pnpm docs:links
 pnpm portability:check
 pnpm test:endpoint-connector-e2e
+pnpm test:approval-api --rerun-tasks
 npm --prefix site ci
 npm --prefix site audit --audit-level=low
 pnpm site:build
@@ -59,6 +60,13 @@ The hosted-client profile has a separately documented single-composition
 Auth0/ChatGPT/private-tunnel qualification. It does not establish general
 provider compatibility. The default demo uses loopback and deterministic
 simulators; no real destructive target is part of acceptance.
+
+The isolated approval API test adds actual loopback HTTP and cryptographic
+access-token verification to the PostgreSQL approval path. Its synthetic IdP
+and operator enrollment are not a live third-party login qualification. It
+tests durable snapshot/approval atomicity, tenant/owner and reviewer-role
+isolation, stale policy, replay, concurrency, parse bounds and timestamp
+precision. It does not qualify a public edge or browser approval UI.
 
 ## Performance and release qualification
 

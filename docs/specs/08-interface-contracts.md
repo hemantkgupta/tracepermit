@@ -16,6 +16,23 @@
 
 ## 2. Current HTTP surfaces
 
+### Authenticated simulator approval API foundation
+
+A separately composed `SimulatorApprovalServer` exposes pending/read/review/
+execute routes under `/api/v1/approvals`. It binds only to IPv4 loopback,
+verifies the existing RS256 access-token profile, and combines per-call scopes
+with operator-owned human/workload enrollment and roles. It accepts only
+bounded simulated security-group arguments, never client-authored trusted
+identity or a canonical action envelope. Decision/execute bodies bind the
+exact returned request hash; execution reloads the immutable stored action.
+
+PostgreSQL V6 commits that operational snapshot with the pending approval and
+evidence/outbox metadata. It remains separate from the argument-free audit
+ledger. There is no browser session/CORS, public startup profile or React
+approval UI. Neither existing launcher starts these routes. See the
+[API runbook](../runbooks/authenticated-approval-api-foundation.md) and
+[ADR 0034](../architecture/0034-authenticated-loopback-approval-api.md).
+
 ### `GET /health`
 
 Returns service state and active policy identifier/version. It is not a deep

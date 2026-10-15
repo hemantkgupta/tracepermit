@@ -12,6 +12,7 @@ import io.tracepermit.execution.ApprovalDecision;
 import io.tracepermit.execution.ApprovalExecutionClaim;
 import io.tracepermit.execution.ApprovalRequestState;
 import io.tracepermit.execution.DurableApprovalState;
+import io.tracepermit.execution.DurableApprovalActionState;
 import io.tracepermit.execution.DurableEnforcementState;
 import io.tracepermit.execution.DurableExecutionClaim;
 import io.tracepermit.execution.ExecutionAttempt;
@@ -26,7 +27,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.function.Supplier;
 
-/** Request-bound approval orchestration with no network-facing reviewer adapter. */
+/** Request-bound approval orchestration; transport adapters must derive reviewer authority. */
 public final class HumanApprovalService {
   public static final String REVIEWER_ROLE = "approval_reviewer";
   public static final String REVIEWER_SCOPE = "approvals.decide";
@@ -75,16 +76,36 @@ public final class HumanApprovalService {
   }
 
   public ApprovalExecutionResult requestApproval(TrustedTenantContext context, JsonNode candidate) {
+    return requestApproval(context, candidate, false);
+  }
+
+  /** The API path requires a transactionally persisted exact action, not a client resubmission. */
+  public ApprovalExecutionResult requestApprovalWithSnapshot(
+      TrustedTenantContext context, JsonNode candidate) {
+    return requestApproval(context, candidate, true);
+  }
+
+  private ApprovalExecutionResult requestApproval(
+      TrustedTenantContext context, JsonNode candidate, boolean persistAction) {
     JsonNode event = validateContext(context, candidate);
     PolicyEvaluation evaluation = policyEvaluator.evaluate(event, policy);
     if (!"require_approval".equals(evaluation.decision().outcome())) {
       throw new IllegalStateException("APPROVAL_NOT_REQUIRED");
     }
-    Instant createdAt = clock.instant();
+    // PostgreSQL cannot preserve arbitrary nanoseconds. Bind a portable precision before hashing.
+    Instant createdAt = clock.instant().truncatedTo(java.time.temporal.ChronoUnit.MILLIS);
     String requestId = createId.get();
     ApprovalBinding binding = binding(
         context, event, evaluation, requestId, createdAt, createdAt.plusSeconds(approvalLifetimeSeconds));
-    ApprovalRequestState request = approvals.createPending(binding);
+    ApprovalRequestState request;
+    if (persistAction) {
+      if (!(approvals instanceof DurableApprovalActionState snapshots)) {
+        throw new IllegalStateException("APPROVAL_SNAPSHOT_UNAVAILABLE");
+      }
+      request = snapshots.createPending(binding, event);
+    } else {
+      request = approvals.createPending(binding);
+    }
     return new ApprovalExecutionResult("pending_approval", evaluation, request, null, null);
   }
 

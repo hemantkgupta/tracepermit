@@ -5,6 +5,14 @@
 
 ## 1. Authenticated MCP allow and execution
 
+The separate [loopback approval API foundation](../runbooks/authenticated-approval-api-foundation.md)
+has an additional authenticated HTTP flow: verify JWT and operator membership
+→ normalize one simulator action → atomically store pending approval, exact
+action snapshot and evidence → distinct authorized reviewer decides against
+the request hash → original requester executes the stored action once. It
+rechecks active reviewer enrollment and policy binding before the durable
+claim. It is not wired into the MCP or read-only React flows described below.
+
 This flow is implemented by the Java loopback development backend and the Java
 authenticated remote OAuth-to-simulator composition.
 

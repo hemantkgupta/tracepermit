@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.tracepermit.contracts.JsonSupport;
+import io.tracepermit.contracts.ActionValidator;
+import io.tracepermit.contracts.CanonicalJson;
 import io.tracepermit.execution.ApprovalBinding;
 import io.tracepermit.execution.ApprovalConsumptionResult;
 import io.tracepermit.execution.ApprovalConsumptionStatus;
@@ -13,7 +15,7 @@ import io.tracepermit.execution.ApprovalExecutionClaim;
 import io.tracepermit.execution.ApprovalRequestState;
 import io.tracepermit.execution.DurableClaimResult;
 import io.tracepermit.execution.DurableClaimStatus;
-import io.tracepermit.execution.DurableApprovalState;
+import io.tracepermit.execution.DurableApprovalActionState;
 import io.tracepermit.execution.DurableEnforcementState;
 import io.tracepermit.execution.DurableEvidenceRecord;
 import io.tracepermit.execution.DurableExecutionClaim;
@@ -46,7 +48,7 @@ import java.util.function.Supplier;
 /** PostgreSQL implementation of the durable execution and evidence transaction port. */
 public final class PostgresDurableEnforcementState
     implements DurableEnforcementState,
-        DurableApprovalState,
+        DurableApprovalActionState,
         EvidencePublicationState,
         DurableReconciliationState {
   public static final String MIGRATION_LOCATION = "classpath:db/migration";
@@ -575,6 +577,19 @@ public final class PostgresDurableEnforcementState
 
   @Override
   public ApprovalRequestState createPending(ApprovalBinding binding) {
+    return createPendingInternal(binding, null);
+  }
+
+  @Override
+  public ApprovalRequestState createPending(ApprovalBinding binding, JsonNode canonicalAction) {
+    JsonNode event = ActionValidator.validate(canonicalAction).deepCopy();
+    if (!binding.actionHash().equals(CanonicalJson.sha256(event))) {
+      throw new IllegalArgumentException("APPROVAL_BINDING_MISMATCH");
+    }
+    return createPendingInternal(binding, event);
+  }
+
+  private ApprovalRequestState createPendingInternal(ApprovalBinding binding, JsonNode event) {
     Objects.requireNonNull(binding);
     return inTransaction(connection -> {
       String sql = """
@@ -601,6 +616,17 @@ public final class PostgresDurableEnforcementState
         transition.setObject(3, databaseTime(binding.createdAt()));
         transition.executeUpdate();
       }
+      if (event != null) {
+        try (PreparedStatement snapshot = connection.prepareStatement("""
+            INSERT INTO tp_approval_action_snapshots
+              (tenant_id, approval_request_id, canonical_action) VALUES (?, ?, ?::jsonb)
+            """)) {
+          snapshot.setString(1, binding.tenant().value());
+          snapshot.setString(2, binding.approvalRequestId());
+          snapshot.setString(3, toJson(event));
+          snapshot.executeUpdate();
+        }
+      }
       ApprovalRequestState created = requireApproval(
           connection, binding.tenant(), binding.approvalRequestId(), false);
       appendApprovalEvidence(
@@ -617,6 +643,58 @@ public final class PostgresDurableEnforcementState
       return findApproval(connection, tenant, approvalRequestId, false);
     } catch (SQLException exception) {
       throw databaseFailure(exception);
+    }
+  }
+
+  @Override
+  public JsonNode findAction(TenantPartition tenant, String approvalRequestId) {
+    Objects.requireNonNull(tenant);
+    requireIdentifier(approvalRequestId, 256, "approval request ID");
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement = connection.prepareStatement("""
+            SELECT canonical_action::text FROM tp_approval_action_snapshots
+            WHERE tenant_id = ? AND approval_request_id = ?
+            """)) {
+      statement.setString(1, tenant.value());
+      statement.setString(2, approvalRequestId);
+      try (ResultSet result = statement.executeQuery()) {
+        return result.next() ? parseJson(result.getString(1)) : null;
+      }
+    } catch (SQLException failure) {
+      throw databaseFailure(failure);
+    }
+  }
+
+  @Override
+  public List<ApprovalRequestState> listApprovals(
+      TenantPartition tenant, String requesterSubjectId, int limit) {
+    Objects.requireNonNull(tenant);
+    if (requesterSubjectId != null) {
+      if (!requesterSubjectId.matches("^[A-Za-z0-9][A-Za-z0-9._:@/+\\-#]{0,255}$")) {
+        throw new IllegalArgumentException("Invalid requester subject ID.");
+      }
+    }
+    if (limit < 1 || limit > 50) throw new IllegalArgumentException("Invalid approval page limit.");
+    try (Connection connection = dataSource.getConnection();
+        PreparedStatement statement = connection.prepareStatement("""
+            SELECT r.approval_request_id FROM tp_approval_requests r
+            JOIN tp_approval_action_snapshots s USING (tenant_id, approval_request_id)
+            WHERE r.tenant_id = ? AND (?::text IS NULL OR r.subject_id = ?)
+            ORDER BY r.created_at DESC, r.approval_request_id LIMIT ?
+            """)) {
+      statement.setString(1, tenant.value());
+      statement.setString(2, requesterSubjectId);
+      statement.setString(3, requesterSubjectId);
+      statement.setInt(4, limit);
+      List<ApprovalRequestState> approvals = new ArrayList<>();
+      try (ResultSet result = statement.executeQuery()) {
+        while (result.next()) {
+          approvals.add(requireApproval(connection, tenant, result.getString(1), false));
+        }
+      }
+      return List.copyOf(approvals);
+    } catch (SQLException failure) {
+      throw databaseFailure(failure);
     }
   }
 
@@ -1474,7 +1552,7 @@ public final class PostgresDurableEnforcementState
          PreparedStatement statement = connection.prepareStatement(
              "SELECT contract_version FROM tp_enforcement_schema_guard WHERE singleton = TRUE");
          ResultSet result = statement.executeQuery()) {
-      if (!result.next() || result.getInt(1) != 5 || result.next()) {
+      if (!result.next() || result.getInt(1) != 6 || result.next()) {
         throw new IllegalStateException("INCOMPATIBLE_DURABLE_STATE_SCHEMA");
       }
     } catch (SQLException exception) {
