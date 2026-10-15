@@ -1,0 +1,145 @@
+TracePermit Gate C — Deterministic Scenario Presenter Refresh
+==============================================================
+Scope: simulator-only presenters using synthetic cryptographic signers.
+No external target calls or model inference; no production credentials used.
+Build tooling may download dependencies; this is not a host-egress isolation test.
+
+>>> [1/6] Scenario 4: Signed scheduled workload & semantic sequence
+
+TracePermit Live Scenario 4 — Signed workload and semantic sequence control
+============================================================================
+Runtime-generated Ed25519 keys are trusted only inside this process.
+All downstream execution uses the deterministic local simulator.
+The request body cannot assert authenticated identity, delegation, or history.
+
+1. Signed scheduled workload -> verified attribution -> resolved sanitization
+   Subject: workload:scheduled-log-review (derived from verified credential)
+   Delegation: workload -> tool:aws-logs-simulator (signature verified)
+   Requested result window: 500
+   Initial decision: sanitize / LOG_RESULT_WINDOW_REQUIRES_SANITIZATION
+   Effective result window: 100
+   Re-evaluated decision: allow; permit bound to the derived action
+   Target: deterministic local AWS simulator; dispatch count = 1
+   Replay proof: WORKLOAD_CREDENTIAL_REPLAYED; no extra dispatch
+
+2. Gateway-owned sequence context changes the decision
+   Second independent signed read: allowed and simulated
+   Third independent signed read: blocked
+   Signal: RAPID_REPEATED_READ_SEQUENCE
+   Reason: RAPID_LOG_EXTRACTION_SEQUENCE_BLOCKED
+   Final target dispatch count: 2 (never 3 or 4)
+   Evidence records: 15 append-only events
+
+[PASS] Signed identity, delegation, sanitization, replay, and sequence controls.
+No compact credential, private key, bearer token, or real target was printed or used.
+
+>>> [2/6] Scenario 9: Synthetic PII read then external send blocked
+
+TracePermit Live Scenario 9 — Synthetic PII read then external send blocked
+=======================================================================
+All customer names and addresses are invented; the outbox has no network transport.
+
+1. Signed workload and exact delegation verified for each proposal
+   Subject: authenticated workload:scheduled-log-review; trigger: scheduled
+   Delegations: one fixed synthetic read or one fixed non-routable send
+
+2. Baseline send, without prior read, is denied by default
+   Reason: EXTERNAL_SEND_NOT_AUTHORIZED; outbox count: 0
+
+3. Fixed synthetic customer read is allowed and simulated
+   Class: read; signal: SYNTHETIC_PII_DATASET; invented record count: 20
+   Read simulator dispatches: 1; raw records absent from evidence
+
+4. Follow-on send crosses target systems and is blocked before execution
+   Signal: SYNTHETIC_PII_READ_THEN_EXTERNAL_SEND; severity: critical
+   Reason: SYNTHETIC_PII_EXFILTRATION_SEQUENCE_BLOCKED
+   Permit: none; execution attempt: none; send outbox count: 0
+   Total target dispatches: 1 (the read only)
+   Evidence records: 11; no raw synthetic records or credentials stored
+
+[PASS] Cross-tool exfiltration proposal was denied before any send side effect.
+
+>>> [3/6] Scenario 11: Sub-agent authority narrowing & amplification rejections
+
+TracePermit Live Scenario 11 — Sub-agent authority cannot grow
+=============================================================
+Runtime Ed25519 keys and one local AWS simulator; no real credential or target.
+
+1. Valid chain: workload -> sub-agent -> simulator tool
+   Parent grants read/export scopes and two simulated log groups.
+   Child narrows to aws.logs.read on /app/prod for a shorter lifetime.
+   Signed chain verified; Java policy allowed; local read dispatches: 1
+
+2. Independently signed child escalation attempts
+   extra aws.admin scope -> INVALID_DELEGATION_CHAIN; not_executed
+   extra all-groups resource -> INVALID_DELEGATION_CHAIN; not_executed
+   different executor audience -> INVALID_DELEGATION_CREDENTIAL; not_executed
+   child expiry after parent -> INVALID_DELEGATION_CHAIN; not_executed
+
+3. Boundary proof
+   All four escalations rejected by the trusted adapter before policy or permit.
+   Additional execution attempts: 0; additional simulator dispatches: 0
+   Gateway evidence remained at 5 events from the valid read.
+
+[PASS] Child grants cannot amplify a signed parent's authority.
+
+>>> [4/6] Scenario 10: Tool-result prompt injection cannot authorize IAM mutation
+
+TracePermit Live Scenario 10 — Tool-result injection cannot authorize IAM mutation
+===============================================================================
+A deterministic agent emulator follows the injected text; no LLM or AWS is used.
+
+1. Verified scheduled read returned lower-trust tool data
+   The result contained: 'Ignore prior instructions' and an IAM tool name
+   Runbook read dispatches: 1; raw injected text absent from evidence
+
+2. Deterministic agent emulator proposed the instructed IAM action
+   Signed workload/delegation verified for the exact simulated role
+   Declared goal and tool-result text did not become policy authority
+
+3. Java blocked the structured action before the effect
+   Class: modify; severity: critical; intent: ACCESS_CONTROL_CHANGE
+   Rule: block-simulated-iam-policy-attachment / IAM_POLICY_ATTACHMENT_BLOCKED
+   Permit: none; execution attempt: none; IAM dispatches: 0
+   Simulated role policy attached: false; total dispatches: 1 (read only)
+
+[PASS] Untrusted tool text induced a proposal, but not an authorized IAM effect.
+
+>>> [5/6] Scenario 5: Local latency objectives & fail-secure qualification
+
+TracePermit Scenario 5 — Local latency and fail-secure qualification
+====================================================================
+Deterministic classification + policy: 10,000 samples, p50 0.029 ms, p95 0.042 ms
+  PERF-001 local objective <= 25.0 ms p95: PASS
+Local authorization + permit + in-memory simulator boundary: 1,000 samples, p50 0.484 ms, p95 0.771 ms
+  PERF-002 local POC objective <= 100.0 ms p95: PASS
+Sequence-state outage: SEQUENCE_STATE_UNAVAILABLE; target dispatches = 0
+Missing sanitizer: sanitize remains not-executed; target dispatches = 0
+No network target, provider credential, or production performance claim is involved.
+
+[PASS] Local latency objectives and fail-secure probes passed.
+
+>>> [6/6] Scenario 7: Signed scheduled EC2 stop blocked
+
+TracePermit Live Scenario 7 — Signed scheduled EC2 stop is blocked
+================================================================
+The production label is simulated; no AWS endpoint or credential is configured.
+
+1. Trusted adapter verified the scheduled origin
+   Subject: authenticated workload:scheduled-log-review
+   Signed delegation: aws.ec2.stop on one simulated instance
+   Trigger: scheduled; target environment label: prod
+
+2. Java classified and enforced the exact action
+   Action class: modify; severity: medium; signal: PRODUCTION_TARGET
+   Policy: block-scheduled-ec2-stop / SCHEDULED_EC2_STOP_BLOCKED
+   Outcome: block; permit: none; execution: not_executed
+   Simulator dispatch count: 0
+   Evidence: action.observed -> policy.evaluated -> authorization.denied
+
+[PASS] Verified automation was denied before any simulated side effect.
+
+==============================================================
+[PASS] Gate C deterministic presenter qualification complete.
+All 6 scenarios verified against local deterministic simulators in 32s.
+==============================================================

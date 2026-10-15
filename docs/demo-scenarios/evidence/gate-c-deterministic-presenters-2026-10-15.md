@@ -4,6 +4,10 @@ Date: 2026-10-15. Runtime revision:
 `1186320435d07b4f9f0066c48bd6a9a99819787c`.
 The runner was introduced in PR #22 at `5ed659092e7fb947a20b2ac08ca96df11dc27a55`;
 Java enforcement and presenter sources are unchanged from that runtime baseline.
+The independent review rerun used `f8e108f2574fc686a30d47840a66ca736f1a8e20`
+in an isolated source snapshot, completing before `2026-10-15T17:30:50Z`
+(23:00:50 IST). The [retained presenter stdout](gate-c-deterministic-presenters-2026-10-15/presenter-output.txt)
+is the actual successful output, not a reconstructed transcript.
 Environment: Java **21.0.12.1**, macOS arm64.
 Scope: deterministic local presenter scenarios using synthetic cryptographic
 signers and safe target simulators. These are standalone, reproducible
@@ -15,7 +19,7 @@ REL-001, REL-009; PERF-001, PERF-002; OPS-004.
 ## Rehearsal summary
 
 All six deterministic scenarios passed in sequence under the unified runner
-`pnpm demo:gate-c` in 25 seconds:
+`pnpm demo:gate-c` in 32 seconds in the review rerun:
 
 | Scenario        | Focus                                    | Invariants verified                                                                       | Outcome                                                                              |
 | :-------------- | :--------------------------------------- | :---------------------------------------------------------------------------------------- | :----------------------------------------------------------------------------------- |
@@ -23,7 +27,7 @@ All six deterministic scenarios passed in sequence under the unified runner
 | **Scenario 9**  | Synthetic PII exfiltration sequence      | `SYNTHETIC_PII_READ_THEN_EXTERNAL_SEND`<br/>`SYNTHETIC_PII_EXFILTRATION_SEQUENCE_BLOCKED` | Read allowed (20 records); follow-on send blocked; outbox sends = 0                  |
 | **Scenario 11** | Sub-agent authority narrowing            | `INVALID_DELEGATION_CHAIN`<br/>`INVALID_DELEGATION_CREDENTIAL`                            | Valid read dispatches = 1; four amplification attempts rejected                      |
 | **Scenario 10** | Tool-result prompt injection             | `IAM_POLICY_ATTACHMENT_BLOCKED`                                                           | IAM dispatches = 0; runbook-read dispatches = 1                                      |
-| **Scenario 5**  | Latency & fail-secure qualification      | `SEQUENCE_STATE_UNAVAILABLE`<br/>`failSecureDispatches == 0`                              | Classification p95: 0.045 ms (&le; 25 ms); Authorization p95: 0.750 ms (&le; 100 ms) |
+| **Scenario 5**  | Latency & fail-secure qualification      | `SEQUENCE_STATE_UNAVAILABLE`<br/>`failSecureDispatches == 0`                              | Classification p95: 0.042 ms (&le; 25 ms); Authorization p95: 0.771 ms (&le; 100 ms) |
 | **Scenario 7**  | Signed scheduled EC2 stop                | `PRODUCTION_TARGET`<br/>`SCHEDULED_EC2_STOP_BLOCKED`                                      | Blocked before simulator; dispatches = 0                                             |
 
 ## Detailed scenario results
@@ -78,9 +82,9 @@ All six deterministic scenarios passed in sequence under the unified runner
 
 - Command: `scripts/run-semantic-qualification.sh`
 - Classification & policy (10,000 samples):
-  - Measured p50: **0.030 ms**, p95: **0.045 ms** (objective &le; 25.0 ms &rarr; **PASS**)
+  - Measured p50: **0.029 ms**, p95: **0.042 ms** (objective &le; 25.0 ms &rarr; **PASS**)
 - Authorization, permit & in-memory simulator (1,000 samples):
-  - Measured p50: **0.415 ms**, p95: **0.750 ms** (objective &le; 100.0 ms &rarr; **PASS**)
+  - Measured p50: **0.484 ms**, p95: **0.771 ms** (objective &le; 100.0 ms &rarr; **PASS**)
 - Sequence-state outage fail-secure: `SEQUENCE_STATE_UNAVAILABLE`, target dispatches = 0
 - Missing sanitizer fail-secure: target dispatches = 0
 
@@ -121,3 +125,26 @@ They are not new model-selected MCP calls, real sub-agent processes, external
 PII inspection, a production performance SLO or live recovery-daemon proof.
 Native endpoint Gate B remains partial: full observed process-fact capture and
 the remaining native source-proof rejection rehearsals are separate work.
+
+## Independent review checks
+
+At review revision `f8e108f2574fc686a30d47840a66ca736f1a8e20`, an isolated
+source snapshot passed:
+
+- `pnpm test:gate-c`: five orchestration tests, no failures or skips.
+- `pnpm demo:gate-c`: all six real Java presenters; stdout linked above.
+- `pnpm check`: console build/typecheck and 12 React tests; Java environment,
+  443 Java tests (61 suites, zero failures/errors/skips), and coverage gates.
+  Compilation reused some Gradle cache entries; this is not a cold-build claim.
+- `pnpm test:approval-api --rerun-tasks`, after the full check: 126 tests,
+  zero failures/errors/skips. These are a subset of the Java test population,
+  not 126 additional tests. All 24 selected Gradle tasks executed.
+- `pnpm demo:verify`: script syntax, shutdown/cleanup checks, 26 endpoint-launcher
+  tests, five runner tests and fixture-source drift checks.
+- Formatting, documentation links and generated flow-diagram checks passed.
+  The final evidence-only edits were separately checked for formatting/links,
+  and the active checkout's unchanged public site built successfully.
+
+No new model prompt, personal account login, cloud target call or browser
+approval action was performed in this automated review. The broader release
+operations and native-client acceptance gates remain incomplete.
