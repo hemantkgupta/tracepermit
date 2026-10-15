@@ -16,7 +16,8 @@ captures request/review/resume, replay, expiry and explicit reviewer-denial
 evidence for the named local durable approval profile. The separate
 [native endpoint record](evidence/codex-native-endpoint-2026-10-15.md) correlates
 model-selected read/block with Java CLI-origin events; remaining endpoint
-security qualification is not implied.
+security qualification is not implied. The [Gate C deterministic record](evidence/gate-c-deterministic-presenters-2026-10-15.md)
+refreshes automated qualification across Scenarios 4, 5, 7, 9, 10, and 11 via `pnpm demo:gate-c`.
 
 ## Safety and claim boundary
 

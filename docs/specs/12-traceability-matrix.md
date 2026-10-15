@@ -39,6 +39,15 @@ coverage, not manual native-model proof from this pair. Gate B, production key
 custody, enrollment and anti-bypass remain partial; no existing status below is
 upgraded to production-qualified.
 
+## Deterministic presenter qualification (Gate C)
+
+The [2026-10-15 Gate C evidence](../demo-scenarios/evidence/gate-c-deterministic-presenters-2026-10-15.md)
+refreshes and automates the deterministic scenario suite across Scenarios 4, 5, 7, 9, 10, and 11.
+
+| Requirements                                                    | Evidence added                                                                                                                                                       | Boundary                                                                                               |
+| --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| FR-005/006/011; SEC-001/002; REL-001/009; PERF-001/002; OPS-004 | Unified `run-gate-c-qualification.sh` (`pnpm demo:gate-c`), unit tests `gate-c-qualification.test.mjs`, expanded `verify-demo-qualification.sh`, and CI verification | Deterministic local simulators; no real cloud endpoints, live LLM inference, or production credentials |
+
 ## Local MCP to durable approval composition
 
 | Requirements                                 | Implementation and verification                                                                                                                                                                                      | Boundary                                                                                                       |

@@ -15,15 +15,24 @@ fi
 
 bash -n "$repo_root/scripts/run-demo.sh"
 bash -n "$repo_root/scripts/run-demo-scenarios.sh"
+bash -n "$repo_root/scripts/run-gate-c-qualification.sh"
+bash -n "$repo_root/scripts/run-codex-endpoint-demo.sh"
 bash -n "$repo_root/scripts/run-connector-origin-scenario.sh"
 bash -n "$repo_root/scripts/run-live-cli-scenario.sh"
 bash -n "$repo_root/scripts/run-request-bound-approval-scenario.sh"
+bash -n "$repo_root/scripts/run-production-deletion-approval-scenario.sh"
+bash -n "$repo_root/scripts/run-signed-scheduled-stop-scenario.sh"
 bash -n "$repo_root/scripts/run-signed-scheduled-semantic-scenario.sh"
+bash -n "$repo_root/scripts/run-synthetic-pii-exfil-scenario.sh"
+bash -n "$repo_root/scripts/run-tool-result-prompt-injection-scenario.sh"
+bash -n "$repo_root/scripts/run-sub-agent-delegation-scenario.sh"
 bash -n "$repo_root/scripts/run-semantic-qualification.sh"
 bash -n "$repo_root/scripts/run-openai-tunnel-demo.sh"
 bash -n "$repo_root/scripts/run-hosted-client-oauth-demo.sh"
 bash -n "$repo_root/scripts/run-java-hosted-client-oauth-backend.sh"
 bash -n "$repo_root/scripts/run-openai-oauth-tunnel-demo.sh"
+bash -n "$repo_root/scripts/run-approval-browser-qualification.sh"
+bash -n "$repo_root/scripts/run-approval-codex-qualification.sh"
 node --check "$repo_root/scripts/summarize-demo-response.mjs"
 node --test "$repo_root/scripts/summarize-demo-response.test.mjs"
 node --check "$repo_root/scripts/summarize-demo-mcp.mjs"
@@ -33,6 +42,8 @@ node --check "$repo_root/scripts/run-demo-endpoint-client.mjs"
 node --check "$repo_root/scripts/demo-cleanup-guardian.mjs"
 node --test "$repo_root/scripts/demo-cleanup-guardian.test.mjs"
 node --test "$repo_root/scripts/demo-shutdown.test.mjs"
+node --test "$repo_root/scripts/codex-endpoint-demo.test.mjs"
+node --test "$repo_root/scripts/gate-c-qualification.test.mjs"
 
 if ! grep -Fq 'simulated !== true' "$repo_root/scripts/run-openai-tunnel-demo.sh"; then
   echo "TracePermit demo verification: the tunnel launcher must verify simulator-only mode." >&2
@@ -103,6 +114,40 @@ qualification_demo="$repo_root/java/adapters-http/src/test/java/io/tracepermit/a
 for invariant in 'POLICY_SAMPLES = 10_000' SEQUENCE_STATE_UNAVAILABLE 'failSecureDispatches.get() == 0'; do
   if ! grep -Fq "$invariant" "$qualification_demo"; then
     echo "TracePermit demo verification: Scenario 5 is missing $invariant." >&2
+    exit 1
+  fi
+done
+
+for invariant in SCHEDULED_EC2_STOP_BLOCKED PRODUCTION_TARGET; do
+  if ! grep -Fq "$invariant" "$semantic_demo"; then
+    echo "TracePermit demo verification: Scenario 7 is missing $invariant." >&2
+    exit 1
+  fi
+done
+
+deletion_demo="$repo_root/java/persistence-postgres/src/test/java/io/tracepermit/persistence/postgres/ProductionDeletionApprovalDemoMain.java"
+for invariant in EXPLICIT_APPROVAL_RULE_MISSING APPROVAL_BINDING_MISMATCH APPROVAL_NOT_CONSUMED APPROVAL_NOT_EXECUTABLE; do
+  if ! grep -Fq "$invariant" "$deletion_demo"; then
+    echo "TracePermit demo verification: Scenario 8 is missing $invariant." >&2
+    exit 1
+  fi
+done
+
+for invariant in SYNTHETIC_PII_READ_THEN_EXTERNAL_SEND SYNTHETIC_PII_EXFILTRATION_SEQUENCE_BLOCKED; do
+  if ! grep -Fq "$invariant" "$semantic_demo"; then
+    echo "TracePermit demo verification: Scenario 9 is missing $invariant." >&2
+    exit 1
+  fi
+done
+
+if ! grep -Fq 'IAM_POLICY_ATTACHMENT_BLOCKED' "$semantic_demo"; then
+  echo "TracePermit demo verification: Scenario 10 is missing IAM_POLICY_ATTACHMENT_BLOCKED." >&2
+  exit 1
+fi
+
+for invariant in INVALID_DELEGATION_CHAIN INVALID_DELEGATION_CREDENTIAL; do
+  if ! grep -Fq "$invariant" "$semantic_demo"; then
+    echo "TracePermit demo verification: Scenario 11 is missing $invariant." >&2
     exit 1
   fi
 done

@@ -53,11 +53,11 @@ jobs:
           pnpm site:build
           node --test scripts/site-search-compatibility.test.mjs
 
-      - name: Verify simulator-only semantic scenarios
+      - name: Verify deterministic presenter qualification (Gate C)
         run: |
+          pnpm test:gate-c
+          pnpm demo:gate-c
           pnpm demo:verify
-          pnpm demo:scenario:semantic:auto
-          pnpm demo:scenario:qualification
 
       - name: Verify durable PostgreSQL enforcement state
         run: pnpm test:java-postgres --rerun-tasks
