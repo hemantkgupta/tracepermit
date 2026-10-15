@@ -1,6 +1,9 @@
 # Codex model-driven durable approval qualification
 
-Date: 2026-10-15. Runtime revision: `16c7e9ec81cb2c86acbb3d2daad28240382abd52`.
+Date: 2026-10-15. Runtime baseline: `16c7e9ec81cb2c86acbb3d2daad28240382abd52`.
+Cases A/B used that revision; Case C used checkout
+`2d5be4aa186078933d939cd497f456d434680a68`, which added documentation and
+screenshots only, with the same Java/React runtime sources.
 Scope: one local, bearer-only, simulator-only profile. Codex CLI **0.162.1** with
 model **`gpt-5.6-sol`** selected and invoked the approval MCP tools from operator
 prompts. The operator separately reviewed in the synthetic Bob browser session.
@@ -28,7 +31,9 @@ was changed to pass the rehearsal.
   The assistant separately refreshed the successful request in the browser and
   captured its durable `consumed / succeeded` projection. No fresh server read
   after the replay is claimed: the requester credential had expired by the
-  later evidence-collection check.
+  later evidence-collection check. For Case C, a separate authenticated,
+  read-only API projection was captured after the user's denial/resume test.
+  That check invoked no MCP request, review or execution tool.
 - CLI times below are displayed minute-level observations in **IST (UTC+05:30)**,
   not precise server event timestamps. Approval expiry values are server values.
   The time beside each request in the inbox is its **expiry**, not creation time.
@@ -41,14 +46,14 @@ independently signed audit ledger.
 
 ## Results
 
-| Case                                      | Observed result                                                    | Qualification boundary                                                     |
-| ----------------------------------------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------- |
-| Model-selected request                    | `pending / not_executed`, `require_approval`                       | Actual model tool selection, not only a configured server listing          |
-| Independent browser approval              | `approved / not_executed`, distinct requester/reviewer projections | Review authorizes an exact request; it does not dispatch it                |
-| Explicit model-selected resume            | `consumed / succeeded`, `mode: simulated`                          | Named local client/profile; refreshed browser agreed                       |
-| Intentional replay                        | `APPROVAL_NOT_EXECUTABLE`                                          | Previously consumed approval could not be resumed again                    |
-| Intentional expired resume                | `APPROVAL_EXPIRED`                                                 | Fresh authentication did not extend the old approval's lifetime            |
-| Bob explicitly denies, then model resumes | **Not exercised in this manual rehearsal**                         | Remains the next manual gate; automated denial tests are separate evidence |
+| Case                                      | Observed result                                                    | Qualification boundary                                                      |
+| ----------------------------------------- | ------------------------------------------------------------------ | --------------------------------------------------------------------------- |
+| Model-selected request                    | `pending / not_executed`, `require_approval`                       | Actual model tool selection, not only a configured server listing           |
+| Independent browser approval              | `approved / not_executed`, distinct requester/reviewer projections | Review authorizes an exact request; it does not dispatch it                 |
+| Explicit model-selected resume            | `consumed / succeeded`, `mode: simulated`                          | Named local client/profile; refreshed browser agreed                        |
+| Intentional replay                        | `APPROVAL_NOT_EXECUTABLE`                                          | Previously consumed approval could not be resumed again                     |
+| Intentional expired resume                | `APPROVAL_EXPIRED`                                                 | Fresh authentication did not extend the old approval's lifetime             |
+| Bob explicitly denies, then model resumes | `denied / not_executed`; `APPROVAL_NOT_EXECUTABLE`                 | User screenshots plus a fresh authenticated server projection before expiry |
 
 ## Case A: approval expiry, not successful execution
 
@@ -110,12 +115,53 @@ replay error. Do not substitute Case A's earlier screenshots for Case B's states
 
 ![Case B: replay of the consumed approval is rejected](codex-model-driven-approval-2026-10-15/replay-rejected.png)
 
+## Case C: explicit reviewer denial, then rejected resume
+
+Approval ID: `f72f301d-830b-4417-95cd-067f38989099`.
+
+Request hash:
+`sha256:e9b0dae7f7839ada3a7a1872c3131d2e5d51099a37745d63809d3447213da20a`.
+
+1. A fresh disposable fixture was started from the documentation-only checkout
+   above. The user prepared a synthetic Bob reviewer session, then the assistant
+   refreshed only Alice's synthetic requester token file. The user launched a
+   fresh Codex session using the same model and invocation-scoped MCP alias.
+2. Following the request-only prompt, the user created one new fixed simulated
+   `sg-demo`/443/`192.0.2.0/24` request. Its pending tool result was not separately
+   captured; the retained screenshot shows the subsequent browser decision.
+3. Bob explicitly denied the exact request. The user's inbox screenshot shows
+   **denied / not executed**, the same hash/arguments, and distinct requester and
+   reviewer principal projections. The server expiry was
+   `2026-10-15T15:04:05.653Z` (**20:34:05.653 IST**).
+4. At approximately **20:30 IST / 15:00 UTC**, the user instructed one intentional
+   resume after denial. Codex invoked `tracepermit_resume_approval` and the tool
+   returned **`APPROVAL_NOT_EXECUTABLE`**, `mode: simulated`. It did not return
+   an authentication error, expiry error or execution success.
+5. At **20:31:58.913 IST / 15:01:58.913 UTC** (`2026-10-15T15:01:58.913Z`),
+   the assistant used the still-valid synthetic requester credential for
+   **GET `/api/v1/approvals`** only. HTTP 200
+   returned this full ID/hash and **`denied / not_executed`** with the same exact
+   action, before its expiry. The retained [bounded projection](codex-model-driven-approval-2026-10-15/denial-state.json)
+   contains only selected synthetic response fields and capture metadata, not
+   authentication headers or token contents.
+
+This completes the explicit-denial portion of the named model-driven rehearsal.
+The CLI screenshot collapses the raw tool-call arguments; its prompt refers to
+the single new request in that session. The browser and read-only server
+projection correlate the full request binding. No raw CLI protocol transcript or
+independent target-call counter was captured for this manual case. The HTTP
+cross-check verifies durable state, not browser rendering or console health.
+
+![Case C: Bob explicitly denied the exact request, still not executed](codex-model-driven-approval-2026-10-15/reviewer-denied-not-executed.png)
+
+![Case C: model-selected resume after denial is rejected](codex-model-driven-approval-2026-10-15/denied-resume-rejected.png)
+
 ## Interpretation and limits
 
 This rehearsal demonstrates a model-driven request → independent browser
-review → explicit requester resume path, plus replay and expiry rejections,
+review → explicit requester resume path, plus replay, expiry and explicit-denial rejections,
 for the named client/version and synthetic identity profile. The red CLI
-“Failed” label on the two intentional negative calls is the expected rejection,
+“Failed” label on the intentional negative calls is the expected rejection,
 not a failed security control.
 
 The manual run did **not** capture an independent simulator dispatch counter.
@@ -169,8 +215,11 @@ credential lasts 290 seconds, the approval 300 seconds. Refreshing the token fil
 requires reloading the environment and reconnecting Codex; it cannot renew an
 approval. Never print or commit the synthetic credential.
 
-Next, create a separate request, have Bob **deny** its exact hash, and ask the
-original requester model to resume once. Capture `denied / not_executed` and
-`APPROVAL_NOT_EXECUTABLE`. Stop on an unexpected result rather than retrying or
-weakening a control. Native source-attested connector qualification is a
-different profile and remains separate.
+The named model-driven rehearsal now covers successful explicit resume, consumed
+approval replay rejection, expiry rejection and explicit reviewer denial. A
+reproduction must use new fixture IDs, not the historical IDs in this record.
+Stop on an unexpected result rather than retrying or weakening a control.
+The next separate qualification is the native source-attested endpoint connector;
+follow the [flow rehearsal plan](../../runbooks/flow-rehearsal-plan.md#gate-b-native-endpoint-connector).
+Completing these four approval cases does not qualify that different profile or
+production identity, deployment and target controls.

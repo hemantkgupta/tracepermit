@@ -202,9 +202,10 @@ No model inference was used in that record.
 
 The separate [model-driven qualification record](../demo-scenarios/evidence/codex-model-driven-approval-2026-10-15.md)
 records Codex CLI 0.162.1 with `gpt-5.6-sol`: model-selected request and explicit
-resume, synthetic Bob review, refreshed durable success, rejected replay and
-rejected expiry. Reviewer denial remains the next manual gate. This qualifies
-one local profile, not arbitrary clients/prompts, source attestation or a
+resume, synthetic Bob review, refreshed durable success, rejected replay,
+rejected expiry and explicit Bob denial followed by rejected resume. A fresh
+authenticated read-only projection confirmed denied/not-executed before expiry.
+This qualifies one local profile, not arbitrary clients/prompts, source attestation or a
 production browser deployment. See the record's screenshot provenance and
 dispatch-count limitations; do not relabel protocol tests as model evidence.
 
@@ -214,5 +215,7 @@ No public production deployment, managed source attestation, live browser IdP
 qualification, protected signing-key provider, multi-replica abuse controls,
 real GitHub/AWS execution or host-wide credential/egress anti-bypass is added.
 Keep the local HTTP browser runtime off tunnels/proxies. The default read-only
-console and hosted OAuth demo remain separate compositions. Finish named-client
-qualification and design-partner discovery before selecting a real-target pilot.
+console and hosted OAuth demo remain separate compositions. The named local
+approval rehearsal is complete for success, replay, expiry and explicit denial;
+native source-attested connector qualification and design-partner discovery
+remain separate work before selecting a real-target pilot.

@@ -1,0 +1,27 @@
+{
+  "evidenceKind": "selected_read_only_api_projection",
+  "observedAt": "2026-10-15T15:01:58.913Z",
+  "captureMethod": "Authenticated GET /api/v1/approvals; fields selected before retention",
+  "httpStatus": 200,
+  "approvalRequestId": "f72f301d-830b-4417-95cd-067f38989099",
+  "requestHash": "sha256:e9b0dae7f7839ada3a7a1872c3131d2e5d51099a37745d63809d3447213da20a",
+  "status": "denied",
+  "executionStatus": "not_executed",
+  "expiresAt": "2026-10-15T15:04:05.653Z",
+  "action": {
+    "target": {
+      "system": "aws",
+      "accountId": "simulated-123",
+      "environment": "prod",
+      "resourceType": "security-group"
+    },
+    "protocol": "mcp",
+    "toolName": "aws.ec2.update_security_group",
+    "arguments": {
+      "cidr": "192.0.2.0/24",
+      "port": 443,
+      "groupId": "sg-demo"
+    }
+  },
+  "limits": "Synthetic fixture; not a signed audit receipt, raw protocol transcript or measured dispatch count"
+}

@@ -250,8 +250,8 @@ authorize execution.
 
 **Proof boundary:** native app-server MCP calls and a synthetic browser reviewer
 have been qualified. The separate [model-driven record](https://github.com/hemantkgupta/tracepermit/blob/main/docs/demo-scenarios/evidence/codex-model-driven-approval-2026-10-15.md)
-qualifies Codex 0.162.1/`gpt-5.6-sol` request/review/resume, replay and expiry
-rejection; explicit reviewer denial remains a manual gate. Native source-attested
+qualifies Codex 0.162.1/`gpt-5.6-sol` request/review/resume, replay, expiry and
+explicit reviewer-denial rejection for this local profile. Native source-attested
 connector qualification and production browser IdP/HTTPS remain separate work.
 The loopback approval fixture must not be tunnel-exposed. This is at-most-one
 dispatch, not exactly-once external effects; screenshots are not dispatch counters.

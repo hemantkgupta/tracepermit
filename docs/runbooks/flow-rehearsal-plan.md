@@ -11,16 +11,16 @@ tests; the [scenario index](../demo-scenarios/README.md) has independent present
 
 ## Current proof levels
 
-| Flow             | Existing evidence                                                                                                                               | Next manual gate                                                                                     |
-| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| 1–2: read/block  | Deterministic adapter/executor tests; prior CLI and hosted-client simulator qualification                                                       | Refresh the chosen client proof on the final demo revision                                           |
-| 3: approval      | Native protocol proof plus Codex 0.162.1/`gpt-5.6-sol` model-selected request/resume, browser review, replay and expiry rejection on 2026-10-15 | Model-driven fresh request → explicit Bob denial → rejected resume                                   |
-| 4: sanitization  | Signed-workload deterministic fixture and application tests                                                                                     | Presenter rehearsal of 500 → 100, re-evaluation and distinct hashes                                  |
-| 5: sequence deny | Synthetic bulk-read/external-send fixture and tests                                                                                             | Presenter rehearsal of both baseline and sequence-specific denies                                    |
-| 6: endpoint      | Local process/source-proof harness and verifier/connector tests                                                                                 | Register the actual source-attested connector with native Codex, then qualify observed process facts |
-| 7: hosted OAuth  | One dated Auth0 + unmodified ChatGPT + private-tunnel composition                                                                               | Reconnect/rehearse only that configured profile; collect fresh evidence if used                      |
-| 8: delegation    | Signed narrow-chain fixture plus four amplification rejects                                                                                     | Presenter rehearsal; do not call fixture signers real sub-agents                                     |
-| 9: uncertainty   | Approval lost-completion/restart test plus separate unknown-queue worker tests                                                                  | Test-guided explanation; no live automatic recovery daemon is qualified                              |
+| Flow             | Existing evidence                                                                                                                                                | Next manual gate                                                                                     |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| 1–2: read/block  | Deterministic adapter/executor tests; prior CLI and hosted-client simulator qualification                                                                        | Refresh the chosen client proof on the final demo revision                                           |
+| 3: approval      | Native protocol proof plus Codex 0.162.1/`gpt-5.6-sol` model-selected request/resume, browser review, replay, expiry and explicit-denial rejection on 2026-10-15 | Named local approval cases complete; native source-attested connector is a separate gate             |
+| 4: sanitization  | Signed-workload deterministic fixture and application tests                                                                                                      | Presenter rehearsal of 500 → 100, re-evaluation and distinct hashes                                  |
+| 5: sequence deny | Synthetic bulk-read/external-send fixture and tests                                                                                                              | Presenter rehearsal of both baseline and sequence-specific denies                                    |
+| 6: endpoint      | Local process/source-proof harness and verifier/connector tests                                                                                                  | Register the actual source-attested connector with native Codex, then qualify observed process facts |
+| 7: hosted OAuth  | One dated Auth0 + unmodified ChatGPT + private-tunnel composition                                                                                                | Reconnect/rehearse only that configured profile; collect fresh evidence if used                      |
+| 8: delegation    | Signed narrow-chain fixture plus four amplification rejects                                                                                                      | Presenter rehearsal; do not call fixture signers real sub-agents                                     |
+| 9: uncertainty   | Approval lost-completion/restart test plus separate unknown-queue worker tests                                                                                   | Test-guided explanation; no live automatic recovery daemon is qualified                              |
 
 Historical records: [hosted/semantic qualification](../demo-scenarios/QUALIFICATION-EVIDENCE-2026-10-11.md)
 and [native Codex approval qualification](../demo-scenarios/evidence/codex-durable-approval-2026-10-15.md).
@@ -32,11 +32,12 @@ claim that the model selected a tool.
 ## Gate A: model-driven Codex approval
 
 The named Codex 0.162.1/`gpt-5.6-sol` profile has passed request → synthetic Bob
-review → explicit resume, replay rejection and a separate expiry rejection.
-**Explicit reviewer denial remains unqualified in the manual model-driven run.**
+review → explicit resume, replay rejection, expiry rejection and explicit Bob
+denial → rejected resume. **Gate A is complete only for this named local profile**,
+not production identity/deployment, other clients or arbitrary prompts.
 Follow [the exact runbook](codex-durable-approvals.md), including installed-version
 checks and private synthetic token handling. The full sequence below is for
-reproduction; next perform only the missing denial case in a fresh request.
+reproduction; the next separate qualification is Gate B, not another approval write.
 
 1. Run `pnpm demo:approvals:codex` with Java 21 and Docker. Keep the printed
    private token path and environment off-screen; use the printed ports.

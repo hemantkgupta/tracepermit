@@ -12,8 +12,9 @@ tested foundations and future production work using the
 The multi-origin rehearsal is recorded in
 [qualification evidence for 2026-10-11](QUALIFICATION-EVIDENCE-2026-10-11.md).
 The separate [2026-10-15 model-driven Codex approval record](evidence/codex-model-driven-approval-2026-10-15.md)
-captures request/review/resume, replay and expiry evidence for the local durable
-approval profile. Explicit reviewer denial remains its next manual gate.
+captures request/review/resume, replay, expiry and explicit reviewer-denial
+evidence for the named local durable approval profile. Native source-attested
+connector qualification remains separate.
 
 ## Safety and claim boundary
 

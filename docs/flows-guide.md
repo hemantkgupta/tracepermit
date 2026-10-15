@@ -241,8 +241,8 @@ Try: [Codex durable approvals runbook](runbooks/codex-durable-approvals.md),
 starting `pnpm demo:approvals:codex` in its own terminal. Do not tunnel the numeric
 loopback browser fixture. Native app-server MCP calls and a synthetic browser
 reviewer have been qualified. A separate [model-driven record](demo-scenarios/evidence/codex-model-driven-approval-2026-10-15.md)
-qualifies Codex 0.162.1/`gpt-5.6-sol` request/review/resume, replay and expiry
-rejection; explicit reviewer denial remains a manual gate. External browser
+qualifies Codex 0.162.1/`gpt-5.6-sol` request/review/resume, replay, expiry and
+explicit reviewer-denial rejection for this local profile. External browser
 IdP/HTTPS and native endpoint source attestation are not qualified by this
 bearer-only profile.
 
