@@ -246,7 +246,12 @@ TracePermit freezes the exact canonical action hash and registers a pending appr
 
 - **No Self-Approval**: The requesting principal or agent cannot approve its own proposal.
 - **Exact-Request Binding**: An independent human approver with the requisite security role reviews the frozen SHA-256 hash.
-- **Atomic One-Time Claim**: Upon approval, PostgreSQL atomically claims the permit for that exact hash. The simulator runs once. Replays or modified parameters are rejected.
+- **Explicit Resume and Atomic Claim**: Approval is still not execution. The original requester explicitly resumes with ID/hash; current owner/client/reviewer/policy/expiry checks precede the PostgreSQL single-use claim and simulator dispatch. Replay cannot dispatch again. This is at-most-one dispatch per approval, not distributed exactly-once effects.
+
+The local Codex path supports only a fixed `sg-demo` simulator mutation, not
+arbitrary database/cloud changes. The payload below is a compact projection,
+not the complete stored binding. Follow the
+[Codex approval runbook](https://github.com/hemantkgupta/tracepermit/blob/main/docs/runbooks/codex-durable-approvals.md).
 
 #### Sequence Diagram
 
@@ -264,17 +269,20 @@ sequenceDiagram
   participant Approver as Human Reviewer
   participant Simulator as AWS Simulator
 
-  Agent->>Gateway: tools/call update_security_group (sg-demo)
+  Agent->>Gateway: tools/call tracepermit_request_simulated_change (sg-demo)
   Gateway->>Gateway: Policy evaluation (outcome: require_approval)
   Gateway->>DB: Store pending approval bound to exact actionHash
-  Gateway-->>Agent: PENDING_APPROVAL (requestId: appr-101)
+  Gateway-->>Agent: pending + approvalRequestId + requestHash + not_executed
 
   Note over Agent,Gateway: Self-approval rejected (SELF_APPROVAL_DENIED)
 
-  Approver->>Gateway: POST /approvals/appr-101/decision (decision: approved)
+  Approver->>Gateway: POST /browser/api/v1/approvals/{id}/decision (approve + requestHash + CSRF)
   Gateway->>Gateway: Verify approver != requester, verify role and tenant
   Gateway->>DB: Atomically mark approval APPROVED
-  Gateway->>DB: Atomically claim permit for actionHash (single use)
+  Gateway-->>Approver: approved, still not_executed
+  Agent->>Gateway: tools/call tracepermit_resume_approval (id + hash)
+  Gateway->>Gateway: Recheck owner, client, reviewer, expiry and current policy
+  Gateway->>DB: Atomically consume approval and claim permit (single use)
   Gateway->>Simulator: execute(canonical action, approved permit)
   Simulator-->>Gateway: Simulated update successful
   Gateway->>DB: Record outcome evidence
@@ -286,16 +294,12 @@ sequenceDiagram
 
 ```json
 {
-  "approvalRequestId": "appr-018f47a2-f5ce-7a4b-8f54-80e5d3eaf301",
-  "actionHash": "sha256:4b22f01234567890abcdef1234567890abcdef1234567890abcdef1234567890",
-  "subjectId": "user:alice@example.com",
-  "requiredRole": "security-admin",
+  "mode": "simulated",
+  "approvalRequestId": "c24d2efb-7f69-4cc6-b45c-ec82e55d9149",
+  "requestHash": "sha256:4c373ad2aadad911a33a4964c10c425ac8a748dc3d3ff841fbc164c1cf0f6f07",
   "status": "approved",
-  "reviewer": {
-    "reviewerId": "user:bob-reviewer@example.com",
-    "decision": "approved",
-    "decidedAt": "2026-10-08T10:20:00.000Z"
-  }
+  "executionStatus": "not_executed",
+  "originalPolicyOutcome": "require_approval"
 }
 ```
 

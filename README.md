@@ -59,6 +59,13 @@ semantic-sequence controls, and fail-secure behavior. The hosted-client OAuth
 scenario is a separate, optional profile requiring an external test IdP and
 private tunnel; it is not needed for the default demo.
 
+For a coding-agent approval workflow, run `pnpm demo:approvals:codex`. This
+disposable synthetic environment connects authenticated MCP request/status/resume
+to the existing independent browser review and PostgreSQL single-use claim.
+Follow the [Codex approval runbook](docs/runbooks/codex-durable-approvals.md);
+no personal IdP login or real target is required. Native client qualification
+and model-driven rehearsal are separate from protocol tests.
+
 ## What is qualified
 
 - Java 21 is the sole backend. The React/TypeScript console is a

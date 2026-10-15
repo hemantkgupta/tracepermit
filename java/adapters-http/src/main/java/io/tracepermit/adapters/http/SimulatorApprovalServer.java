@@ -142,14 +142,33 @@ public final class SimulatorApprovalServer implements AutoCloseable {
         throw failure(400, "INVALID_REQUEST");
       }
       String method = exchange.getRequestMethod();
-      if (ROOT.equals(path)) {
+      if ("/mcp".equals(path)) {
+        if (!"POST".equals(method)) throw failure(405, "METHOD_NOT_ALLOWED");
+        if (headers.containsKey("tracepermit-source-attestation")) {
+          throw failure(403, "SOURCE_PROOF_NOT_SUPPORTED");
+        }
+        String version = headers.getFirst("MCP-Protocol-Version");
+        if (headers.getOrDefault("MCP-Protocol-Version", java.util.List.of()).size() > 1
+            || (version != null && !ApprovalMcpAdapter.PROTOCOLS.contains(version))) {
+          throw failure(400, "UNSUPPORTED_MCP_VERSION");
+        }
+        var response = new ApprovalMcpAdapter((name, arguments) -> switch (name) {
+          case ApprovalMcpAdapter.REQUEST -> request(connector, member, arguments, true);
+          case ApprovalMcpAdapter.STATUS -> {
+            require(connector, member, ApprovalMemberships.Role.REQUESTER, "approvals.read");
+            yield projection(owned(member, arguments.path("approvalRequestId").asText()), member);
+          }
+          case ApprovalMcpAdapter.RESUME -> execute(connector, member,
+              arguments.path("approvalRequestId").asText(), arguments, true);
+          default -> throw failure(400, "TOOL_NOT_FOUND");
+        }, mcpTools(connector, member)).dispatch(readBody(exchange));
+        if (response.body() == null) exchange.sendResponseHeaders(response.status(), -1);
+        else send(exchange, response.status(), response.body());
+      } else if (ROOT.equals(path)) {
         if ("POST".equals(method)) {
           require(connector, member, ApprovalMemberships.Role.REQUESTER, "approvals.request");
           JsonNode arguments = body(exchange, Set.of("groupId", "port", "cidr"));
-          validateArguments(arguments);
-          JsonNode event = normalize(connector, member, arguments);
-          var pending = approvals.requestApprovalWithSnapshot(context(member), event);
-          send(exchange, 201, projection(pending.approval(), member));
+          send(exchange, 201, request(connector, member, arguments, false));
         } else if ("GET".equals(method)) {
           requireRead(connector, member);
           ObjectNode page = JsonSupport.MAPPER.createObjectNode().put("mode", "simulated");
@@ -189,19 +208,8 @@ public final class SimulatorApprovalServer implements AutoCloseable {
         } else if ("POST".equals(method) && parts.length == 2
             && "execute".equals(parts[1])) {
           require(connector, member, ApprovalMemberships.Role.REQUESTER, "approvals.execute");
-          ApprovalRequestState approval = visible(member, parts[0]);
-          if (!member.principalId().equals(approval.binding().subjectId())) {
-            throw failure(403, "REQUESTER_REQUIRED");
-          }
-          if ("approved".equals(approval.status())
-              && !memberships.isActiveReviewer(member.tenant(), approval.reviewerSubjectId())) {
-            throw failure(403, "REVIEWER_AUTHORITY_REVOKED");
-          }
-          checkHash(body(exchange, Set.of("requestHash")), approval);
-          var executed = approvals.executeApproved(context(member), parts[0], exactAction(approval));
-          ObjectNode result = projection(executed.approval(), member);
-          result.put("executionStatus", executed.outcome());
-          send(exchange, 200, result);
+          send(exchange, 200, execute(connector, member, parts[0],
+              body(exchange, Set.of("requestHash")), false));
         } else throw failure(405, "METHOD_NOT_ALLOWED");
       } else throw failure(404, "NOT_FOUND");
     } catch (ApprovalBrowserAdapter.BrowserFailure failure) {
@@ -228,6 +236,56 @@ public final class SimulatorApprovalServer implements AutoCloseable {
     } catch (RuntimeException failure) {
       error(exchange, 503, "SECURITY_STATE_UNAVAILABLE");
     } finally { exchange.close(); }
+  }
+
+  // Both ingress adapters converge here before any approval/permit/execution operation.
+  private static Set<String> mcpTools(AuthenticatedConnector connector, ApprovalMemberships.Entry member) {
+    if (!member.roles().contains(ApprovalMemberships.Role.REQUESTER)) return Set.of();
+    Set<String> names = new java.util.HashSet<>();
+    if (connector.hasScope(ConnectorScope.of("approvals.request"))) names.add(ApprovalMcpAdapter.REQUEST);
+    if (connector.hasScope(ConnectorScope.of("approvals.read"))) names.add(ApprovalMcpAdapter.STATUS);
+    if (connector.hasScope(ConnectorScope.of("approvals.execute"))) names.add(ApprovalMcpAdapter.RESUME);
+    return Set.copyOf(names);
+  }
+
+  private ObjectNode request(AuthenticatedConnector connector, ApprovalMemberships.Entry member,
+      JsonNode arguments, boolean mcp) {
+    require(connector, member, ApprovalMemberships.Role.REQUESTER, "approvals.request");
+    validateArguments(arguments);
+    var pending = approvals.requestApprovalWithSnapshot(context(member), normalize(connector, member, arguments, mcp));
+    return projection(pending.approval(), member);
+  }
+
+  private ApprovalRequestState owned(ApprovalMemberships.Entry member, String id) {
+    ApprovalRequestState approval = visible(member, id);
+    if (!member.principalId().equals(approval.binding().subjectId())) {
+      throw failure(403, "REQUESTER_REQUIRED");
+    }
+    return approval;
+  }
+
+  private ObjectNode execute(AuthenticatedConnector connector, ApprovalMemberships.Entry member,
+      String id, JsonNode arguments, boolean mcp) {
+    require(connector, member, ApprovalMemberships.Role.REQUESTER, "approvals.execute");
+    ApprovalRequestState approval = owned(member, id);
+    checkHash(arguments, approval);
+    JsonNode event = exactAction(approval);
+    // MCP resumption cannot substitute a different enrolled client or origin. HTTP execution of
+    // an MCP snapshot must satisfy the same actor binding, not provide a weaker alternate route.
+    if ((mcp && !"mcp".equals(event.path("action").path("protocol").asText()))
+        || ("mcp".equals(event.path("action").path("protocol").asText())
+            && (!connector.clientId().equals(event.path("identity").path("actor").path("id").asText())
+                || !connector.origin().value().equals(event.path("trigger").path("origin").asText())))) {
+      throw failure(409, "APPROVAL_BINDING_MISMATCH");
+    }
+    if ("approved".equals(approval.status())
+        && !memberships.isActiveReviewer(member.tenant(), approval.reviewerSubjectId())) {
+      throw failure(403, "REVIEWER_AUTHORITY_REVOKED");
+    }
+    var executed = approvals.executeApproved(context(member), id, event);
+    ObjectNode result = projection(executed.approval(), member);
+    result.put("executionStatus", executed.outcome());
+    return result;
   }
 
   private ApprovalRequestState visible(ApprovalMemberships.Entry member, String id) {
@@ -272,9 +330,9 @@ public final class SimulatorApprovalServer implements AutoCloseable {
   }
 
   private JsonNode normalize(AuthenticatedConnector connector, ApprovalMemberships.Entry member,
-      JsonNode arguments) {
+      JsonNode arguments, boolean mcp) {
     AuthenticatedConnector pseudonymous = new AuthenticatedConnector(member.principalId(),
-        "Enrolled API principal", member.tenant().value(), connector.origin(), connector.clientId(),
+        "Enrolled approval principal", member.tenant().value(), connector.origin(), connector.clientId(),
         connector.clientName(), connector.issuer(), connector.verifiedAt(),
         connector.authenticationProfile(), connector.verificationKeyId(),
         connector.credentialFingerprint(), connector.scopes(), connector.expiresAt());
@@ -283,9 +341,10 @@ public final class SimulatorApprovalServer implements AutoCloseable {
         UUID.randomUUID().toString(), UUID.randomUUID().toString().replace("-", ""),
         clock.instant(), pseudonymous, Optional.empty());
     ((ObjectNode) event.path("identity").path("subject")).put("type", member.human() ? "human" : "workload");
-    ((ObjectNode) event.path("trigger")).put("kind", "service").put("origin", "api");
-    ((ObjectNode) event.path("action")).put("protocol", "http");
-    ((ObjectNode) event.path("clientClaims")).put("transport", "loopback-http-approval-api");
+    // A bearer proves a principal, not that a human typed the prompt or which executable ran.
+    ((ObjectNode) event.path("trigger")).put("kind", "service").put("origin", mcp ? connector.origin().value() : "api");
+    ((ObjectNode) event.path("action")).put("protocol", mcp ? "mcp" : "http");
+    ((ObjectNode) event.path("clientClaims")).put("transport", mcp ? "loopback-http-approval-mcp" : "loopback-http-approval-api");
     return ActionValidator.validate(event);
   }
 
@@ -319,8 +378,16 @@ public final class SimulatorApprovalServer implements AutoCloseable {
   }
 
   private static JsonNode body(HttpExchange exchange, Set<String> fields) throws IOException {
+    JsonNode body = readBody(exchange);
+    if (body.size() != fields.size()) throw failure(400, "INVALID_REQUEST");
+    var names = body.fieldNames();
+    while (names.hasNext()) if (!fields.contains(names.next())) throw failure(400, "INVALID_REQUEST");
+    return body;
+  }
+
+  private static JsonNode readBody(HttpExchange exchange) throws IOException {
     var types = exchange.getRequestHeaders().getOrDefault("Content-Type", java.util.List.of());
-    if (types.size() != 1 || !"application/json".equals(types.getFirst())) {
+    if (types.size() != 1 || !Set.of("application/json", "application/json; charset=utf-8").contains(types.getFirst())) {
       throw failure(415, "JSON_REQUIRED");
     }
     byte[] bytes = exchange.getRequestBody().readNBytes(65537);
@@ -331,17 +398,15 @@ public final class SimulatorApprovalServer implements AutoCloseable {
           .onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(bytes)).toString();
       body = JSON.readTree(utf8);
     } catch (IOException failure) { throw failure(400, "INVALID_REQUEST"); }
-    if (body == null || !body.isObject() || body.size() != fields.size()) {
+    if (body == null || !body.isObject()) {
       throw failure(400, "INVALID_REQUEST");
     }
-    var names = body.fieldNames();
-    while (names.hasNext()) if (!fields.contains(names.next())) throw failure(400, "INVALID_REQUEST");
     return body;
   }
 
   private static HttpFailure failure(int status, String code) { return new HttpFailure(status, code); }
 
-  private static final class HttpFailure extends RuntimeException {
+  static final class HttpFailure extends RuntimeException {
     private static final long serialVersionUID = 1L;
     final int status;
     final String code;

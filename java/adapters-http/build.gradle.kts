@@ -44,6 +44,17 @@ tasks.register<JavaExec>("runApprovalBrowserQualification") {
   systemProperty("tracepermit.repositoryRoot", rootDir.parentFile.absolutePath)
 }
 
+tasks.register<JavaExec>("runApprovalCodexQualification") {
+  group = "verification"
+  description = "Runs a disposable synthetic requester / browser reviewer MCP qualification fixture."
+  dependsOn(tasks.named("testClasses"))
+  classpath = sourceSets["test"].runtimeClasspath
+  mainClass = "io.tracepermit.adapters.http.SimulatorApprovalBrowserQualificationMain"
+  args("--codex")
+  standardInput = System.`in`
+  systemProperty("tracepermit.repositoryRoot", rootDir.parentFile.absolutePath)
+}
+
 tasks.register<JavaExec>("runHostedClientOAuth") {
   group = "application"
   description = "Runs the simulator-only hosted-client OAuth profile behind a private tunnel."

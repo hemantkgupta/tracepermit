@@ -13,8 +13,11 @@ the request hash → original requester executes the stored action once. It
 rechecks active reviewer enrollment and policy binding before the durable
 claim. The optional browser inbox signs in through the Java adapter, keeps
 tokens in server memory, and reaches these same checks through cookie/CSRF
-protected `/browser/api/v1/approvals` routes. It is not wired into the MCP or
-default read-only React flows described below. See
+protected `/browser/api/v1/approvals` routes. Its separate authenticated local
+MCP request/status/resume tools now share these durable checks; no MCP approval
+tool exists and resume loads the original immutable action. This is not wired
+into the hosted OAuth or default read-only React flows below. See
+[ADR 0037](../architecture/0037-mcp-durable-simulator-approval-composition.md) and
 [ADR 0036](../architecture/0036-local-browser-approval-boundary.md).
 
 This flow is implemented by the Java loopback development backend and the Java

@@ -146,6 +146,16 @@ production readiness remain target work. See
 - Requester and reviewer are distinct; PostgreSQL finalizes one decision and
   consumes approval with the execution claim in one transaction
 
+The local approval MCP surface adds request/status/resume, never review. It
+shares API/browser authorization and durable claim logic. Original MCP client
+and origin are checked on both execution ingresses to prevent an alternate API
+route from weakening actor binding. Cookie/Origin/source-proof headers are
+rejected on bearer MCP; no endpoint evidence is inferred. Tool metadata and
+annotations grant no authority. A leaked bearer can act as its enrolled subject;
+host-wide anti-bypass, managed device assurance and approval flooding remain
+unresolved. Lost completion leaves consumed/executing authority, never a safe
+automatic retry. See [ADR 0037](../architecture/0037-mcp-durable-simulator-approval-composition.md).
+
 ### Executor to target
 
 - Fixed adapter operation mapping

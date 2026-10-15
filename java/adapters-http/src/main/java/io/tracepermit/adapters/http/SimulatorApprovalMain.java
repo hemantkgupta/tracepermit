@@ -107,13 +107,13 @@ public final class SimulatorApprovalMain {
   static JsonNode policy() {
     try {
       return JsonSupport.MAPPER.readTree("""
-          {"schemaVersion":"1.0","id":"pol-local-simulator-approval","version":1,
+          {"schemaVersion":"1.0","id":"pol-local-simulator-approval","version":2,
            "name":"Local simulator exact-action review","enabled":true,
            "description":"Require independent review for one fixed simulated mutation; deny other actions.",
            "defaultDecision":{"outcome":"block","reasonCode":"NO_EXPLICIT_ALLOW"},
            "rules":[{"id":"review-simulated-security-group","priority":100,
              "description":"Require exact-action human review before simulator dispatch.",
-             "match":{"origins":["api"],"targetSystems":["aws"],"toolNames":["aws.ec2.update_security_group"],
+             "match":{"origins":["api","cli"],"targetSystems":["aws"],"toolNames":["aws.ec2.update_security_group"],
                       "actionClasses":["modify"]},
              "decision":{"outcome":"require_approval","reasonCode":"EXACT_SIMULATED_CHANGE_REVIEW"}}]}
           """);

@@ -115,6 +115,18 @@ final class SimulatorApprovalBrowserFixture implements AutoCloseable {
   String origin() { return "http://127.0.0.1:" + server.port(); }
   String idpOrigin() { return "http://127.0.0.1:" + idp.getAddress().getPort(); }
 
+  // Test/qualification only. No issuer or minting endpoint is selectable in normal runtime.
+  String accessToken(String subject) throws Exception {
+    long now = clock.instant().getEpochSecond();
+    ObjectNode claims = JsonSupport.MAPPER.createObjectNode().put("iss", ISSUER)
+        .put("aud", config.provider().resourceAudience()).put("sub", subject)
+        .put("client_id", CLIENT).put("org_id", "alpha")
+        .put("scope", "approvals.read approvals.request approvals.execute")
+        .put("iat", now - 10).put("exp", now + 290).put("jti", UUID.randomUUID().toString());
+    accessClaims.accept(claims);
+    return sign(claims, "at+jwt");
+  }
+
   private String exchange(Map<String, String> form) {
     exchanges.incrementAndGet();
     try {
