@@ -194,6 +194,20 @@ Before any real AWS or Jira credential is introduced:
 
 ## 8. Security testing expectations
 
+The optional browser approval profile adds login-CSRF/code-injection, token
+substitution, session theft/fixation, cross-origin mutation and unsafe-rendering
+threats. Code/PKCE/state/nonce plus required response issuer, separate signed
+ID/access-token verification, browser binder and one-use login state constrain
+sign-in. HttpOnly SameSite cookies, exact Host/Origin, session CSRF, no CORS,
+CSP and React text rendering constrain browser requests. Every operation
+rechecks current token/enrollment/scope and the shared approval boundary.
+Tokens stay in bounded process memory; sessions expire/logout/restart invalidates.
+This is local HTTP, not public TLS: same-UID compromise and another local port
+can defeat cookie/token custody. Do not tunnel this listener. External provider
+revocation, managed token storage, shared sessions/abuse controls and independent
+security review remain release gates. See
+[ADR 0036](../architecture/0036-local-browser-approval-boundary.md).
+
 - Mutation and property-based tests for schemas and canonicalization
 - Forged, expired, future, wrong-issuer, wrong-audience, and wrong-type tokens
 - Identity, tenant, target, approval, and policy injection attempts

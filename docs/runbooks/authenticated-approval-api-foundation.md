@@ -75,9 +75,12 @@ for the corresponding route, not token-provided role claims. The existing
 verifier requires RS256, `typ: at+jwt`, `kid`, issuer, audience, client, configured
 tenant claim, scopes and `iat`/`exp` within its 15-minute lifetime bound. ID tokens,
 opaque access tokens and sender-constrained tokens are not accepted here.
-Only the four `approvals.*` scopes listed above are allowlisted; additional
-IdP-added scope names are not silently accepted.
-No browser login or token issuance is provided by this launcher.
+Only the four `approvals.*` scopes listed above are allowlisted by default;
+the optional browser profile additionally allows `openid`. Other IdP-added
+scope names are not silently accepted. Optional browser sign-in requires the
+separate configuration and qualification described in the
+[browser inbox runbook](browser-approval-inbox.md). This service never issues
+provider tokens itself.
 
 ```bash
 export TRACEPERMIT_APPROVAL_CONFIG="$PWD/.cache/local-approvals/operator.json"

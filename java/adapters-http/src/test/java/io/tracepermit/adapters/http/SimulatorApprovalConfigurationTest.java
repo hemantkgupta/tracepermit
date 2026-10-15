@@ -28,6 +28,22 @@ final class SimulatorApprovalConfigurationTest {
 
   @BeforeEach void setup() throws Exception { fixture = new SimulatorApprovalFixture(directory); }
 
+  @Test void optionalBrowserConfigurationIsExplicitPrivateAndValidatedOffline() throws Exception {
+    Files.createDirectories(directory.resolve("console"));
+    Files.writeString(directory.resolve("console/index.html"), "<html></html>");
+    fixture.write("client.secret", "synthetic-browser-client-secret\n".getBytes(StandardCharsets.UTF_8));
+    var web = fixture.json.putObject("browser").put("authorizationUri", "https://idp.example.invalid/authorize")
+        .put("tokenUri", "https://idp.example.invalid/token").put("clientSecretFile", "client.secret")
+        .put("consoleDirectory", "console");
+    var config = fixture.load();
+    assertThat(config.browser().consoleDirectory).isEqualTo(directory.resolve("console").toRealPath());
+    assertThat(config.browser().toString()).doesNotContain("synthetic", "secret");
+    web.put("tokenUri", "http://127.0.0.1/token"); fixture.save(); rejected();
+    web.put("tokenUri", "https://idp.example.invalid/token").put("consoleDirectory", "missing"); fixture.save(); rejected();
+    web.put("consoleDirectory", "console").put("unknown", true); fixture.save(); rejected();
+    web.remove("unknown"); fixture.write("client.secret", "short".getBytes(StandardCharsets.UTF_8)); fixture.save(); rejected();
+  }
+
   @Test void explicitConfigurationLoadsWithoutDatabaseOrNetworkAndPreservesKeys() throws Exception {
     var first = fixture.load();
     var second = fixture.load();

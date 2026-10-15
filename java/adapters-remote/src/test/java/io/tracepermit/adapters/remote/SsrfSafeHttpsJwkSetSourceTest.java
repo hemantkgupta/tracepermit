@@ -15,6 +15,24 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 final class SsrfSafeHttpsJwkSetSourceTest {
+  @Test void tokenPostUsesSamePinnedTlsAndNeverFollowsRedirectWithCredentials() throws Exception {
+    var tls = RemoteTestSupport.tlsMaterial();
+    try (MockWebServer server = tlsServer(tls)) {
+      URI uri = server.url("/token").uri();
+      var source = source(uri, tls);
+      server.enqueue(new MockResponse().setHeader("Content-Type", "application/json").setBody("{}"));
+      assertThat(source.postForm(uri, java.util.Map.of("code", "synthetic+code", "code_verifier", "verifier"), "Basic synthetic")).isEqualTo("{}");
+      var request = server.takeRequest();
+      assertThat(request.getMethod()).isEqualTo("POST");
+      assertThat(request.getHeader("Authorization")).isEqualTo("Basic synthetic");
+      assertThat(request.getBody().readUtf8()).contains("code=synthetic%2Bcode", "code_verifier=verifier");
+      server.enqueue(new MockResponse().setResponseCode(302).setHeader("Location", "https://attacker.invalid/token"));
+      assertSafeFailure(() -> source.postForm(uri, java.util.Map.of("code", "sensitive"), "Basic sensitive"));
+      assertThat(server.getRequestCount()).isEqualTo(2);
+      assertSafeFailure(() -> source.postForm(server.url("/elsewhere").uri(), java.util.Map.of(), "Basic sensitive"));
+      assertThat(server.getRequestCount()).isEqualTo(2);
+    }
+  }
   @Test
   void fetchesAllowlistedJsonOverPinnedTlsWithoutCredentials() throws Exception {
     RemoteTestSupport.TlsMaterial tls = RemoteTestSupport.tlsMaterial();

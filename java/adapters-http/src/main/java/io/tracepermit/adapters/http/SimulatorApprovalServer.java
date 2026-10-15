@@ -41,7 +41,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Authenticated, loopback-only API foundation. Not started by either existing demo launcher.
- * No browser sessions/CORS, public edge, real target adapter or token-issuance endpoint exists.
+ * Optional browser adapter is isolated from the bearer API. No public edge or real target exists.
  */
 public final class SimulatorApprovalServer implements AutoCloseable {
   private static final String ROOT = "/api/v1/approvals";
@@ -56,6 +56,7 @@ public final class SimulatorApprovalServer implements AutoCloseable {
   private final HumanApprovalService approvals;
   private final Clock clock;
   private final AtomicBoolean closed = new AtomicBoolean();
+  private final ApprovalBrowserAdapter browser;
 
   public static SimulatorApprovalServer start(
       InetSocketAddress address, OidcAccessTokenVerifier verifier, ApprovalMemberships memberships,
@@ -65,14 +66,25 @@ public final class SimulatorApprovalServer implements AutoCloseable {
         || !"127.0.0.1".equals(address.getAddress().getHostAddress())) {
       throw new IllegalArgumentException("The approval foundation must bind to IPv4 loopback.");
     }
+    return start(address, verifier, memberships, state, policy, permits, simulator, clock, null);
+  }
+
+  static SimulatorApprovalServer start(
+      InetSocketAddress address, OidcAccessTokenVerifier verifier, ApprovalMemberships memberships,
+      PostgresDurableEnforcementState state, JsonNode policy, ExecutionPermitAuthority permits,
+      StatefulTargetSimulator simulator, Clock clock, ApprovalBrowserAdapter browser) throws IOException {
+    if (address.getAddress() == null || !"127.0.0.1".equals(address.getAddress().getHostAddress())) {
+      throw new IllegalArgumentException("The approval foundation must bind to IPv4 loopback.");
+    }
     return new SimulatorApprovalServer(address, verifier, memberships, state, policy, permits,
-        simulator, clock);
+        simulator, clock, browser);
   }
 
   private SimulatorApprovalServer(
       InetSocketAddress address, OidcAccessTokenVerifier verifier, ApprovalMemberships memberships,
       PostgresDurableEnforcementState state, JsonNode policy, ExecutionPermitAuthority permits,
-      StatefulTargetSimulator simulator, Clock clock) throws IOException {
+      StatefulTargetSimulator simulator, Clock clock, ApprovalBrowserAdapter browser) throws IOException {
+    this.browser = browser;
     this.verifier = java.util.Objects.requireNonNull(verifier);
     this.memberships = java.util.Objects.requireNonNull(memberships);
     this.state = java.util.Objects.requireNonNull(state);
@@ -91,7 +103,10 @@ public final class SimulatorApprovalServer implements AutoCloseable {
   public int port() { return server.getAddress().getPort(); }
 
   @Override public void close() {
-    if (closed.compareAndSet(false, true)) { server.stop(0); workers.close(); }
+    if (closed.compareAndSet(false, true)) {
+      server.stop(0); workers.close();
+      if (browser != null) browser.clear();
+    }
   }
 
   private void handle(HttpExchange exchange) throws IOException {
@@ -101,21 +116,31 @@ public final class SimulatorApprovalServer implements AutoCloseable {
           || !("127.0.0.1:" + port()).equals(headers.getFirst("Host"))) {
         throw failure(400, "INVALID_HOST");
       }
-      if (headers.containsKey("Origin") || headers.containsKey("Cookie")) {
-        throw failure(403, "BROWSER_SESSION_NOT_SUPPORTED");
+      var uri = exchange.getRequestURI();
+      if (uri.isAbsolute() || uri.getRawPath().contains("%")) throw failure(400, "INVALID_REQUEST");
+      if (browser != null && browser.handle(exchange, port())) return;
+      String path = uri.getRawPath();
+      boolean browserRequest = browser != null && (ApprovalBrowserAdapter.API.equals(path)
+          || path.startsWith(ApprovalBrowserAdapter.API + "/"));
+      AuthenticatedConnector connector;
+      if (browserRequest) {
+        connector = browser.authenticate(exchange, port());
+        path = ROOT + path.substring(ApprovalBrowserAdapter.API.length());
+      } else {
+        if (headers.containsKey("Origin") || headers.containsKey("Cookie")) {
+          throw failure(403, "BROWSER_SESSION_NOT_SUPPORTED");
+        }
+        if (headers.getOrDefault("Authorization", java.util.List.of()).size() != 1) {
+          throw failure(401, "INVALID_ACCESS_TOKEN");
+        }
+        connector = verifier.authenticate(headers.getFirst("Authorization"));
       }
-      if (headers.getOrDefault("Authorization", java.util.List.of()).size() != 1) {
-        throw failure(401, "INVALID_ACCESS_TOKEN");
-      }
-      AuthenticatedConnector connector = verifier.authenticate(headers.getFirst("Authorization"));
       // A cnf claim is not proof of possession; this bearer-only local adapter cannot verify it.
       if (connector.senderConstraint().isPresent()) throw failure(401, "SENDER_PROOF_NOT_SUPPORTED");
       ApprovalMemberships.Entry member = memberships.resolve(connector);
-      var uri = exchange.getRequestURI();
-      if (uri.isAbsolute() || uri.getRawQuery() != null || uri.getRawPath().contains("%")) {
+      if (uri.getRawQuery() != null) {
         throw failure(400, "INVALID_REQUEST");
       }
-      String path = uri.getRawPath();
       String method = exchange.getRequestMethod();
       if (ROOT.equals(path)) {
         if ("POST".equals(method)) {
@@ -179,6 +204,8 @@ public final class SimulatorApprovalServer implements AutoCloseable {
           send(exchange, 200, result);
         } else throw failure(405, "METHOD_NOT_ALLOWED");
       } else throw failure(404, "NOT_FOUND");
+    } catch (ApprovalBrowserAdapter.BrowserFailure failure) {
+      error(exchange, failure.status, failure.code);
     } catch (HttpFailure failure) {
       error(exchange, failure.status, failure.code);
     } catch (AuthenticationException failure) {

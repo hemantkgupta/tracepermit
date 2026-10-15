@@ -7,6 +7,7 @@ import io.tracepermit.identity.CachingOidcJwkResolver;
 import io.tracepermit.identity.OidcAccessTokenVerifier;
 import io.tracepermit.identity.OidcVerificationKeyResolver;
 import io.tracepermit.identity.StaticOidcProviderRegistry;
+import io.tracepermit.identity.BrowserIdTokenVerifier;
 import io.tracepermit.persistence.postgres.PostgresDurableEnforcementState;
 import io.tracepermit.security.ExecutionPermitAuthority;
 import io.tracepermit.security.InMemoryPermitConsumptionStore;
@@ -23,7 +24,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 
-/** Local simulator approval composition only. No development issuer, browser login or real target. */
+/** Local simulator approval composition, optionally with browser login. No development issuer or real target. */
 public final class SimulatorApprovalMain {
   private SimulatorApprovalMain() {}
 
@@ -83,9 +84,24 @@ public final class SimulatorApprovalMain {
     var permits = new ExecutionPermitAuthority(ExecutionPermitAuthority.DEFAULT_ISSUER,
         configuration.keyId(), configuration.permitKey(), 30, clock,
         () -> "permit-" + UUID.randomUUID(), new InMemoryPermitConsumptionStore());
+    ApprovalBrowserAdapter browser = null;
+    var web = configuration.browser();
+    if (web != null) {
+      var transport = new SsrfSafeHttpsJwkSetSource(Set.of(web.tokenUri),
+          Duration.ofSeconds(3), Duration.ofSeconds(5));
+      String clientId = configuration.provider().clientNames().keySet().iterator().next();
+      String credentials = java.net.URLEncoder.encode(clientId, java.nio.charset.StandardCharsets.UTF_8)
+          + ":" + java.net.URLEncoder.encode(web.clientSecret, java.nio.charset.StandardCharsets.UTF_8);
+      String basic = "Basic " + java.util.Base64.getEncoder()
+          .encodeToString(credentials.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+      browser = new ApprovalBrowserAdapter(web.authorizationUri, configuration.provider().issuer().toString(),
+          configuration.provider().resourceAudience(), clientId, web.consoleDirectory,
+          form -> transport.postForm(web.tokenUri, form, basic), verifier,
+          new BrowserIdTokenVerifier(configuration.provider(), resolver, clock), configuration.memberships(), clock);
+    }
     return SimulatorApprovalServer.start(
         new InetSocketAddress(InetAddress.getByName("127.0.0.1"), configuration.port()),
-        verifier, configuration.memberships(), state, policy(), permits, new StatefulTargetSimulator(), clock);
+        verifier, configuration.memberships(), state, policy(), permits, new StatefulTargetSimulator(), clock, browser);
   }
 
   static JsonNode policy() {

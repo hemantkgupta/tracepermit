@@ -3,6 +3,20 @@
 **Status:** Current POC design with explicit production gaps
 **Applies to:** Java 21 backend and simulator-only execution
 
+## Optional local browser approval adapter
+
+`ApprovalBrowserAdapter` owns OIDC code exchange, one-use browser-bound login
+state, bounded in-memory sessions/CSRF, strict same-origin routing and built
+React assets. `BrowserIdTokenVerifier` checks a separate RS256 ID-token profile
+and matches nonce/subject/client to the independently verified API token.
+`SimulatorApprovalServer` keeps bearer and cookie ingress separate and shares
+the same role/scope/owner, exact snapshot and durable claim path after authentication.
+`SimulatorApprovalConfiguration` opt-in browser fields are private operator
+inputs; `SimulatorApprovalMain` uses DNS-pinned HTTPS token POST and never a
+development issuer. The synthetic browser qualifier lives only in test sources.
+No database migration or real target is introduced. See
+[ADR 0036](../architecture/0036-local-browser-approval-boundary.md).
+
 ## Module ownership
 
 | Module                 | Responsibility                                                                |

@@ -43,18 +43,18 @@ shutdown must stop children and remove the local endpoint key and session.
 
 ## Behavior acceptance
 
-| Boundary         | Required evidence                                                                                                                  |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| Authentication   | Invalid, expired, wrong-issuer/audience, replayed, or sender-mismatched credentials stop before protected dispatch                 |
-| Canonicalization | Unknown tools/schemas and client-asserted security fields do not become trusted action context                                     |
-| Policy           | Allow, block, sanitize, and approval each have positive and negative tests; block and unresolved states never invoke the simulator |
-| Sequence         | History is gateway-owned and tenant/subject scoped; injected client history cannot create authority                                |
-| Approval         | Independently authenticated reviewer, exact request binding, expiry, and atomic single-use claim; self-approval and mutation fail  |
-| Permit           | Signature, audience, canonical hash, time, and one-time claim checked before simulated effect                                      |
-| Delegation       | Parent-linked scope, resource, audience, and lifetime narrowing; broadening fails                                                  |
-| Evidence         | Credentials are redacted; integrity/outbox/receipt checks and observer failures cannot turn a denial into an allow                 |
-| Recovery         | Unknown outcome remains unknown until confirmed by read-only lookup; no automatic re-execution                                     |
-| Console          | Read-only projection; it cannot approve, issue permits, or execute                                                                 |
+| Boundary         | Required evidence                                                                                                                       |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Authentication   | Invalid, expired, wrong-issuer/audience, replayed, or sender-mismatched credentials stop before protected dispatch                      |
+| Canonicalization | Unknown tools/schemas and client-asserted security fields do not become trusted action context                                          |
+| Policy           | Allow, block, sanitize, and approval each have positive and negative tests; block and unresolved states never invoke the simulator      |
+| Sequence         | History is gateway-owned and tenant/subject scoped; injected client history cannot create authority                                     |
+| Approval         | Independently authenticated reviewer, exact request binding, expiry, and atomic single-use claim; self-approval and mutation fail       |
+| Permit           | Signature, audience, canonical hash, time, and one-time claim checked before simulated effect                                           |
+| Delegation       | Parent-linked scope, resource, audience, and lifetime narrowing; broadening fails                                                       |
+| Evidence         | Credentials are redacted; integrity/outbox/receipt checks and observer failures cannot turn a denial into an allow                      |
+| Recovery         | Unknown outcome remains unknown until confirmed by read-only lookup; no automatic re-execution                                          |
+| Console          | Default demo is read-only; separate authenticated browser inbox requests/reviews/executes only through shared simulator approval checks |
 
 The hosted-client profile has a separately documented single-composition
 Auth0/ChatGPT/private-tunnel qualification. It does not establish general
@@ -66,7 +66,20 @@ access-token verification to the PostgreSQL approval path. Its synthetic IdP
 and operator enrollment are not a live third-party login qualification. It
 tests durable snapshot/approval atomicity, tenant/owner and reviewer-role
 isolation, stale policy, replay, concurrency, parse bounds and timestamp
-precision. It does not qualify a public edge or browser approval UI.
+precision. It does not qualify a public edge.
+
+The optional browser profile additionally requires real HTTP cookie/CSRF and
+signed ID/access-token tests, one-use browser-bound login state, wrong
+issuer/audience/nonce/subject/time/hash rejection, current membership checks,
+owner/distinct-reviewer/viewer authorization, logout/expiry/restart invalidation
+and durable approval preservation. `SimulatorApprovalBrowserTest`,
+`BrowserIdTokenVerifierTest` and outbound HTTPS token POST tests supply automated
+evidence. The React client tests assert role-plus-scope guidance, exact hash
+submissions, same-origin credentials and no automatic mutation retry. The
+test-only `pnpm demo:approvals:browser` composition allows rendered sign-in,
+request, viewer, independent review and owner execution qualification without
+a personal account. Neither this synthetic profile nor offline validation
+qualifies external provider compatibility, production cookies or a public edge.
 
 Operator bootstrap acceptance also requires strict private-file/configuration
 rejection, matching persistent keys, offline check with unreachable dependencies,

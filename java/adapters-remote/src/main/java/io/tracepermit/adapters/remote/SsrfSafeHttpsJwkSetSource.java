@@ -25,6 +25,7 @@ import okhttp3.Dns;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
+import okhttp3.FormBody;
 
 /**
  * Fetches only operator-allowlisted JWKS documents over a DNS-pinned HTTPS connection.
@@ -92,6 +93,17 @@ public final class SsrfSafeHttpsJwkSetSource implements OidcJwkSetSource {
 
   @Override
   public String fetch(URI configuredJwksUri) {
+    return request(configuredJwksUri, null, null);
+  }
+
+  /** Same exact-URI, DNS-pinned, no-proxy/no-redirect transport for an operator token endpoint. */
+  public String postForm(URI tokenUri, java.util.Map<String, String> form, String basicAuthorization) {
+    FormBody.Builder body = new FormBody.Builder();
+    form.forEach(body::add);
+    return request(tokenUri, body.build(), basicAuthorization);
+  }
+
+  private String request(URI configuredJwksUri, FormBody form, String authorization) {
     URI uri = requireSafeUri(configuredJwksUri);
     if (!allowedUris.contains(uri)) throw new JwksFetchException();
 
@@ -118,13 +130,13 @@ public final class SsrfSafeHttpsJwkSetSource implements OidcJwkSetSource {
       clientBuilder.sslSocketFactory(sslSocketFactory, trustManager);
     }
 
-    Request request =
-        new Request.Builder()
+    Request.Builder requestBuilder = new Request.Builder()
             .url(uri.toString())
-            .get()
             .header("Accept", "application/jwk-set+json, application/json")
-            .header("Cache-Control", "no-store")
-            .build();
+            .header("Cache-Control", "no-store");
+    if (form == null) requestBuilder.get();
+    else requestBuilder.post(form).header("Authorization", authorization);
+    Request request = requestBuilder.build();
     try (Response response = clientBuilder.build().newCall(request).execute()) {
       if (response.code() != 200 || response.handshake() == null || response.body() == null) {
         throw new JwksFetchException();
