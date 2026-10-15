@@ -4,6 +4,10 @@ Date: 2026-10-15. Scope: local Java/React, synthetic identities and disposable
 PostgreSQL 16.4. No real cloud service, personal login, external IdP registration,
 public tunnel, model inference or target credential was used.
 
+Later evidence: the separate [model-driven rehearsal](codex-model-driven-approval-2026-10-15.md)
+qualifies a named Codex 0.162.1/`gpt-5.6-sol` prompt path. The observations below
+remain the original protocol-only record; they must not be relabeled as model calls.
+
 ## Evidence levels
 
 | Layer               | Result                                                                                                               | What this proves                                                                                                                                                                               |

@@ -248,11 +248,13 @@ policy and expiry are rechecked. Approval consumption and the execution claim
 commit before dispatch. Self-review, stale policy, wrong hash and replay cannot
 authorize execution.
 
-**Proof boundary:** native Codex app-server MCP calls and a synthetic browser
-reviewer have been qualified. A model-driven Codex prompt rehearsal, native
-source-attested connector qualification and production browser IdP/HTTPS are
-separate, unfinished qualifications. The loopback approval fixture must not be
-tunnel-exposed. This is at-most-one dispatch, not exactly-once external effects.
+**Proof boundary:** native app-server MCP calls and a synthetic browser reviewer
+have been qualified. The separate [model-driven record](https://github.com/hemantkgupta/tracepermit/blob/main/docs/demo-scenarios/evidence/codex-model-driven-approval-2026-10-15.md)
+qualifies Codex 0.162.1/`gpt-5.6-sol` request/review/resume, replay and expiry
+rejection; explicit reviewer denial remains a manual gate. Native source-attested
+connector qualification and production browser IdP/HTTPS remain separate work.
+The loopback approval fixture must not be tunnel-exposed. This is at-most-one
+dispatch, not exactly-once external effects; screenshots are not dispatch counters.
 [Runbook](https://github.com/hemantkgupta/tracepermit/blob/main/docs/runbooks/codex-durable-approvals.md).
 
 ## Flow 4: sanitize and re-evaluate

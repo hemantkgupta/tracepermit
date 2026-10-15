@@ -56,6 +56,15 @@ approval expiry remains 300 seconds from request creation; refresh never extends
 Press Enter to stop and discard the fixture database and generated keys/token.
 Do not retain qualification data as a production audit ledger.
 
+Before creating a pending request, prepare the reviewer browser and the request,
+status, resume and intentional-replay prompts. Refresh the synthetic file just
+before launching the requester session. Complete request → review → explicit
+resume within both lifetimes; do not pause between steps waiting for another
+instruction. Save only the non-secret ID/hash, statuses and bounded screenshots.
+An authentication failure does not establish approval expiry. If a credential
+expires, reconnect with a fresh one before a deliberate status/expiry check;
+never blindly retry a write or silently create a replacement approval.
+
 ## 2. Connect Codex without modifying global configuration
 
 In a second terminal, use the **exact printed values**, not a guessed port/path:
@@ -186,10 +195,18 @@ separately. An app-server inventory check can qualify native MCP initialization
 without model inference; it does not prove a model chose the tool correctly.
 A model-driven prompt rehearsal remains a separate UX/compatibility gate.
 
-The [2026-10-15 qualification record](../demo-scenarios/evidence/codex-durable-approval-2026-10-15.md)
+The [2026-10-15 protocol qualification record](../demo-scenarios/evidence/codex-durable-approval-2026-10-15.md)
 records native Codex CLI 0.142.4 initialization, catalog and actual tool calls
 through its app-server API, independent Chrome review and rejected replay.
-No model inference was used; the prompt-driven rehearsal is not yet qualified.
+No model inference was used in that record.
+
+The separate [model-driven qualification record](../demo-scenarios/evidence/codex-model-driven-approval-2026-10-15.md)
+records Codex CLI 0.162.1 with `gpt-5.6-sol`: model-selected request and explicit
+resume, synthetic Bob review, refreshed durable success, rejected replay and
+rejected expiry. Reviewer denial remains the next manual gate. This qualifies
+one local profile, not arbitrary clients/prompts, source attestation or a
+production browser deployment. See the record's screenshot provenance and
+dispatch-count limitations; do not relabel protocol tests as model evidence.
 
 ## Limits and next gate
 
