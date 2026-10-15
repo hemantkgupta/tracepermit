@@ -93,9 +93,14 @@ pnpm dev:approvals
 It can pass for the `.invalid` placeholders; that does not mean login will work.
 `--run` (the default launcher mode) validates before database migration, then
 opens only the approval listener, by default sample port 8085. Use `Ctrl+C` to stop.
-The fixed policy `pol-local-simulator-approval` v1 requires exact review for
-`aws.ec2.update_security_group` and blocks unmatched actions. There is no public
-health endpoint, development token route, console backend or React inbox here.
+The fixed policy `pol-local-simulator-approval` v2 requires exact review for
+`aws.ec2.update_security_group` from API/CLI and blocks unmatched actions.
+There is no public health endpoint or development token route. Optional browser
+configuration adds the [React approval inbox](browser-approval-inbox.md);
+authenticated [local MCP request/status/resume](codex-durable-approvals.md)
+shares this durable service. These are not the default demo console backend.
+Previously pending/approved v1 records cannot execute under v2: request fresh
+review of the current policy rather than rewriting the stored approval.
 
 Startup errors return code 2 with `APPROVAL_STARTUP_FAILED`, without raw exception
 details. Check file paths/ownership/permissions, configuration fields, key formats,

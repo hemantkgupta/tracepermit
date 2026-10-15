@@ -348,6 +348,68 @@ final class SimulatorApprovalServerTest {
     assertThat(rules()).isZero();
   }
 
+  @Test void mcpActorTenantAndPolicyCannotBeSubstitutedThroughEitherIngress() throws Exception {
+    memberships.replace(entries().stream().map(entry -> new ApprovalMemberships.Entry(
+        entry.verifiedSubjectId(), entry.clientId(), entry.tenant(), entry.human(),
+        java.util.stream.Stream.concat(entry.roles().stream(), java.util.stream.Stream.of(ApprovalMemberships.Role.REQUESTER))
+            .collect(java.util.stream.Collectors.toUnmodifiableSet()))).toList());
+    var pending = mcp(token("alice"), ApprovalMcpAdapter.REQUEST, ACTION);
+    String id = pending.path("approvalRequestId").asText();
+    String resume = "{\"approvalRequestId\":\"" + id + "\",\"requestHash\":\"" + pending.path("requestHash").asText() + "\"}";
+    assertThat(mcp(token("beta", c -> c.put("org_id", "beta")), ApprovalMcpAdapter.STATUS,
+        "{\"approvalRequestId\":\"" + id + "\"}").path("errorCode").asText()).isEqualTo("APPROVAL_NOT_FOUND");
+    assertThat(mcp(token("charlie"), ApprovalMcpAdapter.STATUS,
+        "{\"approvalRequestId\":\"" + id + "\"}").path("errorCode").asText()).isEqualTo("APPROVAL_NOT_FOUND");
+    assertStatus(call("POST", path(pending) + "/decision", token("bob"), decision(pending, "approve")), 200);
+    String alternate = token("alice", c -> c.put("client_id", "alternate-client"));
+    assertThat(mcp(alternate, ApprovalMcpAdapter.RESUME, resume).path("errorCode").asText()).isEqualTo("APPROVAL_BINDING_MISMATCH");
+    assertStatus(call("POST", path(pending) + "/execute", alternate, hash(pending)), 409);
+    ((ObjectNode) policy).put("version", 99); restart();
+    assertThat(mcp(token("alice"), ApprovalMcpAdapter.RESUME, resume).path("errorCode").asText()).isEqualTo("APPROVAL_BINDING_MISMATCH");
+    assertThat(rules()).isZero();
+    var api = create(token("alice"));
+    String apiResume = "{\"approvalRequestId\":\"" + api.path("approvalRequestId").asText()
+        + "\",\"requestHash\":\"" + api.path("requestHash").asText() + "\"}";
+    assertThat(mcp(token("alice"), ApprovalMcpAdapter.RESUME, apiResume).path("errorCode").asText()).isEqualTo("APPROVAL_BINDING_MISMATCH");
+  }
+
+  @Test void mcpCompletionOutageRemainsConsumedAndCannotDispatchAgainAfterRestart() throws Exception {
+    var pending = mcp(token("alice"), ApprovalMcpAdapter.REQUEST, ACTION);
+    assertStatus(call("POST", path(pending) + "/decision", token("bob"), decision(pending, "approve")), 200);
+    try (var connection = dataSource.getConnection(); var sql = connection.createStatement()) {
+      sql.execute("""
+          CREATE FUNCTION fail_completion() RETURNS TRIGGER AS $$
+          BEGIN IF NEW.sequence > 1 THEN RAISE EXCEPTION 'synthetic completion outage'; END IF;
+          RETURN NEW; END; $$ LANGUAGE plpgsql
+          """);
+      sql.execute("CREATE TRIGGER fail_completion BEFORE INSERT ON tp_execution_transitions FOR EACH ROW EXECUTE FUNCTION fail_completion()");
+    }
+    String args = "{\"approvalRequestId\":\"" + pending.path("approvalRequestId").asText()
+        + "\",\"requestHash\":\"" + pending.path("requestHash").asText() + "\"}";
+    assertThat(mcp(token("alice"), ApprovalMcpAdapter.RESUME, args).path("errorCode").asText()).isEqualTo("SECURITY_STATE_UNAVAILABLE");
+    assertThat(rules()).isEqualTo(1); // effect happened, but its success was not durably recorded
+    restart();
+    assertThat(mcp(token("alice"), ApprovalMcpAdapter.RESUME, args).path("errorCode").asText()).isEqualTo("APPROVAL_NOT_EXECUTABLE");
+    var status = mcp(token("alice"), ApprovalMcpAdapter.STATUS,
+        "{\"approvalRequestId\":\"" + pending.path("approvalRequestId").asText() + "\"}");
+    assertThat(status.path("status").asText()).isEqualTo("consumed");
+    assertThat(status.path("executionStatus").asText()).isEqualTo("executing");
+    assertThat(rules()).isEqualTo(1);
+  }
+
+  @Test void mcpDatabaseOutageNeverCreatesAuthorityOrDispatches() throws Exception {
+    dataSource.setPortNumbers(new int[] {1}); dataSource.setConnectTimeout(1);
+    assertThat(mcp(token("alice"), ApprovalMcpAdapter.REQUEST, ACTION).path("errorCode").asText()).isEqualTo("SECURITY_STATE_UNAVAILABLE");
+    assertThat(rules()).isZero();
+  }
+
+  private JsonNode mcp(String bearer, String name, String arguments) throws Exception {
+    var response = call("POST", "/mcp", bearer,
+        "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/call\",\"params\":{\"name\":\"" + name + "\",\"arguments\":" + arguments + "}}");
+    assertStatus(response, 200);
+    return json(response).path("result").path("structuredContent");
+  }
+
   private int rules() { return simulator.snapshot().path("aws").path("securityGroups").path("sg-demo").size(); }
   private JsonNode create(String bearer) throws Exception {
     var response = call("POST", "/api/v1/approvals", bearer, ACTION);

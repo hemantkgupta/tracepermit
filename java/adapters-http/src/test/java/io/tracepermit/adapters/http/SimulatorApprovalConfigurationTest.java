@@ -165,7 +165,7 @@ final class SimulatorApprovalConfigurationTest {
         .doesNotContain("secret-must-not-leak", directory.toString(), "Exception", "alice");
   }
 
-  @Test void fixedVersionedPolicyRequiresReviewOnlyForTheExposedApiMutation() {
+  @Test void fixedVersionedPolicyRequiresReviewOnlyForTheExposedApiAndCliMutation() {
     var policy = SimulatorApprovalMain.policy();
     var root = Path.of(System.getProperty("tracepermit.repositoryRoot"));
     var action = (ObjectNode) io.tracepermit.contracts.JsonSupport.read(root.resolve("fixtures/api-service-aws-modify.json"));
@@ -175,7 +175,10 @@ final class SimulatorApprovalConfigurationTest {
     assertThat(evaluator.evaluate(action, policy).decision().outcome()).isEqualTo("block");
     action.withObject("/action").put("toolName", "aws.ec2.update_security_group");
     action.withObject("/trigger").put("origin", "cli");
+    assertThat(evaluator.evaluate(action, policy).decision().outcome()).isEqualTo("require_approval");
+    action.withObject("/trigger").put("origin", "chatgpt-web");
     assertThat(evaluator.evaluate(action, policy).decision().outcome()).isEqualTo("block");
+    assertThat(policy.path("version").asInt()).isEqualTo(2);
     assertThat(policy.path("description").asText()).isNotBlank();
     assertThat(policy.path("rules").get(0).path("description").asText()).isNotBlank();
   }

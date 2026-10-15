@@ -62,6 +62,32 @@ public TLS profile, administrator endpoint or real target is added.
 See [ADR 0036](../architecture/0036-local-browser-approval-boundary.md) and the
 [browser runbook](../runbooks/browser-approval-inbox.md).
 
+### Local durable approval MCP (separate composition)
+
+The approval listener additionally accepts authenticated `POST /mcp`, independent
+of the hosted OAuth/default development MCP listeners below. It exposes only
+`tracepermit_request_simulated_change` (groupId/port/cidr),
+`tracepermit_get_approval` (approvalRequestId) and
+`tracepermit_resume_approval` (approvalRequestId/requestHash). There is no agent
+review tool. Current REQUESTER role plus request/read/execute scope respectively
+gate discovery and invocation. The API/browser/MCP paths converge on the same
+request/execute methods, exact snapshots, application service and PostgreSQL claim.
+MCP canonical actions preserve configured `cli` origin and `mcp` protocol, not
+an invented API origin, human trigger or endpoint attestation. Local policy v2
+explicitly reviews this single known mutation from `api` and `cli` only.
+
+Pending and approved return `not_executed`; explicit owner resume loads the
+snapshot, rechecks original client/origin, current reviewer, expiry and policy
+before claiming once. A changed hash or alternate HTTP client cannot bypass
+binding. JSON tool results contain both text and `structuredContent`; valid
+tool failures set `isError=true` and a safe code. Notifications return 202,
+responses are stateless JSON; no SSE/GET/DELETE/batch/cursor support is provided.
+The bearer-only loopback boundary rejects browser Cookie/Origin, `cnf` without
+supported proof, and source-attestation headers. This does not replace the
+source-attested CLI or public TLS profiles. See
+[ADR 0037](../architecture/0037-mcp-durable-simulator-approval-composition.md) and
+the [Codex runbook](../runbooks/codex-durable-approvals.md).
+
 ### `GET /health`
 
 Returns service state and active policy identifier/version. It is not a deep
