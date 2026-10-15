@@ -71,6 +71,14 @@ action snapshot and tenant-scoped reads. PostgreSQL V6 implements this port;
 the original stored canonical action rather than a new client submission.
 The existing console and demo launchers do not use this foundation yet.
 
+`SimulatorApprovalConfiguration` validates private bounded POSIX files,
+explicit single-client/tenant OIDC trust, independent requester/reviewer enrollment,
+numeric loopback DB configuration and matching Ed25519 keys. The separate
+`SimulatorApprovalMain` runs migrations/schema verification before binding the
+loopback approval service with a fixed default-block/explicit-approval policy.
+Offline check mode performs no DB, DNS, IdP or listener operation. See
+[ADR 0035](../architecture/0035-local-approval-operator-bootstrap.md).
+
 Signed artifacts use named canonicalization and algorithm profiles with
 allowlisted keys. An endpoint source proof binds the exact MCP method/params
 and the authenticated connector credential fingerprint. Delegation grants

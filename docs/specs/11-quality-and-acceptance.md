@@ -68,6 +68,13 @@ tests durable snapshot/approval atomicity, tenant/owner and reviewer-role
 isolation, stale policy, replay, concurrency, parse bounds and timestamp
 precision. It does not qualify a public edge or browser approval UI.
 
+Operator bootstrap acceptance also requires strict private-file/configuration
+rejection, matching persistent keys, offline check with unreachable dependencies,
+DB failure before listening, pending/consumed state across reconstructed startup,
+and a real JVM SIGTERM/port-release test. These run in `pnpm test:approval-api`
+and the aggregate suite. Existing numbered demos remain separate development
+compositions; bootstrap qualification is not a live external-IdP test.
+
 ## Performance and release qualification
 
 Measure classifier/policy time separately from token/JWKS, persistence,

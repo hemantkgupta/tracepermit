@@ -128,6 +128,16 @@ requester and a still-enrolled distinct human reviewer are required. Browser
 sessions, public-edge protection, durable identity administration and real
 targets remain unqualified; see [ADR 0034](../architecture/0034-authenticated-loopback-approval-api.md).
 
+The optional operator bootstrap adds a local file/configuration boundary:
+strict fields and enrollment, bounded owner-only regular files, no final-component
+symlinks, matching persistent Ed25519 keys, explicit OIDC trust and loopback-only
+listener/database. Offline validation performs no network or DB operation.
+These checks do not protect keys from a compromised operator/same-UID process,
+writable ancestors, OS administrators or JVM memory inspection. Local DB transport
+is not encrypted; public TLS, managed custody, live enrollment/revocation and
+production readiness remain target work. See
+[ADR 0035](../architecture/0035-local-approval-operator-bootstrap.md).
+
 - Signed request-bound capability
 - Audience, subject, policy version, expiry, and use limit
 - Executor recomputes action hash and atomically consumes authority

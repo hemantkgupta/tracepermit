@@ -23,6 +23,17 @@ application {
   mainClass = "io.tracepermit.adapters.http.DevelopmentBackendMain"
 }
 
+tasks.register<JavaExec>("runSimulatorApprovals") {
+  group = "application"
+  description = "Runs or offline-validates the loopback-only durable simulator approval API."
+  classpath = sourceSets["main"].runtimeClasspath
+  mainClass = "io.tracepermit.adapters.http.SimulatorApprovalMain"
+}
+
+tasks.test {
+  systemProperty("tracepermit.approvalRuntimeClasspath", sourceSets["main"].runtimeClasspath.asPath)
+}
+
 tasks.register<JavaExec>("runHostedClientOAuth") {
   group = "application"
   description = "Runs the simulator-only hosted-client OAuth profile behind a private tunnel."

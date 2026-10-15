@@ -31,7 +31,9 @@ control, or Slack/Teams notification workflow. A separate loopback-only Java
 API foundation verifies access tokens plus operator-owned reviewer membership
 and persists exact action snapshots with pending approvals. Its automated
 qualification uses a synthetic IdP and safe simulator, not a live browser
-login. It is not started by the existing demo launchers. See the
+login. A separate `pnpm dev:approvals` entry point accepts explicit private
+operator configuration; `--check` validates files and trust configuration
+offline, not IdP or database readiness. It is not started by existing demo launchers. See the
 [API qualification runbook](https://github.com/hemantkgupta/tracepermit/blob/main/docs/runbooks/authenticated-approval-api-foundation.md).
 The React console remains read-only.
 [Scenario 3](https://github.com/hemantkgupta/tracepermit/blob/main/docs/demo-scenarios/03-request-bound-human-approval.md)

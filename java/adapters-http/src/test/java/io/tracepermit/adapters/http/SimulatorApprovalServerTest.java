@@ -399,7 +399,7 @@ final class SimulatorApprovalServerTest {
     return new ApprovalMemberships.Entry(ISSUER + "#" + subject, "approval-client", TENANT, human, roles);
   }
   private static final class MutableClock extends Clock {
-    private Instant now = Instant.parse("2030-01-01T00:00:00Z");
+    private volatile Instant now = Instant.parse("2030-01-01T00:00:00Z");
     void advance(long seconds) { now = now.plusSeconds(seconds); }
     @Override public ZoneId getZone() { return ZoneOffset.UTC; }
     @Override public Clock withZone(ZoneId zone) { return this; }

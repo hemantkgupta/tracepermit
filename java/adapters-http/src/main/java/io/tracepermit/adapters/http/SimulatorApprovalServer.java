@@ -37,6 +37,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Authenticated, loopback-only API foundation. Not started by either existing demo launcher.
@@ -54,6 +55,7 @@ public final class SimulatorApprovalServer implements AutoCloseable {
   private final PostgresDurableEnforcementState state;
   private final HumanApprovalService approvals;
   private final Clock clock;
+  private final AtomicBoolean closed = new AtomicBoolean();
 
   public static SimulatorApprovalServer start(
       InetSocketAddress address, OidcAccessTokenVerifier verifier, ApprovalMemberships memberships,
@@ -88,7 +90,9 @@ public final class SimulatorApprovalServer implements AutoCloseable {
 
   public int port() { return server.getAddress().getPort(); }
 
-  @Override public void close() { server.stop(0); workers.close(); }
+  @Override public void close() {
+    if (closed.compareAndSet(false, true)) { server.stop(0); workers.close(); }
+  }
 
   private void handle(HttpExchange exchange) throws IOException {
     try {

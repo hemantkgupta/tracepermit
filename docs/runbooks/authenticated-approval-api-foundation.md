@@ -1,6 +1,6 @@
 # Authenticated approval API foundation
 
-This is a simulator-only Java API composition, not a deployable product
+This is a local simulator-only Java API composition, not a production product
 profile. It is intentionally separate from `pnpm demo`, the hosted OAuth
 demo and the read-only React console. No personal login or cloud credential is
 needed for its automated qualification.
@@ -20,6 +20,92 @@ verifier. No real IdP, AWS/Jira service or personal account is contacted. The
 test fixture closes its HTTP servers and removes its own database container.
 The command produces the normal Gradle test report under
 `java/adapters-http/build/reports/tests/test/`.
+
+It also exercises the operator bootstrap and a real child JVM: strict private
+configuration, offline validation with unreachable dependencies, signed HTTP
+requests, durable restart/replay behavior, DB failure before listening and
+SIGTERM shutdown. All identities and credentials in these tests are synthetic.
+
+## Operator setup (macOS/Linux only)
+
+This optional path requires an operator-controlled local PostgreSQL database
+and a compatible external IdP registration. The checked-in
+[`config/simulator-approvals.example.json`](../../config/simulator-approvals.example.json)
+contains placeholders, **not working login credentials or a qualified IdP**.
+Use the automated qualification above if those dependencies are not configured.
+
+Prepare a private directory outside source control (or under ignored `.cache/`).
+The following generates local **simulator-only** keys; it does not create a
+database or configure an IdP:
+
+```bash
+umask 077
+mkdir -p .cache/local-approvals
+chmod 700 .cache/local-approvals
+cp config/simulator-approvals.example.json .cache/local-approvals/operator.json
+chmod 600 .cache/local-approvals/operator.json
+openssl genpkey -algorithm ED25519 -outform DER -out .cache/local-approvals/permit.pk8
+openssl pkey -inform DER -in .cache/local-approvals/permit.pk8 -pubout -outform DER -out .cache/local-approvals/permit.spki
+```
+
+Generate these keys only for a new local setup. **Do not overwrite existing keys
+on a restart.** Use a private editor to create `database.secret`, containing the
+dedicated local database role's password (at least 16 non-control characters;
+one terminal LF is allowed), and to update `operator.json`. Do not embed a password
+in JSON, command history, Git or public support reports. Never reuse real-target
+credentials. Use current-user-owned regular files with mode `600` or `400` for
+the JSON, password and both keys. Protect their directory and all ancestors;
+symlinks in ancestors/same-UID tampering are not a qualified defense boundary.
+
+All JSON fields are required; extras and duplicate keys fail. Relative file
+references resolve from the configuration file's directory, not the shell's
+directory. Server and PostgreSQL host are fixed to `127.0.0.1`; choose valid
+nonzero ports. The local DB connection uses no TLS and has 3-second connect and
+5-second socket timeouts; secure its PostgreSQL authentication/bind separately.
+The role needs migration rights in its dedicated database/schema. Do not point
+this composition at a shared or production database.
+
+Replace the `.invalid` issuer/audience/JWKS, client and tenant mapping with
+operator-approved IdP configuration. Membership `subject` is the exact verified
+`sub`, not email/display name; `human` and roles are independent enrollment facts.
+Roles are `REQUESTER`, `REVIEWER`, `VIEWER`; non-human reviewers and a setup lacking
+a distinct requester/reviewer are rejected. The API requires access-token scope
+`approvals.request`, `approvals.read`, `approvals.decide` or `approvals.execute`
+for the corresponding route, not token-provided role claims. The existing
+verifier requires RS256, `typ: at+jwt`, `kid`, issuer, audience, client, configured
+tenant claim, scopes and `iat`/`exp` within its 15-minute lifetime bound. ID tokens,
+opaque access tokens and sender-constrained tokens are not accepted here.
+Only the four `approvals.*` scopes listed above are allowlisted; additional
+IdP-added scope names are not silently accepted.
+No browser login or token issuance is provided by this launcher.
+
+```bash
+export TRACEPERMIT_APPROVAL_CONFIG="$PWD/.cache/local-approvals/operator.json"
+pnpm dev:approvals --check
+pnpm dev:approvals
+```
+
+`--check` is entirely offline: it checks schema, files, enrollment and key pair,
+**not** DB connectivity, IdP compatibility/JWKS availability or port availability.
+It can pass for the `.invalid` placeholders; that does not mean login will work.
+`--run` (the default launcher mode) validates before database migration, then
+opens only the approval listener, by default sample port 8085. Use `Ctrl+C` to stop.
+The fixed policy `pol-local-simulator-approval` v1 requires exact review for
+`aws.ec2.update_security_group` and blocks unmatched actions. There is no public
+health endpoint, development token route, console backend or React inbox here.
+
+Startup errors return code 2 with `APPROVAL_STARTUP_FAILED`, without raw exception
+details. Check file paths/ownership/permissions, configuration fields, key formats,
+DB availability/schema and port conflicts privately. Never enable driver/debug
+credential logging. A successful startup is not evidence of IdP readiness: the
+first token requiring an uncached JWKS key triggers bounded HTTPS verification.
+
+Back up the database before startup: Flyway applies migrations through V6 and
+checks the schema guard. Migrations may commit even if the later port bind fails.
+Do not downgrade an older binary against this schema. Membership/key configuration
+is a startup snapshot; use a controlled stop/edit/restart for changes. Protect
+the persistent keys and DB together. This is not managed key custody/rotation,
+immediate IdP revocation or a backup/restore qualification.
 
 ## API contract
 
@@ -82,9 +168,11 @@ does not reset that database state, but simulator resources remain in memory.
 
 The trusted composition calls `SimulatorApprovalServer.start` with its
 verifier, memberships, PostgreSQL state, policy, permit authority, simulator
-and clock. The integration test is the current executable composition; no
-general-purpose operator bootstrap, browser login or React inbox is supplied
-yet. Do not expose it through a tunnel/public proxy as a production service.
+and clock. `SimulatorApprovalMain` now supplies a narrow operator-configured
+local entry point; browser login, React inbox and production bootstrap remain
+absent. Do not expose it through a tunnel/public proxy as a production service.
 
 See [ADR 0034](../architecture/0034-authenticated-loopback-approval-api.md)
 for enrollment, token, operational snapshot and remaining product boundaries.
+See [ADR 0035](../architecture/0035-local-approval-operator-bootstrap.md) for
+file custody, configuration validation and startup/shutdown constraints.
