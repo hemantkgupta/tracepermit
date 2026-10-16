@@ -45,7 +45,9 @@ When `OVERSIZED_RESULT_WINDOW` was omitted due to numeric narrowing:
 
 - Rule 200 (`block-oversized-log-window`) failed to match because it requires signal `OVERSIZED_RESULT_WINDOW`.
 - Rule 100 (`allow-cli-staging-cloudwatch-read`) matched because tool name, origin, subject, and environment matched.
-- The evaluation returned an unauthorized **`allow`** instead of **`block`** for huge extractions.
+- Raw candidate simulation returned **`allow`** instead of the intended **`block`**
+  for those integral inputs. This is not evidence that a runtime adapter accepted
+  them or that any data was extracted; simulation invokes no target.
 
 ---
 
@@ -71,11 +73,18 @@ if ("aws.logs.filter_log_events".equals(operation)
 - `isIntegralNumber()` strictly accepts Jackson integral nodes (`IntNode`, `LongNode`, `ShortNode`, `BigIntegerNode`).
 - `bigIntegerValue()` retrieves the exact mathematical integer without bit truncation or IEEE-754 floating-point conversion.
 - `compareTo(OVERSIZED_LOG_WINDOW_THRESHOLD) > 0` evaluates true for every positive integral value exceeding 100.
-- Preserves exact `<= 100` behavior (`100`, `99`, `0`, `-1`, `-100`), score increment (`+50`), and `high` severity.
+- Preserves normal integer controls (`100`, `99`, `0`, `-1`, `-100`) and the score
+  increment (`+50`). For the authenticated baseline without extra context,
+  oversized reads score 60 (`high`) and bounded reads score 10 (`low`). Trusted
+  classification context can still increase the score/severity.
+- Wide negative values also keep their exact mathematical meaning. For example,
+  `-4294967195` narrowed to positive `101` in the old implementation and could
+  falsely add the oversized signal; the exact comparison corrects that false
+  positive. This does not make a negative limit a valid tool argument.
 
 ```mermaid
 flowchart TD
-  subgraph Input ["Incoming Action Event"]
+  subgraph Input ["Authenticated baseline fixture (no extra classification context)"]
     ARG["action.arguments.limit"]
   end
 
@@ -141,6 +150,20 @@ checks, zero-mutation catalog assertions, and non-integral characterizations pas
 
 ---
 
+### Independent review and current-main reconciliation
+
+The review independently reproduced **12 failures out of the original 26 tests**
+by restoring the old narrowing comparison, then restored the fixed source.
+`LogWindowClassificationReviewTest` adds **five** permanent regressions covering
+constructed/parsed wide signed integer families, `ShortNode`, exact-tool scoping,
+context signal deduplication/score adjustment, both-template input preservation
+with a forbidden-catalog port, and the wide-negative false positive.
+
+The focused numeric suites therefore report **31 JUnit tests**. They coexist
+with the separately merged 14-test / 19-case template qualification corpus;
+looped evaluations are not additional individually reported JUnit tests.
+No authentication, tool-argument-validation or execution port is added.
+
 ## How to Run Qualification Tests
 
 ### Focused Unit Test
@@ -148,6 +171,7 @@ checks, zero-mutation catalog assertions, and non-integral characterizations pas
 ```bash
 source scripts/configure-java-environment.sh
 java/gradlew -p java :policy:test --tests io.tracepermit.policy.LogWindowNumericBoundaryTest
+java/gradlew -p java :policy:test --tests io.tracepermit.policy.LogWindowClassificationReviewTest
 ```
 
 ### Full Repository Gates
@@ -179,18 +203,16 @@ pnpm docs:flows:check
 
 ---
 
-## Proposed Requirement and Traceability Updates
+## Requirement coverage and limits
 
-The following updates are proposed for `docs/specs/12-traceability-matrix.md` to be applied by
-the repository integrator before branch merge:
+The [shared traceability matrix](../specs/12-traceability-matrix.md) records the
+bounded evidence without inventing requirement wording or completing broad IDs.
 
-| Requirement ID | Requirement Description                                                                                                  | Implementation Artifacts                                               | Verification Test                                                                               | Status                 |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | ---------------------- |
-| **FR-005**     | TracePermit SHALL classify action class, severity, and risk signals from normalized action data.                         | `java/policy/.../PolicyEvaluator.java`                                 | `LogWindowNumericBoundaryTest`<br/>(overflow-safe limit threshold & signal generation)          | Qualified (simulation) |
-| **FR-006**     | Policy SHALL return exactly one of allow, block, sanitize, or require approval, with policy version and reason evidence. | `java/policy/.../PolicyEvaluator.java`<br/>`policies/templates/*.json` | `LogWindowNumericBoundaryTest`<br/>(exact block outcome on oversized limits)                    | Qualified (simulation) |
-| **SEC-002**    | Unknown tools, schemas, algorithms, issuers, audiences, decision values, and permit states MUST fail closed.             | `java/policy/.../PolicyEvaluator.java`                                 | `LogWindowNumericBoundaryTest`<br/>(large integer overflow fails closed into block)             | Qualified (simulation) |
-| **REL-001**    | The enforcement engine SHALL evaluate actions deterministically and without numeric precision loss.                      | `java/policy/.../PolicyEvaluator.java`                                 | `LogWindowNumericBoundaryTest`<br/>(arbitrary-precision BigInteger boundary qualification)      | Qualified (simulation) |
-| **OPS-002**    | Operators SHALL be able to identify active policy, key, schema, and adapter versions for an evaluation.                  | `java/policy/.../PolicySimulationResult.java`                          | `LogWindowNumericBoundaryTest`<br/>(asserts exact policyId, version, reasonCode, matchedRuleId) | Qualified (simulation) |
+| Requirement      | Added evidence                                                                                      | Qualification boundary                                                                                                    |
+| ---------------- | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| FR-005/006       | Exact integral threshold classification and simulator policy outcome/reason/rule/version assertions | Known log tool and candidate policies, not all tools or live effects                                                      |
+| SEC-002; REL-001 | Positive narrowing cannot hide the oversized signal; signed controls and context behavior tested    | Supports conservative policy handling; not full unknown-issuer/algorithm/permit-state or dependency-failure qualification |
+| OPS-002          | Candidate policy ID/version and evaluation metadata                                                 | Partial provenance; not active-policy/key/schema/adapter inventory. The simulation result has no schemaVersion field.     |
 
 ---
 

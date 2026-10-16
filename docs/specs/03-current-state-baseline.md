@@ -136,9 +136,10 @@ See the [runbook](../runbooks/simulator-policy-templates.md).
 These candidates are not installed or active by default. Simulation validates
 canonical structure, not authentication, tool argument schemas or runtime
 authority. It creates no pending approval, permit, target effect or evidence
-record. The pre-existing large-integer log-window classification limitation is
-documented for a separate fix. No broad requirement or production claim is
-upgraded by the corpus.
+record. Log-window classification now compares integral limits exactly without
+numeric narrowing; 26 delivered boundary tests and five independent regressions
+cover that fix. Malformed raw arguments still require trusted-adapter validation.
+No broad requirement or production claim is upgraded by these qualifications.
 
 ## Controls not yet established
 
