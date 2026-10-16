@@ -5,6 +5,9 @@ prepares a new proof; it is **not evidence that this native rehearsal passed**.
 The earlier [model allow/block record](../demo-scenarios/evidence/codex-native-endpoint-2026-10-15.md)
 is unchanged. Requirements: FR-016/017; SEC-003/012/014; OPS-004.
 
+The [automated preparation record](../demo-scenarios/evidence/endpoint-observation-preparation-2026-10-16.md)
+retains separate suite/counter results; it does not complete the native gate.
+
 ## 1. Prepare one matching profile
 
 Use the active checkout and Java 21. Run one Gradle task per checkout. Stop only
