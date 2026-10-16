@@ -9,18 +9,23 @@ import io.tracepermit.contracts.CanonicalJson;
 import io.tracepermit.contracts.JsonSupport;
 
 import java.util.Iterator;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.regex.Matcher;
 
 /**
- * Thread-safe engine that applies field-level redaction and irreversible transformation
- * to JSON documents, action arguments, audit evidence, and diagnostic text.
+ * Applies configured redaction to bounded JSON projections and diagnostic text.
  *
  * <p>Enforces fail-closed redaction bounds (SEC-012, DATA-003) and depth limits to prevent
- * recursion attacks while preserving cryptographic provenance (actionHash).
+ * recursion attacks. Never use the returned projection for authorization or dispatch;
+ * retain the original canonical action and its binding separately.
  */
 public final class EvidenceRedactor {
+  public static final int MAX_NODES = 10_000;
+  public static final int MAX_TEXT_LENGTH = 65_536;
+  public static final int MAX_TOTAL_TEXT_LENGTH = 1_048_576;
   private static final EvidenceRedactor ENTERPRISE_DEFAULT =
       new EvidenceRedactor(RedactionProfile.enterpriseDefault());
   private static final EvidenceRedactor IRREVERSIBLE_HASH =
@@ -54,6 +59,7 @@ public final class EvidenceRedactor {
    * Redacts any arbitrary JSON node recursively, producing a clean sanitized copy.
    */
   public JsonNode redact(JsonNode input) {
+    validateInput(input, 0, new InputBudget());
     if (input == null || input.isNull()) {
       return NullNode.getInstance();
     }
@@ -68,12 +74,15 @@ public final class EvidenceRedactor {
     if (canonicalAction == null || !canonicalAction.isObject()) {
       return redact(canonicalAction);
     }
+    // Validate the entire envelope before recursive copying or hashing, including
+    // subtrees that a matching field rule would otherwise mask/drop without visiting.
+    validateInput(canonicalAction, 0, new InputBudget());
     ObjectNode result = (ObjectNode) canonicalAction.deepCopy();
     JsonNode actionNode = result.get("action");
     if (actionNode instanceof ObjectNode actionObj) {
       JsonNode argsNode = actionObj.get("arguments");
       if (argsNode != null) {
-        JsonNode redactedArgs = redactNode(argsNode, "action.arguments", 1);
+        JsonNode redactedArgs = redactNode(argsNode, "action.arguments", 2);
         actionObj.set("arguments", redactedArgs);
       }
     }
@@ -81,30 +90,105 @@ public final class EvidenceRedactor {
   }
 
   /**
-   * Redacts sensitive value patterns from diagnostic or log text.
+   * Transforms each matching span in the original diagnostic text. Leftmost matches
+   * win; profile order breaks ties. Replacement text is never scanned again.
+   * DROP removes the span, HASH fingerprints its canonical JSON string, MASK uses
+   * the rule indicator. Field-name/path rules do not apply to unstructured text.
    */
   public String redactText(String rawText) {
-    if (rawText == null || rawText.isBlank()) {
+    if (rawText == null) {
       return rawText;
     }
-    String current = rawText;
+    checkTextLength(rawText);
+    List<Matcher> matchers = new ArrayList<>();
+    List<RedactionRule> rules = new ArrayList<>();
     for (RedactionRule rule : profile.rules()) {
       if (rule.valuePattern() != null) {
-        Matcher matcher = rule.valuePattern().matcher(current);
-        if (matcher.find()) {
-          String replacement = maskIndicator(rule);
-          current = matcher.replaceAll(Matcher.quoteReplacement(replacement));
-        }
+        matchers.add(rule.valuePattern().matcher(rawText));
+        rules.add(rule);
       }
     }
-    return current;
+    StringBuilder result = new StringBuilder();
+    int offset = 0;
+    while (offset <= rawText.length()) {
+      int selected = -1;
+      int start = Integer.MAX_VALUE;
+      for (int i = 0; i < matchers.size(); i++) {
+        Matcher candidate = matchers.get(i);
+        if (candidate.find(offset) && candidate.start() < start) {
+          selected = i;
+          start = candidate.start();
+        }
+      }
+      if (selected == -1) break;
+      Matcher match = matchers.get(selected);
+      if (match.start() == match.end()) {
+        throw new IllegalArgumentException("REDACTION_EMPTY_PATTERN_MATCH");
+      }
+      result.append(rawText, offset, start);
+      RedactionRule rule = rules.get(selected);
+      result.append(switch (rule.strategy()) {
+        case MASK -> maskIndicator(rule);
+        case IRREVERSIBLE_HASH -> sha256Text(match.group());
+        case DROP -> "";
+      });
+      if (result.length() > MAX_TOTAL_TEXT_LENGTH) {
+        throw new IllegalArgumentException("REDACTION_OUTPUT_LIMIT");
+      }
+      offset = match.end();
+    }
+    result.append(rawText, offset, rawText.length());
+    if (result.length() > MAX_TOTAL_TEXT_LENGTH) {
+      throw new IllegalArgumentException("REDACTION_OUTPUT_LIMIT");
+    }
+    return result.toString();
   }
 
-  private JsonNode redactNode(JsonNode node, String path, int depth) {
+  private void validateInput(JsonNode node, int depth, InputBudget budget) {
     if (depth > profile.maxDepth()) {
       throw new IllegalArgumentException(
           "Payload exceeds maximum redaction depth limit of " + profile.maxDepth());
     }
+    if (++budget.nodes > MAX_NODES) {
+      throw new IllegalArgumentException("REDACTION_NODE_LIMIT");
+    }
+    if (node == null || node.isNull()) return;
+    if (node.isObject()) {
+      Iterator<Map.Entry<String, JsonNode>> fields = node.fields();
+      while (fields.hasNext()) {
+        Map.Entry<String, JsonNode> entry = fields.next();
+        budget.addText(entry.getKey());
+        validateInput(entry.getValue(), depth + 1, budget);
+      }
+    } else if (node.isArray()) {
+      for (JsonNode child : node) validateInput(child, depth + 1, budget);
+    } else if (node.isTextual()) {
+      budget.addText(node.textValue());
+    } else if (!node.isBoolean() && !node.isNumber()) {
+      throw new IllegalArgumentException("REDACTION_UNSUPPORTED_VALUE");
+    }
+  }
+
+  private static void checkTextLength(String text) {
+    if (text.length() > MAX_TEXT_LENGTH) {
+      throw new IllegalArgumentException("REDACTION_TEXT_LIMIT");
+    }
+  }
+
+  private static final class InputBudget {
+    private int nodes;
+    private int textLength;
+
+    private void addText(String text) {
+      checkTextLength(text);
+      textLength += text.length();
+      if (textLength > MAX_TOTAL_TEXT_LENGTH) {
+        throw new IllegalArgumentException("REDACTION_TOTAL_TEXT_LIMIT");
+      }
+    }
+  }
+
+  private JsonNode redactNode(JsonNode node, String path, int depth) {
     if (node == null || node.isNull()) {
       return NullNode.getInstance();
     }
@@ -189,9 +273,6 @@ public final class EvidenceRedactor {
   }
 
   private static String sha256Fingerprint(JsonNode node) {
-    if (node == null || node.isNull()) {
-      return "sha256:null";
-    }
     return CanonicalJson.sha256(node);
   }
 

@@ -1,7 +1,5 @@
 package io.tracepermit.contracts.redaction;
 
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -37,6 +35,18 @@ public final class RedactionProfile {
       "accesskey",
       "secret_key",
       "secretkey",
+      "aws_access_key_id",
+      "aws_secret_access_key",
+      "aws_session_token",
+      "aws_security_token",
+      "x-api-key",
+      "x_api_key",
+      "api-key",
+      "access-token",
+      "refresh-token",
+      "client-secret",
+      "private-key",
+      "proxy-authorization",
       "token",
       "bearer_token",
       "bearertoken",
@@ -62,7 +72,7 @@ public final class RedactionProfile {
 
   public RedactionProfile(String profileId, List<RedactionRule> rules, int maxDepth) {
     this.profileId = Objects.requireNonNull(profileId, "profileId");
-    this.rules = Collections.unmodifiableList(new ArrayList<>(Objects.requireNonNull(rules, "rules")));
+    this.rules = List.copyOf(Objects.requireNonNull(rules, "rules"));
     if (maxDepth < 1 || maxDepth > 128) {
       throw new IllegalArgumentException("maxDepth must be between 1 and 128");
     }
