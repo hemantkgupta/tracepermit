@@ -1,6 +1,7 @@
 # Policy-generation-bound PostgreSQL backup and restore qualification
 
-Requirements: FR-007, FR-008, FR-013; SEC-005, SEC-006, SEC-009; REL-001, REL-003, REL-005; DATA-001; OPS-004.
+Requirements (bounded evidence, not full acceptance): FR-007/008/013;
+SEC-005/006; REL-001/003/005; OPS-004.
 Related specifications: [System requirements](../specs/02-system-requirements.md),
 [Domain and data model](../specs/05-domain-and-data-model.md),
 [Sequence flows](../specs/09-sequence-flows.md), and
@@ -42,7 +43,21 @@ pg_restore -U "$PGUSER" -d "$TARGET_DB" --single-transaction --exit-on-error "$D
 ```
 
 The restore runner uses `--single-transaction --exit-on-error` to ensure that any
-schema or integrity error causes an immediate rollback and non-zero exit code.
+SQL-command error aborts the restore transaction with a non-zero exit code.
+This does not prove that the input archive contains all required historical state.
+Only trusted, generated fixture archives are accepted: restore can execute code
+chosen by the source database administrator. These commands illustrate the test
+fixture, not a supported customer recovery procedure.
+
+Each case owns two fresh databases created from `template0` inside one disposable
+`postgres:16.4-alpine` container. The test checks successful dump, permission/size
+inspection and restore exit codes; each archive is owner-only (`0600`), nonempty
+and smaller than 5 MiB. Container cleanup removes only fixture-owned artifacts.
+The fixture uses database administration/migration rights, not a qualified
+least-privilege runtime role. Ephemeral Ed25519 keys stay outside the database
+archive and are retained across service recreation; independent key backup,
+custody and rotation are not covered. No operator database URL, real identity,
+cloud credential, customer archive or real downstream service is used.
 
 ---
 
@@ -92,9 +107,11 @@ A valid pending approval bound to active policy generation 1 is backed up and re
 into an empty destination database:
 
 - **Pre-constructor parity:** Raw SQL queries inspect `tp_enforcement_schema_guard`,
-  `flyway_schema_history` (all 8 migrations), `tp_approval_policy_bindings`,
-  `tp_approval_action_snapshots`, `tp_approval_requests`, and `tp_active_policies`
-  _before_ any Java store or service constructors execute. Parity is rechecked after construction.
+  `flyway_schema_history` (all V1–V8 rows, including checksums), and all 15 other
+  application tables _before_ any destination Java store or service constructors
+  execute. Every captured row/field is compared with the quiescent source capture,
+  including nonempty bindings, exact action snapshots, approval and policy state.
+  Parity is rechecked after construction. All five cases use this comparison.
 - **Zero implicit dispatch:** Constructing repositories and services against the restored
   database triggers zero target dispatches.
 - **Review and execution:** A distinct synthetic reviewer (`user:security-reviewer-2@example.invalid`)
@@ -108,7 +125,9 @@ into an empty destination database:
 An approval is executed and consumed on the source database before backup:
 
 - **State preservation:** Restored database preserves the exact `ApprovalPolicyBinding`,
-  the terminal `consumed` status, the execution attempt record, and the cryptographic evidence chain.
+  complete approval and attempt records, exact action snapshot, terminal `consumed`
+  status and all five captured evidence records. The local hash-linked evidence
+  chain is reverified; this is not an independently signed recovery anchor.
 - **Resumption rejection:** Calling `executeApproved` on the restored service throws
   `IllegalStateException("APPROVAL_NOT_EXECUTABLE")`.
 - **Direct claim rejection:** Calling `consumeAndClaim` directly on `PostgresDurableEnforcementState`
@@ -156,6 +175,21 @@ This scenario demonstrates the critical hazard of restoring a pre-consumption sn
    - `executeApproved` succeeds, mints a fresh permit, and dispatches to the simulated target
      a **second time** (target counter = 2).
 
+The immutable binding itself never changed on the source; its old gen1 value
+survives while the active pointer moves to gen2. Restore makes the old binding
+match the old active pointer again. The original request/action, approval decision
+and idempotency key are retained; the second execution has distinct permit and
+attempt IDs. The independent target counter is not reset. A coherent fixed clock
+puts restore at T0+30 seconds, explicitly before the original 300-second expiry.
+
+This case additionally calls the strict existing-state validator from
+[ADR 0045](../architecture/0045-explicit-database-initialization.md) on the raw
+restored snapshot: validation succeeds without changing captured state. Schema
+validation is not an external recovery witness. The opt-in service fixture still
+uses the backward-compatible auto-migrating store constructors, not the default
+static-policy operator launcher; neither factory composition nor schema V8
+silently enables generation binding in that launcher.
+
 > [!CAUTION]
 > **UNSAFE RECOVERY GAP:** A database backup contains only the database's internal state.
 > If an approved action was executed against an external target after the backup was captured,
@@ -166,32 +200,30 @@ This scenario demonstrates the critical hazard of restoring a pre-consumption sn
 
 ## 4. Boundary analysis
 
-| Dimension                           | Existing Behavior                                                                     | Demonstrated Gap                                                                           | Future Work (Out of Scope)                                         |
-| :---------------------------------- | :------------------------------------------------------------------------------------ | :----------------------------------------------------------------------------------------- | :----------------------------------------------------------------- |
-| **Intra-database policy evolution** | Generational monotonicity rejects stale approvals across activations and rollbacks.   | None within continuous database history.                                                   | Remote policy admin APIs.                                          |
-| **Database backup / restore**       | Exact relational schemas, bindings, snapshots, and evidence survive restore intact.   | Generations roll back with the snapshot; database cannot act as external recovery witness. | External monotonic epoch registry or hardware fencing.             |
-| **Post-restore approval execution** | Restored approved requests can be executed if valid under restored active generation. | Stale restores revive pre-consumption authority, allowing duplicate real-world execution.  | Automated post-restore quarantine and pending approval revocation. |
-| **Transport / identity**            | Synthetic trusted reviewer contexts used in test process.                             | Test runner fixture rights are not OIDC qualification.                                     | External IdP qualification and token revocation sync.              |
+| Dimension                           | Existing Behavior                                                            | Demonstrated Gap                                                                           | Future Work (Out of Scope)                               |
+| :---------------------------------- | :--------------------------------------------------------------------------- | :----------------------------------------------------------------------------------------- | :------------------------------------------------------- |
+| **Intra-database policy evolution** | Tested activation and rollback reject stale approvals before claim/dispatch. | These five cases are not exhaustive concurrency or adversarial database qualification.     | Remote policy admin APIs.                                |
+| **Database backup / restore**       | All captured table rows match before/after destination service recreation.   | Generations roll back with the snapshot; database cannot act as external recovery witness. | Separately reviewed external recovery fencing.           |
+| **Post-restore approval execution** | Restored approved requests can execute under a matching restored generation. | Stale restore produces a second synthetic effect; real targets were not tested.            | Designed quarantine and authority invalidation workflow. |
+| **Transport / identity**            | Synthetic trusted reviewer contexts used in test process.                    | Test runner fixture rights are not OIDC qualification.                                     | External IdP qualification and token revocation sync.    |
 
 ---
 
-## 5. Operational quarantine protocol
+## 5. Recovery safety boundary — no supported resume procedure
 
-Because PostgreSQL `pg_dump` and `pg_restore` cannot detect external side effects that occurred
-after snapshot creation, operators must follow this quarantine protocol when recovering from backups:
+Keep restored state isolated from effectful services and agents. Do not reconnect
+or resume merely because restore or strict startup validation succeeds. A reviewed
+procedure must reconcile external effects, approval authority, active policy and
+identity/key state outside the old snapshot before permitting traffic.
 
-1. **Network isolation:** Start the restored database in an isolated network segment accessible
-   only to administrative migration and inspection tooling.
-2. **Revoke pending and unconsumed approvals:**
-   ```sql
-   UPDATE tp_approval_requests
-   SET status = 'cancelled', updated_at = CURRENT_TIMESTAMP
-   WHERE status IN ('pending', 'approved');
-   ```
-3. **Audit against external ledgers:** Inspect target system logs and external IdP event feeds
-   for the window between snapshot timestamp ($T_0$) and disaster timestamp ($T_1$).
-4. **Re-evaluate policies:** Confirm that the active policy in `tp_active_policies` matches the
-   intended enterprise security posture before opening traffic to application adapters.
+There is no implemented quarantine switch, external monotonic recovery epoch,
+bulk cancellation/revocation operation or supported production resume workflow.
+Direct SQL edits are not a substitute: `cancelled` is not a supported approval
+status, and triggers reject direct approval mutation. Do not disable those guards
+or rewrite approval/binding/evidence rows. See
+[ADR 0044](../architecture/0044-database-restore-safety-limits.md).
+No RPO/RTO, cross-version upgrade, general multi-tenant restore, independent
+evidence authenticity or production readiness is established here.
 
 ---
 
@@ -216,18 +248,15 @@ git diff --check
 
 ## 7. Traceability and proposed follow-up
 
-- **Requirements qualified:**
-  - `FR-007` (Policy Evaluation & Staged Versions)
-  - `FR-008` (Approval Binding & Resumption)
-  - `FR-013` (Rollback & Monotonic Generations)
-  - `SEC-005` (Approval State Authenticity)
-  - `SEC-006` (Single-Use Permit Invariant)
-  - `SEC-009` (Tamper-Evident Evidence Ledger)
-  - `REL-001` (Durable State Transition Safety)
-  - `REL-003` (Crash & Recovery Invariants)
-  - `REL-005` (Idempotent Replay Prevention)
-  - `DATA-001` (Schema Evolution & Guard Contract Version 8)
-  - `OPS-004` (Disaster Recovery & Backup Qualification)
-- **Proposed ADR follow-up:** Formalize post-restore operational quarantine protocols
-  and authority invalidation for generation-bound approvals when restoring from non-quiesced
-  database snapshots.
+- `FR-007/008`, `SEC-005/006`: exact approval/action binding, single-use claims and
+  captured consumed-state replay rejection in the tested snapshot.
+- `FR-013`: populated policy lifecycle revisions/generations survive restore;
+  obsolete generation remains rejected across activation and cyclic rollback.
+- `REL-001/003/005`, `OPS-004`: bounded recovery/idempotency evidence and an
+  explicit unresolved stale-snapshot hazard, **not completed safe recovery**.
+- Evidence row equality and local hash-chain verification do not establish
+  `SEC-009` tenant isolation or `DATA-001` credential-fingerprint compliance.
+  Those requirements have separate evidence and are not upgraded by this suite.
+- [Traceability](../specs/12-traceability-matrix.md) and ADR 0044 record this
+  characterization. Recovery-fence design and authority invalidation remain future
+  work, not an operator instruction implemented by this PR.

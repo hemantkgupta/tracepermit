@@ -17,6 +17,8 @@ import io.tracepermit.execution.ApprovalExecutionClaim;
 import io.tracepermit.execution.ApprovalPolicyBinding;
 import io.tracepermit.execution.ApprovalRequestState;
 import io.tracepermit.execution.DurableExecutionClaim;
+import io.tracepermit.execution.DurableEvidenceRecord;
+import io.tracepermit.execution.InMemoryEvidenceLedger;
 import io.tracepermit.execution.TenantPartition;
 import io.tracepermit.policy.ActivePolicySnapshot;
 import io.tracepermit.policy.PolicyEvaluator;
@@ -43,8 +45,10 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -168,6 +172,7 @@ final class PostgresPolicyBoundRestoreQualificationTest {
       assertThat(sourceBinding.policyContentHash()).isEqualTo(sourceSnap.contentHash());
 
       // Capture backup archive from source database
+      var captured = captureDatabase(sourceDs);
       dumpDatabase(sourceDb, dumpPath);
 
       // Restore into fresh, empty destination database
@@ -176,6 +181,7 @@ final class PostgresPolicyBoundRestoreQualificationTest {
 
       // STEP 1: Verify raw restored V8 rows, guard, and Flyway metadata BEFORE constructors
       DataSource destDs = dataSourceFor(destDb);
+      assertThat(captureDatabase(destDs)).isEqualTo(captured);
       try (Connection conn = destDs.getConnection();
            Statement stmt = conn.createStatement()) {
 
@@ -257,6 +263,7 @@ final class PostgresPolicyBoundRestoreQualificationTest {
           new PostgresDurableEnforcementState(destDs, clock, () -> "claim-" + nextId());
       HumanApprovalService destService =
           createApprovalService(destDs, destStore, destState, workspaceId, policyId, permitKey, target, clock);
+      assertThat(captureDatabase(destDs)).isEqualTo(captured);
 
       // Recheck schema guard and Flyway history after constructors
       try (Connection conn = destDs.getConnection();
@@ -359,7 +366,7 @@ final class PostgresPolicyBoundRestoreQualificationTest {
       JsonNode action = sampleAction(workspaceId, approvalRequestId);
       TrustedTenantContext tenantContext = new TrustedTenantContext(tenant);
 
-      ApprovalExecutionResult reqResult = sourceService.requestApproval(tenantContext, action);
+      ApprovalExecutionResult reqResult = sourceService.requestApprovalWithSnapshot(tenantContext, action);
       String reqId = reqResult.approval().binding().approvalRequestId();
 
       TrustedReviewerContext reviewer = reviewer(tenant, "user:reviewer-b@example.invalid");
@@ -372,8 +379,14 @@ final class PostgresPolicyBoundRestoreQualificationTest {
       assertThat(targetCounter.get()).isEqualTo(1);
 
       ApprovalPolicyBinding sourceBinding = sourceState.findPolicyBinding(tenant, reqId).orElseThrow();
+      ApprovalRequestState sourceRequest = sourceState.find(tenant, reqId);
+      var sourceAttempt = sourceState.findByIdempotencyKey(tenant, "simulator", execResult.attempt().idempotencyKey());
+      var sourceEvidence = sourceState.readEvidence(tenant);
+      assertThat(sourceEvidence).hasSize(5);
+      assertValidEvidenceChain(sourceEvidence);
 
       // Back up consumed state
+      var captured = captureDatabase(sourceDs);
       dumpDatabase(sourceDb, dumpPath);
 
       // Restore to destination DB
@@ -381,12 +394,14 @@ final class PostgresPolicyBoundRestoreQualificationTest {
       restoreDatabase(destDb, dumpPath);
 
       DataSource destDs = dataSourceFor(destDb);
+      assertThat(captureDatabase(destDs)).isEqualTo(captured);
       PostgresPolicyLifecycleStore destStore =
           new PostgresPolicyLifecycleStore(destDs, clock, () -> "plt-" + nextId());
       PostgresDurableEnforcementState destState =
           new PostgresDurableEnforcementState(destDs, clock, () -> "claim-" + nextId());
       HumanApprovalService destService =
           createApprovalService(destDs, destStore, destState, workspaceId, policyId, permitKey, target, clock);
+      assertThat(captureDatabase(destDs)).isEqualTo(captured);
 
       // Preserved exact bound state
       ApprovalPolicyBinding restoredBinding = destState.findPolicyBinding(tenant, reqId).orElseThrow();
@@ -394,8 +409,15 @@ final class PostgresPolicyBoundRestoreQualificationTest {
 
       // Preserved exact request and attempt status
       ApprovalRequestState restoredRequest = destState.find(tenant, reqId);
+      assertThat(restoredRequest).isEqualTo(sourceRequest);
       assertThat(restoredRequest.status()).isEqualTo("consumed");
       assertThat(restoredRequest.consumedAttemptId()).isNotNull();
+      assertThat(destState.findAction(tenant, reqId)).isEqualTo(action);
+      assertThat(destState.findByIdempotencyKey(tenant, "simulator", sourceAttempt.idempotencyKey()))
+          .isEqualTo(sourceAttempt);
+      assertThat(destState.readEvidence(tenant)).isEqualTo(sourceEvidence);
+      assertValidEvidenceChain(destState.readEvidence(tenant));
+      assertThat(targetCounter).hasValue(1);
 
       // Calling executeApproved against consumed request throws APPROVAL_NOT_EXECUTABLE
       assertThatThrownBy(() -> destService.executeApproved(tenantContext, reqId, action))
@@ -408,6 +430,7 @@ final class PostgresPolicyBoundRestoreQualificationTest {
           restoredRequest.binding(), decisionId, "permit-replay-b", clock.instant().plusSeconds(10), restoredBinding);
       ApprovalConsumptionResult claimResult = destState.consumeAndClaim(directClaim);
       assertThat(claimResult.status()).isEqualTo(ApprovalConsumptionStatus.APPROVAL_REPLAYED);
+      assertThat(captureDatabase(destDs)).isEqualTo(captured);
 
       // Dispatches remain exactly 1
       assertThat(targetCounter.get())
@@ -471,19 +494,21 @@ final class PostgresPolicyBoundRestoreQualificationTest {
       JsonNode action = sampleAction(workspaceId, approvalRequestId);
       TrustedTenantContext tenantContext = new TrustedTenantContext(tenant);
 
-      ApprovalExecutionResult reqResult = sourceService.requestApproval(tenantContext, action);
+      ApprovalExecutionResult reqResult = sourceService.requestApprovalWithSnapshot(tenantContext, action);
       String reqId = reqResult.approval().binding().approvalRequestId();
 
       TrustedReviewerContext reviewer = reviewer(tenant, "user:reviewer-c@example.invalid");
       sourceService.review(reviewer, reqId, "approve", "REVIEWER_AUTHORIZED");
 
       // Advance active policy to v2 -> gen 2 BEFORE backup
-      sourceStore.activate(workspaceId, policyId, 2, 1, clock.instant().plusSeconds(10), null, "activate v2");
+      clock.advance(Duration.ofSeconds(10));
+      sourceStore.activate(workspaceId, policyId, 2, 1, clock.instant(), null, "activate v2");
       ActivePolicySnapshot snapV2 = sourceStore.activePolicySnapshot(workspaceId, policyId).orElseThrow();
       assertThat(snapV2.activationGeneration()).isEqualTo(2L);
       assertThat(snapV2.version()).isEqualTo(2);
 
       // Capture backup containing v1-bound approval and v2-active policy
+      var captured = captureDatabase(sourceDs);
       dumpDatabase(sourceDb, dumpPath);
 
       // Restore to destination DB
@@ -491,12 +516,14 @@ final class PostgresPolicyBoundRestoreQualificationTest {
       restoreDatabase(destDb, dumpPath);
 
       DataSource destDs = dataSourceFor(destDb);
+      assertThat(captureDatabase(destDs)).isEqualTo(captured);
       PostgresPolicyLifecycleStore destStore =
           new PostgresPolicyLifecycleStore(destDs, clock, () -> "plt-" + nextId());
       PostgresDurableEnforcementState destState =
           new PostgresDurableEnforcementState(destDs, clock, () -> "claim-" + nextId());
       HumanApprovalService destService =
           createApprovalService(destDs, destStore, destState, workspaceId, policyId, permitKey, target, clock);
+      assertThat(captureDatabase(destDs)).isEqualTo(captured);
 
       // Verify active snapshot is v2 gen 2
       ActivePolicySnapshot restoredActive = destStore.activePolicySnapshot(workspaceId, policyId).orElseThrow();
@@ -519,6 +546,7 @@ final class PostgresPolicyBoundRestoreQualificationTest {
           restoredReq.binding(), restoredReq.approvalDecisionId(), "permit-stale-c", clock.instant().plusSeconds(15), restoredBinding);
       ApprovalConsumptionResult claimResult = destState.consumeAndClaim(staleClaim);
       assertThat(claimResult.status()).isEqualTo(ApprovalConsumptionStatus.STALE_POLICY_GENERATION);
+      assertThat(captureDatabase(destDs)).isEqualTo(captured);
 
       // Verifications: zero dispatches, zero consumed permits, approval remains approved
       assertThat(targetCounter.get())
@@ -604,21 +632,24 @@ final class PostgresPolicyBoundRestoreQualificationTest {
       JsonNode action1 = sampleAction(workspaceId, req1Id);
       TrustedTenantContext tenantContext = new TrustedTenantContext(tenant);
 
-      ApprovalExecutionResult req1Result = sourceService.requestApproval(tenantContext, action1);
+      ApprovalExecutionResult req1Result = sourceService.requestApprovalWithSnapshot(tenantContext, action1);
       String actualReq1Id = req1Result.approval().binding().approvalRequestId();
       TrustedReviewerContext reviewer = reviewer(tenant, "user:reviewer-d@example.invalid");
       sourceService.review(reviewer, actualReq1Id, "approve", "REVIEWER_AUTHORIZED");
 
       // 3. Activate v2 -> gen 2
-      sourceStore.activate(workspaceId, policyId, 2, 1, clock.instant().plusSeconds(10), null, "activate v2");
+      clock.advance(Duration.ofSeconds(10));
+      sourceStore.activate(workspaceId, policyId, 2, 1, clock.instant(), null, "activate v2");
 
       // 4. Rollback to v1 -> gen 3
-      sourceStore.rollback(workspaceId, policyId, 2, 1, clock.instant().plusSeconds(20), "operator", "rollback to v1");
+      clock.advance(Duration.ofSeconds(10));
+      sourceStore.rollback(workspaceId, policyId, 2, 1, clock.instant(), "operator", "rollback to v1");
       ActivePolicySnapshot snapGen3 = sourceStore.activePolicySnapshot(workspaceId, policyId).orElseThrow();
       assertThat(snapGen3.version()).isEqualTo(1);
       assertThat(snapGen3.activationGeneration()).isEqualTo(3L);
 
       // Back up database containing gen 1 bound approval and gen 3 active policy
+      var captured = captureDatabase(sourceDs);
       dumpDatabase(sourceDb, dumpPath);
 
       // Restore to destination DB
@@ -626,12 +657,14 @@ final class PostgresPolicyBoundRestoreQualificationTest {
       restoreDatabase(destDb, dumpPath);
 
       DataSource destDs = dataSourceFor(destDb);
+      assertThat(captureDatabase(destDs)).isEqualTo(captured);
       PostgresPolicyLifecycleStore destStore =
           new PostgresPolicyLifecycleStore(destDs, clock, () -> "plt-" + nextId());
       PostgresDurableEnforcementState destState =
           new PostgresDurableEnforcementState(destDs, clock, () -> "claim-" + nextId());
       HumanApprovalService destService =
           createApprovalService(destDs, destStore, destState, workspaceId, policyId, permitKey, target, clock);
+      assertThat(captureDatabase(destDs)).isEqualTo(captured);
 
       // In restored database: active policy is version 1, content hash matches v1, generation is 3
       ActivePolicySnapshot restoredActive = destStore.activePolicySnapshot(workspaceId, policyId).orElseThrow();
@@ -653,11 +686,12 @@ final class PostgresPolicyBoundRestoreQualificationTest {
       assertThat(targetCounter.get())
           .as("Stale gen 1 approval must not dispatch target under gen 3")
           .isZero();
+      assertThat(captureDatabase(destDs)).isEqualTo(captured);
 
       // Freshly requested, reviewed, and executed gen 3 control
       String req2Id = "req-d-2-" + nextId();
       JsonNode action2 = sampleAction(workspaceId, req2Id);
-      ApprovalExecutionResult req2Result = destService.requestApproval(tenantContext, action2);
+      ApprovalExecutionResult req2Result = destService.requestApprovalWithSnapshot(tenantContext, action2);
       String actualReq2Id = req2Result.approval().binding().approvalRequestId();
 
       ApprovalPolicyBinding req2Binding = destState.findPolicyBinding(tenant, actualReq2Id).orElseThrow();
@@ -687,7 +721,8 @@ final class PostgresPolicyBoundRestoreQualificationTest {
    * At T1 execute once on the source, then advance its policy generation to gen 2.
    * At T2 restore the T0 snapshot while still within the original approval lifetime.
    *
-   * <p>Proves that BOTH the approval binding and active generation rolled back together inside the DB.
+   * <p>Proves that approval status and active generation roll back together inside the DB,
+   * making the unchanged old policy binding current again.
    * The independent target counter is 1 before restored resumption, but becomes 2 upon resumption,
    * demonstrating the <b>UNSAFE RECOVERY GAP</b>.
    */
@@ -734,13 +769,16 @@ final class PostgresPolicyBoundRestoreQualificationTest {
       JsonNode action = sampleAction(workspaceId, approvalRequestId);
       TrustedTenantContext tenantContext = new TrustedTenantContext(tenant);
 
-      ApprovalExecutionResult reqResult = sourceService.requestApproval(tenantContext, action);
+      ApprovalExecutionResult reqResult = sourceService.requestApprovalWithSnapshot(tenantContext, action);
       String reqId = reqResult.approval().binding().approvalRequestId();
 
       TrustedReviewerContext reviewer = reviewer(tenant, "user:reviewer-e@example.invalid");
       sourceService.review(reviewer, reqId, "approve", "REVIEWER_AUTHORIZED");
 
       // Snapshot taken at T0: approval is 'approved' (unconsumed), active generation is 1
+      var captured = captureDatabase(sourceDs);
+      var originalRequest = sourceState.find(tenant, reqId);
+      var originalBinding = sourceState.findPolicyBinding(tenant, reqId).orElseThrow();
       dumpDatabase(sourceDb, dumpPathT0);
 
       // T1: Source executes the approved action
@@ -757,6 +795,7 @@ final class PostgresPolicyBoundRestoreQualificationTest {
       ActivePolicySnapshot sourceSnapT1 = sourceStore.activePolicySnapshot(workspaceId, policyId).orElseThrow();
       assertThat(sourceSnapT1.activationGeneration()).isEqualTo(2L);
       assertThat(sourceState.find(tenant, reqId).status()).isEqualTo("consumed");
+      assertThat(sourceState.findPolicyBinding(tenant, reqId)).contains(originalBinding);
 
       // T2: Restore T0 snapshot into destination DB (still within 300s approval lifetime: T0 + 30s)
       clock.set(T0.plusSeconds(30));
@@ -764,28 +803,35 @@ final class PostgresPolicyBoundRestoreQualificationTest {
       restoreDatabase(destDb, dumpPathT0);
 
       DataSource destDs = dataSourceFor(destDb);
+      assertThat(captureDatabase(destDs)).isEqualTo(captured);
+      // Strict operator schema validation is not an external recovery fence either.
+      PostgresDatabaseLifecycle.validateExisting(destDs);
       PostgresPolicyLifecycleStore destStore =
           new PostgresPolicyLifecycleStore(destDs, clock, () -> "plt-" + nextId());
       PostgresDurableEnforcementState destState =
           new PostgresDurableEnforcementState(destDs, clock, () -> "claim-" + nextId());
       HumanApprovalService destService =
           createApprovalService(destDs, destStore, destState, workspaceId, policyId, permitKey, target, clock);
+      assertThat(captureDatabase(destDs)).isEqualTo(captured);
 
       // PROVE ROLLBACK IN RESTORED DATABASE:
-      // Both active policy generation and approval binding rolled back together to gen 1!
+      // Active generation and approval status roll back; the unchanged old gen1 binding matches again.
       ActivePolicySnapshot restoredActive = destStore.activePolicySnapshot(workspaceId, policyId).orElseThrow();
       assertThat(restoredActive.activationGeneration())
           .as("Restored database rolled back active generation from 2 to 1")
           .isEqualTo(1L);
 
       ApprovalRequestState restoredReq = destState.find(tenant, reqId);
+      assertThat(restoredReq).isEqualTo(originalRequest);
+      assertThat(clock.instant()).isBefore(restoredReq.binding().expiresAt());
       assertThat(restoredReq.status())
           .as("Restored database revived unconsumed 'approved' status")
           .isEqualTo("approved");
 
       ApprovalPolicyBinding restoredBinding = destState.findPolicyBinding(tenant, reqId).orElseThrow();
+      assertThat(restoredBinding).isEqualTo(originalBinding);
       assertThat(restoredBinding.policyGeneration())
-          .as("Restored approval binding rolled back to generation 1")
+          .as("The original immutable binding is still generation 1")
           .isEqualTo(1L);
 
       // Target counter is STILL 1 before restored resumption
@@ -795,6 +841,12 @@ final class PostgresPolicyBoundRestoreQualificationTest {
       ApprovalExecutionResult execT2 = destService.executeApproved(tenantContext, reqId, action);
       assertThat(execT2.outcome()).isEqualTo("succeeded");
       assertThat(execT2.approval().status()).isEqualTo("consumed");
+      assertThat(execT2.attempt().permitId()).isNotEqualTo(execT1.attempt().permitId());
+      assertThat(execT2.attempt().attemptId()).isNotEqualTo(execT1.attempt().attemptId());
+      assertThat(execT2.attempt().idempotencyKey()).isEqualTo(execT1.attempt().idempotencyKey());
+      assertThat(sourceState.find(tenant, reqId).status()).isEqualTo("consumed");
+      assertThat(sourceStore.activePolicySnapshot(workspaceId, policyId).orElseThrow().activationGeneration())
+          .isEqualTo(2L);
 
       // ASSERT THE UNSAFE RECOVERY GAP:
       // Target counter is now 2 because the database's internal generation rolled back with the snapshot!
@@ -810,6 +862,57 @@ final class PostgresPolicyBoundRestoreQualificationTest {
   }
 
   // --- Helper Methods ---
+
+  /** Entire captured table rows, not just counts/status. Fixed identifiers only; no operator input. */
+  private static Map<String, List<JsonNode>> captureDatabase(DataSource source) throws Exception {
+    Map<String, List<JsonNode>> captured = new LinkedHashMap<>();
+    for (String table : List.of(
+        "flyway_schema_history", "tp_enforcement_schema_guard", "tp_approval_requests",
+        "tp_approval_transitions", "tp_approval_action_snapshots", "tp_approval_policy_bindings",
+        "tp_policy_versions", "tp_active_policies", "tp_policy_lifecycle_transitions",
+        "tp_consumed_execution_permits", "tp_execution_attempts", "tp_execution_transitions",
+        "tp_evidence_streams", "tp_evidence_events", "tp_evidence_outbox",
+        "tp_evidence_anchors", "tp_reconciliation_queue")) {
+      List<JsonNode> values = new ArrayList<>();
+      try (var connection = source.getConnection(); var statement = connection.createStatement();
+           var rows = statement.executeQuery(
+               "SELECT to_jsonb(r)::text FROM public." + table + " r ORDER BY to_jsonb(r)::text")) {
+        while (rows.next()) values.add(JsonSupport.MAPPER.readTree(rows.getString(1)));
+      }
+      captured.put(table, List.copyOf(values));
+    }
+    assertThat(captured.get("tp_approval_policy_bindings")).hasSize(1);
+    assertThat(captured.get("tp_approval_action_snapshots")).hasSize(1);
+    assertThat(captured.get("tp_active_policies")).hasSize(1);
+    assertThat(captured.get("tp_enforcement_schema_guard")).hasSize(1);
+    assertThat(captured.get("tp_enforcement_schema_guard").getFirst().path("contract_version").asInt())
+        .isEqualTo(8);
+    var history = captured.get("flyway_schema_history");
+    assertThat(history).hasSize(8);
+    assertThat(history.stream().map(row -> row.path("version").asText()).sorted().toList())
+        .containsExactly("1", "2", "3", "4", "5", "6", "7", "8");
+    assertThat(history).allSatisfy(row -> {
+      assertThat(row.path("success").asBoolean()).isTrue();
+      assertThat(row.path("checksum").isIntegralNumber()).isTrue();
+    });
+    return Map.copyOf(captured);
+  }
+
+  private static void assertValidEvidenceChain(List<DurableEvidenceRecord> evidence) {
+    List<JsonNode> records = evidence.stream().map(record -> {
+      ObjectNode integrity = JsonSupport.MAPPER.createObjectNode();
+      integrity.put("algorithm", "sha256");
+      if (record.previousEventHash() == null) integrity.putNull("previousEventHash");
+      else integrity.put("previousEventHash", record.previousEventHash());
+      integrity.put("eventHash", record.eventHash());
+      ObjectNode envelope = JsonSupport.MAPPER.createObjectNode();
+      envelope.set("payload", record.payload());
+      envelope.set("integrity", integrity);
+      return (JsonNode) envelope;
+    }).toList();
+    assertThat(InMemoryEvidenceLedger.verifyRecords(records, evidence.getLast().eventHash()).valid())
+        .isTrue();
+  }
 
   private static ExecResult dumpDatabase(String dbName, String dumpPath) throws Exception {
     validateDbName(dbName);
@@ -832,10 +935,12 @@ final class PostgresPolicyBoundRestoreQualificationTest {
 
     // Conservative small-fixture size bound check (< 5 MB)
     ExecResult statResult = POSTGRES.execInContainer("stat", "-c", "%s", dumpPath);
-    if (statResult.getExitCode() == 0) {
-      long size = Long.parseLong(statResult.getStdout().trim());
-      assertThat(size).isGreaterThan(0).isLessThan(5 * 1024 * 1024);
-    }
+    assertThat(statResult.getExitCode()).as("archive size check must succeed").isZero();
+    long size = Long.parseLong(statResult.getStdout().trim());
+    assertThat(size).isGreaterThan(0).isLessThan(5 * 1024 * 1024);
+    ExecResult mode = POSTGRES.execInContainer("stat", "-c", "%a", dumpPath);
+    assertThat(mode.getExitCode()).isZero();
+    assertThat(mode.getStdout().trim()).isEqualTo("600");
     return result;
   }
 
@@ -859,7 +964,7 @@ final class PostgresPolicyBoundRestoreQualificationTest {
     validateDbName(dbName);
     try (Connection connection = defaultDataSource().getConnection();
          Statement statement = connection.createStatement()) {
-      statement.execute("CREATE DATABASE " + dbName);
+      statement.execute("CREATE DATABASE " + dbName + " TEMPLATE template0");
     }
   }
 
