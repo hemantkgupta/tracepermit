@@ -371,9 +371,10 @@ test("distribution archive layout, permissions, and clean dependency inventory",
   const launcher = join(distDir, "bin/tracepermit-simulator-approval");
   assert.ok(existsSync(launcher), "Launcher must exist");
   const launcherStat = statSync(launcher);
-  assert.ok(
-    (launcherStat.mode & 0o111) !== 0,
-    "Launcher must have executable permissions",
+  assert.equal(
+    launcherStat.mode & 0o777,
+    0o755,
+    "Launcher must have mode 0755",
   );
 
   assert.ok(
@@ -401,6 +402,7 @@ test("distribution archive layout, permissions, and clean dependency inventory",
   // Verify manifest.json
   const manifestPath = join(distDir, "manifest.json");
   assert.ok(existsSync(manifestPath), "manifest.json must exist");
+  assert.equal(statSync(manifestPath).mode & 0o777, 0o644);
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
   assert.equal(manifest.schemaVersion, "1.1");
   assert.equal(manifest.packageName, "tracepermit-simulator-approval");

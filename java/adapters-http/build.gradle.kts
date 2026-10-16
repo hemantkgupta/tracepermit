@@ -313,9 +313,9 @@ val archiveSimulatorApprovalDistribution = tasks.register<Tar>("archiveSimulator
   from(stageSimulatorApprovalDistribution.flatMap { it.outputDir }) {
     into("tracepermit-simulator-approval-0.1.0")
   }
-  filesMatching("**/bin/*") {
-    filePermissions {
-      unix(0b111_101_101)
+  eachFile {
+    if (name == "tracepermit-simulator-approval") {
+      permissions { unix("0755") }
     }
   }
 }
