@@ -10,6 +10,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   statSync,
   symlinkSync,
@@ -17,7 +18,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
-import { test } from "node:test";
+import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -28,15 +29,17 @@ const distArchive = join(
   "java/adapters-http/build/distributions/tracepermit-simulator-approval-0.1.0.tar.gz",
 );
 const distSha256File = `${distArchive}.sha256`;
+let distributionBuilt = false;
 
 function ensureDistributionBuilt() {
-  if (!existsSync(distArchive) || !existsSync(distSha256File)) {
+  // Ask the build to validate its inputs even when an older archive exists.
+  if (!distributionBuilt) {
     const buildResult = spawnSync(
       join(repoRoot, "scripts/build-simulator-approval-distribution.sh"),
       {
         cwd: repoRoot,
         encoding: "utf8",
-        timeout: 120_000,
+        timeout: 180_000,
       },
     );
     if (buildResult.status !== 0) {
@@ -44,8 +47,174 @@ function ensureDistributionBuilt() {
         `Failed to build distribution:\n${buildResult.stdout}\n${buildResult.stderr}`,
       );
     }
+    distributionBuilt = true;
   }
 }
+
+function command(command, args, cwd) {
+  const result = spawnSync(command, args, {
+    cwd,
+    encoding: "utf8",
+    timeout: 180_000,
+  });
+  assert.equal(
+    result.status,
+    0,
+    `${command} failed: ${result.stdout}\n${result.stderr}`,
+  );
+  return result.stdout.trim();
+}
+
+test("packaging refreshes commit-only provenance and rejects dirty or unavailable source metadata", (t) => {
+  // Minimal, synthetic Gradle/Git project: exercise the real packaging task without
+  // modifying this checkout's history, compiling the backend again, or using secrets.
+  const fixture = mkdtempSync(join(tmpdir(), "tp provenance fixture "));
+  t.after(() => rmSync(fixture, { recursive: true, force: true }));
+  const modules = [
+    "adapters-http",
+    "contracts",
+    "policy",
+    "application",
+    "execution",
+    "identity",
+    "security",
+    "simulator",
+    "adapters-remote",
+    "persistence-postgres",
+    "endpoint-connector",
+  ];
+  for (const module of modules)
+    mkdirSync(join(fixture, "java", module), { recursive: true });
+  writeFileSync(join(fixture, ".gitignore"), "**/build/\n**/.gradle/\n");
+  writeFileSync(
+    join(fixture, "java/settings.gradle.kts"),
+    modules.map((m) => `include(":${m}")`).join("\n"),
+  );
+  writeFileSync(
+    join(fixture, "java/build.gradle.kts"),
+    'allprojects { version = "0.1.0-SNAPSHOT" }\nsubprojects { apply(plugin = "java-library") }\n',
+  );
+  const buildFile = "java/adapters-http/build.gradle.kts";
+  copyFileSync(join(repoRoot, buildFile), join(fixture, buildFile));
+  for (const file of [
+    "java/adapters-http/src/main/scripts/tracepermit-simulator-approval",
+    "config/simulator-approvals.example.json",
+    "docs/runbooks/simulator-approval-distribution.md",
+    "LICENSE",
+    "NOTICE",
+  ]) {
+    mkdirSync(dirname(join(fixture, file)), { recursive: true });
+    copyFileSync(join(repoRoot, file), join(fixture, file));
+  }
+  mkdirSync(join(fixture, "apps/console/dist"), { recursive: true });
+  writeFileSync(
+    join(fixture, "apps/console/dist/index.html"),
+    "synthetic console fixture\n",
+  );
+  const git = (...args) => command("git", args, fixture);
+  git("init", "--quiet");
+  git("config", "user.name", "Synthetic qualification");
+  git("config", "user.email", "qualification@example.invalid");
+  git("config", "commit.gpgsign", "false");
+  git("add", ".");
+  git("commit", "--quiet", "-m", "Synthetic fixture A");
+
+  const gradleArgs = [
+    "-p",
+    join(fixture, "java"),
+    "--no-daemon",
+    "--offline",
+    "--configuration-cache",
+    "--build-cache",
+    ":adapters-http:packageSimulatorApprovalDistribution",
+  ];
+  const build = (...extra) =>
+    spawnSync(join(repoRoot, "java/gradlew"), [...gradleArgs, ...extra], {
+      cwd: fixture,
+      encoding: "utf8",
+      timeout: 180_000,
+    });
+  const buildOk = (...extra) => {
+    const result = build(...extra);
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    return result.stdout;
+  };
+  const archive = join(
+    fixture,
+    "java/adapters-http/build/distributions/tracepermit-simulator-approval-0.1.0.tar.gz",
+  );
+  const manifest = () =>
+    JSON.parse(
+      command(
+        "tar",
+        ["-xOf", archive, "tracepermit-simulator-approval-0.1.0/manifest.json"],
+        fixture,
+      ),
+    );
+  buildOk();
+  assert.equal(manifest().sourceCommit, git("rev-parse", "HEAD"));
+  const originalHash = sha256OfFile(archive);
+  git("commit", "--allow-empty", "--quiet", "-m", "Synthetic fixture B");
+  buildOk();
+  assert.equal(
+    manifest().sourceCommit,
+    git("rev-parse", "HEAD"),
+    "Commit-only changes must invalidate cached provenance",
+  );
+  assert.notEqual(sha256OfFile(archive), originalHash);
+  const committedHash = sha256OfFile(archive);
+  assert.match(
+    buildOk(),
+    /:adapters-http:stageSimulatorApprovalDistribution UP-TO-DATE/,
+  );
+  assert.equal(sha256OfFile(archive), committedHash);
+  const sibling = join(
+    fixture,
+    "java/adapters-http/build/staged-distribution/unrelated-artifact.txt",
+  );
+  writeFileSync(sibling, "must not enter this archive\n");
+  buildOk(":adapters-http:stageSimulatorApprovalDistribution", "--rerun");
+  assert.equal(
+    sha256OfFile(archive),
+    committedHash,
+    "Restaging identical inputs must preserve archive bytes and exclude sibling outputs",
+  );
+  assert.ok(
+    !command("tar", ["-tzf", archive], fixture).includes("unrelated-artifact"),
+  );
+
+  const originalNotice = readFileSync(join(fixture, "NOTICE"), "utf8");
+  writeFileSync(
+    join(fixture, "NOTICE"),
+    `${originalNotice}\nUncommitted change\n`,
+  );
+  const assertDirtyBuildRejected = () => {
+    const result = build();
+    assert.equal(result.status, 1);
+    assert.match(
+      `${result.stdout}\n${result.stderr}`,
+      /requires a clean Git source tree/,
+    );
+    assert.ok(
+      !result.stdout.includes("Distribution SHA-256:"),
+      "Failed packaging must not checksum an old archive",
+    );
+    assert.equal(sha256OfFile(archive), committedHash);
+  };
+  assertDirtyBuildRejected();
+  writeFileSync(join(fixture, "NOTICE"), originalNotice);
+  const untracked = join(fixture, "untracked-source.txt");
+  writeFileSync(untracked, "uncommitted input\n");
+  assertDirtyBuildRejected();
+  rmSync(untracked);
+  buildOk();
+  renameSync(join(fixture, ".git"), join(fixture, ".git-unavailable"));
+  assert.notEqual(
+    build().status,
+    0,
+    "Missing Git metadata must fail; never label an archive unknown",
+  );
+});
 
 function sha256OfFile(filePath) {
   const content = readFileSync(filePath);
@@ -62,9 +231,15 @@ function findJavaBinDir() {
 }
 
 let cachedSanitizedPath = null;
+let sanitizedBinDirectory;
+after(() => {
+  if (sanitizedBinDirectory)
+    rmSync(sanitizedBinDirectory, { recursive: true, force: true });
+});
 function createSanitizedPath() {
   if (cachedSanitizedPath) return cachedSanitizedPath;
   const binDir = mkdtempSync(join(tmpdir(), "tp-sanitized-bin-"));
+  sanitizedBinDirectory = binDir;
   const javaBin = findJavaBinDir();
   const requiredTools = [
     "bash",
@@ -176,9 +351,9 @@ test("distribution archive exists and matches sha256 checksum file", () => {
 
   const calculatedSha = sha256OfFile(distArchive);
   const checksumFileContent = readFileSync(distSha256File, "utf8").trim();
-  assert.ok(
-    checksumFileContent.startsWith(calculatedSha),
-    `Checksum mismatch: expected ${calculatedSha} in ${checksumFileContent}`,
+  assert.equal(
+    checksumFileContent,
+    `${calculatedSha}  tracepermit-simulator-approval-0.1.0.tar.gz`,
   );
 });
 
@@ -196,9 +371,10 @@ test("distribution archive layout, permissions, and clean dependency inventory",
   const launcher = join(distDir, "bin/tracepermit-simulator-approval");
   assert.ok(existsSync(launcher), "Launcher must exist");
   const launcherStat = statSync(launcher);
-  assert.ok(
-    (launcherStat.mode & 0o111) !== 0,
-    "Launcher must have executable permissions",
+  assert.equal(
+    launcherStat.mode & 0o777,
+    0o755,
+    "Launcher must have mode 0755",
   );
 
   assert.ok(
@@ -226,11 +402,28 @@ test("distribution archive layout, permissions, and clean dependency inventory",
   // Verify manifest.json
   const manifestPath = join(distDir, "manifest.json");
   assert.ok(existsSync(manifestPath), "manifest.json must exist");
+  assert.equal(statSync(manifestPath).mode & 0o777, 0o644);
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
-  assert.equal(manifest.schemaVersion, "1.0");
+  assert.equal(manifest.schemaVersion, "1.1");
   assert.equal(manifest.packageName, "tracepermit-simulator-approval");
   assert.equal(manifest.packageVersion, "0.1.0");
   assert.equal(manifest.requiredJava, "21");
+  assert.equal(
+    manifest.sourceCommit,
+    command("git", ["rev-parse", "HEAD"], repoRoot),
+  );
+  assert.equal(manifest.sourceTree, "clean");
+  assert.equal(
+    Date.parse(manifest.sourceCommitTimestamp),
+    Number(command("git", ["show", "-s", "--format=%ct", "HEAD"], repoRoot)) *
+      1000,
+  );
+  assert.equal(Object.hasOwn(manifest, "buildTimestamp"), false);
+  assert.equal(
+    manifest.entryPoint,
+    "io.tracepermit.adapters.http.SimulatorApprovalMain",
+  );
+  assert.equal(manifest.launcher, "bin/tracepermit-simulator-approval");
   assert.ok(Array.isArray(manifest.dependencyInventory));
   assert.ok(manifest.dependencyInventory.length >= 10);
   assert.ok(manifest.integrityNotice.includes("checksums verify"));
@@ -241,12 +434,20 @@ test("distribution archive layout, permissions, and clean dependency inventory",
   const sumsLines = readFileSync(sumsPath, "utf8")
     .split("\n")
     .filter((line) => line && !line.startsWith("#"));
-  assert.ok(
-    sumsLines.length >= 20,
-    "SHA256SUMS should contain all packaged files",
-  );
+  const filePaths = (directory) =>
+    readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+      const path = join(directory, entry.name);
+      assert.ok(!entry.isSymbolicLink(), "Archive must not contain symlinks");
+      return entry.isDirectory() ? filePaths(path) : [relative(distDir, path)];
+    });
+  const packagedFiles = filePaths(distDir)
+    .filter((path) => path !== "SHA256SUMS")
+    .sort();
+  const checkedFiles = [];
   for (const line of sumsLines) {
-    const [hash, file] = line.trim().split(/\s+/);
+    const [, hash, file] = line.match(/^([0-9a-f]{64})  (.+)$/) ?? [];
+    assert.ok(file && !file.startsWith("/") && !file.split("/").includes(".."));
+    checkedFiles.push(file);
     const fullPath = join(distDir, file);
     assert.ok(existsSync(fullPath), `File in SHA256SUMS must exist: ${file}`);
     assert.equal(
@@ -255,19 +456,40 @@ test("distribution archive layout, permissions, and clean dependency inventory",
       `Checksum must match for ${file}`,
     );
   }
+  assert.deepEqual(
+    checkedFiles.sort(),
+    packagedFiles,
+    "Every packaged file must have exactly one checksum",
+  );
+  assert.ok(
+    !packagedFiles.some((path) =>
+      /(^|\/)(node_modules|\.git|src)(\/|$)|\.(pk8|spki|secret|class)$/.test(
+        path,
+      ),
+    ),
+    "Archive must exclude source trees, private material, and loose classes",
+  );
 
   // Verify absence of forbidden artifacts:
   // no node_modules, no .git, no .class outside JARs, no test JARs, no test IdP classes
   const libDir = join(distDir, "lib");
   const jars = readdirSync(libDir).filter((f) => f.endsWith(".jar"));
   assert.ok(jars.length >= 10, "lib/ must contain runtime jars");
+  assert.deepEqual(
+    manifest.dependencyInventory.map((jar) => jar.name),
+    [...jars].sort(),
+  );
+  for (const jar of manifest.dependencyInventory) {
+    assert.equal(jar.sizeBytes, statSync(join(libDir, jar.name)).size);
+    assert.equal(jar.sha256, sha256OfFile(join(libDir, jar.name)));
+  }
 
   for (const jar of jars) {
     const jarEntries = execSync(`jar -tf "${join(libDir, jar)}"`, {
       encoding: "utf8",
     });
     assert.ok(
-      !jarEntries.includes("Testcontainers"),
+      !/org\/testcontainers\/|org\/junit\/|org\/assertj\//.test(jarEntries),
       `JAR ${jar} must not contain Testcontainers`,
     );
     assert.ok(
