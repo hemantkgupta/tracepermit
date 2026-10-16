@@ -68,6 +68,17 @@ tests durable snapshot/approval atomicity, tenant/owner and reviewer-role
 isolation, stale policy, replay, concurrency, parse bounds and timestamp
 precision. It does not qualify a public edge.
 
+Optional endpoint observation capture (FR-016/017, SEC-003/012/014) must remain
+off by default, preserve protocol-only stdout, use strict private-file bounds
+and never serialize a credential, signed proof, private key, device ID, raw
+argument or full executable path. Stability failure must produce neither a
+record nor a forward; requested-capture failure must prevent forwarding.
+The recorded request hash must match the signed method/params binding. Tests
+must reject link/replacement/permission/growth/bounds failures and separately
+prove missing, mutated, wrong-credential and replayed proofs cannot add a
+simulator dispatch. Synthetic test observations are not native client proof;
+see the [rehearsal procedure](../runbooks/native-endpoint-observation-rehearsal.md).
+
 The optional browser profile additionally requires real HTTP cookie/CSRF and
 signed ID/access-token tests, one-use browser-bound login state, wrong
 issuer/audience/nonce/subject/time/hash rejection, current membership checks,

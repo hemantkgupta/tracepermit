@@ -83,6 +83,12 @@ Its isolated launcher tests are not additional model-selection evidence.
 **Gate B remains partial:** no full executable-hash/start-time transcript or
 independent live dispatch counter was retained for these model calls.
 
+The opt-in [process-observation rehearsal](native-endpoint-observation-rehearsal.md)
+now supplies a private Java capture path and a four-case HTTP rejection/counter
+test. Capture is disabled by default and records stability-before-forwarding,
+not verifier acceptance. No new native/model rehearsal is claimed by adding it;
+the historical record and the remaining gate stay partial.
+
 Capture actual parent executable/start-time/hash facts and verifier outcomes,
 then exercise missing, changed-request, wrong-credential and replayed proof
 rejections. A harness parent is not proof of native-client identity. No production

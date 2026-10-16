@@ -35,15 +35,22 @@ public final class EndpointConnectorMain {
       EndpointKeyProvider keyProvider = new FileEndpointKeyProvider(
           new EndpointKeyProvider.KeyMetadata(issuer, keyId, deviceId), keyPath);
       ProcessObserver observer = observer(deviceId);
+      Path captureDirectory = environment.containsKey("TRACEPERMIT_ENDPOINT_OBSERVATION_DIRECTORY")
+          ? Path.of(required(environment, "TRACEPERMIT_ENDPOINT_OBSERVATION_DIRECTORY", 4096))
+          : null;
       ConnectorCredentialProvider credentialProvider =
           new EnvironmentConnectorCredentialProvider(environment);
       SourceAttestationFactory attestationFactory = new SourceAttestationFactory(
           keyProvider, Clock.systemUTC(), () -> UUID.randomUUID().toString(), Duration.ofSeconds(30));
       GatewayTransport transport = new LoopbackHttpGatewayTransport(
           gatewayUri, Duration.ofSeconds(2), Duration.ofSeconds(10));
-      EndpointConnector connector = new EndpointConnector(
-          observer, credentialProvider, attestationFactory, transport);
-      return new StdioMcpServer(input, output, diagnostics, connector).run();
+      try (FileProcessObservationRecorder recorder = captureDirectory == null ? null
+          : new FileProcessObservationRecorder(captureDirectory)) {
+        EndpointConnector connector = new EndpointConnector(
+            observer, credentialProvider, attestationFactory, transport,
+            recorder == null ? EndpointObservationCapture.NONE : recorder);
+        return new StdioMcpServer(input, output, diagnostics, connector).run();
+      }
     } catch (ConnectorException | IllegalArgumentException exception) {
       diagnostics.println("TracePermit endpoint connector: CONFIGURATION_INVALID");
       return 2;

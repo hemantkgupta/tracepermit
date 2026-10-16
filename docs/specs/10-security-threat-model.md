@@ -84,6 +84,17 @@
 
 ## 5. Trust-boundary controls
 
+Opt-in endpoint observation capture introduces a local diagnostic-file privacy
+boundary (FR-016/017, SEC-003/012). Default-disabled capture uses an existing
+canonical owner-only POSIX directory, exclusive 0600 files, file/parent identity
+and link/mode checks, bounded records/bytes and allowlisted serialization. It
+records no credentials, signed proofs, raw arguments, device ID or executable
+path. A requested-capture failure stops forwarding instead of silently dropping
+the evidence. These files are editable owner-controlled diagnostics, not gateway
+acceptance or independently immutable evidence. Same-user compromise and hostile
+ancestor-directory races remain outside the development boundary. See
+[ADR 0038](../architecture/0038-private-endpoint-observation-capture.md).
+
 ### Client to connector
 
 - TLS, Host/Origin validation, request size limits, rate limits
