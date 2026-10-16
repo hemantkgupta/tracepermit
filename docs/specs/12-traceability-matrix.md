@@ -47,6 +47,25 @@ upgraded to production-qualified.
 
 See [ADR 0039](../architecture/0039-policy-lifecycle-staging-rollback-and-simulation.md).
 
+## Simulator policy-template qualification
+
+Requirements: FR-005/006/013; SEC-001/002/003; OPS-002.
+
+Two opt-in default-block candidates and a pinned 19-case corpus exercise
+`PolicyLifecycleService.simulate`; `PolicyTemplateQualificationTest` has
+14 tests and 38 matrix evaluations. Exact classification/decision/provenance,
+isolated read/write scope negatives, predicate/priority mutations, both-template
+input/catalog isolation and unknown policy/action schemas are covered.
+
+| Added evidence                                                                                                  | Qualification boundary                                                                                             |
+| --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| FR-005/006; SEC-002: exact class, score, severity, signals, outcome, reason, rule and approval-group assertions | Candidate simulation only; known raw classifier numeric limits are documented, not repaired by these tests         |
+| FR-013: no catalog method call, revision, active pointer or history change during candidate simulation          | Not authenticated policy administration or installed runtime activation                                            |
+| SEC-001/003; OPS-002: canonical-identity characterization, synthetic fixture hygiene, candidate ID/version      | No authentication or complete secret-retention proof; result has no schemaVersion or runtime key/adapter inventory |
+
+See the [template qualification runbook](../runbooks/simulator-policy-templates.md).
+Default policies/launchers and enforcement code remain unchanged.
+
 ## Private endpoint observation capture
 
 | Requirements                     | Implementation and verification                                                                                                                                                                                                                      | Boundary                                                                                                                                                        |
