@@ -4,9 +4,6 @@ import io.tracepermit.execution.TenantPartition;
 import io.tracepermit.security.PermitConsumptionStore;
 
 import javax.sql.DataSource;
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -14,7 +11,6 @@ import java.sql.SQLException;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
-import java.util.HexFormat;
 import java.util.Objects;
 import java.util.regex.Pattern;
 
@@ -23,7 +19,10 @@ import java.util.regex.Pattern;
  *
  * <p>Enforces atomic single-use permit consumption across processes, restarts, and concurrent
  * dispatch attempts by persisting claims in the {@code tp_consumed_execution_permits} table
- * with conflict rejection.
+ * with conflict rejection. Live claims require a verified canonical action hash.
+ * Each write owns and commits a fresh/exclusive DataSource lease before success;
+ * caller-owned/thread-bound transactions are unsupported. This is not the
+ * composed atomic execution/evidence claim used by durable application services.
  */
 public final class PostgresPermitConsumptionStore implements PermitConsumptionStore {
   public static final TenantPartition DEFAULT_TENANT = new TenantPartition("default");
@@ -87,8 +86,7 @@ public final class PostgresPermitConsumptionStore implements PermitConsumptionSt
       return false;
     }
 
-    String effectiveHash = actionHash != null ? actionHash : hashPermitId(permitId);
-    requireHash(effectiveHash, "action hash");
+    requireHash(actionHash, "action hash");
 
     String sql = """
         INSERT INTO tp_consumed_execution_permits
@@ -96,17 +94,16 @@ public final class PostgresPermitConsumptionStore implements PermitConsumptionSt
         VALUES (?, ?, ?, ?, ?)
         ON CONFLICT (tenant_id, permit_id) DO NOTHING
         """;
-    try (Connection connection = dataSource.getConnection();
-         PreparedStatement statement = connection.prepareStatement(sql)) {
-      statement.setString(1, tenant.value());
-      statement.setString(2, permitId);
-      statement.setObject(3, OffsetDateTime.ofInstant(expiresAt, ZoneOffset.UTC));
-      statement.setString(4, effectiveHash);
-      statement.setObject(5, OffsetDateTime.ofInstant(now, ZoneOffset.UTC));
-      return statement.executeUpdate() > 0;
-    } catch (SQLException exception) {
-      throw new PostgresStateException("Failed to record consumed execution permit", exception);
-    }
+    return inTransaction("Failed to record consumed execution permit", connection -> {
+      try (PreparedStatement statement = connection.prepareStatement(sql)) {
+        statement.setString(1, tenant.value());
+        statement.setString(2, permitId);
+        statement.setObject(3, OffsetDateTime.ofInstant(expiresAt, ZoneOffset.UTC));
+        statement.setString(4, actionHash);
+        statement.setObject(5, OffsetDateTime.ofInstant(now, ZoneOffset.UTC));
+        return statement.executeUpdate() == 1;
+      }
+    });
   }
 
   public boolean isConsumed(String permitId) {
@@ -164,14 +161,13 @@ public final class PostgresPermitConsumptionStore implements PermitConsumptionSt
               WHERE r.tenant_id = p.tenant_id AND r.consumed_permit_id = p.permit_id
            )
         """;
-    try (Connection connection = dataSource.getConnection();
-         PreparedStatement statement = connection.prepareStatement(sql)) {
-      statement.setString(1, tenant.value());
-      statement.setObject(2, OffsetDateTime.ofInstant(now, ZoneOffset.UTC));
-      return statement.executeUpdate();
-    } catch (SQLException exception) {
-      throw new PostgresStateException("Failed to prune expired unreferenced permits", exception);
-    }
+    return inTransaction("Failed to prune expired unreferenced permits", connection -> {
+      try (PreparedStatement statement = connection.prepareStatement(sql)) {
+        statement.setString(1, tenant.value());
+        statement.setObject(2, OffsetDateTime.ofInstant(now, ZoneOffset.UTC));
+        return statement.executeUpdate();
+      }
+    });
   }
 
   public TenantPartition defaultTenant() {
@@ -185,18 +181,37 @@ public final class PostgresPermitConsumptionStore implements PermitConsumptionSt
   }
 
   private static void requireHash(String value, String label) {
-    if (!HASH_PATTERN.matcher(value).matches()) {
+    if (value == null || !HASH_PATTERN.matcher(value).matches()) {
       throw new IllegalArgumentException("The " + label + " is invalid.");
     }
   }
 
-  private static String hashPermitId(String permitId) {
-    try {
-      MessageDigest digest = MessageDigest.getInstance("SHA-256");
-      byte[] hash = digest.digest(permitId.getBytes(StandardCharsets.UTF_8));
-      return "sha256:" + HexFormat.of().formatHex(hash);
-    } catch (NoSuchAlgorithmException exception) {
-      throw new IllegalStateException("SHA-256 is not available", exception);
+  /** Owns a fresh/exclusive DataSource lease; never joins a caller's transaction. */
+  private <T> T inTransaction(String message, SqlWork<T> work) {
+    try (Connection connection = dataSource.getConnection()) {
+      boolean originalAutoCommit = connection.getAutoCommit();
+      connection.setAutoCommit(false);
+      try {
+        T result = work.run(connection);
+        connection.commit();
+        connection.setAutoCommit(originalAutoCommit);
+        return result;
+      } catch (RuntimeException | SQLException failure) {
+        try {
+          connection.rollback();
+        } catch (SQLException rollbackFailure) {
+          failure.addSuppressed(rollbackFailure);
+        }
+        // Never enable auto-commit after an unsuccessful rollback: that can commit pending work.
+        throw failure;
+      }
+    } catch (SQLException exception) {
+      throw new PostgresStateException(message, exception);
     }
+  }
+
+  @FunctionalInterface
+  private interface SqlWork<T> {
+    T run(Connection connection) throws SQLException;
   }
 }

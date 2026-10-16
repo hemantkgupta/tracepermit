@@ -19,26 +19,43 @@ No database migration or real target is introduced. See
 
 ## Module ownership
 
-| Module                 | Responsibility                                                                  |
-| ---------------------- | ------------------------------------------------------------------------------- |
-| `contracts`            | Canonical JSON, strict action and signed-claim validation                       |
-| `identity`             | Development token, source proof, workload/delegation, OAuth/OIDC verification   |
-| `policy`               | Deterministic classifier, sequence signals, ordered policy evaluation           |
-| `security`             | Request-bound permit issue, verification, and consumption                       |
-| `execution`            | Attempts, idempotency, unknown outcomes, evidence chain                         |
-| `application`          | Fail-closed orchestration and trusted reviewer workflow                         |
-| `simulator`            | Bounded, stateful AWS/Jira fakes; no real target SDK                            |
-| `adapters-http`        | Combined loopback MCP backend and read-only projections                         |
-| `adapters-remote`      | Authenticated MCP edge and SSRF-safe JWKS HTTPS                                 |
-| `endpoint-connector`   | MCP stdio origin observation and loopback forwarding                            |
-| `persistence-postgres` | Durable claims, permit consumption, approvals, evidence, outbox, reconciliation |
-| `observability-otel`   | Bounded telemetry projection                                                    |
-| `conformance`          | Checked-in schema, vector, and invariant tests                                  |
+| Module                 | Responsibility                                                                                                                     |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `contracts`            | Canonical JSON, strict action and signed-claim validation                                                                          |
+| `identity`             | Development token, source proof, workload/delegation, OAuth/OIDC verification                                                      |
+| `policy`               | Deterministic classifier, sequence signals, strict policy schema validation, lifecycle staging/activation/rollback, and simulation |
+| `security`             | Request-bound permit issue, verification, and consumption                                                                          |
+| `execution`            | Attempts, idempotency, unknown outcomes, evidence chain                                                                            |
+| `application`          | Fail-closed orchestration and trusted reviewer workflow                                                                            |
+| `simulator`            | Bounded, stateful AWS/Jira fakes; no real target SDK                                                                               |
+| `adapters-http`        | Combined loopback MCP backend and read-only projections                                                                            |
+| `adapters-remote`      | Authenticated MCP edge and SSRF-safe JWKS HTTPS                                                                                    |
+| `endpoint-connector`   | MCP stdio origin observation and loopback forwarding                                                                               |
+| `persistence-postgres` | Durable claims, approvals, evidence, outbox, reconciliation                                                                        |
+| `observability-otel`   | Bounded telemetry projection                                                                                                       |
+| `conformance`          | Checked-in schema, vector, and invariant tests                                                                                     |
 
 Transport code stays in adapters. All origins converge on the canonical
 action contract before classification or policy. Application and domain code
 receive trusted identity context from adapters; they do not infer it from tool
 arguments. The executor has no route to a real AWS or Jira service.
+
+## In-memory policy lifecycle boundary
+
+`PolicyLifecycleService` is a trusted Java library, not a policy administration
+API wired into the default backend. Candidate validation operates on a private
+snapshot. `PolicyVersionRecord` copies constructor input and every `document()`
+result, including records returned by stage/active/query/list/restage. Callers
+cannot mutate current or rollback content through these APIs. Dynamic execution
+obtains one policy snapshot per action and reuses it for sanitization re-evaluation.
+
+The current Java profile accepts versions 1..2147483647 and priorities
+-2147483648..2147483647, including negative priorities. Reject unsupported values
+before lifecycle insertion or dry-run evaluation rather than silently narrowing them.
+The checked-in language-neutral schema's wider safe-integer envelope and frozen
+canonical bytes are unchanged. Catalog/history remain in memory; durable,
+role-scoped administration and pending-approval invalidation are not implemented.
+See [ADR 0039](../architecture/0039-policy-lifecycle-staging-rollback-and-simulation.md).
 
 ## Authorization and execution
 
@@ -56,14 +73,30 @@ arguments. The executor has no route to a real AWS or Jira service.
    exact request binding. A request-body approval flag is never authority.
 5. On allow or valid approval, issue a short-lived request-bound permit.
    The executor checks signature, audience, hash, expiry, and single-use
-   claim before invoking the simulator. In durable PostgreSQL runtimes,
-   `PostgresPermitConsumptionStore` atomically claims the permit in
-   `tp_consumed_execution_permits` to prevent replay across restarts and
-   concurrent contention. A denial issues no permit.
+   claim before invoking the simulator. Durable execution/approval already
+   inserts the permit with execution state and evidence in the existing
+   `PostgresDurableEnforcementState` transaction; it does not call standalone
+   `verifyAndConsume`. A denial issues no permit.
 6. Record only bounded, redacted evidence and expose read-only projections
    to the React console.
 
 ## State and transaction boundaries
+
+The optional standalone `PostgresPermitConsumptionStore` supports a separate
+consumption caller. Both authority overloads route by the organization in the
+private, hash-verified canonical action snapshot; an explicit tenant mismatch
+fails before storage. Missing/invalid tenant fails closed in the durable store.
+The port's legacy in-memory defaults retain global rather than tenant-aware
+replay tracking. Live durable claims require the verified action hash, never a
+hash fabricated from the permit ID.
+
+Consumption and foreign-key-aware pruning each own a fresh/exclusive database
+lease and commit before returning. Initially manual-transaction connections are
+supported; caller-owned/thread-bound transactions are not. SQL/commit/close
+failures never return success, rollback failures are preserved, and an ambiguous
+commit may leave a consumed row without dispatch. No automatic retry occurs.
+This standalone claim must not precede the composed durable claim transaction.
+See [ADR 0041](../architecture/0041-postgres-durable-permit-consumption.md).
 
 The default loopback demo uses process-local stores. Those stores are not
 safe for multi-replica or restart-persistent enforcement. The optional

@@ -249,28 +249,38 @@ public final class ExecutionPermitAuthority {
   }
 
   public JsonNode verifyAndConsume(String permit, JsonNode event, String expectedAudience) {
-    return verifyAndConsume(null, permit, event, expectedAudience);
+    return verifyAndConsume(null, false, permit, event, expectedAudience);
   }
 
   public JsonNode verifyAndConsume(
       String tenantId, String permit, JsonNode event, String expectedAudience) {
-    JsonNode claims = verify(permit, event, expectedAudience);
+    return verifyAndConsume(tenantId, true, permit, event, expectedAudience);
+  }
+
+  private JsonNode verifyAndConsume(
+      String tenantId, boolean explicitTenant, String permit, JsonNode event, String expectedAudience) {
+    // Read tenant identity from the same private action snapshot whose hash is verified.
+    JsonNode action = event == null ? null : event.deepCopy();
+    JsonNode claims = verify(permit, action, expectedAudience);
+    String actionTenant = action.path("identity").path("subject").path("organizationId").asText();
+    if (explicitTenant) {
+      require(tenantId != null
+              && tenantId.matches("^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+              && tenantId.equals(actionTenant),
+          "PERMIT_TENANT_MISMATCH", "The execution permit belongs to another tenant.");
+    }
     Instant now = clock.instant();
     Instant expiresAt = parseInstant(claims.path("expiresAt").asText());
     String actionHash = claims.path("actionHash").asText();
-    boolean consumed =
-        tenantId == null
-            ? consumptionStore.consume(
-                claims.path("permitId").asText(), expiresAt, actionHash, now)
-            : consumptionStore.consume(
-                tenantId, claims.path("permitId").asText(), expiresAt, actionHash, now);
+    // Durable stores reject an absent/invalid tenant; legacy stores retain a global namespace.
+    boolean consumed = consumptionStore.consume(
+        actionTenant, claims.path("permitId").asText(), expiresAt, actionHash, now);
     require(
         consumed,
         "EXECUTION_PERMIT_REPLAYED",
         "The single-use execution permit has already been consumed.");
     return claims;
   }
-
 
   /**
    * Verifies a permit without claiming it. Durable executors use this method and

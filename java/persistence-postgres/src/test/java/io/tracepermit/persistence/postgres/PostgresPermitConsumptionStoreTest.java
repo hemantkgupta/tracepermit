@@ -37,6 +37,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 final class PostgresPermitConsumptionStoreTest {
   private static final Path ROOT = Path.of(System.getProperty("tracepermit.repositoryRoot"));
   private static final Instant NOW = Instant.parse("2026-10-16T12:00:00Z");
+  private static final String ACTION_HASH = "sha256:" + "a".repeat(64);
   private static final TenantPartition ACME = new TenantPartition("acme");
   private static final TenantPartition OTHER = new TenantPartition("other");
   private static final PostgreSQLContainer<?> POSTGRES =
@@ -78,14 +79,14 @@ final class PostgresPermitConsumptionStoreTest {
     Instant expiresAt = NOW.plusSeconds(60);
 
     assertThat(store.isConsumed(permitId)).isFalse();
-    assertThat(store.consume(permitId, expiresAt, NOW)).isTrue();
+    assertThat(store.consume(permitId, expiresAt, ACTION_HASH, NOW)).isTrue();
     assertThat(store.isConsumed(permitId)).isTrue();
 
     // Replay within lifetime must return false
-    assertThat(store.consume(permitId, expiresAt, NOW.plusSeconds(10))).isFalse();
+    assertThat(store.consume(permitId, expiresAt, ACTION_HASH, NOW.plusSeconds(10))).isFalse();
 
     // Replay after expiry must still return false
-    assertThat(store.consume(permitId, expiresAt, NOW.plusSeconds(70))).isFalse();
+    assertThat(store.consume(permitId, expiresAt, ACTION_HASH, NOW.plusSeconds(70))).isFalse();
     assertThat(store.isConsumed(permitId)).isTrue();
   }
 
@@ -103,7 +104,7 @@ final class PostgresPermitConsumptionStoreTest {
     List<Callable<Boolean>> tasks = IntStream.range(0, 32)
         .mapToObj(index -> (Callable<Boolean>) () -> {
           start.await();
-          return replicas.get(index % replicas.size()).consume(permitId, expiresAt, NOW);
+          return replicas.get(index % replicas.size()).consume(permitId, expiresAt, ACTION_HASH, NOW);
         })
         .toList();
 
@@ -125,12 +126,12 @@ final class PostgresPermitConsumptionStoreTest {
     Instant expiresAt = NOW.plusSeconds(120);
 
     PostgresPermitConsumptionStore firstInstance = new PostgresPermitConsumptionStore(dataSource, ACME);
-    assertThat(firstInstance.consume(permitId, expiresAt, NOW)).isTrue();
+    assertThat(firstInstance.consume(permitId, expiresAt, ACTION_HASH, NOW)).isTrue();
 
     // Restart: new store instance connecting to same database
     PostgresPermitConsumptionStore restartedInstance = new PostgresPermitConsumptionStore(dataSource, ACME);
     assertThat(restartedInstance.isConsumed(permitId)).isTrue();
-    assertThat(restartedInstance.consume(permitId, expiresAt, NOW.plusSeconds(5))).isFalse();
+    assertThat(restartedInstance.consume(permitId, expiresAt, ACTION_HASH, NOW.plusSeconds(5))).isFalse();
   }
 
   @Test
@@ -139,16 +140,16 @@ final class PostgresPermitConsumptionStoreTest {
     Instant expiresAt = NOW.minusSeconds(1);
 
     // Cannot consume a permit whose expiry is not after now
-    assertThat(store.consume(permitId, expiresAt, NOW)).isFalse();
+    assertThat(store.consume(permitId, expiresAt, ACTION_HASH, NOW)).isFalse();
     assertThat(store.isConsumed(permitId)).isFalse();
 
     // Same for exact boundary: expiresAt == now
-    assertThat(store.consume(permitId, NOW, NOW)).isFalse();
+    assertThat(store.consume(permitId, NOW, ACTION_HASH, NOW)).isFalse();
     assertThat(store.isConsumed(permitId)).isFalse();
   }
 
   @Test
-  void explicitAndDerivedActionHashes() throws SQLException {
+  void explicitActionHashIsRequired() throws SQLException {
     String permitExplicit = "permit-hash-explicit-" + UUID.randomUUID();
     String explicitHash = "sha256:" + "a".repeat(64);
     Instant expiresAt = NOW.plusSeconds(60);
@@ -157,9 +158,13 @@ final class PostgresPermitConsumptionStoreTest {
     assertThat(readActionHash(ACME, permitExplicit)).isEqualTo(explicitHash);
 
     String permitDerived = "permit-hash-derived-" + UUID.randomUUID();
-    assertThat(store.consume(ACME, permitDerived, expiresAt, null, NOW)).isTrue();
-    String derivedHash = readActionHash(ACME, permitDerived);
-    assertThat(derivedHash).startsWith("sha256:").hasSize(71);
+    assertThatThrownBy(() -> store.consume(ACME, permitDerived, expiresAt, null, NOW))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> store.consume(permitDerived, expiresAt, NOW))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> store.consume(ACME, permitDerived, expiresAt, NOW))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThat(store.isConsumed(permitDerived)).isFalse();
 
     // Invalid action hash must fail-closed
     assertThatThrownBy(() -> store.consume(ACME, "permit-bad", expiresAt, "invalid-hash", NOW))
@@ -172,17 +177,17 @@ final class PostgresPermitConsumptionStoreTest {
     Instant expiresAt = NOW.plusSeconds(60);
 
     // Tenant ACME consumes permit
-    assertThat(store.consume(ACME, permitId, expiresAt, NOW)).isTrue();
+    assertThat(store.consume(ACME, permitId, expiresAt, ACTION_HASH, NOW)).isTrue();
     assertThat(store.isConsumed(ACME, permitId)).isTrue();
     assertThat(store.isConsumed(OTHER, permitId)).isFalse();
 
     // Tenant OTHER consumes the same permit ID independently without collision
-    assertThat(store.consume(OTHER, permitId, expiresAt, NOW)).isTrue();
+    assertThat(store.consume(OTHER, permitId, expiresAt, ACTION_HASH, NOW)).isTrue();
     assertThat(store.isConsumed(OTHER, permitId)).isTrue();
 
     // Both tenants cannot re-consume their own permit
-    assertThat(store.consume(ACME, permitId, expiresAt, NOW.plusSeconds(1))).isFalse();
-    assertThat(store.consume(OTHER, permitId, expiresAt, NOW.plusSeconds(1))).isFalse();
+    assertThat(store.consume(ACME, permitId, expiresAt, ACTION_HASH, NOW.plusSeconds(1))).isFalse();
+    assertThat(store.consume(OTHER, permitId, expiresAt, ACTION_HASH, NOW.plusSeconds(1))).isFalse();
 
     // Third tenant sees it unconsumed
     TenantPartition third = new TenantPartition("tenant-c");
@@ -197,14 +202,14 @@ final class PostgresPermitConsumptionStoreTest {
     String referencedApprovalExpired = "permit-ref-app-exp-" + UUID.randomUUID();
 
     // 1. Unreferenced expired permit
-    store.consume(ACME, unreferencedExpired, NOW.minusSeconds(10), NOW.minusSeconds(20));
+    store.consume(ACME, unreferencedExpired, NOW.minusSeconds(10), ACTION_HASH, NOW.minusSeconds(20));
     // 2. Unreferenced live permit
-    store.consume(ACME, unreferencedLive, NOW.plusSeconds(60), NOW);
+    store.consume(ACME, unreferencedLive, NOW.plusSeconds(60), ACTION_HASH, NOW);
     // 3. Referenced expired permit (referenced in tp_execution_attempts)
-    store.consume(ACME, referencedAttemptExpired, NOW.minusSeconds(10), NOW.minusSeconds(20));
+    store.consume(ACME, referencedAttemptExpired, NOW.minusSeconds(10), ACTION_HASH, NOW.minusSeconds(20));
     insertDummyExecutionAttempt(ACME, referencedAttemptExpired, NOW.minusSeconds(20));
     // 4. Referenced expired permit (referenced in tp_approval_requests)
-    store.consume(ACME, referencedApprovalExpired, NOW.minusSeconds(10), NOW.minusSeconds(20));
+    store.consume(ACME, referencedApprovalExpired, NOW.minusSeconds(10), ACTION_HASH, NOW.minusSeconds(20));
     String attemptForApproval = insertDummyExecutionAttempt(ACME, referencedApprovalExpired, NOW.minusSeconds(20));
     insertDummyApprovalRequest(ACME, referencedApprovalExpired, attemptForApproval, NOW.minusSeconds(20));
 
@@ -314,7 +319,7 @@ final class PostgresPermitConsumptionStoreTest {
           """);
     }
     try {
-      assertThatThrownBy(() -> store.consume("permit-failing", NOW.plusSeconds(60), NOW))
+      assertThatThrownBy(() -> store.consume("permit-failing", NOW.plusSeconds(60), ACTION_HASH, NOW))
           .isInstanceOf(PostgresStateException.class)
           .hasMessageContaining("Failed to record consumed execution permit");
     } finally {
