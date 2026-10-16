@@ -16,6 +16,7 @@ import io.tracepermit.application.TrustedTenantContext;
 import io.tracepermit.contracts.ActionValidator;
 import io.tracepermit.contracts.CanonicalJson;
 import io.tracepermit.contracts.JsonSupport;
+import io.tracepermit.contracts.redaction.EvidenceRedactor;
 import io.tracepermit.execution.ApprovalRequestState;
 import io.tracepermit.execution.InMemoryExecutionLedger;
 import io.tracepermit.identity.AuthenticatedConnector;
@@ -318,7 +319,7 @@ public final class SimulatorApprovalServer implements AutoCloseable {
     result.put("policyId", approval.binding().policyId());
     result.put("policyVersion", approval.binding().policyVersion());
     result.put("originalPolicyOutcome", approval.binding().originalDecision());
-    result.set("action", event.path("action").deepCopy());
+    result.set("action", EvidenceRedactor.enterpriseDefault().redact(event.path("action")));
     if (approval.reviewerSubjectId() != null) result.put("reviewerId", approval.reviewerSubjectId());
     if (approval.consumedAttemptId() != null) {
       var attempt = state.findByIdempotencyKey(member.tenant(), "simulator",
