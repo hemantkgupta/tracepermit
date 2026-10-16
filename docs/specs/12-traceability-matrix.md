@@ -143,6 +143,24 @@ See [ADR 0036](../architecture/0036-local-browser-approval-boundary.md) and
 See [ADR 0040](../architecture/0040-source-free-simulator-approval-distribution.md) and
 the [distribution runbook](../runbooks/simulator-approval-distribution.md).
 
+## Bounded approval-response redaction
+
+| Requirements                  | Implementation and verification                                                                                                                                                                                                                                                                | Boundary                                                                                                                                                                                            |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| SEC-012; DATA-003; FR-007/010 | `EvidenceRedactor` validates all subtrees before hashing/copying, applies configured diagnostic text strategies, and masks explicit credential aliases in `SimulatorApprovalServer` response projections; `RedactionBoundaryReviewTest`, `EvidenceRedactionBoundsTest`, `EvidenceRedactorTest` | Exact canonical action snapshots/hashes stay authoritative and unchanged; no global logging, export or before-persistence hook; unkeyed fingerprints are guessable, not a confidentiality guarantee |
+
+`SimulatorApprovalRedactionBoundaryTest` adds six authenticated HTTP/browser/MCP
+boundary cases: masked list/detail and both MCP payload forms, original snapshot
+and request-hash preservation, reader authorization/ownership before projection,
+depth/node failure with no raw fallback or read-side effects, strict credential
+argument rejection, and a clean review/execute/replay control. SEC-001/005/009/012
+and FR-007/010 receive bounded evidence; DATA-003 remains partial because exact
+operational snapshots are intentionally unredacted. Canary snapshots are seeded
+only through internal test APIs, never accepted by public ingress.
+
+See [ADR 0043](../architecture/0043-bounded-evidence-redaction.md) and the
+[API qualification runbook](../runbooks/approval-response-redaction-qualification.md).
+
 ## Functional requirements
 
 | ID     | Design/source evidence                                                                                                                                                                                                                                                                       | Test evidence                                                                                                                                                      | Status                                                                                            |
@@ -180,7 +198,7 @@ the [distribution runbook](../runbooks/simulator-approval-distribution.md).
 | SEC-009 | Trusted tenant contexts plus approval API membership, requester-only execution, reviewer separation and tenant/owner-isolated snapshot reads                                                                                                                                                                                                                                                                             | Partial: authenticated local API tested; durable production tenant administration pending                                                          |
 | SEC-010 | Durable execution/approval and allowed-remote evidence/outbox composition                                                                                                                                                                                                                                                                                                                                                | Partial: edge-denial stream/external publisher/anchor pending                                                                                      |
 | SEC-011 | Java development backend and endpoint transport stay direct numeric loopback-only, with no ambient proxy or redirect; production profile stays separate; separate approval main fixes listener and database to numeric IPv4 loopback; distribution launcher preserves loopback binding and zero-listener offline check                                                                                                   | Implemented POC foundation                                                                                                                         |
-| SEC-012 | Read/stored/OAuth/remote/sanitization evidence omits tokens, internals, raw arguments, and results; Scenario 10 omits injected tool text; `SimulatorApprovalMain.execute` code-only redacted startup errors                                                                                                                                                                                                              | Partial: formal redaction framework pending                                                                                                        |
+| SEC-012 | Read/stored/OAuth/remote/sanitization evidence omits tokens, internals, raw arguments, and results; Scenario 10 omits injected tool text; `SimulatorApprovalMain.execute` code-only redacted startup errors                                                                                                                                                                                                              | Partial: bounded redaction library and approval-response projection tested; global logs/export/storage coverage pending                            |
 | SEC-013 | Injected registry/signing port, public-only vector, restrictive dev key file                                                                                                                                                                                                                                                                                                                                             | Partial: protected key provider/enrollment pending                                                                                                 |
 | SEC-014 | Ed25519 verifier checks trust context, bindings, time, and atomic single use; endpoint transport rejects proxy/remote destination                                                                                                                                                                                                                                                                                        | Implemented for development CLI profile                                                                                                            |
 | SEC-015 | Exact JWKS URI, public-address DNS/pinning, TLS, no redirects/proxies/retries, time/size bounds; approval startup reuses lazy exact-URI SSRF-safe JWKS source                                                                                                                                                                                                                                                            | Implemented Java outbound adapter; deployment egress pending                                                                                       |
@@ -216,13 +234,13 @@ the [distribution runbook](../runbooks/simulator-approval-distribution.md).
 
 ## Data and privacy requirements
 
-| ID       | Current evidence                                                                                   | Status                               |
-| -------- | -------------------------------------------------------------------------------------------------- | ------------------------------------ |
-| DATA-001 | Fingerprint-only identity evidence                                                                 | Implemented baseline                 |
-| DATA-002 | Retention specified, no store                                                                      | Target                               |
-| DATA-003 | Strict bounded arguments, no redaction service                                                     | Target                               |
-| DATA-004 | Durable approval/execution transitions, executable lifecycle evidence, and reconciliation evidence | Implemented for Java durable profile |
-| DATA-005 | Deployment/data-residency question recorded                                                        | Target                               |
+| ID       | Current evidence                                                                                                                                              | Status                                                               |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| DATA-001 | Fingerprint-only identity evidence                                                                                                                            | Implemented baseline                                                 |
+| DATA-002 | Retention specified, no store                                                                                                                                 | Target                                                               |
+| DATA-003 | Bounded MASK/HASH/DROP projection library; original canonical action/hash unchanged; tests and [ADR 0043](../architecture/0043-bounded-evidence-redaction.md) | Partial: before-persistence integration and secret lifecycle pending |
+| DATA-004 | Durable approval/execution transitions, executable lifecycle evidence, and reconciliation evidence                                                            | Implemented for Java durable profile                                 |
+| DATA-005 | Deployment/data-residency question recorded                                                                                                                   | Target                                                               |
 
 ## Operability requirements
 
