@@ -1,231 +1,197 @@
-# Simulator Policy Template Pack and Dry-Run Qualification
+# Simulator policy templates and dry-run qualification
 
-Requirements: FR-005, FR-006, FR-013; SEC-001, SEC-002, SEC-003; OPS-002.
-Architecture Decision: [ADR 0039](../architecture/0039-policy-lifecycle-staging-rollback-and-simulation.md).
+Requirements: FR-005/006/013; SEC-001/002/003; OPS-002.
+See [ADR 0039](../architecture/0039-policy-lifecycle-staging-rollback-and-simulation.md)
+and the [coverage matrix](../specs/12-traceability-matrix.md).
 
-This runbook documents the simulator-only policy template pack and its deterministic
-dry-run qualification test harness. The templates provide opt-in, default-block policy
-definitions for simulator observation and reviewed change workflows. They reuse the
-existing Java policy lifecycle and evaluation engines without expanding the policy
-language, adding administrative endpoints, or modifying production enforcement state.
+These are **opt-in candidate policies**, not installed profiles or authenticated
+administration endpoints. The default launchers and default policies are unchanged.
+The corpus uses deterministic synthetic canonical actions and the actual Java
+`PolicyLifecycleService.simulate` method. It does not create even a simulated
+target effect.
 
----
-
-## Architecture and Evaluation Flow
-
-The qualification harness evaluates candidate policy templates against synthetic canonical
-action events using `PolicyLifecycleService.simulate(...)`. This simulation path operates
-entirely in memory: it validates candidate policy schemas and canonical actions, executes
-deterministic rule evaluation, and returns a structured `PolicySimulationResult` with zero
-database mutations, zero permit minting, and zero target dispatch.
+## Evaluation flow and trust boundary
 
 ```mermaid
-flowchart TD
-  subgraph Input ["Inputs (Candidate & Canonical Event)"]
-    TPL["Candidate Policy Template<br/>(e.g., simulator-observer.json)"]
-    ACT["Synthetic Action Event<br/>(Normalized Canonical Ingress)"]
-  end
-
-  subgraph Service ["PolicyLifecycleService.simulate(...)"]
-    PV["PolicyValidator.validate(...)<br/>Schema, IDs, Bounds & Matchers"]
-    AV["ActionValidator.validate(...)<br/>UUIDs, Lineage, Evidence & Ingress"]
-    PE["PolicyEvaluator.evaluate(...)<br/>Rule Precedence & Classification"]
-  end
-
-  subgraph Outcome ["Deterministic Simulation Result"]
-    RES["PolicySimulationResult<br/>(dryRun = true)<br/>• Outcome: allow | block | require_approval<br/>• Reason Code & Matched Rule ID<br/>• Classification Signals & Severity"]
-  end
-
-  TPL --> PV
-  ACT --> AV
-  PV --> PE
-  AV --> PE
-  PE --> RES
-
-  subgraph Boundary ["Safety Boundary (Non-Existent Ports)"]
-    NP["Zero Permit Issuance<br/>(No ExecutionPermitAuthority)"]
-    ND["Zero Target Dispatch<br/>(No Dispatch Port / Adapter)"]
-    NS["Zero Catalog Mutation<br/>(No Staging / Active Pointer Change)"]
-  end
-
-  RES -.-> Boundary
+flowchart TB
+  P["Candidate policy JSON<br>not active or installed"] --> V["Private policy validation snapshot"]
+  A["Synthetic canonical action<br>not authentication proof"] --> N["Normalize and validate structure"]
+  V --> E["Actual Java classification<br>and priority-ordered policy matching"]
+  N --> E
+  E --> R["Dry-run result<br>candidate ID, version, decision and time"]
+  R --> B["No catalog mutation<br>no permit, approval or dispatch port"]
+  T["Runtime trusted adapter"] -. "separate boundary, not exercised by dry-run" .-> C["Verify identity and origin<br>validate tool and argument constraints"]
 ```
 
----
+`ActionValidator` validates canonical structure and evidence consistency; it does
+not verify a token, source signature or issuer trust. A structurally valid asserted
+human, or canonical evidence naming an untrusted synthetic issuer, can still
+produce an `allow` simulation result. The templates have no assurance predicate.
+Only a trusted runtime adapter may supply verified identity/origin fields.
+Do not expose raw canonical simulation as an authentication or execution API.
 
-## Template Definitions
+## Candidate definitions
 
-Two opt-in candidate templates are provided under `policies/templates/`. Both templates
-fail closed by declaring an explicit default decision of `block`:
+Both templates use explicit default-block decisions and version 1:
 
-### 1. Simulator Observer (`policies/templates/simulator-observer.json`)
+| Candidate                                                                  | Policy ID                           | Default reason                            |
+| -------------------------------------------------------------------------- | ----------------------------------- | ----------------------------------------- |
+| [Observer](../../policies/templates/simulator-observer.json)               | `tpl-simulator-observer-001`        | `SIMULATOR_OBSERVER_DEFAULT_BLOCK`        |
+| [Reviewed change](../../policies/templates/simulator-reviewed-change.json) | `tpl-simulator-reviewed-change-001` | `SIMULATOR_REVIEWED_CHANGE_DEFAULT_BLOCK` |
 
-- **ID:** `tpl-simulator-observer-001` (version 1)
-- **Default Decision:** `block` (`SIMULATOR_OBSERVER_DEFAULT_BLOCK`)
-- **Rules (ordered by priority descending):**
-  1. `block-destructive-operations` (Priority 300): Explicitly blocks all destructive
-     operations (`actionClasses: ["destructive"]`) before any read rule.
-  2. `block-oversized-log-window` (Priority 200): Explicitly blocks CloudWatch log reads
-     requesting result windows exceeding the 100-event threshold
-     (`requiredSignals: ["OVERSIZED_RESULT_WINDOW"]`).
-  3. `allow-cli-staging-cloudwatch-read` (Priority 100): Allows an authenticated CLI human
-     user (`origins: ["cli"]`, `subjectTypes: ["human"]`) to read bounded CloudWatch logs
-     (`toolNames: ["aws.logs.filter_log_events"]`, `actionClasses: ["read"]`) strictly
-     within the simulator staging environment (`environments: ["staging"]`,
-     `targetSystems: ["aws"]`).
-- **Safety Property:** No generic "read verb" allow rule exists. Every unrecognized tool,
-  non-CLI origin, non-human subject, and production environment is blocked.
+Both contain:
 
-### 2. Simulator Reviewed Change (`policies/templates/simulator-reviewed-change.json`)
+- Priority 300: `block-destructive-operations`, matching destructive
+  classification, returns `DESTRUCTIVE_OPERATIONS_BLOCKED`.
+- Priority 200: `block-oversized-log-window`, matching the explicit AWS log-read
+  tool plus `OVERSIZED_RESULT_WINDOW`, returns `OVERSIZED_LOG_WINDOW_BLOCKED`.
+- Priority 100: `allow-cli-staging-cloudwatch-read`, matching canonical CLI human,
+  AWS, staging, read classification and exact `aws.logs.filter_log_events`,
+  returns `CLI_STAGING_LOG_READ_ALLOWED`. This is not an authentication check.
 
-- **ID:** `tpl-simulator-reviewed-change-001` (version 1)
-- **Default Decision:** `block` (`SIMULATOR_REVIEWED_CHANGE_DEFAULT_BLOCK`)
-- **Rules (ordered by priority descending):**
-  1. `block-destructive-operations` (Priority 300): Explicitly blocks destructive operations
-     before modification or read rules.
-  2. `require-approval-cli-staging-security-group-update` (Priority 250): Requires human
-     approval (`outcome: "require_approval"`, `reasonCode: "SIMULATOR_SECURITY_GROUP_UPDATE_REQUIRES_APPROVAL"`,
-     `approvalGroup: "simulator-security-reviewers"`) for CLI human EC2 security group
-     updates (`toolNames: ["aws.ec2.update_security_group"]`, `actionClasses: ["modify"]`)
-     in staging. **Never allows writes unconditionally.**
-  3. `block-oversized-log-window` (Priority 200): Blocks oversized log window queries.
-  4. `allow-cli-staging-cloudwatch-read` (Priority 100): Allows bounded CLI human CloudWatch
-     reads in staging.
-- **Safety Property:** Destructive actions and oversized queries are blocked before read
-  or approval rules. Unlisted mutations fall through to the default block.
+Reviewed change additionally contains priority 250
+`require-approval-cli-staging-security-group-update`: exact
+`aws.ec2.update_security_group`, CLI human, AWS, staging, modify classification.
+It returns `require_approval`,
+`SIMULATOR_SECURITY_GROUP_UPDATE_REQUIRES_APPROVAL`, and approval group
+`simulator-security-reviewers`. That group is decision metadata, not evidence of
+an enrolled reviewer or a durable approval request. The candidate never allows
+this write unconditionally.
 
----
+The oversized read also matches the explicit read allow, so its higher priority
+matters. A destructive delete does **not** match the different update-tool/modify
+rule; that vector proves destructive matching, not competing-rule precedence.
 
-## How to Run the Qualification Corpus
+## Reproduce
 
-### Prerequisites
-
-- Java 21 JDK
-- Node >= 22 and pnpm 11.25.0
-
-### Run Focused Qualification Test
+Prerequisites: Java 21, Node 22+, pnpm 11.25.0; Docker for full PostgreSQL checks.
 
 ```bash
+corepack enable
+pnpm install --frozen-lockfile
 source scripts/configure-java-environment.sh
 java/gradlew -p java :policy:test --tests io.tracepermit.policy.PolicyTemplateQualificationTest
-```
-
-### Run Full Repository Quality Gates
-
-```bash
 pnpm check
 pnpm format:check
 pnpm docs:links
 pnpm docs:flows:check
 ```
 
----
+The focused class reports **14 JUnit tests**, including a pinned matrix of
+**19 cases × 2 templates = 38 evaluations**. The matrix produces 4 allows,
+1 require-approval result and 33 blocks. These are decision evaluations, not
+38 target invocations or 38 individually reported JUnit tests.
 
-## Deterministic Qualification Matrix
+## Deterministic corpus
 
-The qualification matrix (`fixtures/policy-templates/matrix.json`) defines 12 synthetic
-scenarios run through the actual Java simulation API:
+[Matrix JSON](../../fixtures/policy-templates/matrix.json) contains the exact
+outcome, reason, nullable matched rule, nullable approval group and expected
+classification for each case. Tests require every case ID, reject missing or
+duplicate cases, check both policy IDs/version/time, and assert exact class,
+score, severity and signal list.
 
-| #   | Scenario Description                                       | Action Fixture                                     | Observer Outcome | Reviewed Change Outcome | Matched Rule ID / Reason Code                                                                                |
-| --- | ---------------------------------------------------------- | -------------------------------------------------- | ---------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------ |
-| 1   | Positive read (bounded staging log read)                   | `cli-human-staging-log-read.json`                  | `allow`          | `allow`                 | `allow-cli-staging-cloudwatch-read`<br/>`CLI_STAGING_LOG_READ_ALLOWED`                                       |
-| 2   | Approval write (staging security group update)             | `cli-human-staging-security-group-update.json`     | `block`          | `require_approval`      | `require-approval-cli-staging-security-group-update`<br/>`SIMULATOR_SECURITY_GROUP_UPDATE_REQUIRES_APPROVAL` |
-| 3   | Termination denial (staging EC2 instance terminate)        | `cli-human-staging-ec2-terminate.json`             | `block`          | `block`                 | `block-destructive-operations`<br/>`DESTRUCTIVE_OPERATIONS_BLOCKED`                                          |
-| 4   | Destructive deletion denial (security group delete)        | `cli-human-staging-ec2-delete-security-group.json` | `block`          | `block`                 | `block-destructive-operations`<br/>`DESTRUCTIVE_OPERATIONS_BLOCKED`                                          |
-| 5   | Plausible read-like tool (`describe_log_groups`)           | `cli-human-staging-plausible-read.json`            | `block`          | `block`                 | Default deny (no generic read allow)<br/>`DEFAULT_BLOCK`                                                     |
-| 6   | Unrecognized tool (`custom.unrecognized_operation`)        | `cli-human-staging-unknown-tool.json`              | `block`          | `block`                 | Default deny (unknown tool fail-closed)<br/>`DEFAULT_BLOCK`                                                  |
-| 7   | Wrong origin (ChatGPT web instead of CLI)                  | `chatgpt-web-staging-log-read.json`                | `block`          | `block`                 | Default deny (origin mismatch)<br/>`DEFAULT_BLOCK`                                                           |
-| 8   | Wrong subject & origin (API workload instead of CLI human) | `api-workload-staging-log-read.json`               | `block`          | `block`                 | Default deny (subject/origin mismatch)<br/>`DEFAULT_BLOCK`                                                   |
-| 9   | Wrong environment for read (`prod` instead of `staging`)   | `cli-human-prod-log-read.json`                     | `block`          | `block`                 | Default deny (environment mismatch)<br/>`DEFAULT_BLOCK`                                                      |
-| 10  | Wrong environment for write (`prod` instead of `staging`)  | `cli-human-prod-security-group-update.json`        | `block`          | `block`                 | Default deny (environment mismatch)<br/>`DEFAULT_BLOCK`                                                      |
-| 11  | Oversized log window (`limit = 500` > 100)                 | `cli-human-staging-oversized-log-read.json`        | `block`          | `block`                 | `block-oversized-log-window`<br/>`OVERSIZED_LOG_WINDOW_BLOCKED`                                              |
-| 12  | Unmatched modification (`aws.ec2.start_instances`)         | `cli-human-staging-unmatched-modify.json`          | `block`          | `block`                 | Default deny (unlisted mutation)<br/>`DEFAULT_BLOCK`                                                         |
+| Case | Synthetic action                                                                 | Observer | Reviewed change    |
+| ---- | -------------------------------------------------------------------------------- | -------- | ------------------ |
+| 01   | positive read: CLI human staging CloudWatch filter_log_events                    | `allow`  | `allow`            |
+| 02   | approval-not-allow write: CLI human staging EC2 update_security_group            | `block`  | `require_approval` |
+| 03   | termination denial: CLI human staging EC2 terminate_instances                    | `block`  | `block`            |
+| 04   | destructive deletion denial: CLI human staging EC2 delete_security_group         | `block`  | `block`            |
+| 05   | plausible read-like name: CLI human staging CloudWatch describe_log_groups       | `block`  | `block`            |
+| 06   | unknown tool: CLI human staging custom.unrecognized_operation                    | `block`  | `block`            |
+| 07   | wrong origin: ChatGPT web human staging CloudWatch filter_log_events             | `block`  | `block`            |
+| 08   | wrong origin and subject type: API workload staging CloudWatch filter_log_events | `block`  | `block`            |
+| 09   | wrong environment for read: CLI human prod CloudWatch filter_log_events          | `block`  | `block`            |
+| 10   | wrong environment for write: CLI human prod EC2 update_security_group            | `block`  | `block`            |
+| 11   | oversized log window: CLI human staging CloudWatch filter_log_events limit=500   | `block`  | `block`            |
+| 12   | unmatched write: CLI human staging EC2 start_instances                           | `block`  | `block`            |
+| 13   | CLI workload read isolates subject type                                          | `block`  | `block`            |
+| 14   | CLI human read isolates target system                                            | `block`  | `block`            |
+| 15   | web human write isolates origin                                                  | `block`  | `block`            |
+| 16   | CLI workload write isolates subject type                                         | `block`  | `block`            |
+| 17   | CLI human write isolates target system                                           | `block`  | `block`            |
+| 18   | integer limit 100 is within coarse signal threshold                              | `allow`  | `allow`            |
+| 19   | integer limit 101 triggers oversized block                                       | `block`  | `block`            |
 
----
+Cases 13–17 isolate read/write subject, system and write-origin restrictions.
+The wrong-system vectors are structurally valid canonical inputs for matcher
+qualification; they are not proof a runtime registry would admit that tool/system
+combination. Cases 18/19 check the normal integer signal threshold at 100/101.
 
-## Mutation Testing: Detecting Broadened Allows
+The expected reason is the matched rule's exact reason above, or the candidate's
+own default reason when no rule matches. In particular, there is no generic
+`DEFAULT_BLOCK` reason substituted for the two distinct candidate defaults.
 
-The qualification suite includes 5 programmatic policy mutation tests in
-`PolicyTemplateQualificationTest.java` that prove the harness detects broadened allow vectors:
+## Regression sensitivity and isolation
 
-1. **Oversized Log Rule Removal:** Removing `block-oversized-log-window` causes the oversized
-   query (`limit = 500`) to match `allow-cli-staging-cloudwatch-read`, producing an unauthorized
-   `allow` instead of `block`. The test asserts this regression is detected.
-2. **Tool Scope Broadening:** Removing `toolNames` from `allow-cli-staging-cloudwatch-read`
-   broadens the rule to allow unreviewed read tools like `aws.logs.describe_log_groups`.
-3. **Environment Scope Broadening:** Removing `environments` from `allow-cli-staging-cloudwatch-read`
-   broadens the rule to allow reading from production (`prod`).
-4. **Origin Scope Broadening:** Removing `origins` from `allow-cli-staging-cloudwatch-read`
-   broadens the rule to allow unreviewed web agent triggers (`chatgpt-web`).
-5. **Write Allow Mutation:** Mutating `require-approval-cli-staging-security-group-update`
-   decision outcome from `require_approval` to `allow` produces an unauthorized unconditional
-   write allow, violating the non-negotiable write-approval invariant.
+The suite includes:
 
----
+- Existing read mutations for tool, environment, origin and oversized-rule
+  removal, plus mutation from require-approval to unconditional write allow.
+- New read subject/system removal vectors for **both** templates: the original
+  blocks and the mutant allows.
+- Write origin/subject/system/environment/tool removal vectors: original blocks,
+  mutant requires approval for the now-broadened scope. It still does not execute.
+- Lowering the oversized-block priority below the read allow changes block to
+  allow in both templates, demonstrating real overlapping-rule precedence.
+- All 38 simulations preserve policy and action inputs and leave revision,
+  active pointer, activation and rollback history empty.
+- A separate forbidden-catalog test fails on **any** storage-port call across
+  both templates and all vectors. No invented dispatch counter is used:
+  simulation has no permit, approval, target or evidence-ledger port.
+- Malformed policy/action validation and unknown policy **and action** schemas
+  are rejected, including through the actual simulation entry point.
+- Explicit characterizations show that canonical assertions are not
+  authenticated and that raw simulation is not tool-argument schema validation.
 
-## Capability Limits and Boundary Guarantees
+## Log-window signal is not argument validation
 
-> [!WARNING]
-> These policy templates are candidate definitions for local simulator qualification.
-> Do NOT describe these templates as production-ready, resource-scoped, or safe for arbitrary
-> AWS accounts.
+For normal positive integer input, limit 100 allows the candidate read and 101
+blocks it with `OVERSIZED_RESULT_WINDOW`. This is a coarse classifier signal,
+not general argument validation or a resource-access guarantee.
 
-1. **No Arbitrary Resource/Argument Predicates:** The TracePermit policy schema matchers
-   support only discrete enums and identifiers: `origins`, `subjectTypes`, `targetSystems`,
-   `environments`, `actionClasses`, `toolNames`, `requiredSignals`, and `minimumSeverity`.
-   They do NOT support arbitrary JSONPath, CIDR range, port number, or resource ARN matching.
-2. **Classifier Signal Threshold vs Argument Validation:** The `OVERSIZED_RESULT_WINDOW`
-   signal is generated by a hardcoded threshold (`limit > 100` on `aws.logs.filter_log_events`)
-   inside `PolicyEvaluator.classify`. It is a coarse risk signal, not arbitrary argument
-   schema validation. Detailed argument constraints remain the responsibility of trusted adapters.
-3. **Synthetic Fixtures are Not Authentication:** The canonical action events in
-   `fixtures/policy-templates/` contain synthetic tokens, fingerprints, and lineage structures.
-   They satisfy contract structure for simulation testing but do not represent live cryptographic
-   authentication.
-4. **Pending Approval Does Not Execute:** A simulation result of `require_approval` indicates
-   that the action cannot proceed without out-of-band human review. It mints zero permits
-   and triggers zero downstream execution.
+At baseline revision `05764ed`, the pre-existing classifier tests
+`isIntegralNumber()` and then `asInt() > 100`. Positive integers outside the
+Java int range can narrow to small/negative values and miss the oversized
+signal; the independent review reproduced this with 2147483648. This tests/docs
+change does **not** repair that production comparison. Overflow-safe
+classification is a separately scoped follow-up, not a desired allow behavior
+enshrined by this suite.
 
----
+Missing/null/textual/fractional/boolean/object limits can also return allow in
+raw canonical simulation without the oversized signal. Characterization tests
+make that limitation visible; they do not approve these inputs for a real tool.
+Trusted adapters must validate required fields, types and supported ranges
+before execution. Do not reuse candidate simulation as that boundary.
 
-## Candidate Simulation vs Installed Runtime Enforcement
+## Capabilities deliberately not claimed
 
-| Dimension               | Candidate Dry-Run Simulation (`PolicyLifecycleService.simulate`) | Installed Runtime Enforcement (`SecureExecutionService` / `DurableExecutionService`) |
-| ----------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| **State Storage**       | None; pure function over memory arguments                        | Staged and activated in `PolicyLifecycleStore` (PostgreSQL / in-memory)              |
-| **Catalog Pointer**     | No pointer change; catalog is untouched                          | Monotonic `activation_sequence` and active pointer in `tp_active_policies`           |
-| **Execution Authority** | None; simulation path has no permit issuer port                  | Mints cryptographic, single-use `ExecutionPermit`                                    |
-| **Target Dispatch**     | None; simulation path has no dispatch port                       | Verifies permit claim atomically before invoking simulator target adapter            |
-| **Evidence Ledger**     | None; returns ephemeral `PolicySimulationResult`                 | Appends immutable records to `ExecutionLedger` / PostgreSQL audit sink               |
+- No arbitrary JSONPath, CIDR, port, account/resource-ID or ARN predicates.
+  Current discrete matchers cover origin, subject type, target system,
+  environment, action class, exact tool, required signals and minimum severity.
+- No staging, activation, rollback, pending-approval creation or runtime policy
+  replacement occurs from loading this corpus.
+- Default launchers still use static policies. Optional lifecycle-backed Java
+  composition and PostgreSQL pointers are separate from installed defaults.
+- `PolicySimulationResult` contains candidate ID/version, evaluation,
+  simulated time and dry-run flag; it has **no result schemaVersion field**.
+  It is not active-policy, signing-key or adapter-version inventory.
+- No live identity/provider/target qualification, target failure prediction,
+  latency measurement or independently immutable evidence follows from dry-run.
+- No real credentials or target effects are needed. Fixture fingerprints and
+  identities are synthetic; fixture hygiene is not a full secret-retention
+  or redaction-service qualification.
 
----
+## Requirement coverage and limits
 
-## Proposed Requirement and Traceability Updates
+| Requirement | Added evidence                                                                                                             | Scope                                                                                  |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| FR-005/006  | Exact classification, signal, severity, decision, reason, rule, group and candidate version assertions; mutation negatives | Implemented corpus slice, not all tools or classifiers                                 |
+| FR-013      | Candidate dry-run without catalog writes or input mutation                                                                 | Simulation only; authenticated administration and installed activation remain separate |
+| SEC-001     | Asserted/fabricated canonical identity characterization                                                                    | Not authenticated here; trusted-adapter qualification remains separate                 |
+| SEC-002     | Default-block unknown/unmatched tools; malformed/unknown policy/action schemas                                             | Tested candidate matching/validation only, not issuer/algorithm/permit-state coverage  |
+| SEC-003     | Synthetic fixture inspection; fingerprints, no reusable token/key                                                          | Fixture hygiene only; not complete logs/storage/export secret coverage                 |
+| OPS-002     | Exact candidate policy ID/version; candidate schema validation                                                             | Partial provenance only; no active runtime/key/adapter inventory                       |
 
-The following rows are proposed for `docs/specs/12-traceability-matrix.md` to be applied by
-the repository integrator before branch merge:
-
-| Requirement ID | Requirement Description                                                                                                                   | Implementation Artifacts                                                                 | Verification Test                                                                                     | Status                 |
-| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ---------------------- |
-| **FR-005**     | TracePermit SHALL classify action class, severity, and risk signals from normalized action data.                                          | `java/policy/.../PolicyEvaluator.java`<br/>`policies/templates/*.json`                   | `PolicyTemplateQualificationTest`<br/>(oversized log window signal & severity checks)                 | Qualified (simulation) |
-| **FR-006**     | Policy SHALL return exactly one of allow, block, sanitize, or require approval, with policy version and reason evidence.                  | `java/policy/.../PolicyEvaluator.java`<br/>`policies/templates/*.json`                   | `PolicyTemplateQualificationTest`<br/>(exact outcome, reasonCode, matchedRuleId & version assertions) | Qualified (simulation) |
-| **FR-013**     | The control plane SHALL support policy versioning, validation, simulation, staged activation, and rollback.                               | `java/policy/.../PolicyLifecycleService.java`<br/>`policies/templates/*.json`            | `PolicyTemplateQualificationTest`<br/>(dry-run simulation without catalog mutations)                  | Qualified (simulation) |
-| **SEC-001**    | Request bodies and tool arguments MUST NOT self-assert authenticated, verified, delegated, approved, or sanitized state.                  | `java/contracts/.../ActionValidator.java`<br/>`java/contracts/.../ActionNormalizer.java` | `PolicyTemplateQualificationTest`<br/>(strict validation rejects forged / unverified claims)          | Qualified (simulation) |
-| **SEC-002**    | Unknown tools, schemas, algorithms, issuers, audiences, decision values, and permit states MUST fail closed.                              | `java/policy/.../PolicyValidator.java`<br/>`policies/templates/*.json`                   | `PolicyTemplateQualificationTest`<br/>(default-block, unknown tools & malformed schemas fail closed)  | Qualified (simulation) |
-| **SEC-003**    | Bearer tokens, private keys, client secrets, API keys, and reusable target credentials MUST NOT enter source control or evidence records. | `fixtures/policy-templates/*.json`                                                       | `PolicyTemplateQualificationTest`<br/>(only synthetic identifiers and hashes in fixtures)             | Qualified (simulation) |
-| **OPS-002**    | Operators SHALL be able to identify active policy, key, schema, and adapter versions for an evaluation.                                   | `java/policy/.../PolicySimulationResult.java`                                            | `PolicyTemplateQualificationTest`<br/>(asserts exact policyId, version, and schemaVersion)            | Qualified (simulation) |
-
----
-
-## What Remains Unimplemented
-
-1. **Authenticated Policy Administration:** No HTTP or MCP mutation tools exist for uploading,
-   editing, or deleting policy templates.
-2. **Runtime Activation Wiring:** These candidate templates are not automatically staged or
-   activated upon server startup; default launchers retain their existing static policy profiles.
-3. **Exact Resource Predicates:** Policy matchers do not support arbitrary CIDR, port, or
-   resource-level pattern matching; adapters must perform resource filtering.
-4. **Customer Qualification:** These templates have not been qualified against production
-   AWS infrastructure or real identity providers.
-5. **Production Target Enablement:** Real AWS credentials and destructive live targets remain
-   strictly prohibited under repository safety invariants.
+The shared traceability matrix records this bounded evidence without marking
+broad requirements or the policy-administration milestone complete. Real AWS
+credentials and destructive live targets remain prohibited.

@@ -20,6 +20,12 @@
           "matchedRuleId": "allow-cli-staging-cloudwatch-read",
           "approvalGroup": null
         }
+      },
+      "classification": {
+        "actionClass": "read",
+        "score": 10,
+        "severity": "low",
+        "signals": ["READ_VERB"]
       }
     },
     {
@@ -40,6 +46,12 @@
           "matchedRuleId": "require-approval-cli-staging-security-group-update",
           "approvalGroup": "simulator-security-reviewers"
         }
+      },
+      "classification": {
+        "actionClass": "modify",
+        "score": 45,
+        "severity": "medium",
+        "signals": ["MUTATION_VERB"]
       }
     },
     {
@@ -60,6 +72,12 @@
           "matchedRuleId": "block-destructive-operations",
           "approvalGroup": null
         }
+      },
+      "classification": {
+        "actionClass": "destructive",
+        "score": 85,
+        "severity": "critical",
+        "signals": ["DESTRUCTIVE_VERB"]
       }
     },
     {
@@ -80,6 +98,12 @@
           "matchedRuleId": "block-destructive-operations",
           "approvalGroup": null
         }
+      },
+      "classification": {
+        "actionClass": "destructive",
+        "score": 85,
+        "severity": "critical",
+        "signals": ["DESTRUCTIVE_VERB"]
       }
     },
     {
@@ -100,6 +124,12 @@
           "matchedRuleId": null,
           "approvalGroup": null
         }
+      },
+      "classification": {
+        "actionClass": "read",
+        "score": 10,
+        "severity": "low",
+        "signals": ["READ_VERB"]
       }
     },
     {
@@ -120,6 +150,12 @@
           "matchedRuleId": null,
           "approvalGroup": null
         }
+      },
+      "classification": {
+        "actionClass": "modify",
+        "score": 60,
+        "severity": "high",
+        "signals": ["UNKNOWN_TOOL", "CONSERVATIVE_DEFAULT"]
       }
     },
     {
@@ -140,6 +176,12 @@
           "matchedRuleId": null,
           "approvalGroup": null
         }
+      },
+      "classification": {
+        "actionClass": "read",
+        "score": 10,
+        "severity": "low",
+        "signals": ["READ_VERB"]
       }
     },
     {
@@ -160,6 +202,12 @@
           "matchedRuleId": null,
           "approvalGroup": null
         }
+      },
+      "classification": {
+        "actionClass": "read",
+        "score": 10,
+        "severity": "low",
+        "signals": ["READ_VERB"]
       }
     },
     {
@@ -180,6 +228,12 @@
           "matchedRuleId": null,
           "approvalGroup": null
         }
+      },
+      "classification": {
+        "actionClass": "read",
+        "score": 10,
+        "severity": "low",
+        "signals": ["READ_VERB"]
       }
     },
     {
@@ -200,6 +254,12 @@
           "matchedRuleId": null,
           "approvalGroup": null
         }
+      },
+      "classification": {
+        "actionClass": "modify",
+        "score": 55,
+        "severity": "medium",
+        "signals": ["MUTATION_VERB", "PRODUCTION_TARGET"]
       }
     },
     {
@@ -220,6 +280,12 @@
           "matchedRuleId": "block-oversized-log-window",
           "approvalGroup": null
         }
+      },
+      "classification": {
+        "actionClass": "read",
+        "score": 60,
+        "severity": "high",
+        "signals": ["READ_VERB", "OVERSIZED_RESULT_WINDOW"]
       }
     },
     {
@@ -240,6 +306,194 @@
           "matchedRuleId": null,
           "approvalGroup": null
         }
+      },
+      "classification": {
+        "actionClass": "modify",
+        "score": 45,
+        "severity": "medium",
+        "signals": ["MUTATION_VERB"]
+      }
+    },
+    {
+      "id": "case-13-wrong-subject",
+      "name": "CLI workload read isolates subject type",
+      "fixture": "fixtures/policy-templates/cli-workload-staging-log-read.json",
+      "category": "wrong_subject",
+      "expectations": {
+        "policies/templates/simulator-observer.json": {
+          "outcome": "block",
+          "reasonCode": "SIMULATOR_OBSERVER_DEFAULT_BLOCK",
+          "matchedRuleId": null,
+          "approvalGroup": null
+        },
+        "policies/templates/simulator-reviewed-change.json": {
+          "outcome": "block",
+          "reasonCode": "SIMULATOR_REVIEWED_CHANGE_DEFAULT_BLOCK",
+          "matchedRuleId": null,
+          "approvalGroup": null
+        }
+      },
+      "classification": {
+        "actionClass": "read",
+        "score": 10,
+        "severity": "low",
+        "signals": ["READ_VERB"]
+      }
+    },
+    {
+      "id": "case-14-wrong-target-system",
+      "name": "CLI human read isolates target system",
+      "fixture": "fixtures/policy-templates/cli-human-wrong-system-log-read.json",
+      "category": "wrong_target_system",
+      "expectations": {
+        "policies/templates/simulator-observer.json": {
+          "outcome": "block",
+          "reasonCode": "SIMULATOR_OBSERVER_DEFAULT_BLOCK",
+          "matchedRuleId": null,
+          "approvalGroup": null
+        },
+        "policies/templates/simulator-reviewed-change.json": {
+          "outcome": "block",
+          "reasonCode": "SIMULATOR_REVIEWED_CHANGE_DEFAULT_BLOCK",
+          "matchedRuleId": null,
+          "approvalGroup": null
+        }
+      },
+      "classification": {
+        "actionClass": "read",
+        "score": 10,
+        "severity": "low",
+        "signals": ["READ_VERB"]
+      }
+    },
+    {
+      "id": "case-15-wrong-write-origin",
+      "name": "web human write isolates origin",
+      "fixture": "fixtures/policy-templates/chatgpt-web-staging-security-group-update.json",
+      "category": "wrong_write_origin",
+      "expectations": {
+        "policies/templates/simulator-observer.json": {
+          "outcome": "block",
+          "reasonCode": "SIMULATOR_OBSERVER_DEFAULT_BLOCK",
+          "matchedRuleId": null,
+          "approvalGroup": null
+        },
+        "policies/templates/simulator-reviewed-change.json": {
+          "outcome": "block",
+          "reasonCode": "SIMULATOR_REVIEWED_CHANGE_DEFAULT_BLOCK",
+          "matchedRuleId": null,
+          "approvalGroup": null
+        }
+      },
+      "classification": {
+        "actionClass": "modify",
+        "score": 45,
+        "severity": "medium",
+        "signals": ["MUTATION_VERB"]
+      }
+    },
+    {
+      "id": "case-16-wrong-write-subject",
+      "name": "CLI workload write isolates subject type",
+      "fixture": "fixtures/policy-templates/cli-workload-staging-security-group-update.json",
+      "category": "wrong_write_subject",
+      "expectations": {
+        "policies/templates/simulator-observer.json": {
+          "outcome": "block",
+          "reasonCode": "SIMULATOR_OBSERVER_DEFAULT_BLOCK",
+          "matchedRuleId": null,
+          "approvalGroup": null
+        },
+        "policies/templates/simulator-reviewed-change.json": {
+          "outcome": "block",
+          "reasonCode": "SIMULATOR_REVIEWED_CHANGE_DEFAULT_BLOCK",
+          "matchedRuleId": null,
+          "approvalGroup": null
+        }
+      },
+      "classification": {
+        "actionClass": "modify",
+        "score": 45,
+        "severity": "medium",
+        "signals": ["MUTATION_VERB"]
+      }
+    },
+    {
+      "id": "case-17-wrong-write-target-system",
+      "name": "CLI human write isolates target system",
+      "fixture": "fixtures/policy-templates/cli-human-wrong-system-security-group-update.json",
+      "category": "wrong_write_target_system",
+      "expectations": {
+        "policies/templates/simulator-observer.json": {
+          "outcome": "block",
+          "reasonCode": "SIMULATOR_OBSERVER_DEFAULT_BLOCK",
+          "matchedRuleId": null,
+          "approvalGroup": null
+        },
+        "policies/templates/simulator-reviewed-change.json": {
+          "outcome": "block",
+          "reasonCode": "SIMULATOR_REVIEWED_CHANGE_DEFAULT_BLOCK",
+          "matchedRuleId": null,
+          "approvalGroup": null
+        }
+      },
+      "classification": {
+        "actionClass": "modify",
+        "score": 45,
+        "severity": "medium",
+        "signals": ["MUTATION_VERB"]
+      }
+    },
+    {
+      "id": "case-18-threshold-allowed",
+      "name": "integer limit 100 is within coarse signal threshold",
+      "fixture": "fixtures/policy-templates/cli-human-staging-log-limit-100.json",
+      "category": "threshold_allowed",
+      "expectations": {
+        "policies/templates/simulator-observer.json": {
+          "outcome": "allow",
+          "reasonCode": "CLI_STAGING_LOG_READ_ALLOWED",
+          "matchedRuleId": "allow-cli-staging-cloudwatch-read",
+          "approvalGroup": null
+        },
+        "policies/templates/simulator-reviewed-change.json": {
+          "outcome": "allow",
+          "reasonCode": "CLI_STAGING_LOG_READ_ALLOWED",
+          "matchedRuleId": "allow-cli-staging-cloudwatch-read",
+          "approvalGroup": null
+        }
+      },
+      "classification": {
+        "actionClass": "read",
+        "score": 10,
+        "severity": "low",
+        "signals": ["READ_VERB"]
+      }
+    },
+    {
+      "id": "case-19-threshold-blocked",
+      "name": "integer limit 101 triggers oversized block",
+      "fixture": "fixtures/policy-templates/cli-human-staging-log-limit-101.json",
+      "category": "threshold_blocked",
+      "expectations": {
+        "policies/templates/simulator-observer.json": {
+          "outcome": "block",
+          "reasonCode": "OVERSIZED_LOG_WINDOW_BLOCKED",
+          "matchedRuleId": "block-oversized-log-window",
+          "approvalGroup": null
+        },
+        "policies/templates/simulator-reviewed-change.json": {
+          "outcome": "block",
+          "reasonCode": "OVERSIZED_LOG_WINDOW_BLOCKED",
+          "matchedRuleId": "block-oversized-log-window",
+          "approvalGroup": null
+        }
+      },
+      "classification": {
+        "actionClass": "read",
+        "score": 60,
+        "severity": "high",
+        "signals": ["READ_VERB", "OVERSIZED_RESULT_WINDOW"]
       }
     }
   ]
