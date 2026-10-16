@@ -81,7 +81,7 @@ final class PostgresPolicyLifecycleStoreTest {
     store = new PostgresPolicyLifecycleStore(dataSource, CLOCK, () -> "plt-" + ID_COUNTER.incrementAndGet());
     try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {
       statement.execute("""
-          TRUNCATE tp_policy_lifecycle_transitions, tp_active_policies, tp_policy_versions
+          TRUNCATE tp_approval_policy_bindings, tp_policy_lifecycle_transitions, tp_active_policies, tp_policy_versions
           """);
     }
   }

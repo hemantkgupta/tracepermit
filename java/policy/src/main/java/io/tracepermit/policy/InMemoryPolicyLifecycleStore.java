@@ -110,6 +110,7 @@ public final class InMemoryPolicyLifecycleStore implements PolicyLifecycleStore 
       holder.versions.put(version, activated);
       holder.activationHistoryList.add(version);
       holder.activeVersion.set(activated);
+      holder.activationSequence.incrementAndGet();
 
       long seq = holder.sequenceCounter.incrementAndGet();
       holder.transitions.add(new PolicyTransitionRecord(
@@ -185,6 +186,7 @@ public final class InMemoryPolicyLifecycleStore implements PolicyLifecycleStore 
 
       holder.activationHistoryList.add(resolvedTargetVersion);
       holder.activeVersion.set(reactivated);
+      holder.activationSequence.incrementAndGet();
 
       long seq = holder.sequenceCounter.incrementAndGet();
       holder.transitions.add(new PolicyTransitionRecord(
@@ -214,6 +216,26 @@ public final class InMemoryPolicyLifecycleStore implements PolicyLifecycleStore 
     if (holder == null) return Optional.empty();
     PolicyVersionRecord record = holder.activeVersion.get();
     return record != null && record.isActive() ? Optional.of(record) : Optional.empty();
+  }
+
+  @Override
+  public Optional<ActivePolicySnapshot> activePolicySnapshot(String workspaceId, String policyId) {
+    Map<String, PolicyHolder> ws = workspaces.get(workspaceId);
+    if (ws == null) return Optional.empty();
+    PolicyHolder holder = ws.get(policyId);
+    if (holder == null) return Optional.empty();
+    synchronized (holder) {
+      PolicyVersionRecord record = holder.activeVersion.get();
+      if (record == null || !record.isActive()) return Optional.empty();
+      return Optional.of(new ActivePolicySnapshot(
+          workspaceId,
+          policyId,
+          record.version(),
+          record.contentHash(),
+          record.document(),
+          holder.activationSequence.get(),
+          record.activatedAt() != null ? record.activatedAt() : Instant.EPOCH));
+    }
   }
 
   @Override
@@ -269,6 +291,7 @@ public final class InMemoryPolicyLifecycleStore implements PolicyLifecycleStore 
     final List<RollbackRecord> rollbacks = new CopyOnWriteArrayList<>();
     final List<PolicyTransitionRecord> transitions = new CopyOnWriteArrayList<>();
     final AtomicLong sequenceCounter = new AtomicLong();
+    final AtomicLong activationSequence = new AtomicLong();
 
     PolicyHolder(String policyId) {
       this.policyId = policyId;

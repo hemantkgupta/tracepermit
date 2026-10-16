@@ -8,8 +8,11 @@ import io.tracepermit.execution.ApprovalConsumptionResult;
 import io.tracepermit.execution.ApprovalConsumptionStatus;
 import io.tracepermit.execution.ApprovalDecision;
 import io.tracepermit.execution.ApprovalExecutionClaim;
+import io.tracepermit.execution.ApprovalPolicyBinding;
 import io.tracepermit.execution.ApprovalRequestState;
+import io.tracepermit.execution.DurableApprovalActionState;
 import io.tracepermit.execution.DurableApprovalState;
+import io.tracepermit.execution.DurablePolicyBoundApprovalState;
 import io.tracepermit.execution.DurableClaimResult;
 import io.tracepermit.execution.DurableEnforcementState;
 import io.tracepermit.execution.DurableEvidenceRecord;
@@ -17,7 +20,10 @@ import io.tracepermit.execution.DurableExecutionClaim;
 import io.tracepermit.execution.ExecutionAttempt;
 import io.tracepermit.execution.ExecutionTransition;
 import io.tracepermit.execution.TenantPartition;
+import io.tracepermit.policy.InMemoryPolicyLifecycleStore;
 import io.tracepermit.policy.PolicyEvaluator;
+import io.tracepermit.policy.PolicyLifecycleService;
+import io.tracepermit.policy.PolicyLifecycleStore;
 import io.tracepermit.security.ExecutionPermitAuthority;
 import io.tracepermit.security.InMemoryPermitConsumptionStore;
 import org.junit.jupiter.api.Test;
@@ -27,6 +33,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -388,13 +395,193 @@ final class HumanApprovalServiceTest {
     return "sha256:" + String.valueOf(digit).repeat(64);
   }
 
-  private static final class FakeState implements DurableApprovalState, DurableEnforcementState {
-    private ApprovalRequestState state;
-    private RuntimeException consumeFailure;
-    private RuntimeException completeFailure;
-    private ApprovalConsumptionStatus consumptionStatus = ApprovalConsumptionStatus.STARTED;
-    private String attemptStatus = "executing";
-    private String completedOutcome;
+  private static HumanApprovalService durableService(
+      PolicyLifecycleStore store,
+      String workspaceId,
+      String policyId,
+      DurableApprovalState state,
+      SimulatedTarget target) {
+    AtomicInteger ids = new AtomicInteger();
+    return new HumanApprovalService(
+        new PolicyEvaluator(),
+        store,
+        workspaceId,
+        policyId,
+        permitAuthority(ids),
+        state,
+        state instanceof DurableEnforcementState ? (DurableEnforcementState) state : null,
+        target,
+        () -> SecurityReadiness.allReady(NOW),
+        Clock.fixed(NOW, ZoneOffset.UTC),
+        () -> "approval-" + ids.incrementAndGet(),
+        "urn:tracepermit:approval-test-executor",
+        "simulator",
+        300);
+  }
+
+  @Test
+  void durablePolicyModeRejectsCreationWhenNoActivePolicyExists() {
+    InMemoryPolicyLifecycleStore store = new InMemoryPolicyLifecycleStore();
+    FakeState state = new FakeState();
+    HumanApprovalService service = durableService(store, "default", "pol-local", state, action -> JsonSupport.MAPPER.nullNode());
+
+    assertThatThrownBy(() -> service.requestApproval(new TrustedTenantContext(ACME), event()))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage("ACTIVE_POLICY_UNAVAILABLE");
+  }
+
+  @Test
+  void durablePolicyModeExecutesSuccessfullyWhenPolicyGenerationIsCurrent() {
+    PolicyLifecycleService lifecycle = new PolicyLifecycleService();
+    ObjectNode policy = sampleApprovalPolicy(1);
+    lifecycle.stage(policy, NOW);
+    lifecycle.activate("pol-approval-test", 1, NOW);
+
+    FakePolicyBoundState state = new FakePolicyBoundState();
+    AtomicInteger targetCalls = new AtomicInteger();
+    HumanApprovalService service = durableService(
+        lifecycle.store(), "default", "pol-approval-test", state,
+        action -> {
+          targetCalls.incrementAndGet();
+          return JsonSupport.MAPPER.createObjectNode().put("status", "simulated");
+        });
+
+    ApprovalExecutionResult requested = service.requestApproval(new TrustedTenantContext(ACME), event());
+    assertThat(requested.outcome()).isEqualTo("pending_approval");
+    assertThat(state.findPolicyBinding(ACME, requested.approval().binding().approvalRequestId())).isPresent();
+    assertThat(state.findPolicyBinding(ACME, requested.approval().binding().approvalRequestId()).get().policyGeneration())
+        .isEqualTo(1L);
+
+    service.review(authorizedReviewer(), requested.approval().binding().approvalRequestId(), "approve", "CHANGE_REVIEWED");
+    ApprovalExecutionResult executed = service.executeApproved(new TrustedTenantContext(ACME),
+        requested.approval().binding().approvalRequestId(), event());
+
+    assertThat(executed.outcome()).isEqualTo("succeeded");
+    assertThat(targetCalls.get()).isEqualTo(1);
+  }
+
+  @Test
+  void durablePolicyModeRejectsExecutionWhenNewVersionIsActivated() {
+    PolicyLifecycleService lifecycle = new PolicyLifecycleService();
+    ObjectNode v1 = sampleApprovalPolicy(1);
+    ObjectNode v2 = sampleApprovalPolicy(2);
+    lifecycle.stage(v1, NOW);
+    lifecycle.stage(v2, NOW.plusSeconds(1));
+    lifecycle.activate("pol-approval-test", 1, NOW);
+
+    FakePolicyBoundState state = new FakePolicyBoundState();
+    AtomicInteger targetCalls = new AtomicInteger();
+    HumanApprovalService service = durableService(
+        lifecycle.store(), "default", "pol-approval-test", state,
+        action -> {
+          targetCalls.incrementAndGet();
+          return JsonSupport.MAPPER.nullNode();
+        });
+
+    ApprovalExecutionResult requested = service.requestApproval(new TrustedTenantContext(ACME), event());
+    String reqId = requested.approval().binding().approvalRequestId();
+    service.review(authorizedReviewer(), reqId, "approve", "CHANGE_REVIEWED");
+
+    // Operator activates v2 (generation 2)
+    lifecycle.activate("pol-approval-test", 2, NOW.plusSeconds(2));
+
+    // Execute must fail closed before dispatch
+    assertThatThrownBy(() -> service.executeApproved(new TrustedTenantContext(ACME), reqId, event()))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage("STALE_POLICY_GENERATION");
+    assertThat(targetCalls.get()).isEqualTo(0);
+  }
+
+  @Test
+  void durablePolicyModeRejectsExecutionAfterRollbackRestoringSameVersionAndDocument() {
+    PolicyLifecycleService lifecycle = new PolicyLifecycleService();
+    ObjectNode v1 = sampleApprovalPolicy(1);
+    ObjectNode v2 = sampleApprovalPolicy(2);
+    lifecycle.stage(v1, NOW);
+    lifecycle.stage(v2, NOW.plusSeconds(1));
+    lifecycle.activate("pol-approval-test", 1, NOW);
+
+    FakePolicyBoundState state = new FakePolicyBoundState();
+    AtomicInteger targetCalls = new AtomicInteger();
+    HumanApprovalService service = durableService(
+        lifecycle.store(), "default", "pol-approval-test", state,
+        action -> {
+          targetCalls.incrementAndGet();
+          return JsonSupport.MAPPER.createObjectNode().put("status", "simulated");
+        });
+
+    // 1. Request approval under v1 (generation 1)
+    ApprovalExecutionResult req1 = service.requestApproval(new TrustedTenantContext(ACME), event());
+    String req1Id = req1.approval().binding().approvalRequestId();
+    service.review(authorizedReviewer(), req1Id, "approve", "CHANGE_REVIEWED");
+
+    // 2. Activate v2 (generation 2)
+    lifecycle.activate("pol-approval-test", 2, NOW.plusSeconds(2));
+
+    // 3. Rollback to v1 (generation 3)
+    lifecycle.rollback("pol-approval-test", NOW.plusSeconds(3), "rollback to v1");
+
+    // 4. Old approval (created at gen 1) MUST be rejected even though v1 is currently active!
+    assertThatThrownBy(() -> service.executeApproved(new TrustedTenantContext(ACME), req1Id, event()))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage("STALE_POLICY_GENERATION");
+    assertThat(targetCalls.get()).isEqualTo(0);
+
+    // 5. Fresh approval created under restored v1 (generation 3) MUST succeed
+    ApprovalExecutionResult req2 = service.requestApproval(new TrustedTenantContext(ACME), event());
+    String req2Id = req2.approval().binding().approvalRequestId();
+    service.review(authorizedReviewer(), req2Id, "approve", "CHANGE_REVIEWED");
+    ApprovalExecutionResult exec2 = service.executeApproved(new TrustedTenantContext(ACME), req2Id, event());
+    assertThat(exec2.outcome()).isEqualTo("succeeded");
+    assertThat(targetCalls.get()).isEqualTo(1);
+  }
+
+  @Test
+  void unboundApprovalFailsClosedInDurablePolicyMode() {
+    PolicyLifecycleService lifecycle = new PolicyLifecycleService();
+    ObjectNode v1 = sampleApprovalPolicy(1);
+    lifecycle.stage(v1, NOW);
+    lifecycle.activate("pol-approval-test", 1, NOW);
+
+    FakePolicyBoundState state = new FakePolicyBoundState();
+    // Simulate legacy approval created without durable policy binding
+    HumanApprovalService staticService = service(state, action -> JsonSupport.MAPPER.nullNode());
+    ApprovalExecutionResult legacyReq = staticService.requestApproval(new TrustedTenantContext(ACME), event());
+    String legacyId = legacyReq.approval().binding().approvalRequestId();
+    staticService.review(authorizedReviewer(), legacyId, "approve", "CHANGE_REVIEWED");
+
+    // Attempt to execute via durable service
+    HumanApprovalService durableService = durableService(
+        lifecycle.store(), "default", "pol-approval-test", state, action -> JsonSupport.MAPPER.nullNode());
+
+    assertThatThrownBy(() -> durableService.executeApproved(new TrustedTenantContext(ACME), legacyId, event()))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessage("STALE_POLICY_GENERATION");
+  }
+
+  private static ObjectNode sampleApprovalPolicy(int version) {
+    ObjectNode policy = JsonSupport.MAPPER.createObjectNode();
+    policy.put("schemaVersion", "1.0");
+    policy.put("id", "pol-approval-test");
+    policy.put("version", version);
+    policy.put("name", "Sample Approval Policy v" + version);
+    policy.put("description", "A sample policy requiring approval for tests.");
+    policy.put("enabled", true);
+    policy.putObject("defaultDecision")
+        .put("outcome", "require_approval")
+        .put("reasonCode", "SAMPLE_REQUIRE_APPROVAL");
+    policy.putArray("rules");
+    return policy;
+  }
+
+  private static class FakeState
+      implements DurableApprovalState, DurableEnforcementState {
+    protected ApprovalRequestState state;
+    protected RuntimeException consumeFailure;
+    protected RuntimeException completeFailure;
+    protected ApprovalConsumptionStatus consumptionStatus = ApprovalConsumptionStatus.STARTED;
+    protected String attemptStatus = "executing";
+    protected String completedOutcome;
 
     @Override
     public ApprovalRequestState createPending(ApprovalBinding binding) {
@@ -403,7 +590,6 @@ final class HumanApprovalServiceTest {
           binding.createdAt(), null, null);
       return state;
     }
-
     @Override
     public ApprovalRequestState find(TenantPartition tenant, String approvalRequestId) {
       return state != null
@@ -481,12 +667,72 @@ final class HumanApprovalServiceTest {
       return List.of();
     }
 
-    private static ExecutionAttempt attempt(String status) {
+    protected static ExecutionAttempt attempt(String status) {
       return new ExecutionAttempt(
           "attempt-1", "018f47a2-f5ce-7a4b-8f54-80e5d3eaf092", "permit-1",
           hash('6'), status, NOW, NOW,
           List.of(new ExecutionTransition(1, null, "executing", NOW, "EXECUTION_CLAIMED")),
           null);
+    }
+  }
+
+  private static final class FakePolicyBoundState extends FakeState
+      implements DurablePolicyBoundApprovalState {
+    private ApprovalPolicyBinding policyBinding;
+    private JsonNode actionSnapshot;
+
+    @Override
+    public List<ApprovalRequestState> listApprovals(
+        TenantPartition tenant, String requesterSubjectId, int limit) {
+      return state != null ? List.of(state) : List.of();
+    }
+
+    @Override
+    public ApprovalRequestState createPending(ApprovalBinding binding, JsonNode canonicalAction) {
+      this.actionSnapshot = canonicalAction;
+      return createPending(binding);
+    }
+
+    @Override
+    public ApprovalRequestState createPendingBound(
+        ApprovalBinding binding, JsonNode canonicalAction, ApprovalPolicyBinding policyBinding) {
+      this.actionSnapshot = canonicalAction;
+      this.policyBinding = policyBinding;
+      return createPending(binding);
+    }
+
+    @Override
+    public JsonNode findAction(TenantPartition tenant, String approvalRequestId) {
+      return actionSnapshot;
+    }
+
+    @Override
+    public Optional<ApprovalPolicyBinding> findPolicyBinding(TenantPartition tenant, String approvalRequestId) {
+      return Optional.ofNullable(policyBinding);
+    }
+
+    @Override
+    public ApprovalConsumptionResult consumeAndClaim(ApprovalExecutionClaim claim) {
+      if (consumeFailure != null) throw consumeFailure;
+      ExecutionAttempt attempt = attempt(attemptStatus);
+      if (consumptionStatus != ApprovalConsumptionStatus.STARTED) {
+        return new ApprovalConsumptionResult(
+            consumptionStatus,
+            state,
+            consumptionStatus == ApprovalConsumptionStatus.IDEMPOTENCY_DUPLICATE ? attempt : null);
+      }
+      if (policyBinding != null) {
+        if (claim.policyBinding() == null || !policyBinding.equals(claim.policyBinding())) {
+          return new ApprovalConsumptionResult(
+              ApprovalConsumptionStatus.STALE_POLICY_GENERATION, state, null);
+        }
+      }
+      state = new ApprovalRequestState(
+          state.binding(), "consumed", 3, state.approvalDecisionId(), state.reviewerSubjectId(),
+          state.reviewerAuthenticationMethod(), state.reviewerCredentialFingerprint(),
+          state.decisionReasonCode(), state.decidedAt(), claim.occurredAt(),
+          claim.executionClaim().permitId(), attempt.attemptId());
+      return new ApprovalConsumptionResult(consumptionStatus, state, attempt);
     }
   }
 }

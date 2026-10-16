@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.tracepermit.contracts.CanonicalJson;
 import io.tracepermit.contracts.JsonSupport;
+import io.tracepermit.policy.ActivePolicySnapshot;
 import io.tracepermit.policy.PolicyConcurrencyException;
 import io.tracepermit.policy.PolicyLifecycleStore;
 import io.tracepermit.policy.PolicyState;
@@ -423,6 +424,39 @@ public final class PostgresPolicyLifecycleStore implements PolicyLifecycleStore 
   }
 
   @Override
+  public Optional<ActivePolicySnapshot> activePolicySnapshot(String workspaceId, String policyId) {
+    requireWorkspace(workspaceId);
+    requirePolicyId(policyId);
+    try (Connection connection = dataSource.getConnection();
+         PreparedStatement query = connection.prepareStatement("""
+             SELECT a.workspace_id, a.policy_id, a.active_version, a.activation_sequence, a.activated_at,
+                    v.content_hash, v.document
+             FROM tp_active_policies a
+             JOIN tp_policy_versions v
+               ON a.workspace_id = v.workspace_id
+              AND a.policy_id = v.policy_id
+              AND a.active_version = v.version
+             WHERE a.workspace_id = ? AND a.policy_id = ?
+             """)) {
+      query.setString(1, workspaceId);
+      query.setString(2, policyId);
+      try (ResultSet rs = query.executeQuery()) {
+        if (!rs.next()) return Optional.empty();
+        return Optional.of(new ActivePolicySnapshot(
+            rs.getString("workspace_id"),
+            rs.getString("policy_id"),
+            rs.getInt("active_version"),
+            rs.getString("content_hash"),
+            parseJson(rs.getString("document")),
+            rs.getLong("activation_sequence"),
+            rs.getTimestamp("activated_at").toInstant()));
+      }
+    } catch (SQLException failure) {
+      throw new PostgresStateException("Failed to query active policy snapshot", failure);
+    }
+  }
+
+  @Override
   public Optional<PolicyVersionRecord> getVersion(String workspaceId, String policyId, int version) {
     requireWorkspace(workspaceId);
     requirePolicyId(policyId);
@@ -623,7 +657,7 @@ public final class PostgresPolicyLifecycleStore implements PolicyLifecycleStore 
          PreparedStatement query = connection.prepareStatement(
              "SELECT contract_version FROM tp_enforcement_schema_guard WHERE singleton = TRUE");
          ResultSet rows = query.executeQuery()) {
-      if (!rows.next() || rows.getInt(1) != 7 || rows.next()) {
+      if (!rows.next() || rows.getInt(1) != 8 || rows.next()) {
         throw new IllegalStateException("INCOMPATIBLE_DURABLE_STATE_SCHEMA");
       }
     } catch (SQLException failure) {
