@@ -165,6 +165,14 @@ Run `/mcp verbose` and confirm exactly the two advertised tools:
 the connector supplies the Bearer credential internally. A catalog alone is not
 a policy/execution result. Do not spend the token lifetime exchanging screenshots.
 
+For a deliberately retained, private process-fact transcript, use the optional
+`--capture-observations` launch instead. Follow the
+[observation rehearsal](native-endpoint-observation-rehearsal.md): the Java hook
+records a bounded allowlist after process stability and before forwarding, never
+tokens, signed proofs or raw arguments. This is not gateway-acceptance evidence,
+and ordinary launches/check-only mode do not enable capture. Files remain private
+after demo key cleanup; review them before any evidence export.
+
 ### Prompt A: one bounded simulated read
 
 ```text

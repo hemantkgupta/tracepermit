@@ -3,11 +3,11 @@ set +x
 set -euo pipefail
 
 if [[ $# -eq 1 && "$1" == "--help" ]]; then
-  echo "Usage: pnpm demo:endpoint:codex [--check]"
+  echo "Usage: pnpm demo:endpoint:codex [--check | --capture-observations]"
   echo "Start pnpm demo in this checkout first. Simulator-only; no global Codex configuration writes."
   exit 0
 fi
-if [[ $# -gt 1 || ( $# -eq 1 && "$1" != "--check" ) ]]; then
+if [[ $# -gt 1 || ( $# -eq 1 && "$1" != "--check" && "$1" != "--capture-observations" ) ]]; then
   echo "TracePermit native endpoint demo: INVALID_ARGUMENTS" >&2
   exit 2
 fi
@@ -27,6 +27,17 @@ fi
 tracepermit_codex_bin="$(node scripts/codex-endpoint-preflight.mjs "$tracepermit_codex_command")"
 echo "TracePermit native endpoint demo: preflight passed (local session, matching build, Java 21, readiness and key metadata)."
 if [[ "${1:-}" == "--check" ]]; then exit 0; fi
+
+# Capture is explicit, local and retained separately from the ephemeral signing key.
+# An ambient variable cannot silently enable recording through this launcher.
+unset TRACEPERMIT_ENDPOINT_OBSERVATION_DIRECTORY
+if [[ "${1:-}" == "--capture-observations" ]]; then
+  umask 077
+  TRACEPERMIT_ENDPOINT_OBSERVATION_DIRECTORY="$(mktemp -d "$tracepermit_repo_root/.cache/endpoint-observations.XXXXXX")"
+  export TRACEPERMIT_ENDPOINT_OBSERVATION_DIRECTORY
+  echo "Private observation directory: $TRACEPERMIT_ENDPOINT_OBSERVATION_DIRECTORY"
+  echo "Java records stable process facts only, not gateway acceptance. Review before publishing."
+fi
 
 export TRACEPERMIT_GATEWAY_URL=http://127.0.0.1:8080/mcp
 export TRACEPERMIT_ENDPOINT_ISSUER=tracepermit-endpoint:demo-local
@@ -52,6 +63,6 @@ echo "Only simulated targets. No automatic tool calls, token refresh or tool ret
 # inherited terminal is observed by Java; this wrapper does not assert presence.
 tracepermit_status=0
 "$tracepermit_codex_bin" --no-daemon --sandbox read-only -m gpt-5.6-sol \
-  -c "mcp_servers.tracepermit_endpoint={command=$tracepermit_connector_toml,args=[],env_vars=[\"JAVA_HOME\",\"TRACEPERMIT_GATEWAY_URL\",\"TRACEPERMIT_ENDPOINT_ISSUER\",\"TRACEPERMIT_ENDPOINT_KEY_ID\",\"TRACEPERMIT_ENDPOINT_DEVICE_ID\",\"TRACEPERMIT_ENDPOINT_PRIVATE_KEY_PKCS8_PATH\",\"TRACEPERMIT_CONNECTOR_BEARER_TOKEN\"],required=true,startup_timeout_sec=30,default_tools_approval_mode=\"prompt\"}" \
+  -c "mcp_servers.tracepermit_endpoint={command=$tracepermit_connector_toml,args=[],env_vars=[\"JAVA_HOME\",\"TRACEPERMIT_GATEWAY_URL\",\"TRACEPERMIT_ENDPOINT_ISSUER\",\"TRACEPERMIT_ENDPOINT_KEY_ID\",\"TRACEPERMIT_ENDPOINT_DEVICE_ID\",\"TRACEPERMIT_ENDPOINT_PRIVATE_KEY_PKCS8_PATH\",\"TRACEPERMIT_CONNECTOR_BEARER_TOKEN\",\"TRACEPERMIT_ENDPOINT_OBSERVATION_DIRECTORY\"],required=true,startup_timeout_sec=30,default_tools_approval_mode=\"prompt\"}" \
   || tracepermit_status=$?
 exit "$tracepermit_status"

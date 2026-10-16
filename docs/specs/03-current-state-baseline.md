@@ -1,6 +1,6 @@
 # Current-state capability matrix
 
-**As of:** 2026-10-15
+**As of:** 2026-10-16
 **Scope:** public Java-backend/React-console proof of concept
 
 This is the authoritative boundary between running POC behavior and product
@@ -45,6 +45,14 @@ five-minute synthetic credential; it neither refreshes nor retries tool calls.
 This is separate from bearer-only durable approvals. Full retained process facts,
 manual proof-negative rehearsal, measured live dispatch counts, protected keys,
 managed enrollment and host-wide anti-bypass are not established by this pair.
+
+An optional `--capture-observations` launch now prepares a private, bounded Java
+process-fact/request-hash transcript for a future native rehearsal. It is off
+by default and records after stability checking but before gateway forwarding;
+it is not acceptance/execution proof. The four-case HTTP rejection test uses a
+synthetic observation and measures no extra dispatches. See the
+[capture runbook](../runbooks/native-endpoint-observation-rehearsal.md); no new
+native/model qualification is implied.
 
 ### Authenticated approval API foundation
 

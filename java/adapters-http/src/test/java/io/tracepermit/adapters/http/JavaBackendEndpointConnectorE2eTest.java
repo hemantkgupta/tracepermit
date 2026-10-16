@@ -211,6 +211,60 @@ final class JavaBackendEndpointConnectorE2eTest {
   }
 
   @Test
+  void fourSourceProofRejectionsCannotDispatchAnOtherwiseAllowedRead() throws Exception {
+    // Synthetic observer fixture, not native Codex or model-driven attack evidence.
+    KeyPair keys = keyPair();
+    RuntimeFixture fixture = runtime(keys, () -> SecurityReadiness.allReady(NOW));
+    try (LoopbackDevelopmentMcpServer server = fixture.server()) {
+      URI endpoint = URI.create("http://127.0.0.1:" + server.port() + "/mcp");
+      String token = issueToken(server.port(), "cli-readonly");
+      String otherToken = issueToken(server.port(), "cli-readonly");
+      assertThat(otherToken).isNotEqualTo(token);
+      JsonNode request = JsonSupport.MAPPER.readTree("""
+          {"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"aws.logs.filter_log_events","arguments":{"logGroupName":"/app/staging","filterPattern":"WARN","limit":2}}}
+          """);
+      SourceAttestationFactory factory = new SourceAttestationFactory(keyProvider(keys), CLOCK,
+          () -> UUID.randomUUID().toString(), Duration.ofSeconds(30));
+
+      HttpResponse<String> missing = post(endpoint, token, null, request.toString());
+      assertThat(missing.statusCode()).isEqualTo(401);
+      assertThat(missing.body()).contains("MISSING_SOURCE_ATTESTATION");
+      assertThat(fixture.targetInvocations()).hasValue(0);
+
+      String credentialBound = factory.create(request, token, observation(true));
+      HttpResponse<String> wrongCredential =
+          post(endpoint, otherToken, credentialBound, request.toString());
+      assertThat(wrongCredential.statusCode()).isEqualTo(403);
+      assertThat(wrongCredential.body()).contains("INVALID_SOURCE_ATTESTATION");
+      assertThat(fixture.targetInvocations()).hasValue(0);
+
+      JsonNode changed = request.deepCopy();
+      ((com.fasterxml.jackson.databind.node.ObjectNode) changed.path("params").path("arguments"))
+          .put("limit", 1);
+      String exactRequest = factory.create(request, token, observation(true));
+      HttpResponse<String> mutation = post(endpoint, token, exactRequest, changed.toString());
+      assertThat(mutation.statusCode()).isEqualTo(403);
+      assertThat(mutation.body()).contains("INVALID_SOURCE_ATTESTATION");
+      assertThat(fixture.targetInvocations()).hasValue(0);
+      assertThat(fixture.evidence().readAll()).isEmpty();
+
+      String singleUse = factory.create(request, token, observation(true));
+      HttpResponse<String> accepted = post(endpoint, token, singleUse, request.toString());
+      assertThat(accepted.statusCode()).isEqualTo(200);
+      JsonNode allowed = content(JsonSupport.MAPPER.readTree(accepted.body()));
+      assertThat(allowed.path("execution").path("status").asText()).isEqualTo("executed");
+      assertThat(fixture.targetInvocations()).hasValue(1);
+      int evidenceAfterRead = fixture.evidence().readAll().size();
+
+      HttpResponse<String> replay = post(endpoint, token, singleUse, request.toString());
+      assertThat(replay.statusCode()).isEqualTo(409);
+      assertThat(replay.body()).contains("SOURCE_ATTESTATION_REPLAYED");
+      assertThat(fixture.targetInvocations()).hasValue(1);
+      assertThat(fixture.evidence().readAll()).hasSize(evidenceAfterRead);
+    }
+  }
+
+  @Test
   void unsafeBindingIncompleteTrustAndReadinessFailureAreRejected() throws Exception {
     KeyPair keys = keyPair();
     RuntimeFixture components = components(keys);

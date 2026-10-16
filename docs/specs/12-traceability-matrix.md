@@ -39,6 +39,16 @@ coverage, not manual native-model proof from this pair. Gate B, production key
 custody, enrollment and anti-bypass remain partial; no existing status below is
 upgraded to production-qualified.
 
+## Private endpoint observation capture
+
+| Requirements                     | Implementation and verification                                                                                                                                                                                                                      | Boundary                                                                                                                                                        |
+| -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| FR-016/017; SEC-003/012; OPS-004 | Default-disabled `EndpointObservationCapture`, private bounded Java `FileProcessObservationRecorder`, explicit launcher flag, redaction/filesystem/lifecycle/order tests and [capture runbook](../runbooks/native-endpoint-observation-rehearsal.md) | Records measured facts and request hash after stability checking, before forwarding; not gateway acceptance, immutable evidence or a completed native rehearsal |
+| SEC-014; REL-001                 | `fourSourceProofRejectionsCannotDispatchAnOtherwiseAllowedRead`: actual loopback HTTP, missing proof, changed arguments, different valid credential and replay; invocation and ledger assertions                                                     | Synthetic process observation; zero rejected-case increments, not model-selected/native negative evidence                                                       |
+
+See [ADR 0038](../architecture/0038-private-endpoint-observation-capture.md).
+No production or Gate B status below is upgraded by this preparation slice.
+
 ## Deterministic presenter qualification (Gate C)
 
 The [2026-10-15 Gate C evidence](../demo-scenarios/evidence/gate-c-deterministic-presenters-2026-10-15.md)

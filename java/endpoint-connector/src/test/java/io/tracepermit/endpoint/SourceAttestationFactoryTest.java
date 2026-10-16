@@ -11,6 +11,8 @@ import io.tracepermit.identity.StaticEndpointKeyRegistry;
 import org.junit.jupiter.api.Test;
 
 import java.nio.file.Path;
+import java.nio.file.Files;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.security.GeneralSecurityException;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
@@ -24,6 +26,9 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Optional;
 import java.util.Queue;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
+import org.junit.jupiter.api.io.TempDir;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -189,6 +194,74 @@ final class SourceAttestationFactoryTest {
             accepted),
         request,
         "CONNECTOR_CREDENTIAL_UNAVAILABLE");
+  }
+
+  @Test
+  void captureMatchesSignedRequestAndHappensBeforeGatewayForwarding(@TempDir Path temporary)
+      throws Exception {
+    Path directory = temporary.toRealPath().resolve("capture");
+    Files.createDirectory(directory, PosixFilePermissions.asFileAttribute(
+        PosixFilePermissions.fromString("rwx------")));
+    JsonNode request = request("tools/list", JsonSupport.MAPPER.createObjectNode());
+    AtomicReference<String> sentProof = new AtomicReference<>();
+    AtomicInteger captures = new AtomicInteger();
+    try (FileProcessObservationRecorder recorder = new FileProcessObservationRecorder(directory)) {
+      EndpointConnector connector = new EndpointConnector(observer(observation(true), false), () -> TOKEN,
+          factory(ed25519(), () -> "018f0000-0000-7000-8000-000000000045"),
+          (body, credential, proof) -> {
+            assertThat(captures).hasValue(1);
+            sentProof.set(proof);
+            return Optional.of(response(body.path("id")));
+          }, (observed, body) -> {
+            recorder.record(observed, body);
+            captures.incrementAndGet();
+          });
+      assertThat(connector.forward(request)).isPresent();
+      JsonNode record = JsonSupport.MAPPER.readTree(Files.readString(recorder.path()));
+      assertThat(record.path("requestHash")).isEqualTo(claims(sentProof.get()).path("requestHash"));
+      assertThat(record.path("process").path("executableHash"))
+          .isEqualTo(claims(sentProof.get()).path("process").path("executableHash"));
+      assertThat(record.toString()).doesNotContain(TOKEN, sentProof.get());
+    }
+  }
+
+  @Test
+  void explicitlyRequestedCaptureFailurePreventsGatewayForwarding(@TempDir Path temporary)
+      throws Exception {
+    Path directory = temporary.toRealPath().resolve("capture");
+    Files.createDirectory(directory, PosixFilePermissions.asFileAttribute(
+        PosixFilePermissions.fromString("rwx------")));
+    AtomicInteger forwards = new AtomicInteger();
+    try (FileProcessObservationRecorder recorder =
+        new FileProcessObservationRecorder(directory)) {
+      Files.setPosixFilePermissions(recorder.path(), PosixFilePermissions.fromString("rw-r--r--"));
+      EndpointConnector connector = new EndpointConnector(observer(observation(true), false), () -> TOKEN,
+          factory(ed25519(), () -> "018f0000-0000-7000-8000-000000000043"),
+          (body, credential, proof) -> {
+            forwards.incrementAndGet();
+            return Optional.of(response(body.path("id")));
+          }, recorder);
+      assertConnectorCode(connector, request("tools/list", JsonSupport.MAPPER.createObjectNode()),
+          "ENDPOINT_CAPTURE_UNAVAILABLE");
+      assertThat(forwards).hasValue(0);
+      assertThat(Files.size(recorder.path())).isZero();
+    }
+  }
+
+  @Test
+  void failedStabilityCheckCannotRecordFactsOrForward() {
+    AtomicInteger captures = new AtomicInteger();
+    AtomicInteger forwards = new AtomicInteger();
+    EndpointConnector connector = new EndpointConnector(observer(observation(true), true), () -> TOKEN,
+        factory(ed25519(), () -> "018f0000-0000-7000-8000-000000000044"),
+        (request, credential, proof) -> {
+          forwards.incrementAndGet();
+          return Optional.empty();
+        }, (observation, request) -> captures.incrementAndGet());
+    assertConnectorCode(connector, request("tools/list", JsonSupport.MAPPER.createObjectNode()),
+        "ENDPOINT_EXECUTABLE_CHANGED");
+    assertThat(captures).hasValue(0);
+    assertThat(forwards).hasValue(0);
   }
 
   @Test

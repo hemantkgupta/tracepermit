@@ -8,8 +8,10 @@ import {
   mkdtempSync,
   readFileSync,
   realpathSync,
+  readdirSync,
   rmSync,
   symlinkSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -324,6 +326,7 @@ function shellFixture(t) {
       token: process.env.TRACEPERMIT_CONNECTOR_BEARER_TOKEN,
       gateway: process.env.TRACEPERMIT_GATEWAY_URL,
       keyPath: process.env.TRACEPERMIT_ENDPOINT_PRIVATE_KEY_PKCS8_PATH,
+      captureDirectory: process.env.TRACEPERMIT_ENDPOINT_OBSERVATION_DIRECTORY,
       parentCommand: execFileSync('/bin/ps', ['-p', String(process.ppid), '-o', 'comm='], {encoding:'utf8'}).trim(),
       targetCredentialPresent: ['AWS_ACCESS_KEY_ID','AWS_SECRET_ACCESS_KEY','AWS_SESSION_TOKEN','JIRA_TOKEN'].some(k => !!process.env[k])
     }));
@@ -372,6 +375,8 @@ test("check-only validates without issuing token or launching native client", (t
 
 test("launcher forwards Java and secret via environment, never argv/output/config", (t) => {
   const f = shellFixture(t);
+  f.env.TRACEPERMIT_ENDPOINT_OBSERVATION_DIRECTORY =
+    "ambient-capture-must-not-be-used";
   const r = f.run([]);
   assert.equal(r.status, 0, r.stderr);
   const call = JSON.parse(readFileSync(f.nativeCall, "utf8"));
@@ -379,6 +384,7 @@ test("launcher forwards Java and secret via environment, never argv/output/confi
   assert.equal(call.token, token);
   assert.equal(call.gateway, demoUrls.gatewayUrl);
   assert.equal(call.keyPath, f.state.endpointPrivateKeyPath);
+  assert.equal(call.captureDirectory, undefined);
   assert.match(call.parentCommand, /(?:^|\/)bash$/);
   assert.equal(call.targetCredentialPresent, false);
   assert.deepEqual(call.args.slice(0, 5), [
@@ -405,6 +411,39 @@ test("launcher forwards Java and secret via environment, never argv/output/confi
     assert.match(line, /^--disable --noproxy \* --proto =http /);
     assert.doesNotMatch(line, /--location|--retry/);
   }
+});
+
+test("explicit capture creates a private directory without adding a forwarding shim", (t) => {
+  const f = shellFixture(t);
+  const r = f.run(["--capture-observations"]);
+  assert.equal(r.status, 0, r.stderr);
+  const call = JSON.parse(readFileSync(f.nativeCall, "utf8"));
+  assert.ok(
+    call.captureDirectory.startsWith(
+      join(f.root, ".cache/endpoint-observations."),
+    ),
+  );
+  assert.equal(statSync(call.captureDirectory).mode & 0o777, 0o700);
+  assert.deepEqual(readdirSync(call.captureDirectory), []);
+  assert.match(call.args[6], /command=.*run-java-endpoint-connector\.sh/);
+  assert.match(call.args[6], /"TRACEPERMIT_ENDPOINT_OBSERVATION_DIRECTORY"/);
+  assert.match(call.parentCommand, /(?:^|\/)bash$/);
+  assert.match(r.stdout, /not gateway acceptance/);
+  assert.doesNotMatch(JSON.stringify(call.args), new RegExp(token));
+  assert.equal(existsSync(join(f.root, ".codex")), false);
+  // The fake client never starts Java; this validates orchestration, not native facts.
+});
+
+test("check-only and invalid capture combinations never create observation directories", (t) => {
+  const f = shellFixture(t);
+  assert.equal(f.run(["--check"]).status, 0);
+  assert.equal(f.run(["--check", "--capture-observations"]).status, 2);
+  assert.equal(
+    readdirSync(join(f.root, ".cache")).some((name) =>
+      name.startsWith("endpoint-observations."),
+    ),
+    false,
+  );
 });
 
 test("mismatch prevents token issue and native launch", (t) => {

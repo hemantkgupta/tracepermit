@@ -10,16 +10,28 @@ public final class EndpointConnector {
   private final ConnectorCredentialProvider credentialProvider;
   private final SourceAttestationFactory attestationFactory;
   private final GatewayTransport gatewayTransport;
+  private final EndpointObservationCapture observationCapture;
 
   public EndpointConnector(
       ProcessObserver processObserver,
       ConnectorCredentialProvider credentialProvider,
       SourceAttestationFactory attestationFactory,
       GatewayTransport gatewayTransport) {
+    this(processObserver, credentialProvider, attestationFactory, gatewayTransport,
+        EndpointObservationCapture.NONE);
+  }
+
+  public EndpointConnector(
+      ProcessObserver processObserver,
+      ConnectorCredentialProvider credentialProvider,
+      SourceAttestationFactory attestationFactory,
+      GatewayTransport gatewayTransport,
+      EndpointObservationCapture observationCapture) {
     this.processObserver = Objects.requireNonNull(processObserver);
     this.credentialProvider = Objects.requireNonNull(credentialProvider);
     this.attestationFactory = Objects.requireNonNull(attestationFactory);
     this.gatewayTransport = Objects.requireNonNull(gatewayTransport);
+    this.observationCapture = Objects.requireNonNull(observationCapture);
   }
 
   public Optional<JsonNode> forward(JsonNode request) {
@@ -50,6 +62,7 @@ public final class EndpointConnector {
     String compactAttestation =
         attestationFactory.create(request, bearerToken, observation);
     processObserver.verifyStable(observation);
+    observationCapture.record(observation, request);
     return gatewayTransport.forward(request, bearerToken, compactAttestation);
   }
 }
