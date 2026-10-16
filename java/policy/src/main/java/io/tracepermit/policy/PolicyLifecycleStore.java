@@ -86,6 +86,11 @@ public interface PolicyLifecycleStore {
   Optional<PolicyVersionRecord> activeVersion(String workspaceId, String policyId);
 
   /**
+   * Retrieves an immutable snapshot of the active policy and its monotonic activation generation.
+   */
+  Optional<ActivePolicySnapshot> activePolicySnapshot(String workspaceId, String policyId);
+
+  /**
    * Retrieves a specific version of a policy in a workspace.
    */
   Optional<PolicyVersionRecord> getVersion(String workspaceId, String policyId, int version);

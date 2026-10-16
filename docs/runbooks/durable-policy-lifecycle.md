@@ -1,7 +1,7 @@
 # Durable policy lifecycle foundation
 
 Requirements: FR-013; REL-006; SEC-002/009; OPS-002.
-See [ADR 0039](../architecture/0039-policy-lifecycle-staging-rollback-and-simulation.md).
+See [ADR 0039](../architecture/0039-policy-lifecycle-staging-rollback-and-simulation.md) and [ADR 0042](../architecture/0042-durable-policy-generation-binding.md).
 
 This is an optional trusted Java library over PostgreSQL, not an administrative
 HTTP/MCP endpoint or a policy editor. Default backend/approval launchers retain
@@ -56,10 +56,10 @@ a caller permission to select another workspace.
 ## Schema upgrade and failure handling
 
 Constructing the PostgreSQL store automatically runs Flyway migrations. V7 adds
-the policy tables/triggers and advances the existing enforcement schema guard
-from 6 to 7 without deleting approval, execution, permit or evidence rows. A
-real-PostgreSQL regression upgrades a V6 fixture and verifies its prior permit
-claim survives. Existing V1–V6 migrations are unchanged.
+the policy tables/triggers and V8 adds `tp_approval_policy_bindings`, advancing
+the existing enforcement schema guard to 8 without deleting approval, execution,
+permit or evidence rows. A real-PostgreSQL regression upgrades a V6 fixture and
+verifies its prior permit claim survives. Existing V1–V7 migrations are unchanged.
 
 Use the matching application/schema version; old binaries expecting V6 cannot
 use V7. The policy store also rejects an unknown or missing schema guard at
@@ -100,11 +100,15 @@ database failure, rollback and dynamic allow/block/simulator composition.
 interleaving, unchecked failures, single-lease idempotence, returned/persisted
 metadata, transaction modes and ambiguous failures, concurrent restaging,
 workspace mutations, SQL immutability, V6-to-V7 upgrade and incompatible/missing
-schema-guard rejection.
+schema-guard rejection. `PostgresPolicyBoundApprovalTest` verifies durable
+approval policy generation binding, rejection of stale approvals across activation
+and rollback, fail-closed handling of unbound approvals, and concurrent claim/activation
+serialization.
 
 The approval and numbered scenario reruns establish compatibility of the existing
-static-policy compositions, not durable policy administration wiring. Pending
-approval invalidation after durable policy activation, authenticated policy
+static-policy compositions, not durable policy administration wiring. Invalidation
+of pending approvals after durable policy activation or rollback is verified for
+simulator approvals via generation-bound claim checks (ADR 0042); authenticated policy
 roles/API/UI, external evidence anchoring, database-admin protection and
 distributed rollout remain unqualified. No production-readiness or latency
 claim follows from this library's tests.

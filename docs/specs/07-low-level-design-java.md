@@ -145,9 +145,18 @@ verifies signed anchor receipts before storing immutable delivery evidence.
 The separate loopback `SimulatorApprovalServer` derives reviewer authority
 from verified access tokens plus operator-owned `ApprovalMemberships`.
 `DurableApprovalActionState` extends approval persistence with an atomic exact
-action snapshot and tenant-scoped reads. PostgreSQL V6 implements this port;
+action snapshot and tenant-scoped reads. PostgreSQL V6/V8 implements this port;
 `HumanApprovalService.requestApprovalWithSnapshot` requires it. Execution uses
 the original stored canonical action rather than a new client submission.
+In durable policy mode, approvals are bound to the active policy version,
+canonical content hash, and monotonic activation generation via
+`ApprovalPolicyBinding` and `tp_approval_policy_bindings` (migration V8).
+`HumanApprovalService` re-verifies generation prior to permit issuance, and
+`PostgresDurableEnforcementState.consumeAndClaim` locks `tp_active_policies` `FOR SHARE`,
+failing closed with `STALE_POLICY_GENERATION` if generation, version, or content
+hash differs from the binding snapshot, or if an approval is unbound. Rollback
+to an identical prior policy version advances generation and rejects previous
+approvals. See [ADR 0042](../architecture/0042-durable-policy-generation-binding.md).
 The existing console and demo launchers do not use this foundation yet.
 
 `SimulatorApprovalConfiguration` validates private bounded POSIX files,

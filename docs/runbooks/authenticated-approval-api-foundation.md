@@ -101,6 +101,10 @@ authenticated [local MCP request/status/resume](codex-durable-approvals.md)
 shares this durable service. These are not the default demo console backend.
 Previously pending/approved v1 records cannot execute under v2: request fresh
 review of the current policy rather than rewriting the stored approval.
+In durable policy lifecycle mode (ADR 0042), approvals are bound to the active
+policy activation generation; any policy activation or rollback advances the
+generation, rejecting previously created approvals with STALE_POLICY_GENERATION
+(HTTP 409 Conflict / MCP tool error).
 
 Startup errors return code 2 with `APPROVAL_STARTUP_FAILED`, without raw exception
 details. Check file paths/ownership/permissions, configuration fields, key formats,
@@ -108,7 +112,7 @@ DB availability/schema and port conflicts privately. Never enable driver/debug
 credential logging. A successful startup is not evidence of IdP readiness: the
 first token requiring an uncached JWKS key triggers bounded HTTPS verification.
 
-Back up the database before startup: Flyway applies migrations through V6 and
+Back up the database before startup: Flyway applies migrations through V8 and
 checks the schema guard. Migrations may commit even if the later port bind fails.
 Do not downgrade an older binary against this schema. Membership/key configuration
 is a startup snapshot; use a controlled stop/edit/restart for changes. Protect

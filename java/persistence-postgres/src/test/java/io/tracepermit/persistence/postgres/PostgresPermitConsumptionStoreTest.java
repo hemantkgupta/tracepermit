@@ -63,7 +63,8 @@ final class PostgresPermitConsumptionStoreTest {
     try (Connection connection = dataSource.getConnection();
          Statement statement = connection.createStatement()) {
       statement.execute("""
-          TRUNCATE tp_approval_action_snapshots, tp_approval_transitions, tp_approval_requests,
+          TRUNCATE tp_approval_policy_bindings,
+                   tp_approval_action_snapshots, tp_approval_transitions, tp_approval_requests,
                    tp_evidence_anchors, tp_evidence_outbox,
                    tp_evidence_events, tp_evidence_streams,
                    tp_reconciliation_queue,
