@@ -348,3 +348,12 @@ tasks.register<Sync>("installSimulatorApprovalDistribution") {
   into(layout.buildDirectory.dir("install/tracepermit-simulator-approval-0.1.0"))
 }
 
+tasks.register<JavaExec>("runSimulatorApprovalLatencyQualification") {
+  group = "verification"
+  description = "Measures reproducible loopback MCP and HTTP approval latency against PostgreSQL."
+  dependsOn(tasks.named("testClasses"))
+  classpath = sourceSets["test"].runtimeClasspath
+  mainClass = "io.tracepermit.adapters.http.SimulatorApprovalLatencyQualificationMain"
+  systemProperty("tracepermit.repositoryRoot", rootDir.parentFile.absolutePath)
+}
+
