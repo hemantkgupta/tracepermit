@@ -19,21 +19,21 @@ No database migration or real target is introduced. See
 
 ## Module ownership
 
-| Module                 | Responsibility                                                                |
-| ---------------------- | ----------------------------------------------------------------------------- |
-| `contracts`            | Canonical JSON, strict action and signed-claim validation                     |
-| `identity`             | Development token, source proof, workload/delegation, OAuth/OIDC verification |
-| `policy`               | Deterministic classifier, sequence signals, ordered policy evaluation         |
-| `security`             | Request-bound permit issue, verification, and consumption                     |
-| `execution`            | Attempts, idempotency, unknown outcomes, evidence chain                       |
-| `application`          | Fail-closed orchestration and trusted reviewer workflow                       |
-| `simulator`            | Bounded, stateful AWS/Jira fakes; no real target SDK                          |
-| `adapters-http`        | Combined loopback MCP backend and read-only projections                       |
-| `adapters-remote`      | Authenticated MCP edge and SSRF-safe JWKS HTTPS                               |
-| `endpoint-connector`   | MCP stdio origin observation and loopback forwarding                          |
-| `persistence-postgres` | Durable claims, approvals, evidence, outbox, reconciliation                   |
-| `observability-otel`   | Bounded telemetry projection                                                  |
-| `conformance`          | Checked-in schema, vector, and invariant tests                                |
+| Module                 | Responsibility                                                                                                                                     |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `contracts`            | Canonical JSON, strict action and signed-claim validation, formal field-level argument/evidence redaction (`EvidenceRedactor`, `RedactionProfile`) |
+| `identity`             | Development token, source proof, workload/delegation, OAuth/OIDC verification                                                                      |
+| `policy`               | Deterministic classifier, sequence signals, ordered policy evaluation                                                                              |
+| `security`             | Request-bound permit issue, verification, and consumption                                                                                          |
+| `execution`            | Attempts, idempotency, unknown outcomes, evidence chain                                                                                            |
+| `application`          | Fail-closed orchestration and trusted reviewer workflow                                                                                            |
+| `simulator`            | Bounded, stateful AWS/Jira fakes; no real target SDK                                                                                               |
+| `adapters-http`        | Combined loopback MCP backend and read-only projections                                                                                            |
+| `adapters-remote`      | Authenticated MCP edge and SSRF-safe JWKS HTTPS                                                                                                    |
+| `endpoint-connector`   | MCP stdio origin observation and loopback forwarding                                                                                               |
+| `persistence-postgres` | Durable claims, approvals, evidence, outbox, reconciliation                                                                                        |
+| `observability-otel`   | Bounded telemetry projection                                                                                                                       |
+| `conformance`          | Checked-in schema, vector, and invariant tests                                                                                                     |
 
 Transport code stays in adapters. All origins converge on the canonical
 action contract before classification or policy. Application and domain code
