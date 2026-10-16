@@ -183,6 +183,22 @@ final class SimulatorApprovalConfigurationTest {
     assertThat(policy.path("rules").get(0).path("description").asText()).isNotBlank();
   }
 
+  @Test void sourceWrapperAcceptsAllThreeExplicitCommandsBeforeRequiringPrivateConfig() throws Exception {
+    var root = Path.of(System.getProperty("tracepermit.repositoryRoot"));
+    for (String command : new String[] {"--check", "--init-db", "--run", "--repair"}) {
+      var builder = new ProcessBuilder("/bin/bash", root.resolve("scripts/run-java-simulator-approvals.sh").toString(), command)
+          .redirectErrorStream(true);
+      builder.environment().remove("TRACEPERMIT_APPROVAL_CONFIG");
+      var process = builder.start();
+      try {
+        assertThat(process.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+        assertThat(process.exitValue()).isEqualTo(2);
+        String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        assertThat(output).contains(command.equals("--repair") ? "Usage:" : "TRACEPERMIT_APPROVAL_CONFIG must name");
+      } finally { if (process.isAlive()) process.destroyForcibly().waitFor(); }
+    }
+  }
+
   private void rejected() {
     assertThatThrownBy(() -> SimulatorApprovalConfiguration.load(fixture.config))
         .isExactlyInstanceOf(IllegalArgumentException.class).hasMessage("INVALID_APPROVAL_CONFIGURATION")

@@ -175,7 +175,12 @@ durable lifecycle integration.
 `SimulatorApprovalConfiguration` validates private bounded POSIX files,
 explicit single-client/tenant OIDC trust, independent requester/reviewer enrollment,
 numeric loopback DB configuration and matching Ed25519 keys. The separate
-`SimulatorApprovalMain` runs migrations/schema verification before binding the
+`SimulatorApprovalMain` separates explicit empty-only `--init-db` from normal
+run. `PostgresDatabaseLifecycle` checks existing tables, invariant triggers,
+schema guard and complete migration history/checksums; strict state/permit-store
+factories never migrate. Legacy development constructors remain auto-migrating.
+See [ADR 0045](../architecture/0045-explicit-database-initialization.md).
+The runtime validates before binding the
 loopback approval service with a fixed default-block/explicit-approval policy.
 Offline check mode performs no DB, DNS, IdP or listener operation. See
 [ADR 0035](../architecture/0035-local-approval-operator-bootstrap.md).

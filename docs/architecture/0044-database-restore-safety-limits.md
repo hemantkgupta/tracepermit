@@ -17,6 +17,12 @@ empty database does not imply application startup rejection. Ordinary repository
 construction runs Flyway and can initialize the empty database. A schema created
 by that bootstrap is not proof that historical replay/evidence state recovered.
 
+[ADR 0045](0045-explicit-database-initialization.md) subsequently separates
+explicit first installation from strict startup on the supported operator path.
+The legacy auto-migrating constructors used by this characterization remain
+compatible. Strict startup rejects empty/partial state, but a complete older
+snapshot can still pass it; the stale-authority recovery gap remains open.
+
 ## Decision and observed boundaries
 
 1. A custom archive captured after consumption preserves the exact recorded

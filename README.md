@@ -96,7 +96,9 @@ and model-driven rehearsal are separate from protocol tests.
   simulators. Run `pnpm test:approval-api --rerun-tasks`; see the
   [API qualification runbook](docs/runbooks/authenticated-approval-api-foundation.md).
   An optional `pnpm dev:approvals` operator entry point requires private local
-  configuration; `--check` validates it offline. It is not enabled by the demo
+  configuration; `--check` validates it offline, first-install `--init-db`
+  explicitly initializes an empty database, and normal run never migrates or
+  repairs state. It is not enabled by the demo
   launchers. Optional browser configuration adds same-origin OIDC sign-in and
   a role-scoped React inbox; tokens stay in Java session memory. Try the
   test-classpath-only synthetic profile with `pnpm demo:approvals:browser`.

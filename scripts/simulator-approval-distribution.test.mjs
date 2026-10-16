@@ -405,6 +405,21 @@ test("distribution archive layout, permissions, and clean dependency inventory",
   assert.equal(statSync(manifestPath).mode & 0o777, 0o644);
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
   assert.equal(manifest.schemaVersion, "1.1");
+  const installedRunbook = readFileSync(
+    join(distDir, "docs/setup-runbook.md"),
+    "utf8",
+  );
+  assert.ok(installedRunbook.includes("--init-db"));
+  assert.ok(
+    installedRunbook.includes(
+      `/blob/${manifest.sourceCommit}/docs/architecture/0045-explicit-database-initialization.md`,
+    ),
+  );
+  assert.ok(
+    !/\]\((?:\.\.\/|authenticated-approval-api-foundation\.md)/.test(
+      installedRunbook,
+    ),
+  );
   assert.equal(manifest.packageName, "tracepermit-simulator-approval");
   assert.equal(manifest.packageVersion, "0.1.0");
   assert.equal(manifest.requiredJava, "21");
@@ -874,6 +889,36 @@ test("online --run starts, binds loopback port, and terminates cleanly on SIGTER
   writeFileSync(dbSecretPath, pgPassword);
 
   const sanitizedPath = createSanitizedPath();
+
+  // Source-free commands must not confuse an empty DB with successful restore.
+  const commandOptions = {
+    cwd: unrelatedCwd,
+    env: { PATH: sanitizedPath, TRACEPERMIT_APPROVAL_CONFIG: configPath },
+    encoding: "utf8",
+    timeout: 25_000,
+  };
+  const emptyRun = spawnSync(launcher, ["--run"], commandOptions);
+  assert.equal(emptyRun.status, 2);
+  assert.ok(emptyRun.stderr.includes("APPROVAL_STARTUP_FAILED"));
+  assert.equal(
+    execSync(
+      `docker exec ${containerId} psql -U tracepermit_approvals -d tracepermit_approvals -Atc "SELECT count(*) FROM pg_tables WHERE schemaname='public'"`,
+      { encoding: "utf8" },
+    ).trim(),
+    "0",
+  );
+  const initialize = spawnSync(launcher, ["--init-db"], commandOptions);
+  assert.equal(initialize.status, 0, initialize.stderr);
+  assert.ok(initialize.stdout.includes("APPROVAL_DATABASE_INITIALIZED"));
+  assert.ok(!initialize.stdout.includes("API listening"));
+  const duplicateInit = spawnSync(launcher, ["--init-db"], commandOptions);
+  assert.equal(duplicateInit.status, 2);
+  for (const result of [emptyRun, initialize, duplicateInit]) {
+    const output = result.stdout + result.stderr;
+    assert.ok(!output.includes(pgPassword));
+    assert.ok(!output.includes(configPath));
+    assert.ok(!output.includes("jdbc:"));
+  }
 
   // Spawn --run
   const child = spawn(launcher, ["--run"], {
