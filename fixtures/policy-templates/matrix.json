@@ -1,0 +1,246 @@
+{
+  "schemaVersion": "1.0",
+  "description": "Deterministic simulation qualification matrix for simulator policy templates",
+  "cases": [
+    {
+      "id": "case-01-positive-read",
+      "name": "positive read: CLI human staging CloudWatch filter_log_events",
+      "fixture": "fixtures/policy-templates/cli-human-staging-log-read.json",
+      "category": "positive_read",
+      "expectations": {
+        "policies/templates/simulator-observer.json": {
+          "outcome": "allow",
+          "reasonCode": "CLI_STAGING_LOG_READ_ALLOWED",
+          "matchedRuleId": "allow-cli-staging-cloudwatch-read",
+          "approvalGroup": null
+        },
+        "policies/templates/simulator-reviewed-change.json": {
+          "outcome": "allow",
+          "reasonCode": "CLI_STAGING_LOG_READ_ALLOWED",
+          "matchedRuleId": "allow-cli-staging-cloudwatch-read",
+          "approvalGroup": null
+        }
+      }
+    },
+    {
+      "id": "case-02-approval-not-allow-write",
+      "name": "approval-not-allow write: CLI human staging EC2 update_security_group",
+      "fixture": "fixtures/policy-templates/cli-human-staging-security-group-update.json",
+      "category": "approval_not_allow_write",
+      "expectations": {
+        "policies/templates/simulator-observer.json": {
+          "outcome": "block",
+          "reasonCode": "SIMULATOR_OBSERVER_DEFAULT_BLOCK",
+          "matchedRuleId": null,
+          "approvalGroup": null
+        },
+        "policies/templates/simulator-reviewed-change.json": {
+          "outcome": "require_approval",
+          "reasonCode": "SIMULATOR_SECURITY_GROUP_UPDATE_REQUIRES_APPROVAL",
+          "matchedRuleId": "require-approval-cli-staging-security-group-update",
+          "approvalGroup": "simulator-security-reviewers"
+        }
+      }
+    },
+    {
+      "id": "case-03-termination-denial",
+      "name": "termination denial: CLI human staging EC2 terminate_instances",
+      "fixture": "fixtures/policy-templates/cli-human-staging-ec2-terminate.json",
+      "category": "termination_denial",
+      "expectations": {
+        "policies/templates/simulator-observer.json": {
+          "outcome": "block",
+          "reasonCode": "DESTRUCTIVE_OPERATIONS_BLOCKED",
+          "matchedRuleId": "block-destructive-operations",
+          "approvalGroup": null
+        },
+        "policies/templates/simulator-reviewed-change.json": {
+          "outcome": "block",
+          "reasonCode": "DESTRUCTIVE_OPERATIONS_BLOCKED",
+          "matchedRuleId": "block-destructive-operations",
+          "approvalGroup": null
+        }
+      }
+    },
+    {
+      "id": "case-04-destructive-deletion-denial",
+      "name": "destructive deletion denial: CLI human staging EC2 delete_security_group",
+      "fixture": "fixtures/policy-templates/cli-human-staging-ec2-delete-security-group.json",
+      "category": "destructive_denial",
+      "expectations": {
+        "policies/templates/simulator-observer.json": {
+          "outcome": "block",
+          "reasonCode": "DESTRUCTIVE_OPERATIONS_BLOCKED",
+          "matchedRuleId": "block-destructive-operations",
+          "approvalGroup": null
+        },
+        "policies/templates/simulator-reviewed-change.json": {
+          "outcome": "block",
+          "reasonCode": "DESTRUCTIVE_OPERATIONS_BLOCKED",
+          "matchedRuleId": "block-destructive-operations",
+          "approvalGroup": null
+        }
+      }
+    },
+    {
+      "id": "case-05-plausible-read-like-tool",
+      "name": "plausible read-like name: CLI human staging CloudWatch describe_log_groups",
+      "fixture": "fixtures/policy-templates/cli-human-staging-plausible-read.json",
+      "category": "plausible_read",
+      "expectations": {
+        "policies/templates/simulator-observer.json": {
+          "outcome": "block",
+          "reasonCode": "SIMULATOR_OBSERVER_DEFAULT_BLOCK",
+          "matchedRuleId": null,
+          "approvalGroup": null
+        },
+        "policies/templates/simulator-reviewed-change.json": {
+          "outcome": "block",
+          "reasonCode": "SIMULATOR_REVIEWED_CHANGE_DEFAULT_BLOCK",
+          "matchedRuleId": null,
+          "approvalGroup": null
+        }
+      }
+    },
+    {
+      "id": "case-06-unknown-tool",
+      "name": "unknown tool: CLI human staging custom.unrecognized_operation",
+      "fixture": "fixtures/policy-templates/cli-human-staging-unknown-tool.json",
+      "category": "unknown_tool",
+      "expectations": {
+        "policies/templates/simulator-observer.json": {
+          "outcome": "block",
+          "reasonCode": "SIMULATOR_OBSERVER_DEFAULT_BLOCK",
+          "matchedRuleId": null,
+          "approvalGroup": null
+        },
+        "policies/templates/simulator-reviewed-change.json": {
+          "outcome": "block",
+          "reasonCode": "SIMULATOR_REVIEWED_CHANGE_DEFAULT_BLOCK",
+          "matchedRuleId": null,
+          "approvalGroup": null
+        }
+      }
+    },
+    {
+      "id": "case-07-wrong-origin-web",
+      "name": "wrong origin: ChatGPT web human staging CloudWatch filter_log_events",
+      "fixture": "fixtures/policy-templates/chatgpt-web-staging-log-read.json",
+      "category": "wrong_origin",
+      "expectations": {
+        "policies/templates/simulator-observer.json": {
+          "outcome": "block",
+          "reasonCode": "SIMULATOR_OBSERVER_DEFAULT_BLOCK",
+          "matchedRuleId": null,
+          "approvalGroup": null
+        },
+        "policies/templates/simulator-reviewed-change.json": {
+          "outcome": "block",
+          "reasonCode": "SIMULATOR_REVIEWED_CHANGE_DEFAULT_BLOCK",
+          "matchedRuleId": null,
+          "approvalGroup": null
+        }
+      }
+    },
+    {
+      "id": "case-08-wrong-origin-api-workload",
+      "name": "wrong origin and subject type: API workload staging CloudWatch filter_log_events",
+      "fixture": "fixtures/policy-templates/api-workload-staging-log-read.json",
+      "category": "wrong_origin_and_subject",
+      "expectations": {
+        "policies/templates/simulator-observer.json": {
+          "outcome": "block",
+          "reasonCode": "SIMULATOR_OBSERVER_DEFAULT_BLOCK",
+          "matchedRuleId": null,
+          "approvalGroup": null
+        },
+        "policies/templates/simulator-reviewed-change.json": {
+          "outcome": "block",
+          "reasonCode": "SIMULATOR_REVIEWED_CHANGE_DEFAULT_BLOCK",
+          "matchedRuleId": null,
+          "approvalGroup": null
+        }
+      }
+    },
+    {
+      "id": "case-09-wrong-environment-read",
+      "name": "wrong environment for read: CLI human prod CloudWatch filter_log_events",
+      "fixture": "fixtures/policy-templates/cli-human-prod-log-read.json",
+      "category": "wrong_environment",
+      "expectations": {
+        "policies/templates/simulator-observer.json": {
+          "outcome": "block",
+          "reasonCode": "SIMULATOR_OBSERVER_DEFAULT_BLOCK",
+          "matchedRuleId": null,
+          "approvalGroup": null
+        },
+        "policies/templates/simulator-reviewed-change.json": {
+          "outcome": "block",
+          "reasonCode": "SIMULATOR_REVIEWED_CHANGE_DEFAULT_BLOCK",
+          "matchedRuleId": null,
+          "approvalGroup": null
+        }
+      }
+    },
+    {
+      "id": "case-10-wrong-environment-write",
+      "name": "wrong environment for write: CLI human prod EC2 update_security_group",
+      "fixture": "fixtures/policy-templates/cli-human-prod-security-group-update.json",
+      "category": "wrong_environment",
+      "expectations": {
+        "policies/templates/simulator-observer.json": {
+          "outcome": "block",
+          "reasonCode": "SIMULATOR_OBSERVER_DEFAULT_BLOCK",
+          "matchedRuleId": null,
+          "approvalGroup": null
+        },
+        "policies/templates/simulator-reviewed-change.json": {
+          "outcome": "block",
+          "reasonCode": "SIMULATOR_REVIEWED_CHANGE_DEFAULT_BLOCK",
+          "matchedRuleId": null,
+          "approvalGroup": null
+        }
+      }
+    },
+    {
+      "id": "case-11-oversized-log-window",
+      "name": "oversized log window: CLI human staging CloudWatch filter_log_events limit=500",
+      "fixture": "fixtures/policy-templates/cli-human-staging-oversized-log-read.json",
+      "category": "oversized_log_window",
+      "expectations": {
+        "policies/templates/simulator-observer.json": {
+          "outcome": "block",
+          "reasonCode": "OVERSIZED_LOG_WINDOW_BLOCKED",
+          "matchedRuleId": "block-oversized-log-window",
+          "approvalGroup": null
+        },
+        "policies/templates/simulator-reviewed-change.json": {
+          "outcome": "block",
+          "reasonCode": "OVERSIZED_LOG_WINDOW_BLOCKED",
+          "matchedRuleId": "block-oversized-log-window",
+          "approvalGroup": null
+        }
+      }
+    },
+    {
+      "id": "case-12-unmatched-write",
+      "name": "unmatched write: CLI human staging EC2 start_instances",
+      "fixture": "fixtures/policy-templates/cli-human-staging-unmatched-modify.json",
+      "category": "default_deny",
+      "expectations": {
+        "policies/templates/simulator-observer.json": {
+          "outcome": "block",
+          "reasonCode": "SIMULATOR_OBSERVER_DEFAULT_BLOCK",
+          "matchedRuleId": null,
+          "approvalGroup": null
+        },
+        "policies/templates/simulator-reviewed-change.json": {
+          "outcome": "block",
+          "reasonCode": "SIMULATOR_REVIEWED_CHANGE_DEFAULT_BLOCK",
+          "matchedRuleId": null,
+          "approvalGroup": null
+        }
+      }
+    }
+  ]
+}
