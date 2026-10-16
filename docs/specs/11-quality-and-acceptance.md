@@ -78,6 +78,11 @@ must reject link/replacement/permission/growth/bounds failures and separately
 prove missing, mutated, wrong-credential and replayed proofs cannot add a
 simulator dispatch. Synthetic test observations are not native client proof;
 see the [rehearsal procedure](../runbooks/native-endpoint-observation-rehearsal.md).
+The [2026-10-16 positive native record](../demo-scenarios/evidence/native-endpoint-observation-2026-10-16.md)
+adds one actual client read with retained process facts and independently read
+server-event correlation. Its action-feed delta is not a dispatch counter;
+the public projection exposes no hash with which to independently cross-link
+the capture. Keep remaining native negatives and automated tests distinct.
 
 The optional browser profile additionally requires real HTTP cookie/CSRF and
 signed ID/access-token tests, one-use browser-bound login state, wrong

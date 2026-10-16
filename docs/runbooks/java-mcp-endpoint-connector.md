@@ -6,6 +6,9 @@
 model-selected simulated read/termination-block calls on 2026-10-15. See the
 [dated evidence and limits](../demo-scenarios/evidence/codex-native-endpoint-2026-10-15.md).
 This is not general client compatibility or complete endpoint-security qualification.
+The [2026-10-16 positive observation record](../demo-scenarios/evidence/native-endpoint-observation-2026-10-16.md)
+adds retained native executable/start-time facts for one bounded read at PR #23's
+merged revision; it does not retroactively add capture to the older calls.
 
 ## Safety boundary
 
@@ -177,6 +180,9 @@ after demo key cleanup; review them before any evidence export.
 
 ```text
 Use only tracepermit_endpoint.
+Select by the exact server namespace and fully qualified tool name, not by
+matching descriptions or other TracePermit servers. On ambiguity, report
+the matching names and stop without calling a tool.
 Call aws.logs.filter_log_events exactly once with:
 - logGroupName: /app/staging
 - filterPattern: ERROR
