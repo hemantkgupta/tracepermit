@@ -149,13 +149,12 @@ For normal positive integer input, limit 100 allows the candidate read and 101
 blocks it with `OVERSIZED_RESULT_WINDOW`. This is a coarse classifier signal,
 not general argument validation or a resource-access guarantee.
 
-At baseline revision `05764ed`, the pre-existing classifier tests
-`isIntegralNumber()` and then `asInt() > 100`. Positive integers outside the
-Java int range can narrow to small/negative values and miss the oversized
-signal; the independent review reproduced this with 2147483648. This tests/docs
-change does **not** repair that production comparison. Overflow-safe
-classification is a separately scoped follow-up, not a desired allow behavior
-enshrined by this suite.
+At baseline revision `05764ed`, the classifier narrowed with `asInt() > 100`;
+positive integers outside the Java int range could miss the oversized signal.
+The [overflow-safe classifier](log-window-classification.md) now compares the
+original integral value exactly with 100. Wide signed, parsed and constructed
+numeric regressions cover that separate production fix. No tool argument
+schema, resource predicate or template allow rule was broadened.
 
 Missing/null/textual/fractional/boolean/object limits can also return allow in
 raw canonical simulation without the oversized signal. Characterization tests

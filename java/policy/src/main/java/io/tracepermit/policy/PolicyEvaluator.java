@@ -3,6 +3,7 @@ package io.tracepermit.policy;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.tracepermit.contracts.ActionValidator;
 
+import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -10,6 +11,7 @@ import java.util.Map;
 import java.util.Set;
 
 public final class PolicyEvaluator {
+  private static final BigInteger OVERSIZED_LOG_WINDOW_THRESHOLD = BigInteger.valueOf(100);
   private static final List<String> DESTRUCTIVE = List.of("delete", "drop", "terminate", "destroy", "purge", "truncate");
   private static final List<String> ORCHESTRATION = List.of("delegate", "spawn", "subagent", "assume_role", "issue_token");
   private static final List<String> READ = List.of("get", "list", "read", "describe", "search", "query", "filter", "fetch");
@@ -79,7 +81,7 @@ public final class PolicyEvaluator {
     JsonNode arguments = event.path("action").path("arguments");
     if ("aws.logs.filter_log_events".equals(operation)
         && arguments.path("limit").isIntegralNumber()
-        && arguments.path("limit").asInt() > 100) {
+        && arguments.path("limit").bigIntegerValue().compareTo(OVERSIZED_LOG_WINDOW_THRESHOLD) > 0) {
       score += 50;
       addSignal(signals, "OVERSIZED_RESULT_WINDOW");
       addSignal(semanticIntents, "POTENTIAL_DATA_EXFILTRATION");
