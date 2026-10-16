@@ -478,6 +478,98 @@ final class PostgresPolicyBoundApprovalTest {
     }
   }
 
+  @Test
+  void migrationUpgradesV7FixtureWithoutDataLoss() throws Exception {
+    PGSimpleDataSource upgrade = (PGSimpleDataSource) configuredDataSource();
+    String schema = "upgrade_v7_v8_test";
+    try (Connection connection = upgrade.getConnection(); Statement statement = connection.createStatement()) {
+      statement.execute("CREATE SCHEMA IF NOT EXISTS " + schema);
+    }
+    upgrade.setCurrentSchema(schema);
+
+    // Migrate up to V7
+    org.flywaydb.core.Flyway.configure()
+        .dataSource(upgrade)
+        .locations(PostgresDurableEnforcementState.MIGRATION_LOCATION)
+        .target("7")
+        .load()
+        .migrate();
+
+    String pHash = hash('1');
+    String rHash = hash('2');
+    String aHash = hash('3');
+
+    // Populate V7 tables
+    try (Connection connection = upgrade.getConnection(); Statement statement = connection.createStatement()) {
+      statement.execute(String.format("""
+          INSERT INTO tp_policy_versions (workspace_id, policy_id, version, name, description, content_hash, document, staged_at, current_state)
+          VALUES ('ws-v7', 'pol-v7', 1, 'Policy V7', 'desc', '%s', '{"id":"pol-v7","version":1}'::jsonb, CURRENT_TIMESTAMP, 'active')
+          """, pHash));
+      statement.execute("""
+          INSERT INTO tp_active_policies (workspace_id, policy_id, active_version, activation_sequence, activated_at, updated_at)
+          VALUES ('ws-v7', 'pol-v7', 1, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+          """);
+      statement.execute(String.format("""
+          INSERT INTO tp_approval_requests (
+            tenant_id, approval_request_id, request_hash, action_hash, event_id,
+            evaluation_id, subject_id, actor_lineage_hash, policy_id, policy_version,
+            original_decision, tool_name, resource_hash, approval_group, created_at,
+            expires_at, max_uses, status, transition_sequence, updated_at
+          ) VALUES (
+            'ws-v7', 'req-v7', '%s', '%s', 'ev-v7',
+            'eval-v7', 'sub-v7', '%s', 'pol-v7', 1,
+            'require_approval', 'test_tool', '%s', 'default', CURRENT_TIMESTAMP,
+            CURRENT_TIMESTAMP + INTERVAL '1 hour', 1, 'pending', 1, CURRENT_TIMESTAMP
+          )
+          """, rHash, aHash, hash('4'), hash('5')));
+      statement.execute("""
+          INSERT INTO tp_approval_transitions (
+            tenant_id, approval_request_id, sequence, from_status, to_status,
+            reason_code, occurred_at
+          ) VALUES ('ws-v7', 'req-v7', 1, NULL, 'pending', 'APPROVAL_REQUESTED', CURRENT_TIMESTAMP)
+          """);
+      statement.execute("""
+          INSERT INTO tp_approval_action_snapshots (tenant_id, approval_request_id, canonical_action)
+          VALUES ('ws-v7', 'req-v7', '{"test":true}'::jsonb)
+          """);
+      statement.execute(String.format("""
+          INSERT INTO tp_consumed_execution_permits (tenant_id, permit_id, expires_at, action_hash, claimed_at)
+          VALUES ('ws-v7', 'permit-v7', CURRENT_TIMESTAMP + INTERVAL '1 hour', '%s', CURRENT_TIMESTAMP)
+          """, aHash));
+    }
+
+    // Now migrate to V8
+    PostgresDurableEnforcementState.migrate(upgrade, PostgresDurableEnforcementState.MIGRATION_LOCATION);
+
+    // Verify schema guard is 8 and V7 data is completely preserved
+    try (Connection connection = upgrade.getConnection(); Statement statement = connection.createStatement()) {
+      try (var rs = statement.executeQuery("SELECT contract_version FROM tp_enforcement_schema_guard")) {
+        assertThat(rs.next()).isTrue();
+        assertThat(rs.getInt(1)).isEqualTo(8);
+      }
+      try (var rs = statement.executeQuery("SELECT count(*) FROM tp_policy_versions WHERE workspace_id = 'ws-v7'")) {
+        assertThat(rs.next()).isTrue();
+        assertThat(rs.getInt(1)).isEqualTo(1);
+      }
+      try (var rs = statement.executeQuery("SELECT count(*) FROM tp_active_policies WHERE workspace_id = 'ws-v7'")) {
+        assertThat(rs.next()).isTrue();
+        assertThat(rs.getInt(1)).isEqualTo(1);
+      }
+      try (var rs = statement.executeQuery("SELECT count(*) FROM tp_approval_requests WHERE tenant_id = 'ws-v7'")) {
+        assertThat(rs.next()).isTrue();
+        assertThat(rs.getInt(1)).isEqualTo(1);
+      }
+      try (var rs = statement.executeQuery("SELECT count(*) FROM tp_approval_action_snapshots WHERE tenant_id = 'ws-v7'")) {
+        assertThat(rs.next()).isTrue();
+        assertThat(rs.getInt(1)).isEqualTo(1);
+      }
+      try (var rs = statement.executeQuery("SELECT count(*) FROM tp_consumed_execution_permits WHERE tenant_id = 'ws-v7'")) {
+        assertThat(rs.next()).isTrue();
+        assertThat(rs.getInt(1)).isEqualTo(1);
+      }
+    }
+  }
+
   private static ApprovalBinding approvalBinding(String approvalRequestId, JsonNode action, int version) {
     String actionHash = CanonicalJson.sha256(action);
     String requestHash = CanonicalJson.sha256(JsonSupport.MAPPER.createObjectNode()

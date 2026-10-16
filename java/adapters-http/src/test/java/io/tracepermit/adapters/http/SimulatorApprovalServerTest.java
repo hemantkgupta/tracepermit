@@ -475,6 +475,11 @@ final class SimulatorApprovalServerTest {
     assertThat(freshExecuted.path("executionStatus").asText()).isEqualTo("succeeded");
     assertThat(freshExecuted.path("status").asText()).isEqualTo("consumed");
     assertThat(rules()).isEqualTo(1);
+
+    // Replay of consumed approval is rejected with 409 APPROVAL_NOT_EXECUTABLE
+    HttpResponse<String> replay = call("POST", freshPath + "/execute", aliceToken, hash(freshPending));
+    assertStatus(replay, 409);
+    assertThat(json(replay).path("error").path("code").asText()).isEqualTo("APPROVAL_NOT_EXECUTABLE");
   }
 
   @Test void durablePolicyModeFailsClosedWhenActivePolicyIsUnavailable() throws Exception {
