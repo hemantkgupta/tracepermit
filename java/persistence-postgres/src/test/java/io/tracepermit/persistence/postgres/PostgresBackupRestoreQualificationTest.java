@@ -3,8 +3,6 @@ package io.tracepermit.persistence.postgres;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.tracepermit.application.ApprovalExecutionResult;
-import io.tracepermit.application.DurableExecutionService;
-import io.tracepermit.application.ExecutionResult;
 import io.tracepermit.application.HumanApprovalService;
 import io.tracepermit.application.SecurityReadiness;
 import io.tracepermit.application.TrustedReviewerContext;
@@ -34,6 +32,8 @@ import org.testcontainers.containers.PostgreSQLContainer;
 
 import javax.sql.DataSource;
 import java.nio.file.Path;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -44,7 +44,6 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -62,7 +61,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *
  * <p>Qualification Scenarios:
  * <ol>
- *   <li>Invalid or truncated archive rejection and fail-closed service startup.
+ *   <li>Invalid archive rejection, plus characterization that empty-database bootstrap
+ *       is not proof of successful recovery.
  *   <li>Post-consumption backup preserves exact snapshots, permits, attempts, evidence chains,
  *       and rejects replays with zero new target invocations.
  *   <li>Pending and approved requests preserve bindings and timestamps without automatic dispatch,
@@ -70,7 +70,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *   <li>Policy revisions, active selections, and Flyway metadata survive restore with exact parity.
  *   <li>CRITICAL ROLLBACK LIMIT (Hazard Proof): Point-in-time restore to a pre-consumption snapshot (T0)
  *       after real-world execution at T1 revives old unconsumed authority, causing a duplicate execution
- *       against an external or simulated target. Proves why stale restores require quarantine and cannot
+ *       against an independent synthetic target counter. Proves why stale restores require quarantine and cannot
  *       rely on PostgreSQL alone.
  * </ol>
  */
@@ -82,9 +82,11 @@ final class PostgresBackupRestoreQualificationTest {
   private static final PostgreSQLContainer<?> POSTGRES =
       new PostgreSQLContainer<>("postgres:16.4-alpine");
   private static final AtomicLong ID_GEN = new AtomicLong();
+  private static KeyPair permitKey;
 
   @BeforeAll
-  static void startContainer() {
+  static void startContainer() throws Exception {
+    permitKey = KeyPairGenerator.getInstance("Ed25519").generateKeyPair();
     POSTGRES.start();
   }
 
@@ -94,11 +96,11 @@ final class PostgresBackupRestoreQualificationTest {
   }
 
   /**
-   * Proves that a deliberately invalid or truncated archive fails restore with a non-zero exit code
-   * and prevents application services from starting against the failed database.
+   * A failed restore has no recovered state. The ordinary constructor can nevertheless
+   * initialize an empty database, so it must not be treated as a recovery-readiness gate.
    */
   @Test
-  void invalidOrTruncatedArchiveFailsRestoreAndRejectsServiceStartup() throws Exception {
+  void invalidArchiveFailsRestoreButEmptyBootstrapIsNotARecoveryGate() throws Exception {
     String destDb = randomDbName("inv_dst");
     String corruptDumpPath = "/tmp/corrupt_" + UUID.randomUUID() + ".dump";
 
@@ -107,7 +109,8 @@ final class PostgresBackupRestoreQualificationTest {
 
       // Write corrupted / truncated archive data inside the container
       ExecResult writeCorrupt = POSTGRES.execInContainer(
-          "sh", "-c", "printf 'PGDMP_CORRUPTED_HEADER_DATA_TRUNCATED' > " + corruptDumpPath);
+          "sh", "-c", "umask 077; printf 'PGDMP_CORRUPTED_HEADER_DATA_TRUNCATED' > \"$1\"",
+          "synthetic-corrupt-archive", corruptDumpPath);
       assertThat(writeCorrupt.getExitCode()).isZero();
 
       // Attempt restore: pg_restore MUST fail with non-zero exit code
@@ -119,7 +122,7 @@ final class PostgresBackupRestoreQualificationTest {
           .as("pg_restore stderr must cite archive corruption")
           .containsAnyOf("did not find magic string", "corrupt", "unrecognized file format", "error");
 
-      // Verify that the failed restore target was NOT populated and cannot be declared ready:
+      // The failed restore target has no recovered state. These queries alone are not a startup gate:
       // The schema guard table does not exist, and no enforcement tables were restored.
       DataSource failedTarget = dataSourceFor(destDb);
       try (Connection connection = failedTarget.getConnection();
@@ -140,6 +143,14 @@ final class PostgresBackupRestoreQualificationTest {
       assertThatThrownBy(() -> readContractVersion(failedTarget))
           .as("readContractVersion must fail on unpopulated database")
           .isInstanceOf(SQLException.class);
+
+      // This is a gap characterization, NOT permission to reconnect a restored runtime.
+      // No server, approval service or target is started against this failed destination.
+      var emptyBootstrap = new PostgresDurableEnforcementState(
+          failedTarget, Clock.fixed(T0, ZoneOffset.UTC), PostgresBackupRestoreQualificationTest::nextId);
+      assertThat(readContractVersion(failedTarget)).isPositive();
+      assertThat(emptyBootstrap.listApprovals(ACME, null, 50)).isEmpty();
+      assertThat(emptyBootstrap.readEvidence(ACME)).isEmpty();
     } finally {
       POSTGRES.execInContainer("rm", "-f", corruptDumpPath);
       dropDatabase(destDb);
@@ -197,6 +208,11 @@ final class PostgresBackupRestoreQualificationTest {
       List<DurableEvidenceRecord> sourceEvidence = sourceState.readEvidence(ACME);
       assertThat(sourceEvidence).hasSize(5); // requested, approved, consumed, claimed, succeeded
       assertValidEvidenceChain(sourceEvidence);
+      ApprovalRequestState sourceRequest = sourceState.find(ACME, requestId);
+      ExecutionAttempt sourceAttempt = sourceState.findByIdempotencyKey(
+          ACME, "simulator", executed.attempt().idempotencyKey());
+      List<JsonNode> sourceMigrations = readMigrationHistory(sourceDs);
+      int sourceSchema = readContractVersion(sourceDs);
 
       // Take pg_dump custom archive
       ExecResult dumpResult = dumpDatabase(sourceDb, dumpPath);
@@ -209,6 +225,8 @@ final class PostgresBackupRestoreQualificationTest {
 
       // Recreate all repositories and services on restored database, retaining target simulator counter
       DataSource destDs = dataSourceFor(destDb);
+      assertThat(readMigrationHistory(destDs)).isEqualTo(sourceMigrations);
+      assertThat(readContractVersion(destDs)).isEqualTo(sourceSchema);
       PostgresDurableEnforcementState restoredState =
           new PostgresDurableEnforcementState(destDs, clock, PostgresBackupRestoreQualificationTest::nextId);
       PostgresPermitConsumptionStore restoredPermitStore =
@@ -228,6 +246,7 @@ final class PostgresBackupRestoreQualificationTest {
       // 2. Assert approval request state and binding integrity
       ApprovalRequestState restoredRequest = restoredState.find(ACME, requestId);
       assertThat(restoredRequest).isNotNull();
+      assertThat(restoredRequest).isEqualTo(sourceRequest);
       assertThat(restoredRequest.status()).isEqualTo("consumed");
       assertThat(restoredRequest.binding().approvalRequestId()).isEqualTo(requestId);
       assertThat(restoredRequest.binding().actionHash()).isEqualTo(actionHash);
@@ -241,6 +260,7 @@ final class PostgresBackupRestoreQualificationTest {
       ExecutionAttempt restoredAttempt = restoredState.findByIdempotencyKey(
           ACME, "simulator", executed.attempt().idempotencyKey());
       assertThat(restoredAttempt).isNotNull();
+      assertThat(restoredAttempt).isEqualTo(sourceAttempt);
       assertThat(restoredAttempt.status()).isEqualTo("succeeded");
       assertThat(restoredAttempt.attemptId()).isEqualTo(executed.attempt().attemptId());
       assertThat(restoredAttempt.transitions()).extracting(item -> item.to())
@@ -249,6 +269,7 @@ final class PostgresBackupRestoreQualificationTest {
       // 5. Assert evidence chain survived and validates cryptographically
       List<DurableEvidenceRecord> restoredEvidence = restoredState.readEvidence(ACME);
       assertThat(restoredEvidence).hasSize(5);
+      assertThat(restoredEvidence).isEqualTo(sourceEvidence);
       assertValidEvidenceChain(restoredEvidence);
       assertThat(restoredEvidence.getLast().eventHash())
           .isEqualTo(sourceEvidence.getLast().eventHash());
@@ -338,6 +359,10 @@ final class PostgresBackupRestoreQualificationTest {
       assertThat(sourceState.find(ACME, reqId1).status()).isEqualTo("pending");
       assertThat(sourceState.find(ACME, reqId2).status()).isEqualTo("approved");
       assertThat(targetInvocations).hasValue(0);
+      ApprovalRequestState originalPending = sourceState.find(ACME, reqId1);
+      ApprovalRequestState originalApproved = sourceState.find(ACME, reqId2);
+      List<JsonNode> sourceMigrations = readMigrationHistory(sourceDs);
+      int sourceSchema = readContractVersion(sourceDs);
 
       // Dump and restore
       ExecResult dumpResult = dumpDatabase(sourceDb, dumpPath);
@@ -349,6 +374,8 @@ final class PostgresBackupRestoreQualificationTest {
 
       // Recreate state on restored database at T0
       DataSource destDs = dataSourceFor(destDb);
+      assertThat(readMigrationHistory(destDs)).isEqualTo(sourceMigrations);
+      assertThat(readContractVersion(destDs)).isEqualTo(sourceSchema);
       PostgresDurableEnforcementState restoredState =
           new PostgresDurableEnforcementState(destDs, clock, PostgresBackupRestoreQualificationTest::nextId);
 
@@ -357,20 +384,33 @@ final class PostgresBackupRestoreQualificationTest {
 
       ApprovalRequestState restoredReq1 = restoredState.find(ACME, reqId1);
       assertThat(restoredReq1).isNotNull();
+      assertThat(restoredReq1).isEqualTo(originalPending);
       assertThat(restoredReq1.status()).isEqualTo("pending");
       assertThat(restoredReq1.binding().expiresAt()).isEqualTo(T0.plusSeconds(300));
       assertThat(restoredState.findAction(ACME, reqId1)).isEqualTo(action1);
 
       ApprovalRequestState restoredReq2 = restoredState.find(ACME, reqId2);
       assertThat(restoredReq2).isNotNull();
+      assertThat(restoredReq2).isEqualTo(originalApproved);
       assertThat(restoredReq2.status()).isEqualTo("approved");
       assertThat(restoredReq2.binding().expiresAt()).isEqualTo(T0.plusSeconds(300));
       assertThat(restoredState.findAction(ACME, reqId2)).isEqualTo(action2);
 
-      // Advance clock past expiry: T0 + 301 seconds
-      Clock expiredClock = Clock.fixed(T0.plusSeconds(301), ZoneOffset.UTC);
+      // Constructing the service also must not dispatch or change recovered authority.
+      approvalService(destDs, restoredState, action -> {
+        targetInvocations.incrementAndGet();
+        return JsonSupport.MAPPER.createObjectNode().put("status", "simulated");
+      }, clock);
+      assertThat(targetInvocations).hasValue(0);
+      assertThat(restoredState.find(ACME, reqId1)).isEqualTo(originalPending);
+      assertThat(restoredState.find(ACME, reqId2)).isEqualTo(originalApproved);
+
+      // Expiry is exclusive: reject exactly at T0 + 300 seconds, without sleeping.
+      Clock expiredClock = Clock.fixed(T0.plusSeconds(300), ZoneOffset.UTC);
+      PostgresDurableEnforcementState expiredState = new PostgresDurableEnforcementState(
+          destDs, expiredClock, PostgresBackupRestoreQualificationTest::nextId);
       HumanApprovalService expiredService = approvalService(
-          destDs, restoredState, action -> {
+          destDs, expiredState, action -> {
             targetInvocations.incrementAndGet();
             return JsonSupport.MAPPER.createObjectNode().put("status", "simulated");
           }, expiredClock);
@@ -439,6 +479,13 @@ final class PostgresBackupRestoreQualificationTest {
       // Verify Flyway history in source DB
       List<String> sourceMigrations = readInstalledMigrations(sourceDs);
       assertThat(sourceMigrations).contains("V1", "V2", "V3", "V4", "V5", "V6", "V7");
+      List<JsonNode> sourceMigrationHistory = readMigrationHistory(sourceDs);
+      int sourceSchema = readContractVersion(sourceDs);
+      JsonNode sourcePointer = readActivePointer(sourceDs, workspaceId, policyId);
+      assertThat(sourcePointer.path("activation_sequence").asLong()).isEqualTo(3);
+      List<PolicyVersionRecord> sourceVersions = sourceStore.listVersions(workspaceId, policyId);
+      List<PolicyTransitionRecord> sourceTransitions = sourceStore.activationHistory(workspaceId, policyId);
+      List<RollbackRecord> sourceRollbacks = sourceStore.rollbackHistory(workspaceId, policyId);
 
       // Backup source database
       ExecResult dumpResult = dumpDatabase(sourceDb, dumpPath);
@@ -451,26 +498,32 @@ final class PostgresBackupRestoreQualificationTest {
 
       // Recreate stores against restored database
       DataSource destDs = dataSourceFor(destDb);
+      // Read raw restored metadata BEFORE constructors can apply missing migrations.
+      assertThat(readMigrationHistory(destDs)).isEqualTo(sourceMigrationHistory);
+      assertThat(readContractVersion(destDs)).isEqualTo(sourceSchema);
+      assertThat(readActivePointer(destDs, workspaceId, policyId)).isEqualTo(sourcePointer);
       PostgresPolicyLifecycleStore restoredStore = new PostgresPolicyLifecycleStore(
-          destDs, Clock.fixed(T0, ZoneOffset.UTC), PostgresBackupRestoreQualificationTest::nextId);
-      PostgresDurableEnforcementState restoredEnforcement = new PostgresDurableEnforcementState(
           destDs, Clock.fixed(T0, ZoneOffset.UTC), PostgresBackupRestoreQualificationTest::nextId);
 
       // Verify active version
       Optional<PolicyVersionRecord> restoredActiveOpt = restoredStore.activeVersion(workspaceId, policyId);
       assertThat(restoredActiveOpt).isPresent();
       PolicyVersionRecord restoredActive = restoredActiveOpt.get();
+      assertThat(restoredActive).isEqualTo(sourceActive);
       assertThat(restoredActive.version()).isEqualTo(1);
       assertThat(restoredActive.contentHash()).isEqualTo(v1Staged.contentHash());
       assertThat(restoredActive.document()).isEqualTo(v1Doc);
 
       // Verify version listing (ordered descending by version)
       List<PolicyVersionRecord> versions = restoredStore.listVersions(workspaceId, policyId);
+      assertThat(versions).isEqualTo(sourceVersions);
+      assertThat(versions.getFirst().contentHash()).isEqualTo(v2Staged.contentHash());
       assertThat(versions).hasSize(2);
       assertThat(versions).extracting(PolicyVersionRecord::version).containsExactly(2, 1);
 
       // Verify activation history (3 transitions: activate, activate, rollback)
       List<PolicyTransitionRecord> transitions = restoredStore.activationHistory(workspaceId, policyId);
+      assertThat(transitions).isEqualTo(sourceTransitions);
       assertThat(transitions).hasSize(3);
       assertThat(transitions.get(0).transitionType()).isEqualTo("activate");
       assertThat(transitions.get(0).toVersion()).isEqualTo(1);
@@ -481,6 +534,7 @@ final class PostgresBackupRestoreQualificationTest {
 
       // Verify rollback history
       List<RollbackRecord> rollbacks = restoredStore.rollbackHistory(workspaceId, policyId);
+      assertThat(rollbacks).isEqualTo(sourceRollbacks);
       assertThat(rollbacks).hasSize(1);
       assertThat(rollbacks.getFirst().fromVersion()).isEqualTo(2);
       assertThat(rollbacks.getFirst().toVersion()).isEqualTo(1);
@@ -489,10 +543,11 @@ final class PostgresBackupRestoreQualificationTest {
       // Verify Flyway schema history parity
       List<String> destMigrations = readInstalledMigrations(destDs);
       assertThat(destMigrations).isEqualTo(sourceMigrations);
+      assertThat(readMigrationHistory(destDs)).isEqualTo(sourceMigrationHistory);
 
       // Verify schema guard
       int contractVersion = readContractVersion(destDs);
-      assertThat(contractVersion).isEqualTo(7);
+      assertThat(contractVersion).isEqualTo(sourceSchema);
 
     } finally {
       POSTGRES.execInContainer("rm", "-f", dumpPath);
@@ -525,7 +580,7 @@ final class PostgresBackupRestoreQualificationTest {
       DataSource sourceDs = dataSourceFor(sourceDb);
 
       // The synthetic target ledger / invocation counter represents the external target reality.
-      // It exists outside the database and tracks real side effects.
+      // It exists outside the database and tracks synthetic calls, never a real target effect.
       AtomicInteger externalTargetLedger = new AtomicInteger(0);
 
       Clock clockT0 = Clock.fixed(T0, ZoneOffset.UTC);
@@ -546,6 +601,7 @@ final class PostgresBackupRestoreQualificationTest {
           reviewer(ACME, "user:bob@example.com"), requestId, "approve", "CHANGE_REVIEWED");
 
       assertThat(stateT0.find(ACME, requestId).status()).isEqualTo("approved");
+      ApprovalRequestState approvedAtT0 = stateT0.find(ACME, requestId);
       assertThat(externalTargetLedger.get())
           .as("External target must have 0 invocations at T0")
           .isZero();
@@ -557,8 +613,10 @@ final class PostgresBackupRestoreQualificationTest {
       // Step 3: At T1 (T0 + 10s), execute the approved action in the primary system.
       // The permit is consumed, database transitions to 'consumed', and target ledger records 1 effect.
       Clock clockT1 = Clock.fixed(T0.plusSeconds(10), ZoneOffset.UTC);
+      PostgresDurableEnforcementState stateT1 = new PostgresDurableEnforcementState(
+          sourceDs, clockT1, PostgresBackupRestoreQualificationTest::nextId);
       HumanApprovalService approvalServiceT1 = approvalService(
-          sourceDs, stateT0, action -> {
+          sourceDs, stateT1, action -> {
             externalTargetLedger.incrementAndGet();
             return JsonSupport.MAPPER.createObjectNode().put("status", "simulated");
           }, clockT1);
@@ -578,7 +636,7 @@ final class PostgresBackupRestoreQualificationTest {
       assertThat(externalTargetLedger.get()).isEqualTo(1);
 
       // Step 4: At T2 (T0 + 20s), a disaster occurs.
-      // An operator restores the pre-consumption backup (T0) into a new database (or restores over the primary).
+      // Restore the pre-consumption backup (T0) into this test's fresh destination database only.
       createDatabase(destDb);
       ExecResult restoreResult = restoreDatabase(destDb, dumpPathT0);
       assertThat(restoreResult.getExitCode()).isZero();
@@ -599,6 +657,11 @@ final class PostgresBackupRestoreQualificationTest {
       // The restored database has NO KNOWLEDGE of the execution that occurred at T1!
       // The approval request is back in 'approved' status, and no consumed permit row exists.
       ApprovalRequestState staleRequestState = restoredState.find(ACME, requestId);
+      assertThat(staleRequestState).isEqualTo(approvedAtT0);
+      assertThat(restoredState.findAction(ACME, requestId)).isEqualTo(modifyAction);
+      assertThat(new PostgresPermitConsumptionStore(destDs, ACME).isConsumed(executedT1.attempt().permitId()))
+          .isFalse();
+      assertThat(externalTargetLedger).hasValue(1);
       assertThat(staleRequestState.status())
           .as("Stale restore from T0 revived 'approved' status")
           .isEqualTo("approved");
@@ -612,6 +675,10 @@ final class PostgresBackupRestoreQualificationTest {
 
       assertThat(duplicatedExecution.outcome()).isEqualTo("succeeded");
       assertThat(duplicatedExecution.approval().status()).isEqualTo("consumed");
+      assertThat(duplicatedExecution.approval().binding()).isEqualTo(approvedAtT0.binding());
+      assertThat(duplicatedExecution.attempt().idempotencyKey()).isEqualTo(executedT1.attempt().idempotencyKey());
+      assertThat(duplicatedExecution.attempt().permitId()).isNotEqualTo(executedT1.attempt().permitId());
+      assertThat(duplicatedExecution.attempt().attemptId()).isNotEqualTo(executedT1.attempt().attemptId());
 
       // ASSERT THE UNSAFE RECOVERY GAP:
       // The external target ledger has now been invoked TWICE for the same approval!
@@ -626,35 +693,106 @@ final class PostgresBackupRestoreQualificationTest {
     }
   }
 
-  // Helper methods
+  @Test
+  void restoredUnknownSchemaGuardIsRejectedWithoutRepair() throws Exception {
+    String sourceDb = randomDbName("guard_src");
+    String destDb = randomDbName("guard_dst");
+    String dumpPath = "/tmp/guard_" + UUID.randomUUID() + ".dump";
+    Clock clock = Clock.fixed(T0, ZoneOffset.UTC);
+    try {
+      createDatabase(sourceDb);
+      DataSource source = dataSourceFor(sourceDb);
+      new PostgresDurableEnforcementState(source, clock, PostgresBackupRestoreQualificationTest::nextId);
+      List<JsonNode> history = readMigrationHistory(source);
+      assertThat(dumpDatabase(sourceDb, dumpPath).getExitCode()).isZero();
+      createDatabase(destDb);
+      assertThat(restoreDatabase(destDb, dumpPath).getExitCode()).isZero();
+      DataSource destination = dataSourceFor(destDb);
+      assertThat(readMigrationHistory(destination)).isEqualTo(history);
+      // Fixture-superuser corruption, not a runtime application's granted operation.
+      try (var connection = destination.getConnection(); var sql = connection.createStatement()) {
+        sql.execute("ALTER TABLE tp_enforcement_schema_guard DROP CONSTRAINT tp_enforcement_schema_guard_contract_version_check");
+        sql.executeUpdate("UPDATE tp_enforcement_schema_guard SET contract_version = 999 WHERE singleton = TRUE");
+      }
+      assertThatThrownBy(() -> new PostgresDurableEnforcementState(
+          destination, clock, PostgresBackupRestoreQualificationTest::nextId))
+          .isInstanceOf(IllegalStateException.class).hasMessage("INCOMPATIBLE_DURABLE_STATE_SCHEMA");
+      assertThat(readContractVersion(destination)).isEqualTo(999);
+      assertThat(readMigrationHistory(destination)).isEqualTo(history);
+    } finally {
+      POSTGRES.execInContainer("rm", "-f", dumpPath);
+      dropDatabase(sourceDb);
+      dropDatabase(destDb);
+    }
+  }
+
+  // Helper methods: fixed tools and generated names inside this owned disposable container only.
 
   private static ExecResult dumpDatabase(String dbName, String dumpPath) throws Exception {
-    return POSTGRES.execInContainer(
-        "env", "PGPASSWORD=" + POSTGRES.getPassword(),
+    requireFixtureName(dbName, dumpPath);
+    assertThat(POSTGRES.execInContainer("test", "!", "-e", dumpPath).getExitCode()).isZero();
+    ExecResult result = POSTGRES.execInContainer(
+        "sh", "-c", "umask 077; exec \"$@\"", "synthetic-dump",
         "pg_dump",
+        "-h", "/var/run/postgresql",
         "-U", POSTGRES.getUsername(),
         "-d", dbName,
         "-Fc",
         "-f", dumpPath);
+    if (result.getExitCode() == 0) assertPrivateArchive(dumpPath);
+    return result;
   }
 
   private static ExecResult restoreDatabase(String dbName, String dumpPath) throws Exception {
+    requireFixtureName(dbName, dumpPath);
+    assertPrivateArchive(dumpPath);
+    try (var connection = dataSourceFor(dbName).getConnection(); var sql = connection.createStatement();
+         var result = sql.executeQuery("SELECT count(*) FROM pg_tables WHERE schemaname = 'public'")) {
+      assertThat(result.next()).isTrue();
+      assertThat(result.getLong(1)).as("Restore destination must be a fresh fixture").isZero();
+    }
     return POSTGRES.execInContainer(
-        "env", "PGPASSWORD=" + POSTGRES.getPassword(),
         "pg_restore",
+        "--single-transaction", "--exit-on-error",
+        "-h", "/var/run/postgresql",
         "-U", POSTGRES.getUsername(),
         "-d", dbName,
         dumpPath);
   }
 
+  private static void assertPrivateArchive(String path) throws Exception {
+    ExecResult metadata = POSTGRES.execInContainer("stat", "-c", "%a:%s", path);
+    assertThat(metadata.getExitCode()).isZero();
+    String[] fields = metadata.getStdout().trim().split(":");
+    assertThat(fields).hasSize(2);
+    assertThat(fields[0]).as("Archive must be owner-only").isEqualTo("600");
+    assertThat(Long.parseLong(fields[1])).as("Synthetic archive must be bounded")
+        .isBetween(1L, 4L * 1024 * 1024);
+  }
+
+  private static void requireFixtureName(String database, String archive) {
+    requireFixtureDatabase(database);
+    if (!archive.matches("/tmp/[a-z0-9_]+_[a-f0-9-]{36}\\.dump")) {
+      throw new IllegalArgumentException("Only generated backup fixture targets are supported.");
+    }
+  }
+
+  private static void requireFixtureDatabase(String database) {
+    if (!database.matches("tp_[a-z_]+_[a-f0-9]{16}")) {
+      throw new IllegalArgumentException("Only generated backup fixture databases are supported.");
+    }
+  }
+
   private static void createDatabase(String dbName) throws SQLException {
+    requireFixtureDatabase(dbName);
     try (Connection connection = defaultDataSource().getConnection();
          Statement statement = connection.createStatement()) {
-      statement.execute("CREATE DATABASE " + dbName);
+      statement.execute("CREATE DATABASE " + dbName + " TEMPLATE template0");
     }
   }
 
   private static void dropDatabase(String dbName) {
+    requireFixtureDatabase(dbName);
     try (Connection connection = defaultDataSource().getConnection();
          Statement statement = connection.createStatement()) {
       statement.execute(
@@ -700,7 +838,7 @@ final class PostgresBackupRestoreQualificationTest {
     ExecutionPermitAuthority authority = new ExecutionPermitAuthority(
         ExecutionPermitAuthority.DEFAULT_ISSUER,
         "approval-test-key",
-        new byte[32],
+        permitKey,
         30,
         clock,
         () -> "permit-" + nextId(),
@@ -769,6 +907,29 @@ final class PostgresBackupRestoreQualificationTest {
         return resultSet.getInt(1);
       }
       throw new IllegalStateException("Missing tp_enforcement_schema_guard singleton");
+    }
+  }
+
+  private static List<JsonNode> readMigrationHistory(DataSource dataSource) throws Exception {
+    try (var connection = dataSource.getConnection(); var sql = connection.createStatement();
+         var rows = sql.executeQuery("SELECT to_jsonb(h)::text FROM flyway_schema_history h ORDER BY installed_rank")) {
+      List<JsonNode> history = new ArrayList<>();
+      while (rows.next()) history.add(JsonSupport.MAPPER.readTree(rows.getString(1)));
+      return List.copyOf(history);
+    }
+  }
+
+  private static JsonNode readActivePointer(DataSource source, String workspace, String policy) throws Exception {
+    try (var connection = source.getConnection(); var statement = connection.prepareStatement(
+        "SELECT to_jsonb(p)::text FROM tp_active_policies p WHERE workspace_id = ? AND policy_id = ?")) {
+      statement.setString(1, workspace);
+      statement.setString(2, policy);
+      try (var rows = statement.executeQuery()) {
+        assertThat(rows.next()).isTrue();
+        JsonNode pointer = JsonSupport.MAPPER.readTree(rows.getString(1));
+        assertThat(rows.next()).isFalse();
+        return pointer;
+      }
     }
   }
 

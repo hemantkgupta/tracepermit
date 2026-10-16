@@ -141,6 +141,17 @@ numeric narrowing; 26 delivered boundary tests and five independent regressions
 cover that fix. Malformed raw arguments still require trusted-adapter validation.
 No broad requirement or production claim is upgraded by these qualifications.
 
+## Database restore boundary
+
+Same-version simulator tests preserve captured consumed approval/permit,
+action/hash, attempt/idempotency, evidence and policy/migration state through
+actual PostgreSQL custom archives. They also demonstrate two recovery gaps:
+an older still-live approval snapshot can dispatch again, and ordinary Flyway
+bootstrap can initialize an empty destination after a failed archive restore.
+Startup is not successful recovery proof. No automatic quarantine/recovery
+epoch, external witness or validated effectful resume procedure is implemented.
+See [ADR 0044](../architecture/0044-database-restore-safety-limits.md).
+
 ## Controls not yet established
 
 The repository is a security-control POC, **not** a deployable enterprise

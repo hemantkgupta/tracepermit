@@ -161,6 +161,22 @@ only through internal test APIs, never accepted by public ingress.
 See [ADR 0043](../architecture/0043-bounded-evidence-redaction.md) and the
 [API qualification runbook](../runbooks/approval-response-redaction-qualification.md).
 
+## Simulator database backup/restore qualification
+
+`PostgresBackupRestoreQualificationTest` adds six same-version PostgreSQL cases:
+complete captured approval/action/permit/attempt/evidence and policy/migration
+parity, no automatic dispatch, exclusive expiry, unsupported guard rejection,
+and explicit stale-restore/empty-bootstrap gap characterization. Raw restored
+metadata is checked before application constructors can apply migrations.
+
+SEC-005/006, REL-001/003/005 and OPS-004 receive bounded evidence, not whole-ID
+completion. Old snapshots can revive authority; a failed empty restore can be
+initialized as a new database. Recovery safety remains **Partial**: no automated
+fence, recovery-success gate, external target witness, safe resume procedure or
+RPO/RTO qualification. SEC-009 and DATA-001 are context, not new broad claims.
+See [ADR 0044](../architecture/0044-database-restore-safety-limits.md) and the
+[runbook](../runbooks/simulator-backup-restore-qualification.md).
+
 ## Functional requirements
 
 | ID     | Design/source evidence                                                                                                                                                                                                                                                                       | Test evidence                                                                                                                                                      | Status                                                                                            |
