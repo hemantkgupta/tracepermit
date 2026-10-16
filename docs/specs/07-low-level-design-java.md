@@ -158,6 +158,20 @@ loopback approval service with a fixed default-block/explicit-approval policy.
 Offline check mode performs no DB, DNS, IdP or listener operation. See
 [ADR 0035](../architecture/0035-local-approval-operator-bootstrap.md).
 
+`packageSimulatorApprovalDistribution` packages the loopback approval API,
+runtime JARs, built React inbox assets, and a thin bash launcher
+(`tracepermit-simulator-approval`) into a host-native archive
+(`tracepermit-simulator-approval-0.1.0.tar.gz`). The launcher requires only
+Java 21 and forwards strictly to `SimulatorApprovalMain` without requiring a source
+checkout, Node, pnpm, or Gradle on the running host. Offline `--check` validates
+configuration, file permissions (0600/0400 owner-only), Ed25519 keypair math, and
+bundled assets without network, database, or IdP traffic. The archive includes
+`manifest.json` recording the source Git commit, package version, required Java 21,
+and SHA-256 dependency inventory, alongside `SHA256SUMS`. Checksums provide file
+integrity verification, not third-party code signing. All credentials and private keys
+remain operator-owned outside the bundle. See
+[ADR 0040](../architecture/0040-source-free-simulator-approval-distribution.md).
+
 Signed artifacts use named canonicalization and algorithm profiles with
 allowlisted keys. An endpoint source proof binds the exact MCP method/params
 and the authenticated connector credential fingerprint. Delegation grants

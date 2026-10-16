@@ -62,6 +62,11 @@ jobs:
       - name: Verify durable PostgreSQL enforcement state
         run: pnpm test:java-postgres --rerun-tasks
 
+      - name: Verify source-free simulator approval distribution
+        run: |
+          pnpm build:distribution
+          pnpm test:distribution
+
       - name: Check formatting
         run: pnpm format:check
 

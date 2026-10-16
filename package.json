@@ -63,7 +63,9 @@
     "test:approval-api": "scripts/run-java-approval-api-tests.sh",
     "java:env-check": "scripts/test-java-environment.sh",
     "build:java-endpoint": "scripts/build-java-endpoint-connector.sh",
-    "test:endpoint-connector-e2e": "scripts/test-java-endpoint-connector-e2e.sh"
+    "test:endpoint-connector-e2e": "scripts/test-java-endpoint-connector-e2e.sh",
+    "build:distribution": "scripts/build-simulator-approval-distribution.sh",
+    "test:distribution": "node --test scripts/simulator-approval-distribution.test.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.7.2",

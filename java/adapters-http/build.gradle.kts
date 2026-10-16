@@ -1,3 +1,8 @@
+import java.security.MessageDigest
+import java.time.Instant
+import org.gradle.api.tasks.bundling.Compression
+import org.gradle.api.tasks.bundling.Tar
+
 plugins {
   application
 }
@@ -81,3 +86,225 @@ tasks.register<JavaExec>("runSemanticQualification") {
   mainClass = "io.tracepermit.adapters.http.SemanticQualificationMain"
   systemProperty("tracepermit.repositoryRoot", rootDir.parentFile.absolutePath)
 }
+
+abstract class StageSimulatorApprovalDistribution : DefaultTask() {
+  @get:InputFiles
+  abstract val runtimeClasspath: ConfigurableFileCollection
+
+  @get:InputFile
+  abstract val mainJar: RegularFileProperty
+
+  @get:InputFile
+  abstract val launcherScript: RegularFileProperty
+
+  @get:InputDirectory
+  abstract val consoleDir: DirectoryProperty
+
+  @get:InputFile
+  abstract val exampleConfig: RegularFileProperty
+
+  @get:InputFile
+  abstract val runbook: RegularFileProperty
+
+  @get:InputFile
+  abstract val license: RegularFileProperty
+
+  @get:InputFile
+  abstract val notice: RegularFileProperty
+
+  @get:Internal
+  abstract val repoDir: DirectoryProperty
+
+  @get:OutputDirectory
+  abstract val outputDir: DirectoryProperty
+
+  @TaskAction
+  fun stage() {
+    val stageDir = outputDir.get().asFile
+    stageDir.deleteRecursively()
+    stageDir.mkdirs()
+
+    val binDir = stageDir.resolve("bin").apply { mkdirs() }
+    val libDir = stageDir.resolve("lib").apply { mkdirs() }
+    val consoleTargetDir = stageDir.resolve("console").apply { mkdirs() }
+    val examplesDir = stageDir.resolve("examples").apply { mkdirs() }
+    val docsDir = stageDir.resolve("docs").apply { mkdirs() }
+
+    // 1. Copy launcher
+    val launcherDest = binDir.resolve("tracepermit-simulator-approval")
+    launcherScript.get().asFile.copyTo(launcherDest, overwrite = true)
+    launcherDest.setExecutable(true, false)
+
+    // 2. Copy JARs
+    val mainJarFile = mainJar.get().asFile
+    mainJarFile.copyTo(libDir.resolve(mainJarFile.name), overwrite = true)
+    runtimeClasspath.files.forEach { jarFile ->
+      if (jarFile.isFile && jarFile.name.endsWith(".jar")) {
+        jarFile.copyTo(libDir.resolve(jarFile.name), overwrite = true)
+      }
+    }
+
+    // 3. Copy Console
+    val consoleSourceDir = consoleDir.get().asFile
+    val indexHtml = consoleSourceDir.resolve("index.html")
+    if (!indexHtml.isFile) {
+      throw GradleException("Built console assets missing at ${consoleSourceDir.absolutePath}; run 'pnpm build' first.")
+    }
+    consoleSourceDir.copyRecursively(consoleTargetDir, overwrite = true)
+
+    // 4. Copy Examples
+    exampleConfig.get().asFile.copyTo(examplesDir.resolve("simulator-approvals.example.json"), overwrite = true)
+
+    // 5. Copy Docs & Legal
+    runbook.get().asFile.copyTo(docsDir.resolve("setup-runbook.md"), overwrite = true)
+    license.get().asFile.copyTo(docsDir.resolve("LICENSE"), overwrite = true)
+    notice.get().asFile.copyTo(docsDir.resolve("NOTICE"), overwrite = true)
+
+    fun sha256(file: File): String {
+      val md = MessageDigest.getInstance("SHA-256")
+      file.inputStream().use { input ->
+        val buffer = ByteArray(8192)
+        var read: Int
+        while (input.read(buffer).also { read = it } != -1) {
+          md.update(buffer, 0, read)
+        }
+      }
+      return md.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    // 6. Generate manifest.json
+    val jars = libDir.listFiles { f -> f.isFile && f.name.endsWith(".jar") }
+      ?.sortedBy { it.name } ?: emptyList()
+
+    val commit = try {
+      val proc = ProcessBuilder("git", "rev-parse", "HEAD")
+        .directory(repoDir.get().asFile)
+        .redirectError(ProcessBuilder.Redirect.DISCARD)
+        .start()
+      val out = proc.inputStream.bufferedReader().readText().trim()
+      if (proc.waitFor() == 0 && out.isNotEmpty()) out else "unknown"
+    } catch (_: Exception) {
+      "unknown"
+    }
+    val manifestJson = buildString {
+      append("{\n")
+      append("  \"schemaVersion\": \"1.0\",\n")
+      append("  \"packageName\": \"tracepermit-simulator-approval\",\n")
+      append("  \"packageVersion\": \"0.1.0\",\n")
+      append("  \"sourceCommit\": \"$commit\",\n")
+      append("  \"buildTimestamp\": \"${Instant.now()}\",\n")
+      append("  \"requiredJava\": \"21\",\n")
+      append("  \"supportedPlatforms\": [\n    \"macOS\",\n    \"Linux\"\n  ],\n")
+      append("  \"entryPoint\": \"io.tracepermit.adapters.http.SimulatorApprovalMain\",\n")
+      append("  \"launcher\": \"bin/tracepermit-simulator-approval\",\n")
+      append("  \"integrityNotice\": \"Artifact checksums verify transmission and storage integrity. They do not constitute an independent cryptographic code signature or third-party provenance attestation.\",\n")
+      append("  \"dependencyInventory\": [\n")
+      jars.forEachIndexed { index, jar ->
+        append("    {\n")
+        append("      \"name\": \"${jar.name}\",\n")
+        append("      \"sizeBytes\": ${jar.length()},\n")
+        append("      \"sha256\": \"${sha256(jar)}\"\n")
+        append("    }")
+        if (index < jars.size - 1) append(",")
+        append("\n")
+      }
+      append("  ]\n")
+      append("}\n")
+    }
+    stageDir.resolve("manifest.json").writeText(manifestJson)
+
+    // 7. Generate SHA256SUMS
+    val sums = buildString {
+      append("# TracePermit Simulator Approval Distribution SHA-256 Checksums\n")
+      append("# Notice: Checksums verify transmission and storage integrity.\n")
+      append("# They do not constitute an independent cryptographic code signature.\n")
+      val allFiles = stageDir.walkTopDown().filter { it.isFile && it.name != "SHA256SUMS" }.toList()
+        .sortedBy { it.relativeTo(stageDir).path.replace('\\', '/') }
+      allFiles.forEach { file ->
+        val relPath = file.relativeTo(stageDir).path.replace('\\', '/')
+        append("${sha256(file)}  $relPath\n")
+      }
+    }
+    stageDir.resolve("SHA256SUMS").writeText(sums)
+  }
+}
+
+abstract class GenerateArchiveChecksum : DefaultTask() {
+  @get:InputFile
+  abstract val archiveFile: RegularFileProperty
+
+  @get:OutputFile
+  abstract val checksumFile: RegularFileProperty
+
+  @TaskAction
+  fun generate() {
+    val archive = archiveFile.get().asFile
+    val md = MessageDigest.getInstance("SHA-256")
+    archive.inputStream().use { input ->
+      val buffer = ByteArray(8192)
+      var read: Int
+      while (input.read(buffer).also { read = it } != -1) {
+        md.update(buffer, 0, read)
+      }
+    }
+    val sha256 = md.digest().joinToString("") { "%02x".format(it) }
+    checksumFile.get().asFile.writeText("$sha256  ${archive.name}\n")
+    logger.lifecycle("Distribution archive created: ${archive.absolutePath} (${archive.length()} bytes)")
+    logger.lifecycle("Distribution SHA-256: $sha256")
+  }
+}
+
+val stageSimulatorApprovalDistribution = tasks.register<StageSimulatorApprovalDistribution>("stageSimulatorApprovalDistribution") {
+  group = "distribution"
+  description = "Stages files for the source-free simulator approval distribution."
+  dependsOn(tasks.named("jar"))
+  runtimeClasspath.from(configurations["runtimeClasspath"])
+  mainJar.set(tasks.named<Jar>("jar").flatMap { it.archiveFile })
+  launcherScript.set(layout.projectDirectory.file("src/main/scripts/tracepermit-simulator-approval"))
+  consoleDir.set(layout.projectDirectory.dir("../../apps/console/dist"))
+  exampleConfig.set(layout.projectDirectory.file("../../config/simulator-approvals.example.json"))
+  runbook.set(layout.projectDirectory.file("../../docs/runbooks/simulator-approval-distribution.md"))
+  license.set(layout.projectDirectory.file("../../LICENSE"))
+  notice.set(layout.projectDirectory.file("../../NOTICE"))
+  repoDir.set(layout.projectDirectory.dir("../.."))
+  outputDir.set(layout.buildDirectory.dir("staged-distribution/tracepermit-simulator-approval-0.1.0"))
+}
+
+val packageSimulatorApprovalDistribution = tasks.register<Tar>("packageSimulatorApprovalDistribution") {
+  group = "distribution"
+  description = "Packages the source-free simulator approval host-native archive."
+  dependsOn(stageSimulatorApprovalDistribution)
+  archiveBaseName.set("tracepermit-simulator-approval")
+  archiveVersion.set("0.1.0")
+  archiveExtension.set("tar.gz")
+  compression = Compression.GZIP
+  destinationDirectory.set(layout.buildDirectory.dir("distributions"))
+  from(layout.buildDirectory.dir("staged-distribution"))
+  filesMatching("**/bin/*") {
+    filePermissions {
+      unix(0b111_101_101)
+    }
+  }
+}
+
+val checksumSimulatorApprovalDistribution = tasks.register<GenerateArchiveChecksum>("checksumSimulatorApprovalDistribution") {
+  group = "distribution"
+  description = "Generates SHA-256 checksum for the simulator approval archive."
+  archiveFile.set(packageSimulatorApprovalDistribution.flatMap { it.archiveFile })
+  checksumFile.set(packageSimulatorApprovalDistribution.flatMap { tar ->
+    tar.destinationDirectory.file(tar.archiveFile.map { "${it.asFile.name}.sha256" })
+  })
+}
+
+packageSimulatorApprovalDistribution.configure {
+  finalizedBy(checksumSimulatorApprovalDistribution)
+}
+
+tasks.register<Sync>("installSimulatorApprovalDistribution") {
+  group = "distribution"
+  description = "Installs the unpacked simulator approval distribution into build/install/tracepermit-simulator-approval."
+  dependsOn(stageSimulatorApprovalDistribution)
+  from(layout.buildDirectory.dir("staged-distribution/tracepermit-simulator-approval-0.1.0"))
+  into(layout.buildDirectory.dir("install/tracepermit-simulator-approval-0.1.0"))
+}
+
