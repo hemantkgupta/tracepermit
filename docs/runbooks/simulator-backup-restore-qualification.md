@@ -61,6 +61,13 @@ it failed because no startup exception occurred. The final suite retains that
 behavior as an explicit gap characterization and adds the sixth guard test.
 Production startup, authorization and persistence behavior are unchanged.
 
+Those statements describe this qualification slice's legacy constructor path.
+The supported operator entry point now uses explicit initialization and strict
+non-migrating opens ([ADR 0045](../architecture/0045-explicit-database-initialization.md)).
+Its normal run rejects empty state, while the older-snapshot authority revival
+case remains unresolved. This suite's compatibility constructors still exercise
+the original bootstrap ambiguity; it does not prove strict startup accepts it.
+
 The evidence comparison verifies the existing local hash-linked chain against
 the captured source records; it is not an independently signed recovery anchor
 or non-repudiation proof. Raw duplicate-claim tests exercise storage semantics,
