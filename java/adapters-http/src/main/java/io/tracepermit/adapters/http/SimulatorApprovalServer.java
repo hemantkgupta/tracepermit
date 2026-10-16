@@ -25,6 +25,7 @@ import io.tracepermit.identity.ConnectorScope;
 import io.tracepermit.identity.OidcAccessTokenVerifier;
 import io.tracepermit.persistence.postgres.PostgresDurableEnforcementState;
 import io.tracepermit.policy.PolicyEvaluator;
+import io.tracepermit.policy.PolicyLifecycleStore;
 import io.tracepermit.security.ExecutionPermitAuthority;
 import io.tracepermit.simulator.StatefulTargetSimulator;
 import java.io.IOException;
@@ -81,6 +82,30 @@ public final class SimulatorApprovalServer implements AutoCloseable {
         simulator, clock, browser);
   }
 
+  public static SimulatorApprovalServer start(
+      InetSocketAddress address, OidcAccessTokenVerifier verifier, ApprovalMemberships memberships,
+      PostgresDurableEnforcementState state, PolicyLifecycleStore policyStore, String workspaceId,
+      String policyId, ExecutionPermitAuthority permits, StatefulTargetSimulator simulator, Clock clock)
+      throws IOException {
+    if (address.getAddress() == null
+        || !"127.0.0.1".equals(address.getAddress().getHostAddress())) {
+      throw new IllegalArgumentException("The approval foundation must bind to IPv4 loopback.");
+    }
+    return start(address, verifier, memberships, state, policyStore, workspaceId, policyId, permits, simulator, clock, null);
+  }
+
+  static SimulatorApprovalServer start(
+      InetSocketAddress address, OidcAccessTokenVerifier verifier, ApprovalMemberships memberships,
+      PostgresDurableEnforcementState state, PolicyLifecycleStore policyStore, String workspaceId,
+      String policyId, ExecutionPermitAuthority permits, StatefulTargetSimulator simulator, Clock clock,
+      ApprovalBrowserAdapter browser) throws IOException {
+    if (address.getAddress() == null || !"127.0.0.1".equals(address.getAddress().getHostAddress())) {
+      throw new IllegalArgumentException("The approval foundation must bind to IPv4 loopback.");
+    }
+    return new SimulatorApprovalServer(address, verifier, memberships, state, policyStore, workspaceId,
+        policyId, permits, simulator, clock, browser);
+  }
+
   private SimulatorApprovalServer(
       InetSocketAddress address, OidcAccessTokenVerifier verifier, ApprovalMemberships memberships,
       PostgresDurableEnforcementState state, JsonNode policy, ExecutionPermitAuthority permits,
@@ -92,6 +117,27 @@ public final class SimulatorApprovalServer implements AutoCloseable {
     this.clock = java.util.Objects.requireNonNull(clock);
     this.approvals = new HumanApprovalService(new PolicyEvaluator(), policy, permits, state, state,
         simulator, () -> SecurityReadiness.allReady(clock.instant()), clock,
+        () -> UUID.randomUUID().toString(), "urn:tracepermit:approval-api:simulator", "simulator", 300);
+    this.server = HttpServer.create(address, 32);
+    // Bounded parallelism; this local foundation is not a production abuse-control layer.
+    this.workers = Executors.newFixedThreadPool(8);
+    server.setExecutor(workers);
+    server.createContext("/", this::handle);
+    server.start();
+  }
+
+  private SimulatorApprovalServer(
+      InetSocketAddress address, OidcAccessTokenVerifier verifier, ApprovalMemberships memberships,
+      PostgresDurableEnforcementState state, PolicyLifecycleStore policyStore, String workspaceId,
+      String policyId, ExecutionPermitAuthority permits, StatefulTargetSimulator simulator, Clock clock,
+      ApprovalBrowserAdapter browser) throws IOException {
+    this.browser = browser;
+    this.verifier = java.util.Objects.requireNonNull(verifier);
+    this.memberships = java.util.Objects.requireNonNull(memberships);
+    this.state = java.util.Objects.requireNonNull(state);
+    this.clock = java.util.Objects.requireNonNull(clock);
+    this.approvals = new HumanApprovalService(new PolicyEvaluator(), policyStore, workspaceId, policyId,
+        permits, state, state, simulator, () -> SecurityReadiness.allReady(clock.instant()), clock,
         () -> UUID.randomUUID().toString(), "urn:tracepermit:approval-api:simulator", "simulator", 300);
     this.server = HttpServer.create(address, 32);
     // Bounded parallelism; this local foundation is not a production abuse-control layer.
@@ -231,7 +277,7 @@ public final class SimulatorApprovalServer implements AutoCloseable {
       String code = failure.getMessage();
       if (Set.of("APPROVAL_ALREADY_DECIDED", "APPROVAL_NOT_EXECUTABLE", "APPROVAL_REPLAYED",
           "APPROVAL_EXPIRED", "APPROVAL_BINDING_MISMATCH", "APPROVAL_POLICY_MISMATCH",
-          "APPROVAL_NOT_REQUIRED")
+          "APPROVAL_NOT_REQUIRED", "STALE_POLICY_GENERATION")
           .contains(code == null ? "" : code)) error(exchange, 409, code);
       else error(exchange, 503, "SECURITY_STATE_UNAVAILABLE");
     } catch (RuntimeException failure) {

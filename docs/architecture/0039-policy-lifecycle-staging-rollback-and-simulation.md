@@ -102,9 +102,11 @@ static-policy composition; no writable HTTP/MCP endpoint or React editor is adde
 - Database triggers reject ordinary application updates and deletes on revisions and
   append-only transition history. This does not claim cryptographic tamper-proofing
   against a database administrator.
-- Durable policy activation integration with pending-approval stale-policy checks is
-  explicitly deferred; pending human approvals continue to snapshot their evaluation-time
-  policy version.
+- The original static-policy composition snapshots the evaluation-time policy version.
+  [ADR 0042](0042-durable-policy-generation-binding.md) adds opt-in durable active-generation
+  binding and atomic stale-claim rejection for simulator approvals. Default launchers
+  and the source-free distribution remain static-policy compositions. An activation
+  after a committed execution claim is not cancellation of that claim.
 - Authenticated HTTP/MCP administration endpoints, React console policy editors,
   and distributed multi-region policy synchronization remain deferred target work.
 - Calls are trusted in-process Java APIs, not policy-changing agent tools.

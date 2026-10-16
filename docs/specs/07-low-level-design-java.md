@@ -145,10 +145,32 @@ verifies signed anchor receipts before storing immutable delivery evidence.
 The separate loopback `SimulatorApprovalServer` derives reviewer authority
 from verified access tokens plus operator-owned `ApprovalMemberships`.
 `DurableApprovalActionState` extends approval persistence with an atomic exact
-action snapshot and tenant-scoped reads. PostgreSQL V6 implements this port;
+action snapshot and tenant-scoped reads. PostgreSQL V6/V8 implements this port;
 `HumanApprovalService.requestApprovalWithSnapshot` requires it. Execution uses
 the original stored canonical action rather than a new client submission.
-The existing console and demo launchers do not use this foundation yet.
+In durable policy mode, approvals are bound to the active policy version,
+canonical content hash, and monotonic activation generation via
+`ApprovalPolicyBinding` and `tp_approval_policy_bindings` (migration V8).
+`HumanApprovalService` re-verifies generation prior to permit issuance, and
+`PostgresDurableEnforcementState.consumeAndClaim` locks `tp_active_policies` `FOR SHARE`,
+failing closed with `STALE_POLICY_GENERATION` if generation, version, or content
+hash differs from the binding snapshot. The durable service rejects unbound
+approvals. The raw claim port retains static compatibility only when both
+saved binding and claim policy context are absent; a saved binding cannot be
+bypassed by omitting claim context. This is not a database-global mode fence.
+Rollback to an identical prior policy version advances generation and rejects
+previous approvals. Stale pending/approved rows are retained, not automatically
+cancelled. See [ADR 0042](../architecture/0042-durable-policy-generation-binding.md).
+
+Activation after the Java precheck may allow an internal permit to be minted,
+but the atomic claim still prevents stale consumption and dispatch. Claim
+commit is the ordering point: later activation does not cancel a committed
+claim, and locks are released before target invocation.
+`PostgresPolicyGenerationBoundaryTest` forces both row-lock schedules and
+checks creation/precheck races, legacy compatibility, insert rollback and lost
+commit acknowledgement. Default launchers and the source-free distribution
+remain static-policy compositions; only the opt-in Java factory wires this
+durable lifecycle integration.
 
 `SimulatorApprovalConfiguration` validates private bounded POSIX files,
 explicit single-client/tenant OIDC trust, independent requester/reviewer enrollment,

@@ -12,10 +12,12 @@ import io.tracepermit.execution.ApprovalConsumptionResult;
 import io.tracepermit.execution.ApprovalConsumptionStatus;
 import io.tracepermit.execution.ApprovalDecision;
 import io.tracepermit.execution.ApprovalExecutionClaim;
+import io.tracepermit.execution.ApprovalPolicyBinding;
 import io.tracepermit.execution.ApprovalRequestState;
 import io.tracepermit.execution.DurableClaimResult;
 import io.tracepermit.execution.DurableClaimStatus;
 import io.tracepermit.execution.DurableApprovalActionState;
+import io.tracepermit.execution.DurablePolicyBoundApprovalState;
 import io.tracepermit.execution.DurableEnforcementState;
 import io.tracepermit.execution.DurableEvidenceRecord;
 import io.tracepermit.execution.DurableExecutionClaim;
@@ -43,12 +45,13 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.function.Supplier;
 
 /** PostgreSQL implementation of the durable execution and evidence transaction port. */
 public final class PostgresDurableEnforcementState
     implements DurableEnforcementState,
-        DurableApprovalActionState,
+        DurablePolicyBoundApprovalState,
         EvidencePublicationState,
         DurableReconciliationState {
   public static final String MIGRATION_LOCATION = "classpath:db/migration";
@@ -577,7 +580,7 @@ public final class PostgresDurableEnforcementState
 
   @Override
   public ApprovalRequestState createPending(ApprovalBinding binding) {
-    return createPendingInternal(binding, null);
+    return createPendingInternal(binding, null, null);
   }
 
   @Override
@@ -586,10 +589,32 @@ public final class PostgresDurableEnforcementState
     if (!binding.actionHash().equals(CanonicalJson.sha256(event))) {
       throw new IllegalArgumentException("APPROVAL_BINDING_MISMATCH");
     }
-    return createPendingInternal(binding, event);
+    return createPendingInternal(binding, event, null);
   }
 
-  private ApprovalRequestState createPendingInternal(ApprovalBinding binding, JsonNode event) {
+  @Override
+  public ApprovalRequestState createPendingBound(
+      ApprovalBinding binding,
+      JsonNode canonicalAction,
+      ApprovalPolicyBinding policyBinding) {
+    Objects.requireNonNull(binding);
+    Objects.requireNonNull(policyBinding);
+    if (!binding.policyId().equals(policyBinding.policyId())
+        || binding.policyVersion() != policyBinding.policyVersion()) {
+      throw new IllegalArgumentException("APPROVAL_BINDING_MISMATCH");
+    }
+    if (canonicalAction != null) {
+      JsonNode event = ActionValidator.validate(canonicalAction).deepCopy();
+      if (!binding.actionHash().equals(CanonicalJson.sha256(event))) {
+        throw new IllegalArgumentException("APPROVAL_BINDING_MISMATCH");
+      }
+      return createPendingInternal(binding, event, policyBinding);
+    }
+    return createPendingInternal(binding, null, policyBinding);
+  }
+
+  private ApprovalRequestState createPendingInternal(
+      ApprovalBinding binding, JsonNode event, ApprovalPolicyBinding policyBinding) {
     Objects.requireNonNull(binding);
     return inTransaction(connection -> {
       String sql = """
@@ -627,6 +652,24 @@ public final class PostgresDurableEnforcementState
           snapshot.executeUpdate();
         }
       }
+      if (policyBinding != null) {
+        try (PreparedStatement statement = connection.prepareStatement("""
+            INSERT INTO tp_approval_policy_bindings (
+              tenant_id, approval_request_id, workspace_id, policy_id, policy_version,
+              policy_generation, policy_content_hash, bound_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """)) {
+          statement.setString(1, binding.tenant().value());
+          statement.setString(2, binding.approvalRequestId());
+          statement.setString(3, policyBinding.workspaceId());
+          statement.setString(4, policyBinding.policyId());
+          statement.setInt(5, policyBinding.policyVersion());
+          statement.setLong(6, policyBinding.policyGeneration());
+          statement.setString(7, policyBinding.policyContentHash());
+          statement.setObject(8, databaseTime(policyBinding.boundAt()));
+          statement.executeUpdate();
+        }
+      }
       ApprovalRequestState created = requireApproval(
           connection, binding.tenant(), binding.approvalRequestId(), false);
       appendApprovalEvidence(
@@ -662,6 +705,41 @@ public final class PostgresDurableEnforcementState
       }
     } catch (SQLException failure) {
       throw databaseFailure(failure);
+    }
+  }
+
+  @Override
+  public Optional<ApprovalPolicyBinding> findPolicyBinding(TenantPartition tenant, String approvalRequestId) {
+    Objects.requireNonNull(tenant);
+    requireIdentifier(approvalRequestId, 256, "approval request ID");
+    try (Connection connection = dataSource.getConnection()) {
+      return findPolicyBinding(connection, tenant, approvalRequestId);
+    } catch (SQLException failure) {
+      throw databaseFailure(failure);
+    }
+  }
+
+  private Optional<ApprovalPolicyBinding> findPolicyBinding(
+      Connection connection, TenantPartition tenant, String approvalRequestId) throws SQLException {
+    String sql = """
+        SELECT workspace_id, policy_id, policy_version, policy_generation,
+               policy_content_hash, bound_at
+          FROM tp_approval_policy_bindings
+         WHERE tenant_id = ? AND approval_request_id = ?
+        """;
+    try (PreparedStatement statement = connection.prepareStatement(sql)) {
+      statement.setString(1, tenant.value());
+      statement.setString(2, approvalRequestId);
+      try (ResultSet result = statement.executeQuery()) {
+        if (!result.next()) return Optional.empty();
+        return Optional.of(new ApprovalPolicyBinding(
+            result.getString("workspace_id"),
+            result.getString("policy_id"),
+            result.getInt("policy_version"),
+            result.getLong("policy_generation"),
+            result.getString("policy_content_hash"),
+            result.getObject("bound_at", OffsetDateTime.class).toInstant()));
+      }
     }
   }
 
@@ -793,6 +871,51 @@ public final class PostgresDurableEnforcementState
     if (!approval.binding().equals(claim.binding())
         || !Objects.equals(approval.approvalDecisionId(), claim.approvalDecisionId())) {
       throw new IllegalArgumentException("APPROVAL_BINDING_MISMATCH");
+    }
+
+    Optional<ApprovalPolicyBinding> storedBindingOpt = findPolicyBinding(
+        connection, claim.binding().tenant(), claim.binding().approvalRequestId());
+
+    if (claim.policyBinding() != null && storedBindingOpt.isEmpty()) {
+      return new ApprovalConsumptionResult(
+          ApprovalConsumptionStatus.STALE_POLICY_GENERATION, approval, null);
+    }
+
+    if (storedBindingOpt.isPresent()) {
+      ApprovalPolicyBinding stored = storedBindingOpt.get();
+      if (claim.policyBinding() != null && !stored.equals(claim.policyBinding())) {
+        return new ApprovalConsumptionResult(
+            ApprovalConsumptionStatus.STALE_POLICY_GENERATION, approval, null);
+      }
+      try (PreparedStatement checkPolicy = connection.prepareStatement("""
+          SELECT a.active_version, a.activation_sequence, v.content_hash
+          FROM tp_active_policies a
+          JOIN tp_policy_versions v
+            ON a.workspace_id = v.workspace_id
+           AND a.policy_id = v.policy_id
+           AND a.active_version = v.version
+          WHERE a.workspace_id = ? AND a.policy_id = ?
+          FOR SHARE OF a
+          """)) {
+        checkPolicy.setString(1, stored.workspaceId());
+        checkPolicy.setString(2, stored.policyId());
+        try (ResultSet rs = checkPolicy.executeQuery()) {
+          if (!rs.next()) {
+            return new ApprovalConsumptionResult(
+                ApprovalConsumptionStatus.STALE_POLICY_GENERATION, approval, null);
+          }
+          int activeVersion = rs.getInt("active_version");
+          long activeGeneration = rs.getLong("activation_sequence");
+          String activeContentHash = rs.getString("content_hash");
+
+          if (activeGeneration != stored.policyGeneration()
+              || activeVersion != stored.policyVersion()
+              || !activeContentHash.equals(stored.policyContentHash())) {
+            return new ApprovalConsumptionResult(
+                ApprovalConsumptionStatus.STALE_POLICY_GENERATION, approval, null);
+          }
+        }
+      }
     }
 
     AttemptMetadata attempt = insertExecutionRows(connection, claim.executionClaim());
@@ -1552,7 +1675,7 @@ public final class PostgresDurableEnforcementState
          PreparedStatement statement = connection.prepareStatement(
              "SELECT contract_version FROM tp_enforcement_schema_guard WHERE singleton = TRUE");
          ResultSet result = statement.executeQuery()) {
-      if (!result.next() || result.getInt(1) != 7 || result.next()) {
+      if (!result.next() || result.getInt(1) != 8 || result.next()) {
         throw new IllegalStateException("INCOMPATIBLE_DURABLE_STATE_SCHEMA");
       }
     } catch (SQLException exception) {

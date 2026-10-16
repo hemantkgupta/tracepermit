@@ -178,10 +178,15 @@ Start the approval service:
 During startup:
 
 1. Validates operator configuration and credentials.
-2. Applies the packaged PostgreSQL Flyway migrations (currently `V1` through `V7`)
+2. Applies the packaged PostgreSQL Flyway migrations (currently `V1` through `V8`)
    and verifies the supported schema before opening the listener.
 3. Binds the HTTP listener strictly to `http://127.0.0.1:<port>`.
 4. Outputs: `TracePermit simulator approval API listening on http://127.0.0.1:<port>`.
+
+The default launcher still uses its fixed static simulator policy. Installing
+schema V8 does not select an active policy or enable generation-bound approvals;
+that composition is an opt-in Java factory described in
+[ADR 0042](../architecture/0042-durable-policy-generation-binding.md).
 
 ### Clean process termination
 
