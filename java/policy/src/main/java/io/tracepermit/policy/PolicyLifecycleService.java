@@ -92,6 +92,14 @@ public final class PolicyLifecycleService {
     return store.activeVersion(workspaceId, policyId);
   }
 
+  public Optional<ActivePolicySnapshot> activePolicySnapshot(String policyId) {
+    return activePolicySnapshot(DEFAULT_WORKSPACE, policyId);
+  }
+
+  public Optional<ActivePolicySnapshot> activePolicySnapshot(String workspaceId, String policyId) {
+    return store.activePolicySnapshot(workspaceId, policyId);
+  }
+
   public Optional<PolicyVersionRecord> getVersion(String policyId, int version) {
     return getVersion(DEFAULT_WORKSPACE, policyId, version);
   }
