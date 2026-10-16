@@ -15,8 +15,8 @@ import io.tracepermit.identity.OidcAccessTokenVerifier;
 import io.tracepermit.identity.OidcProviderConfiguration;
 import io.tracepermit.identity.StaticOidcProviderRegistry;
 import io.tracepermit.persistence.postgres.PostgresDurableEnforcementState;
+import io.tracepermit.persistence.postgres.PostgresPermitConsumptionStore;
 import io.tracepermit.security.ExecutionPermitAuthority;
-import io.tracepermit.security.InMemoryPermitConsumptionStore;
 import io.tracepermit.simulator.StatefulTargetSimulator;
 import java.net.InetSocketAddress;
 import java.net.URI;
@@ -124,7 +124,7 @@ final class SimulatorApprovalServerTest {
     state = new PostgresDurableEnforcementState(dataSource, clock, () -> UUID.randomUUID().toString());
     var permits = new ExecutionPermitAuthority(ExecutionPermitAuthority.DEFAULT_ISSUER,
         "fixture-ed25519", permitKey, 30, clock, () -> UUID.randomUUID().toString(),
-        new InMemoryPermitConsumptionStore());
+        new PostgresPermitConsumptionStore(dataSource));
     server = SimulatorApprovalServer.start(new InetSocketAddress("127.0.0.1", 0), verifier,
         memberships, state, policy, permits, simulator, clock);
   }

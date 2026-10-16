@@ -12,6 +12,7 @@ import io.tracepermit.execution.InMemoryExecutionLedger;
 import io.tracepermit.policy.ClassificationContext;
 import io.tracepermit.policy.PolicyEvaluation;
 import io.tracepermit.policy.PolicyEvaluator;
+import io.tracepermit.policy.PolicyLifecycleService;
 import io.tracepermit.security.ExecutionPermitAuthority;
 
 import java.time.Clock;
@@ -21,7 +22,7 @@ import java.util.function.Supplier;
 
 public final class SecureExecutionService implements ActionEnforcer {
   private final PolicyEvaluator policyEvaluator;
-  private final JsonNode policy;
+  private final Supplier<JsonNode> policySupplier;
   private final ExecutionPermitAuthority permits;
   private final InMemoryExecutionLedger executions;
   private final InMemoryEvidenceLedger evidence;
@@ -32,9 +33,16 @@ public final class SecureExecutionService implements ActionEnforcer {
   private final ActionSanitizer sanitizer;
   private final ActionSequenceStore sequenceStore;
 
-  public SecureExecutionService(PolicyEvaluator policyEvaluator, JsonNode policy, ExecutionPermitAuthority permits,
-      InMemoryExecutionLedger executions, InMemoryEvidenceLedger evidence, SimulatedTarget target,
-      Supplier<SecurityReadiness> readiness, Clock clock, String audience) {
+  public SecureExecutionService(
+      PolicyEvaluator policyEvaluator,
+      JsonNode policy,
+      ExecutionPermitAuthority permits,
+      InMemoryExecutionLedger executions,
+      InMemoryEvidenceLedger evidence,
+      SimulatedTarget target,
+      Supplier<SecurityReadiness> readiness,
+      Clock clock,
+      String audience) {
     this(
         policyEvaluator,
         policy,
@@ -61,8 +69,86 @@ public final class SecureExecutionService implements ActionEnforcer {
       String audience,
       ActionSanitizer sanitizer,
       ActionSequenceStore sequenceStore) {
+    this(
+        policyEvaluator,
+        () -> Objects.requireNonNull(policy, "policy must not be null").deepCopy(),
+        permits,
+        executions,
+        evidence,
+        target,
+        readiness,
+        clock,
+        audience,
+        sanitizer,
+        sequenceStore);
+  }
+
+  public SecureExecutionService(
+      PolicyLifecycleService policyLifecycleService,
+      String policyId,
+      ExecutionPermitAuthority permits,
+      InMemoryExecutionLedger executions,
+      InMemoryEvidenceLedger evidence,
+      SimulatedTarget target,
+      Supplier<SecurityReadiness> readiness,
+      Clock clock,
+      String audience) {
+    this(
+        policyLifecycleService,
+        policyId,
+        permits,
+        executions,
+        evidence,
+        target,
+        readiness,
+        clock,
+        audience,
+        ActionSanitizer.NONE,
+        ActionSequenceStore.DISABLED);
+  }
+
+  public SecureExecutionService(
+      PolicyLifecycleService policyLifecycleService,
+      String policyId,
+      ExecutionPermitAuthority permits,
+      InMemoryExecutionLedger executions,
+      InMemoryEvidenceLedger evidence,
+      SimulatedTarget target,
+      Supplier<SecurityReadiness> readiness,
+      Clock clock,
+      String audience,
+      ActionSanitizer sanitizer,
+      ActionSequenceStore sequenceStore) {
+    this(
+        Objects.requireNonNull(policyLifecycleService, "policyLifecycleService must not be null").evaluator(),
+        () -> policyLifecycleService.activeVersion(policyId)
+            .map(io.tracepermit.policy.PolicyVersionRecord::document)
+            .orElseThrow(() -> new IllegalStateException("NO_ACTIVE_POLICY: " + policyId)),
+        permits,
+        executions,
+        evidence,
+        target,
+        readiness,
+        clock,
+        audience,
+        sanitizer,
+        sequenceStore);
+  }
+
+  public SecureExecutionService(
+      PolicyEvaluator policyEvaluator,
+      Supplier<JsonNode> policySupplier,
+      ExecutionPermitAuthority permits,
+      InMemoryExecutionLedger executions,
+      InMemoryEvidenceLedger evidence,
+      SimulatedTarget target,
+      Supplier<SecurityReadiness> readiness,
+      Clock clock,
+      String audience,
+      ActionSanitizer sanitizer,
+      ActionSequenceStore sequenceStore) {
     this.policyEvaluator = Objects.requireNonNull(policyEvaluator);
-    this.policy = policy.deepCopy();
+    this.policySupplier = Objects.requireNonNull(policySupplier);
     this.permits = Objects.requireNonNull(permits);
     this.executions = Objects.requireNonNull(executions);
     this.evidence = Objects.requireNonNull(evidence);
@@ -85,7 +171,8 @@ public final class SecureExecutionService implements ActionEnforcer {
     } catch (RuntimeException failure) {
       throw new IllegalStateException("SEQUENCE_STATE_UNAVAILABLE", failure);
     }
-    PolicyEvaluation evaluation = policyEvaluator.evaluate(event, policy, sequenceContext);
+    JsonNode activePolicy = policySupplier.get();
+    PolicyEvaluation evaluation = policyEvaluator.evaluate(event, activePolicy, sequenceContext);
     appendEvidence("action.observed", event, evaluation);
     appendEvidence("policy.evaluated", event, evaluation);
     JsonNode effectiveEvent = event;
@@ -109,7 +196,7 @@ public final class SecureExecutionService implements ActionEnforcer {
         appendEvidence("sanitization.rejected", event, evaluation);
         return new ExecutionResult("sanitize", evaluation, null, null);
       }
-      effectiveEvaluation = policyEvaluator.evaluate(effectiveEvent, policy, sequenceContext);
+      effectiveEvaluation = policyEvaluator.evaluate(effectiveEvent, activePolicy, sequenceContext);
       appendSanitizationEvidence(event, sanitization, effectiveEvaluation);
       appendEvidence("policy.re_evaluated", effectiveEvent, effectiveEvaluation);
       if (!"allow".equals(effectiveEvaluation.decision().outcome())) {

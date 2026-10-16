@@ -122,6 +122,24 @@ ancestor-directory races remain outside the development boundary. See
 
 ### Connector to policy
 
+The optional in-memory/PostgreSQL policy lifecycle library validates a private candidate
+snapshot, rejects numbers outside its explicit Java `int` version/priority
+profile, and copies every returned revision document. API callers cannot change
+active decisions or future rollback content through a mutable JSON reference,
+or alias a large version into an existing catalog key (FR-013, REL-006, SEC-002).
+Regression tests preserve block decisions, stored hashes and zero simulator
+dispatch on attempted mutation. These are trusted in-process APIs, not an
+authenticated operator surface or a sandbox against compromised JVM code.
+PostgreSQL V7 persists immutable revision identity/content and transition history.
+First activation is serialized before any active row exists; SQL/unchecked
+failures roll back pointer/history, and commit/close failures cannot report
+success or automatically retry. Workspace filters require trusted caller
+selection; they are not RLS or authorization. Current-version preconditions
+are not ABA-resistant generations. Actor/reason metadata is caller supplied,
+and database triggers are not protection against a privileged administrator.
+Authenticated rollout and pending-approval integration remain separate work. See
+[ADR 0039](../architecture/0039-policy-lifecycle-staging-rollback-and-simulation.md).
+
 - Versioned canonical action
 - Explicit tenant, subject, actor, trigger, target, and assurance
 - Deterministic validation before classification
@@ -129,6 +147,19 @@ ancestor-directory races remain outside the development boundary. See
   resulting structured action crosses the same adapter and policy boundary
 
 ### Policy/approval to executor
+
+The standalone Java consumption authority uses a private, hash-verified action
+snapshot for tenant routing and rejects an explicit tenant mismatch before
+storage. The PostgreSQL adapter requires action provenance and commits its own
+bounded consumption/pruning transaction before success, including on initially
+manual-transaction connections. Commit/close uncertainty is failure, not retry
+authority; a row may already exist. Tests cover partition switching and
+transaction failures with no reported-success effect. The existing durable
+execution/approval claim path is unchanged and remains atomic with evidence;
+the standalone adapter must not pre-consume its permit. These trusted Java APIs
+are not remote authentication or database-admin isolation. See
+[ADR 0041](../architecture/0041-postgres-durable-permit-consumption.md)
+(FR-008, SEC-005/006/009, REL-004).
 
 The separate authenticated loopback approval API adds verified access tokens
 plus operator-owned membership to this boundary. It never accepts requester,
