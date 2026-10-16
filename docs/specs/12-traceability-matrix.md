@@ -149,7 +149,17 @@ the [distribution runbook](../runbooks/simulator-approval-distribution.md).
 | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | SEC-012; DATA-003; FR-007/010 | `EvidenceRedactor` validates all subtrees before hashing/copying, applies configured diagnostic text strategies, and masks explicit credential aliases in `SimulatorApprovalServer` response projections; `RedactionBoundaryReviewTest`, `EvidenceRedactionBoundsTest`, `EvidenceRedactorTest` | Exact canonical action snapshots/hashes stay authoritative and unchanged; no global logging, export or before-persistence hook; unkeyed fingerprints are guessable, not a confidentiality guarantee |
 
-See [ADR 0043](../architecture/0043-bounded-evidence-redaction.md).
+`SimulatorApprovalRedactionBoundaryTest` adds six authenticated HTTP/browser/MCP
+boundary cases: masked list/detail and both MCP payload forms, original snapshot
+and request-hash preservation, reader authorization/ownership before projection,
+depth/node failure with no raw fallback or read-side effects, strict credential
+argument rejection, and a clean review/execute/replay control. SEC-001/005/009/012
+and FR-007/010 receive bounded evidence; DATA-003 remains partial because exact
+operational snapshots are intentionally unredacted. Canary snapshots are seeded
+only through internal test APIs, never accepted by public ingress.
+
+See [ADR 0043](../architecture/0043-bounded-evidence-redaction.md) and the
+[API qualification runbook](../runbooks/approval-response-redaction-qualification.md).
 
 ## Functional requirements
 

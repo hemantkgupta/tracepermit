@@ -93,6 +93,14 @@ cycles, pre-copy envelope validation, node/text budgets, text strategy/overlap
 semantics, replacement isolation, credential aliases, benign fields, and source
 hash/container independence. `EvidenceRedactorTest` preserves original behavior.
 
+`SimulatorApprovalRedactionBoundaryTest` additionally exercises real loopback
+HTTP, signed synthetic identity, browser sessions, MCP structured/text responses
+and disposable PostgreSQL. It verifies masked projections, unchanged original
+snapshots/bindings, authorization before projection, bounded failure without raw
+fallback, strict credential-field rejection and a clean one-effect/replay control.
+Canary snapshots are seeded through test-only internal Java calls, not public
+credential ingestion. See the [API qualification runbook](../runbooks/approval-response-redaction-qualification.md).
+
 No canonicalization profile, signed claim, database migration, policy rule,
 approval authority or dispatch input changes. Existing approval and simulator
 regressions remain required. This is bounded projection hardening, not completion
