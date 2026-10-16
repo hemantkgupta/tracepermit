@@ -580,6 +580,16 @@ GET    /api/v1/evidence
 Control-plane APIs require tenant-aware authorization distinct from an agent's
 tool-execution authority.
 
+The Java `PolicyLifecycleService` is an in-memory library and does not implement
+the policy mutation endpoints listed above. Its current runtime profile requires
+policy versions 1..2147483647 and rule priorities -2147483648..2147483647;
+negative priorities are allowed. Unsupported numeric values fail closed before
+catalog mutation; they are not truncated to a different identity or precedence.
+The frozen policy JSON schema retains its wider language-neutral safe-integer
+envelope. Widening the Java profile requires an end-to-end compatibility decision,
+not a local integer cast. Returned lifecycle documents are defensive copies,
+not writable references to active/staged/rollback state.
+
 The listed approval endpoints remain target APIs. The request-bound approval implementation deliberately does
 not expose them until production reviewer authentication, tenant roles, CSRF/
 session behavior, concurrency/idempotency responses, and mutation audit are
