@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# TracePermit Simulator Approval Launcher
+# Host-native thin launcher for SimulatorApprovalMain.
+# Requires: Java 21 on PATH.
+# Does NOT require: Node.js, pnpm, Gradle, or source repository checkout.
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DIST_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# Verify arguments: exactly one argument, either --check or --run
+if [ "$#" -ne 1 ] || { [ "$1" != "--check" ] && [ "$1" != "--run" ]; }; then
+  echo "APPROVAL_STARTUP_FAILED: check private configuration and local dependencies; details redacted." >&2
+  exit 2
+fi
+
+# Verify TRACEPERMIT_APPROVAL_CONFIG environment variable
+if [ -z "${TRACEPERMIT_APPROVAL_CONFIG:-}" ]; then
+  echo "APPROVAL_STARTUP_FAILED: check private configuration and local dependencies; details redacted." >&2
+  exit 2
+fi
+
+# Verify Java executable on PATH
+if ! command -v java >/dev/null 2>&1; then
+  echo "APPROVAL_STARTUP_FAILED: Java 21 is required but java executable was not found on PATH; details redacted." >&2
+  exit 2
+fi
+
+# Verify Java version is 21
+JAVA_VERSION_OUTPUT="$(java -version 2>&1 || true)"
+JAVA_MAJOR="$(echo "$JAVA_VERSION_OUTPUT" | sed -n 's/.*version "\([0-9]*\).*/\1/p' | head -n 1)"
+if [ "$JAVA_MAJOR" != "21" ]; then
+  echo "APPROVAL_STARTUP_FAILED: Java 21 is required but incompatible Java version detected; details redacted." >&2
+  exit 2
+fi
+
+# Verify runtime library directory
+if [ ! -d "$DIST_DIR/lib" ]; then
+  echo "APPROVAL_STARTUP_FAILED: runtime libraries are missing; details redacted." >&2
+  exit 2
+fi
+
+# Verify built console assets
+if [ ! -f "$DIST_DIR/console/index.html" ]; then
+  echo "APPROVAL_STARTUP_FAILED: console assets are missing; details redacted." >&2
+  exit 2
+fi
+
+# Assemble classpath using Java wildcard expansion
+CLASSPATH="$DIST_DIR/lib/*"
+
+# Execute SimulatorApprovalMain with exact arguments.
+# Using exec replaces the shell process so SIGTERM/SIGINT are handled cleanly by Java shutdown hooks.
+exec java -cp "$CLASSPATH" io.tracepermit.adapters.http.SimulatorApprovalMain "$@"
