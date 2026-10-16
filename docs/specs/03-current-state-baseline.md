@@ -61,7 +61,11 @@ not part of either current demo launcher. `SimulatorApprovalMain` now supplies
 the optional `pnpm dev:approvals` startup with strict operator-owned JSON,
 one OIDC trust/enrollment configuration, local PostgreSQL and persistent Ed25519
 file references. `--check` validates offline, without binding, migration or IdP
-traffic. It is not a readiness or external-login qualification. Its integration tests
+traffic. First-install `--init-db` explicitly initializes an empty dedicated
+public schema; normal run uses strict non-migrating repository opens and rejects
+empty/partial/incompatible state. See [ADR 0045](../architecture/0045-explicit-database-initialization.md).
+This does not detect a valid older restored snapshot or add a recovery fence.
+It is not a readiness or external-login qualification. Its integration tests
 combine strict RS256 access-token verification, operator-owned human/workload
 memberships and per-call scopes with PostgreSQL V6/V8 exact action snapshots,
 durable approval policy generation bindings and execution state. They exercise

@@ -167,6 +167,26 @@ and exits with status `0`.
 - **Full local validation:** JSON schema, file permissions (0600/0400 owner-only), Ed25519 keypair mathematics, membership roles, and console assets are verified.
 - **Redacted failure:** Any validation error exits with status `2` and outputs `APPROVAL_STARTUP_FAILED: ... details redacted.` without exposing file paths, database passwords, or key material.
 
+## First installation only (`--init-db`)
+
+With the private config pointing to a dedicated empty local database, initialize:
+
+```bash
+/path/to/tracepermit-simulator-approval-0.1.0/bin/tracepermit-simulator-approval --init-db
+```
+
+Success emits `APPROVAL_DATABASE_INITIALIZED` and exits without a listener,
+IdP call or target effect. It installs packaged V1–V8 with an initialization
+role. Existing/partial state is refused; cooperating concurrent initializers
+fail fast. Never use this command after a restore or for an upgrade. Migration
+failure can leave partial state; no automatic repair, clean or retry is provided.
+
+Normal run may use a separate private config with a non-owner runtime role:
+application DML and metadata/history reads, not migration rights. Role/grant
+provisioning remains operator-owned. Keep initialization credentials out of the
+runtime config. Exact checks and limits are in
+[ADR 0045](../architecture/0045-explicit-database-initialization.md).
+
 ## Running the application (`--run`)
 
 Start the approval service:
@@ -178,8 +198,9 @@ Start the approval service:
 During startup:
 
 1. Validates operator configuration and credentials.
-2. Applies the packaged PostgreSQL Flyway migrations (currently `V1` through `V8`)
-   and verifies the supported schema before opening the listener.
+2. Validates existing packaged PostgreSQL V1–V8 migration history/checksums,
+   guard, required tables and enabled invariant triggers. Empty/partial,
+   incompatible or pending-upgrade state fails without migration or repair.
 3. Binds the HTTP listener strictly to `http://127.0.0.1:<port>`.
 4. Outputs: `TracePermit simulator approval API listening on http://127.0.0.1:<port>`.
 
@@ -187,6 +208,12 @@ The default launcher still uses its fixed static simulator policy. Installing
 schema V8 does not select an active policy or enable generation-bound approvals;
 that composition is an opt-in Java factory described in
 [ADR 0042](../architecture/0042-durable-policy-generation-binding.md).
+
+Schema validation does not prove successful recovery: a complete old snapshot
+can revive consumed approvals. Keep agents/effectful services disconnected after
+restore or restore failure; no external recovery fence or safe-resume command
+is implemented. There is no in-place schema-upgrade command; never reset or
+rewrite a populated database to make this version start.
 
 ### Clean process termination
 

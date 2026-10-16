@@ -63,10 +63,22 @@ public final class PostgresDurableEnforcementState
   private final Supplier<String> createId;
 
   public PostgresDurableEnforcementState(DataSource dataSource, Clock clock, Supplier<String> createId) {
+    this(dataSource, clock, createId, true);
+  }
+
+  /** Operator runtime path: validate existing state without implicit schema migration. */
+  public static PostgresDurableEnforcementState openExisting(
+      DataSource dataSource, Clock clock, Supplier<String> createId) {
+    return new PostgresDurableEnforcementState(dataSource, clock, createId, false);
+  }
+
+  private PostgresDurableEnforcementState(
+      DataSource dataSource, Clock clock, Supplier<String> createId, boolean migrateSchema) {
     this.dataSource = Objects.requireNonNull(dataSource);
     this.clock = Objects.requireNonNull(clock);
     this.createId = Objects.requireNonNull(createId);
-    migrate(dataSource, MIGRATION_LOCATION);
+    if (migrateSchema) migrate(dataSource, MIGRATION_LOCATION);
+    else PostgresDatabaseLifecycle.validateExisting(dataSource);
     verifySchemaVersion();
   }
 

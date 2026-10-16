@@ -211,6 +211,22 @@ automatic retry. See [ADR 0037](../architecture/0037-mcp-durable-simulator-appro
 - Append-only lifecycle events
 - External checkpoint/anchor beyond application and DBA authority
 
+### Operator database lifecycle
+
+Normal simulator operator startup rejects absent/incomplete/incompatible schema
+without implicitly creating, migrating or repairing it. First-install authority
+is a separate empty-only `--init-db`; both state and permit stores use strict
+opens in this profile. Metadata/history read and non-owner DML fixtures separate
+runtime needs from migration ownership. See
+[ADR 0045](../architecture/0045-explicit-database-initialization.md).
+
+This prevents accidental empty bootstrap on that path, not all restore threats.
+An older complete snapshot can pass validation and revive authority. Local
+generation/evidence roll back with the DB; no external witness or effectful
+safe-resume workflow exists. Legacy trusted development constructors retain
+auto-migration. DBA tampering, arbitrary schema rewrites and concurrent DDL by
+noncooperating actors are not comprehensively detected or fenced.
+
 ## 6. Fail-safe matrix
 
 | Condition                          | Read-only operation                        | Sensitive write/destructive operation |

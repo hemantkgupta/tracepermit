@@ -40,10 +40,24 @@ public final class PostgresPermitConsumptionStore implements PermitConsumptionSt
   }
 
   public PostgresPermitConsumptionStore(DataSource dataSource, TenantPartition defaultTenant) {
+    this(dataSource, defaultTenant, true);
+  }
+
+  /** Operator runtime path: no constructor-triggered migration or schema creation. */
+  public static PostgresPermitConsumptionStore openExisting(DataSource dataSource) {
+    return new PostgresPermitConsumptionStore(dataSource, DEFAULT_TENANT, false);
+  }
+
+  private PostgresPermitConsumptionStore(
+      DataSource dataSource, TenantPartition defaultTenant, boolean migrateSchema) {
     this.dataSource = Objects.requireNonNull(dataSource, "dataSource");
     this.defaultTenant = Objects.requireNonNull(defaultTenant, "defaultTenant");
-    PostgresDurableEnforcementState.migrate(
-        dataSource, PostgresDurableEnforcementState.MIGRATION_LOCATION);
+    if (migrateSchema) {
+      PostgresDurableEnforcementState.migrate(
+          dataSource, PostgresDurableEnforcementState.MIGRATION_LOCATION);
+    } else {
+      PostgresDatabaseLifecycle.validateExisting(dataSource);
+    }
   }
 
   public PostgresPermitConsumptionStore(DataSource dataSource, String defaultTenantId) {

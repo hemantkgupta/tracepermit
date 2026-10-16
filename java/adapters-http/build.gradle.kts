@@ -165,7 +165,12 @@ abstract class StageSimulatorApprovalDistribution : DefaultTask() {
     exampleConfig.get().asFile.copyTo(examplesDir.resolve("simulator-approvals.example.json"), overwrite = true)
 
     // 5. Copy Docs & Legal
-    runbook.get().asFile.copyTo(docsDir.resolve("setup-runbook.md"), overwrite = true)
+    // The installed runbook is relocated: its repository-relative links would otherwise break.
+    val sourceDocs = "https://github.com/hemantkgupta/tracepermit/blob/${sourceCommit.get()}/docs"
+    val installedRunbook = runbook.get().asFile.readText()
+      .replace("](../architecture/", "]($sourceDocs/architecture/")
+      .replace("](authenticated-approval-api-foundation.md)", "]($sourceDocs/runbooks/authenticated-approval-api-foundation.md)")
+    docsDir.resolve("setup-runbook.md").writeText(installedRunbook)
     license.get().asFile.copyTo(docsDir.resolve("LICENSE"), overwrite = true)
     notice.get().asFile.copyTo(docsDir.resolve("NOTICE"), overwrite = true)
 

@@ -93,7 +93,7 @@ an approval created under an old policy to execute against a new active policy.
    Migration `V8__policy_bound_approvals.sql` advances the schema contract
    version to 8 and creates `tp_approval_policy_bindings` with foreign keys to
    `tp_approval_requests` and `tp_policy_versions`. PostgreSQL trigger
-   `tp_deny_approval_policy_bindings_mutation` rejects any `UPDATE` or `DELETE`
+   `tp_approval_policy_binding_immutable` rejects any `UPDATE` or `DELETE`
    statements on binding records.
 
 7. **Opt-in composition and transport mapping:**

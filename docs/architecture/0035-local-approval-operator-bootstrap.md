@@ -41,9 +41,11 @@ challenge checks the pair. There is no automatic key generation or rotation.
 Offline `--check` validates configuration, files, enrollment, key pairing and
 JWKS URL syntax without DNS, IdP traffic, database access/migration or a
 listener. It is not a readiness/connection/authentication check. On `--run`,
-configuration validation precedes Flyway migration/schema guard and listener
-creation. Migrations can commit before a later bind failure; they are not
-rolled back by shutdown. The fixed versioned policy requires approval for the
+configuration validation precedes non-migrating existing-schema validation and
+listener creation. [ADR 0045](0045-explicit-database-initialization.md) supersedes
+the original implicit-migration behavior: first installation uses a separate
+empty-only `--init-db`; normal run never migrates or repairs the database.
+The fixed versioned policy requires approval for the
 only exposed simulator mutation and blocks unmatched actions. There is no
 operator option for arbitrary target adapters, policy replacement or public bind.
 

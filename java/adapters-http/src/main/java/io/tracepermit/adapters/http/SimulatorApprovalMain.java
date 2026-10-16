@@ -9,6 +9,7 @@ import io.tracepermit.identity.OidcVerificationKeyResolver;
 import io.tracepermit.identity.StaticOidcProviderRegistry;
 import io.tracepermit.identity.BrowserIdTokenVerifier;
 import io.tracepermit.persistence.postgres.PostgresDurableEnforcementState;
+import io.tracepermit.persistence.postgres.PostgresDatabaseLifecycle;
 import io.tracepermit.persistence.postgres.PostgresPermitConsumptionStore;
 import io.tracepermit.security.ExecutionPermitAuthority;
 import io.tracepermit.simulator.StatefulTargetSimulator;
@@ -47,7 +48,7 @@ public final class SimulatorApprovalMain {
   static int execute(String[] args, Map<String, String> environment, PrintStream out,
       PrintStream err, Runner runner) {
     try {
-      if (args.length != 1 || !Set.of("--check", "--run").contains(args[0])) {
+      if (args.length != 1 || !Set.of("--check", "--run", "--init-db").contains(args[0])) {
         throw new IllegalArgumentException();
       }
       String path = environment.get("TRACEPERMIT_APPROVAL_CONFIG");
@@ -55,6 +56,9 @@ public final class SimulatorApprovalMain {
       var configuration = SimulatorApprovalConfiguration.load(Path.of(path));
       if ("--check".equals(args[0])) {
         out.println("APPROVAL_CONFIGURATION_VALID: offline only; no database, IdP or listener checked.");
+      } else if ("--init-db".equals(args[0])) {
+        PostgresDatabaseLifecycle.initializeEmpty(configuration.database());
+        out.println("APPROVAL_DATABASE_INITIALIZED: fresh simulator schema only; no listener or target started.");
       } else {
         runner.run(configuration);
       }
@@ -78,12 +82,12 @@ public final class SimulatorApprovalMain {
       OidcVerificationKeyResolver resolver) throws Exception {
     var verifier = new OidcAccessTokenVerifier(
         new StaticOidcProviderRegistry(List.of(configuration.provider())), resolver, clock);
-    // Configuration/key/enrollment validation finishes before this constructor can migrate PostgreSQL.
-    var state = new PostgresDurableEnforcementState(configuration.database(), clock,
+    // Configuration/key/enrollment validation and strict schema checks precede listener creation.
+    var state = PostgresDurableEnforcementState.openExisting(configuration.database(), clock,
         () -> UUID.randomUUID().toString());
     var permits = new ExecutionPermitAuthority(ExecutionPermitAuthority.DEFAULT_ISSUER,
         configuration.keyId(), configuration.permitKey(), 30, clock,
-        () -> "permit-" + UUID.randomUUID(), new PostgresPermitConsumptionStore(configuration.database()));
+        () -> "permit-" + UUID.randomUUID(), PostgresPermitConsumptionStore.openExisting(configuration.database()));
     ApprovalBrowserAdapter browser = null;
     var web = configuration.browser();
     if (web != null) {
