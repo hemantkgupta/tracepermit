@@ -16,7 +16,6 @@ import io.tracepermit.execution.InMemoryEvidenceLedger;
 import io.tracepermit.execution.TenantPartition;
 import io.tracepermit.policy.PolicyEvaluator;
 import io.tracepermit.security.ExecutionPermitAuthority;
-import io.tracepermit.security.InMemoryPermitConsumptionStore;
 import io.tracepermit.simulator.StatefulTargetSimulator;
 import org.postgresql.ds.PGSimpleDataSource;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -80,7 +79,7 @@ public final class RequestBoundApprovalDemoMain {
         30,
         clock,
         () -> "scenario3-permit-" + identifiers.incrementAndGet(),
-        new InMemoryPermitConsumptionStore());
+        new PostgresPermitConsumptionStore(dataSource, TENANT));
     HumanApprovalService approvals = new HumanApprovalService(
         new PolicyEvaluator(),
         JsonSupport.read(ROOT.resolve("policies/aws-web-readonly.json")),

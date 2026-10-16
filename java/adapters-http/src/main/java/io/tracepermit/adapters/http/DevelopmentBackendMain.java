@@ -17,6 +17,7 @@ import io.tracepermit.identity.InMemorySourceAttestationReplayStore;
 import io.tracepermit.identity.SourceAttestationVerifier;
 import io.tracepermit.identity.StaticEndpointKeyRegistry;
 import io.tracepermit.persistence.postgres.PostgresDurableEnforcementState;
+import io.tracepermit.persistence.postgres.PostgresPermitConsumptionStore;
 import io.tracepermit.policy.PolicyEvaluator;
 import io.tracepermit.security.ExecutionPermitAuthority;
 import io.tracepermit.security.InMemoryPermitConsumptionStore;
@@ -163,7 +164,7 @@ public final class DevelopmentBackendMain {
             30,
             clock,
             () -> "permit-" + UUID.randomUUID(),
-            new InMemoryPermitConsumptionStore());
+            new PostgresPermitConsumptionStore(dataSource));
     return new DurableExecutionService(
         new PolicyEvaluator(),
         JsonSupport.read(repositoryRoot.resolve("policies/aws-web-readonly.json")),

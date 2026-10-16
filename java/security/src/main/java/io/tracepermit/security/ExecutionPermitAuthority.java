@@ -249,15 +249,28 @@ public final class ExecutionPermitAuthority {
   }
 
   public JsonNode verifyAndConsume(String permit, JsonNode event, String expectedAudience) {
+    return verifyAndConsume(null, permit, event, expectedAudience);
+  }
+
+  public JsonNode verifyAndConsume(
+      String tenantId, String permit, JsonNode event, String expectedAudience) {
     JsonNode claims = verify(permit, event, expectedAudience);
     Instant now = clock.instant();
     Instant expiresAt = parseInstant(claims.path("expiresAt").asText());
+    String actionHash = claims.path("actionHash").asText();
+    boolean consumed =
+        tenantId == null
+            ? consumptionStore.consume(
+                claims.path("permitId").asText(), expiresAt, actionHash, now)
+            : consumptionStore.consume(
+                tenantId, claims.path("permitId").asText(), expiresAt, actionHash, now);
     require(
-        consumptionStore.consume(claims.path("permitId").asText(), expiresAt, now),
+        consumed,
         "EXECUTION_PERMIT_REPLAYED",
         "The single-use execution permit has already been consumed.");
     return claims;
   }
+
 
   /**
    * Verifies a permit without claiming it. Durable executors use this method and
