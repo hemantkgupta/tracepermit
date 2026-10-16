@@ -8,11 +8,13 @@ import org.junit.jupiter.api.Test;
 
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -235,13 +237,19 @@ final class PolicyLifecycleServiceTest {
     int readerCount = 4;
     ExecutorService pool = Executors.newFixedThreadPool(readerCount + 1);
     CountDownLatch startLatch = new CountDownLatch(1);
+    CountDownLatch readersStarted = new CountDownLatch(readerCount);
     AtomicBoolean running = new AtomicBoolean(true);
     AtomicInteger evaluations = new AtomicInteger();
+    List<Future<?>> workers = new ArrayList<>();
 
     for (int i = 0; i < readerCount; i++) {
-      pool.submit(() -> {
+      workers.add(pool.submit(() -> {
         try {
           startLatch.await();
+          assertThat(service.evaluateActive("pol-aws-web-001", readAction, ClassificationContext.EMPTY)
+              .decision().outcome()).isEqualTo("allow");
+          evaluations.incrementAndGet();
+          readersStarted.countDown();
           while (running.get()) {
             PolicyEvaluation eval = service.evaluateActive("pol-aws-web-001", readAction, ClassificationContext.EMPTY);
             assertThat(eval.decision().outcome()).isNotNull();
@@ -250,12 +258,13 @@ final class PolicyLifecycleServiceTest {
         } catch (Exception e) {
           throw new RuntimeException(e);
         }
-      });
+      }));
     }
 
-    pool.submit(() -> {
+    workers.add(pool.submit(() -> {
       try {
         startLatch.await();
+        assertThat(readersStarted.await(5, TimeUnit.SECONDS)).isTrue();
         for (int i = 0; i < 20; i++) {
           service.activate("pol-aws-web-001", 2, Instant.now());
           service.rollback("pol-aws-web-001", Instant.now(), "iteration-" + i);
@@ -265,12 +274,20 @@ final class PolicyLifecycleServiceTest {
       } finally {
         running.set(false);
       }
-    });
+    }));
 
-    startLatch.countDown();
-    pool.shutdown();
-    assertThat(pool.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
-    assertThat(evaluations.get()).isPositive();
+    try {
+      startLatch.countDown();
+      pool.shutdown();
+      assertThat(pool.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
+      for (Future<?> worker : workers) {
+        worker.get(1, TimeUnit.SECONDS);
+      }
+      assertThat(evaluations.get()).isGreaterThanOrEqualTo(readerCount);
+    } finally {
+      running.set(false);
+      pool.shutdownNow();
+    }
   }
 
   @Test

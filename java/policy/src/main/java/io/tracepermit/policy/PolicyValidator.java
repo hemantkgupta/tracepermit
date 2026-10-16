@@ -43,12 +43,19 @@ public final class PolicyValidator {
 
   public static JsonNode validate(JsonNode policy) {
     require(policy != null && policy.isObject(), "", "policy document must be an object");
+    // Validate the exact snapshot returned to ingestion, not a caller-owned tree.
+    policy = policy.deepCopy();
     checkNoExtraFields(policy, TOP_LEVEL_PROPERTIES, "");
 
     require("1.0".equals(text(policy, "schemaVersion")), "schemaVersion", "must equal 1.0");
     require(!text(policy, "id").isBlank(), "id", "must not be empty");
-    require(policy.has("version") && policy.path("version").isIntegralNumber() && policy.path("version").asLong() > 0,
-        "version", "must be a positive integer");
+    // PolicyDecision, catalog keys and rule ordering currently use Java int.
+    // The language-neutral schema has a wider envelope; reject unsupported
+    // values here before any narrowing can change version identity or priority.
+    require(policy.path("version").isIntegralNumber()
+            && policy.path("version").canConvertToInt()
+            && policy.path("version").intValue() > 0,
+        "version", "must be a positive integer in the supported Java range 1..2147483647");
     require(!text(policy, "name").isBlank(), "name", "must not be empty");
     require(!text(policy, "description").isBlank(), "description", "must not be empty");
     require(policy.has("enabled") && policy.path("enabled").isBoolean(), "enabled", "must be a boolean");
@@ -70,7 +77,8 @@ public final class PolicyValidator {
       require(!ruleId.isBlank(), base + ".id", "must not be empty");
       require(ruleIds.add(ruleId), base + ".id", "rule IDs must be unique across the policy document");
 
-      require(rule.has("priority") && rule.path("priority").isIntegralNumber(), base + ".priority", "must be an integer");
+      require(rule.path("priority").isIntegralNumber() && rule.path("priority").canConvertToInt(),
+          base + ".priority", "must be an integer in the supported Java range -2147483648..2147483647");
       require(!text(rule, "description").isBlank(), base + ".description", "must not be empty");
 
       JsonNode match = object(rule, "match");
@@ -86,7 +94,7 @@ public final class PolicyValidator {
       }
     }
 
-    return policy.deepCopy();
+    return policy;
   }
 
   private static void validateMatch(JsonNode match, String base) {

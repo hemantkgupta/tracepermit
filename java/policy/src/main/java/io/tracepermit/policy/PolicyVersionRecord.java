@@ -31,6 +31,11 @@ public record PolicyVersionRecord(
     document = document.deepCopy();
   }
 
+  /** JsonNode is mutable: callers receive a copy, never the stored revision. */
+  public JsonNode document() {
+    return document.deepCopy();
+  }
+
   public static PolicyVersionRecord staged(JsonNode policy, Instant now) {
     JsonNode validated = PolicyValidator.validate(policy);
     return new PolicyVersionRecord(

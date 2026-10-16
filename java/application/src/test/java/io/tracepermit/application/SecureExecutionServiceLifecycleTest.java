@@ -27,6 +27,30 @@ final class SecureExecutionServiceLifecycleTest {
   private static final Clock CLOCK = Clock.fixed(NOW, ZoneOffset.UTC);
 
   @Test
+  void mutatingAnExposedActiveDocumentCannotAuthorizeASimulatorDispatch() {
+    PolicyLifecycleService lifecycle = new PolicyLifecycleService();
+    ObjectNode candidate = (ObjectNode) JsonSupport.read(ROOT.resolve("policies/aws-web-readonly.json"));
+    candidate.put("version", 1);
+    candidate.putArray("rules");
+    ((ObjectNode) candidate.path("defaultDecision")).put("outcome", "block");
+    String policyId = candidate.path("id").asText();
+    lifecycle.stage(candidate, NOW);
+    var active = lifecycle.activate(policyId, 1, NOW);
+
+    ((ObjectNode) active.document().path("defaultDecision")).put("outcome", "allow");
+    AtomicInteger dispatches = new AtomicInteger();
+    SecureExecutionService service = createService(lifecycle, policyId, evidence(), action -> {
+      dispatches.incrementAndGet();
+      return JsonSupport.MAPPER.createObjectNode().put("status", "simulated");
+    });
+
+    ExecutionResult result = service.execute(JsonSupport.read(ROOT.resolve("fixtures/chatgpt-aws-read.json")));
+    assertThat(result.outcome()).isEqualTo("block");
+    assertThat(result.evaluation().decision().policyVersion()).isOne();
+    assertThat(dispatches.get()).isZero();
+  }
+
+  @Test
   void enforcementDynamicallyHonorsStagedActivationAndRollback() {
     PolicyLifecycleService lifecycle = new PolicyLifecycleService();
     String policyId = "pol-aws-web-001";

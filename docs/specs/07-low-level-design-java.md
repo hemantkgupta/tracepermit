@@ -40,6 +40,23 @@ action contract before classification or policy. Application and domain code
 receive trusted identity context from adapters; they do not infer it from tool
 arguments. The executor has no route to a real AWS or Jira service.
 
+## In-memory policy lifecycle boundary
+
+`PolicyLifecycleService` is a trusted Java library, not a policy administration
+API wired into the default backend. Candidate validation operates on a private
+snapshot. `PolicyVersionRecord` copies constructor input and every `document()`
+result, including records returned by stage/active/query/list/restage. Callers
+cannot mutate current or rollback content through these APIs. Dynamic execution
+obtains one policy snapshot per action and reuses it for sanitization re-evaluation.
+
+The current Java profile accepts versions 1..2147483647 and priorities
+-2147483648..2147483647, including negative priorities. Reject unsupported values
+before lifecycle insertion or dry-run evaluation rather than silently narrowing them.
+The checked-in language-neutral schema's wider safe-integer envelope and frozen
+canonical bytes are unchanged. Catalog/history remain in memory; durable,
+role-scoped administration and pending-approval invalidation are not implemented.
+See [ADR 0039](../architecture/0039-policy-lifecycle-staging-rollback-and-simulation.md).
+
 ## Authorization and execution
 
 1. Authenticate transport credentials and, where required, verify source or
