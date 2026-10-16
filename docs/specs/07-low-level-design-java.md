@@ -31,7 +31,7 @@ No database migration or real target is introduced. See
 | `adapters-http`        | Combined loopback MCP backend and read-only projections                                                                            |
 | `adapters-remote`      | Authenticated MCP edge and SSRF-safe JWKS HTTPS                                                                                    |
 | `endpoint-connector`   | MCP stdio origin observation and loopback forwarding                                                                               |
-| `persistence-postgres` | Durable claims, approvals, evidence, outbox, reconciliation                                                                        |
+| `persistence-postgres` | Durable claims, approvals, policy revisions/lifecycle, evidence, outbox, reconciliation                                            |
 | `observability-otel`   | Bounded telemetry projection                                                                                                       |
 | `conformance`          | Checked-in schema, vector, and invariant tests                                                                                     |
 
@@ -40,7 +40,7 @@ action contract before classification or policy. Application and domain code
 receive trusted identity context from adapters; they do not infer it from tool
 arguments. The executor has no route to a real AWS or Jira service.
 
-## In-memory policy lifecycle boundary
+## Policy lifecycle and durable persistence foundation
 
 `PolicyLifecycleService` is a trusted Java library, not a policy administration
 API wired into the default backend. Candidate validation operates on a private
@@ -49,12 +49,41 @@ result, including records returned by stage/active/query/list/restage. Callers
 cannot mutate current or rollback content through these APIs. Dynamic execution
 obtains one policy snapshot per action and reuses it for sanitization re-evaluation.
 
+The `PolicyLifecycleStore` SPI in `java/policy` abstracts revision and state storage,
+implemented by `InMemoryPolicyLifecycleStore` and `PostgresPolicyLifecycleStore` in
+`java/persistence-postgres`:
+
+1. **Durable revisions:** PostgreSQL V7 migration introduces `tp_policy_versions` with
+   database trigger `tp_guard_policy_version_mutation()` preventing mutation or deletion.
+   Identical restaging is idempotent; different content fails closed.
+2. **Transactional activation & rollback:** `tp_active_policies` maintains `activation_sequence`
+   and `active_version`. Active updates and `tp_policy_lifecycle_transitions` history commit
+   atomically under a transaction-scoped workspace/policy advisory lock followed
+   by row locks (`FOR UPDATE`). This also serializes the first activation when
+   the active row is absent. A non-null `expectedActiveVersion` mismatch fails
+   with `PolicyConcurrencyException`; null is unconditional and the version
+   precondition is not an ABA-resistant generation check.
+3. **Rollback traversal:** rollback resolves predecessor activations from transition history,
+   supporting repeated rollback toggling and explicit target rollbacks.
+4. **Workspace isolation:** storage is partitioned by trusted caller-supplied `workspace_id`.
+   Unavailability fails closed without silent in-memory fallback.
+
+Writes own a fresh/exclusive READ COMMITTED connection lease, commit before
+returning, and restore its original modes after success. SQL and unchecked
+failures roll back without enabling auto-commit; rollback failure is suppressed.
+Ambiguous commit/restoration/close failure reports failure, not success or an
+automatic retry. Inspect durable pointer/history before further operator action.
+Idempotent activation uses the same connection; reactivation metadata agrees
+between the returned record and a fresh query. Caller-owned transactions and
+database-admin tamper resistance are not supported. Advisory lock acquisition
+has a five-second query timeout; there is no end-to-end latency guarantee.
+
 The current Java profile accepts versions 1..2147483647 and priorities
 -2147483648..2147483647, including negative priorities. Reject unsupported values
 before lifecycle insertion or dry-run evaluation rather than silently narrowing them.
-The checked-in language-neutral schema's wider safe-integer envelope and frozen
-canonical bytes are unchanged. Catalog/history remain in memory; durable,
-role-scoped administration and pending-approval invalidation are not implemented.
+Actor tracking IDs are unauthenticated caller metadata, not verified operator provenance;
+DB history is not tamper-proof against a DBA; and pending-approval stale-policy integration
+and remote administration APIs remain deferred.
 See [ADR 0039](../architecture/0039-policy-lifecycle-staging-rollback-and-simulation.md).
 
 ## Authorization and execution

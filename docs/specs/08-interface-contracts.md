@@ -600,8 +600,8 @@ GET    /api/v1/evidence
 Control-plane APIs require tenant-aware authorization distinct from an agent's
 tool-execution authority.
 
-The Java `PolicyLifecycleService` is an in-memory library and does not implement
-the policy mutation endpoints listed above. Its current runtime profile requires
+The Java `PolicyLifecycleService` delegates to an in-memory or optional PostgreSQL
+store and does not implement the policy mutation endpoints listed above. Its current runtime profile requires
 policy versions 1..2147483647 and rule priorities -2147483648..2147483647;
 negative priorities are allowed. Unsupported numeric values fail closed before
 catalog mutation; they are not truncated to a different identity or precedence.
@@ -609,6 +609,18 @@ The frozen policy JSON schema retains its wider language-neutral safe-integer
 envelope. Widening the Java profile requires an end-to-end compatibility decision,
 not a local integer cast. Returned lifecycle documents are defensive copies,
 not writable references to active/staged/rollback state.
+
+The durable store uses trusted caller workspace names and optional expected
+active-version preconditions, not HTTP authentication or ETags. Null means an
+unconditional serialized transition; comparison is by version, not an
+ABA-resistant activation generation. First activation is serialized even before
+an active row exists. Immutable revision identity/content and lifecycle history
+persist through Flyway V7; lifecycle state/timestamps can change. Store writes
+own exclusive transactions, including on auto-commit-disabled leases; idempotent
+activation does not acquire a nested connection. Transaction/commit/close errors
+do not report success or automatically retry. A failure can follow a durable
+commit, so read the pointer/history before deciding what to do next. See the
+[lifecycle runbook](../runbooks/durable-policy-lifecycle.md).
 
 The listed approval endpoints remain target APIs. The request-bound approval implementation deliberately does
 not expose them until production reviewer authentication, tenant roles, CSRF/

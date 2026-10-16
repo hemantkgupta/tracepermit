@@ -122,15 +122,22 @@ ancestor-directory races remain outside the development boundary. See
 
 ### Connector to policy
 
-The optional in-memory policy lifecycle library validates a private candidate
+The optional in-memory/PostgreSQL policy lifecycle library validates a private candidate
 snapshot, rejects numbers outside its explicit Java `int` version/priority
 profile, and copies every returned revision document. API callers cannot change
 active decisions or future rollback content through a mutable JSON reference,
 or alias a large version into an existing catalog key (FR-013, REL-006, SEC-002).
 Regression tests preserve block decisions, stored hashes and zero simulator
 dispatch on attempted mutation. These are trusted in-process APIs, not an
-authenticated operator surface or a sandbox against compromised JVM code;
-durable role-scoped rollout remains separate work. See
+authenticated operator surface or a sandbox against compromised JVM code.
+PostgreSQL V7 persists immutable revision identity/content and transition history.
+First activation is serialized before any active row exists; SQL/unchecked
+failures roll back pointer/history, and commit/close failures cannot report
+success or automatically retry. Workspace filters require trusted caller
+selection; they are not RLS or authorization. Current-version preconditions
+are not ABA-resistant generations. Actor/reason metadata is caller supplied,
+and database triggers are not protection against a privileged administrator.
+Authenticated rollout and pending-approval integration remain separate work. See
 [ADR 0039](../architecture/0039-policy-lifecycle-staging-rollback-and-simulation.md).
 
 - Versioned canonical action
