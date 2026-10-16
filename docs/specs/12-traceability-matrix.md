@@ -5,6 +5,24 @@
 
 Status values: **Implemented**, **Partial**, **Target**, or **Proposed**.
 
+## Explicit operator database initialization
+
+Requirements: SEC-002/003/006/012; REL-001/005; OPS-001/002/004.
+
+`PostgresDatabaseLifecycle`, strict `openExisting` state/permit factories and
+`SimulatorApprovalMain` separate empty-only `--init-db` from non-migrating run.
+`PostgresDatabaseLifecycleTest` covers metadata/history/trigger rejection,
+non-owner validation, concurrency/lock release and unchanged state on refusal.
+`SimulatorApprovalBootstrapTest` proves actual child-main empty refusal,
+explicit initialization, no-listener failure, non-owner signed HTTP approval,
+restart and replay. The packaged test covers the same commands without build
+tools on runtime PATH. See [ADR 0045](../architecture/0045-explicit-database-initialization.md).
+
+This is bounded startup/installation hardening, not full physical-schema or
+restore validation, externally anchored replay safety, production least privilege
+or a completed recovery/operations requirement. Legacy development auto-migration
+and static-policy launcher scope are explicit; no upgrade/resume command is added.
+
 ## Flow documentation mapping
 
 The [nine-flow developer guide](../flows-guide.md), corresponding public guide

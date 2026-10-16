@@ -96,6 +96,7 @@ final class SimulatorApprovalConfiguration {
       database.setServerNames(new String[] {"127.0.0.1"});
       database.setPortNumbers(new int[] {integer(pg, "port", 1, 65_535)});
       database.setDatabaseName(identifier(pg, "database"));
+      database.setCurrentSchema("public"); // Do not resolve application tables via a role-named schema.
       database.setUser(identifier(pg, "user"));
       String password = utf8(readPrivateFile(reference(config, pg, "passwordFile"), 1024));
       // A single terminal newline from an operator-created secret file is allowed; no trimming otherwise.

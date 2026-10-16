@@ -37,7 +37,12 @@ The optional `pnpm dev:approvals` command starts only this separate local API
 from private operator JSON. `--check` validates offline, not IdP/DB readiness.
 Its numeric-loopback listener/database, one-client/tenant enrollment, persistent
 Ed25519 files, fixed default-block policy and migration behavior are specified
-in [ADR 0035](../architecture/0035-local-approval-operator-bootstrap.md).
+in [ADR 0035](../architecture/0035-local-approval-operator-bootstrap.md), with
+schema lifecycle superseded by [ADR 0045](../architecture/0045-explicit-database-initialization.md):
+`--check` is offline; `--init-db` installs only fresh empty state without
+starting a listener; normal run validates existing state without implicit DDL.
+Failures return exit 2/code-only redacted diagnostics; no public init, repair,
+upgrade or recovery-resume HTTP/MCP endpoint is added.
 The `/health`, `/ready` and `/mcp` surfaces below belong to other compositions,
 not to this approval listener.
 
