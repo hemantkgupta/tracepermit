@@ -73,11 +73,30 @@ See [ADR 0039](../architecture/0039-policy-lifecycle-staging-rollback-and-simula
    exact request binding. A request-body approval flag is never authority.
 5. On allow or valid approval, issue a short-lived request-bound permit.
    The executor checks signature, audience, hash, expiry, and single-use
-   claim before invoking the simulator. A denial issues no permit.
+   claim before invoking the simulator. Durable execution/approval already
+   inserts the permit with execution state and evidence in the existing
+   `PostgresDurableEnforcementState` transaction; it does not call standalone
+   `verifyAndConsume`. A denial issues no permit.
 6. Record only bounded, redacted evidence and expose read-only projections
    to the React console.
 
 ## State and transaction boundaries
+
+The optional standalone `PostgresPermitConsumptionStore` supports a separate
+consumption caller. Both authority overloads route by the organization in the
+private, hash-verified canonical action snapshot; an explicit tenant mismatch
+fails before storage. Missing/invalid tenant fails closed in the durable store.
+The port's legacy in-memory defaults retain global rather than tenant-aware
+replay tracking. Live durable claims require the verified action hash, never a
+hash fabricated from the permit ID.
+
+Consumption and foreign-key-aware pruning each own a fresh/exclusive database
+lease and commit before returning. Initially manual-transaction connections are
+supported; caller-owned/thread-bound transactions are not. SQL/commit/close
+failures never return success, rollback failures are preserved, and an ambiguous
+commit may leave a consumed row without dispatch. No automatic retry occurs.
+This standalone claim must not precede the composed durable claim transaction.
+See [ADR 0041](../architecture/0041-postgres-durable-permit-consumption.md).
 
 The default loopback demo uses process-local stores. Those stores are not
 safe for multi-replica or restart-persistent enforcement. The optional

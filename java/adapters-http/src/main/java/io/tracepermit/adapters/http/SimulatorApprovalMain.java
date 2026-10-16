@@ -9,8 +9,8 @@ import io.tracepermit.identity.OidcVerificationKeyResolver;
 import io.tracepermit.identity.StaticOidcProviderRegistry;
 import io.tracepermit.identity.BrowserIdTokenVerifier;
 import io.tracepermit.persistence.postgres.PostgresDurableEnforcementState;
+import io.tracepermit.persistence.postgres.PostgresPermitConsumptionStore;
 import io.tracepermit.security.ExecutionPermitAuthority;
-import io.tracepermit.security.InMemoryPermitConsumptionStore;
 import io.tracepermit.simulator.StatefulTargetSimulator;
 import java.io.PrintStream;
 import java.net.InetAddress;
@@ -83,7 +83,7 @@ public final class SimulatorApprovalMain {
         () -> UUID.randomUUID().toString());
     var permits = new ExecutionPermitAuthority(ExecutionPermitAuthority.DEFAULT_ISSUER,
         configuration.keyId(), configuration.permitKey(), 30, clock,
-        () -> "permit-" + UUID.randomUUID(), new InMemoryPermitConsumptionStore());
+        () -> "permit-" + UUID.randomUUID(), new PostgresPermitConsumptionStore(configuration.database()));
     ApprovalBrowserAdapter browser = null;
     var web = configuration.browser();
     if (web != null) {

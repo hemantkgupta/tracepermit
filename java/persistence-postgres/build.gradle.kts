@@ -1,5 +1,6 @@
 dependencies {
   api(project(":execution"))
+  api(project(":security"))
   implementation(project(":contracts"))
   implementation("org.flywaydb:flyway-core:11.8.2")
   implementation("org.flywaydb:flyway-database-postgresql:11.8.2")

@@ -483,6 +483,26 @@ The current compact token uses an HS256 header with an ephemeral key. The
 enterprise format must add an explicit canonicalization profile and use a
 reviewed asymmetric/KMS-backed signing configuration.
 
+### Standalone Java consumption adapter
+
+`ExecutionPermitAuthority.verifyAndConsume` snapshots the action before verifying
+its hash. The explicit-tenant overload rejects null, invalid or different tenant
+IDs with `PERMIT_TENANT_MISMATCH` before a claim. Both overloads route to the
+organization in that same verified action, not a configured default namespace.
+The PostgreSQL adapter rejects a missing/invalid organization and requires the
+verified canonical action hash for live claims; no-hash overloads fail closed.
+Legacy in-memory ports retain global replay tracking, not tenant-aware isolation.
+
+Standalone consumption and pruning own fresh/exclusive DataSource leases and
+commit before returning. SQL/commit/close failures never return success; an
+ambiguous acknowledgement can leave a consumed row and is not permission to
+retry or dispatch. Caller-owned/thread-bound transactions are unsupported.
+These Java ports do not authenticate body claims or expose a new remote API.
+The existing durable execution/approval services instead consume permits with
+execution state and evidence in their established atomic transaction; do not
+pre-consume through this adapter. See
+[ADR 0041](../architecture/0041-postgres-durable-permit-consumption.md).
+
 ## 6. Audit evidence contract
 
 The current internal evidence record contains:
