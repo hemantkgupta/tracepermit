@@ -33,6 +33,15 @@ launcher starts these routes. See the
 [API runbook](../runbooks/authenticated-approval-api-foundation.md) and
 [ADR 0034](../architecture/0034-authenticated-loopback-approval-api.md).
 
+The collection GET now accepts exact `status`, `toolName`, `approvalRequestId`,
+bounded `limit` and unsigned `cursor` parameters. Responses add `pageSize`,
+nullable `nextCursor` and per-item `createdAt`. Every page re-derives tenant/owner
+authority before a bounded read-only PostgreSQL query and existing redacted
+projection. All other approval routes and MCP envelopes retain query rejection.
+This is approval history, not full action search or snapshot export. See the
+[history contract](../runbooks/approval-history-api.md) and
+[ADR 0046](../architecture/0046-authenticated-approval-history-pagination.md).
+
 The optional `pnpm dev:approvals` command starts only this separate local API
 from private operator JSON. `--check` validates offline, not IdP/DB readiness.
 Its numeric-loopback listener/database, one-client/tenant enrollment, persistent

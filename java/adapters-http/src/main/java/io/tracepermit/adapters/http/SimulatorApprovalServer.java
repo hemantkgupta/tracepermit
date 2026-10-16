@@ -185,7 +185,8 @@ public final class SimulatorApprovalServer implements AutoCloseable {
       // A cnf claim is not proof of possession; this bearer-only local adapter cannot verify it.
       if (connector.senderConstraint().isPresent()) throw failure(401, "SENDER_PROOF_NOT_SUPPORTED");
       ApprovalMemberships.Entry member = memberships.resolve(connector);
-      if (uri.getRawQuery() != null) {
+      if (uri.getRawQuery() != null
+          && !(ROOT.equals(path) && "GET".equals(exchange.getRequestMethod()))) {
         throw failure(400, "INVALID_REQUEST");
       }
       String method = exchange.getRequestMethod();
@@ -222,9 +223,14 @@ public final class SimulatorApprovalServer implements AutoCloseable {
           var items = page.putArray("items");
           String owner = member.roles().equals(Set.of(ApprovalMemberships.Role.REQUESTER))
               ? member.principalId() : null;
-          for (var approval : state.listApprovals(member.tenant(), owner, 50)) {
+          var parameters = ApprovalHistoryParameters.parse(uri.getRawQuery(), member.tenant().value(), member.principalId(), owner);
+          var history = state.approvalHistory(member.tenant(), owner, parameters.query());
+          for (var approval : history.items()) {
             items.add(projection(approval, member));
           }
+          page.put("pageSize", parameters.query().limit());
+          if (history.hasMore()) page.put("nextCursor", parameters.nextCursor(history.items().getLast()));
+          else page.putNull("nextCursor");
           send(exchange, 200, page);
         } else throw failure(405, "METHOD_NOT_ALLOWED");
       } else if (path.startsWith(ROOT + "/")) {
@@ -360,6 +366,7 @@ public final class SimulatorApprovalServer implements AutoCloseable {
     result.put("requestHash", approval.binding().requestHash());
     result.put("requesterId", approval.binding().subjectId());
     result.put("status", approval.status());
+    result.put("createdAt", approval.binding().createdAt().toString());
     result.put("expiresAt", approval.binding().expiresAt().toString());
     result.put("expired", !approval.binding().expiresAt().isAfter(clock.instant()));
     result.put("policyId", approval.binding().policyId());
