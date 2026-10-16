@@ -121,6 +121,12 @@ static-policy composition; no writable HTTP/MCP endpoint or React editor is adde
 
 ## Verification
 
+- `PolicyTemplateQualificationTest`: two opt-in candidates, 19 cases/38
+  evaluations, exact classification/decision metadata, isolated scope and
+  priority mutations, input preservation and a forbidden-catalog port.
+  Asserted/fabricated canonical identity and malformed raw tool arguments are
+  explicitly characterized as non-authentication/non-schema-validation
+  boundaries. No execution authority or default runtime behavior changes.
 - `PolicyValidatorTest`: supported repository policies, unknown fields/schema,
   duplicate IDs, invalid decisions and match enums.
 - `PolicyNumericRangeTest`: overflow/collision rejection before catalog
