@@ -65,6 +65,12 @@ traffic. First-install `--init-db` explicitly initializes an empty dedicated
 public schema; normal run uses strict non-migrating repository opens and rejects
 empty/partial/incompatible state. See [ADR 0045](../architecture/0045-explicit-database-initialization.md).
 This does not detect a valid older restored snapshot or add a recovery fence.
+The five [generation-bound restore cases](../runbooks/policy-bound-restore-qualification.md)
+compare populated V8 state before/after service recreation and exercise actual
+opt-in review/resume. Captured consumed state and stale lifecycle generations
+reject replay; an old approved snapshot still revives authority and produces a
+second synthetic effect despite strict schema validation. This is a documented
+recovery gap, not a safe-restore or production-readiness qualification.
 It is not a readiness or external-login qualification. Its integration tests
 combine strict RS256 access-token verification, operator-owned human/workload
 memberships and per-call scopes with PostgreSQL V6/V8 exact action snapshots,

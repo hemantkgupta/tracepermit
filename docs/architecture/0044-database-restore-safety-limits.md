@@ -66,3 +66,13 @@ not an independently signed recovery anchor.
 
 See the [qualification runbook](../runbooks/simulator-backup-restore-qualification.md)
 for the six cases, exact boundaries and primary PostgreSQL references.
+
+`PostgresPolicyBoundRestoreQualificationTest` adds five opt-in V8 generation-bound
+service cases, with nonempty bindings and exact captured rows verified before and
+after destination constructors. Consumed-state replay and activation/rollback
+staleness remain rejected. Restoring a pre-consumption snapshot rolls back the
+active pointer and approval status together: the unchanged old binding matches
+again, and the external synthetic effect counter reaches two using a fresh
+permit/attempt. Even strict existing-state validation accepts this complete old
+snapshot; it is not a recovery epoch. See the
+[generation-bound runbook](../runbooks/policy-bound-restore-qualification.md).

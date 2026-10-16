@@ -189,6 +189,18 @@ See [ADR 0043](../architecture/0043-bounded-evidence-redaction.md) and the
 
 ## Simulator database backup/restore qualification
 
+`PostgresPolicyBoundRestoreQualificationTest` adds five opt-in generation-bound
+service cases: pending/review/execute, consumed replay, activation staleness,
+cyclic-rollback staleness with a fresh gen3 control, and pre-consumption snapshot
+authority revival. All 17 captured tables (including full Flyway rows/checksums)
+match before/after destination construction. Original request/action, binding,
+attempt and hash-linked evidence are preserved; the stale-snapshot hazard keeps
+an external effect counter and proves a second effect with fresh permit/attempt
+IDs. Strict existing-state validation accepts the complete older snapshot.
+FR-007/008/013, SEC-005/006, REL-001/003/005 and OPS-004 receive bounded evidence;
+no broad status or tenant/credential-isolation claim is upgraded. See the
+[generation-bound qualification](../runbooks/policy-bound-restore-qualification.md).
+
 `PostgresBackupRestoreQualificationTest` adds six same-version PostgreSQL cases:
 complete captured approval/action/permit/attempt/evidence and policy/migration
 parity, no automatic dispatch, exclusive expiry, unsupported guard rejection,
