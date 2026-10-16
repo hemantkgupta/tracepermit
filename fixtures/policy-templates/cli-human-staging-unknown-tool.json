@@ -1,0 +1,91 @@
+{
+  "schemaVersion": "1.0",
+  "eventId": "018f47a2-f5ce-7a4b-8f54-80e5d3eaf106",
+  "observedAt": "2026-10-16T12:00:00.000Z",
+  "traceId": "10010010010010010010010010010006",
+  "identity": {
+    "subject": {
+      "id": "user:operator@example.com",
+      "type": "human",
+      "displayName": "Operator",
+      "organizationId": "acme",
+      "authenticationMethod": "oauth",
+      "assurance": "authenticated"
+    },
+    "actor": {
+      "id": "client:tracepermit-cli",
+      "type": "orchestrator",
+      "displayName": "TracePermit CLI",
+      "organizationId": "acme",
+      "authenticationMethod": "client_metadata",
+      "assurance": "asserted"
+    },
+    "evidence": [
+      {
+        "evidenceId": "evidence-oauth-operator",
+        "subjectId": "user:operator@example.com",
+        "kind": "oauth_token",
+        "assurance": "authenticated",
+        "issuer": "tracepermit-oauth",
+        "verifiedAt": "2026-10-16T11:59:59.000Z",
+        "credentialFingerprint": "sha256:1001001001001001001001001001001001001001001001001001001001001001"
+      },
+      {
+        "evidenceId": "evidence-cli-metadata",
+        "subjectId": "client:tracepermit-cli",
+        "kind": "client_metadata",
+        "assurance": "asserted",
+        "issuer": "cli-metadata"
+      }
+    ]
+  },
+  "trigger": {
+    "kind": "human",
+    "origin": "cli",
+    "requestId": "req-cli-106",
+    "clientName": "TracePermit CLI"
+  },
+  "declaredIntent": {
+    "goal": "Invoke unrecognized custom tool",
+    "source": "prompt"
+  },
+  "action": {
+    "protocol": "cli",
+    "toolName": "custom.unrecognized_operation",
+    "arguments": {
+      "key": "value"
+    },
+    "target": {
+      "system": "aws",
+      "environment": "staging",
+      "accountId": "simulated-123",
+      "resourceType": "custom-resource"
+    }
+  },
+  "lineage": {
+    "rootPrincipalId": "user:operator@example.com",
+    "hops": [
+      {
+        "hopId": "hop-user",
+        "kind": "principal",
+        "subjectId": "user:operator@example.com",
+        "assurance": "authenticated",
+        "source": "tracepermit-oauth",
+        "observedAt": "2026-10-16T11:59:59.000Z"
+      },
+      {
+        "hopId": "hop-cli",
+        "parentHopId": "hop-user",
+        "kind": "orchestrator",
+        "subjectId": "client:tracepermit-cli",
+        "assurance": "asserted",
+        "source": "cli-metadata",
+        "observedAt": "2026-10-16T12:00:00.000Z"
+      }
+    ],
+    "delegations": []
+  },
+  "clientClaims": {
+    "profile": "staging-operator"
+  }
+}

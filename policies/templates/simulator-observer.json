@@ -1,0 +1,58 @@
+{
+  "schemaVersion": "1.0",
+  "id": "tpl-simulator-observer-001",
+  "version": 1,
+  "name": "Simulator Observer Policy Template",
+  "description": "Candidate policy template for simulator observation: allows explicit CLI human CloudWatch log reads in staging while blocking destructive operations, oversized log windows, and unlisted actions.",
+  "enabled": true,
+  "defaultDecision": {
+    "outcome": "block",
+    "reasonCode": "SIMULATOR_OBSERVER_DEFAULT_BLOCK"
+  },
+  "rules": [
+    {
+      "id": "block-destructive-operations",
+      "priority": 300,
+      "description": "Explicitly block all destructive operations in the simulator environment before read rules.",
+      "match": {
+        "actionClasses": ["destructive"]
+      },
+      "decision": {
+        "outcome": "block",
+        "reasonCode": "DESTRUCTIVE_OPERATIONS_BLOCKED"
+      }
+    },
+    {
+      "id": "block-oversized-log-window",
+      "priority": 200,
+      "description": "Explicitly block log read requests with result windows exceeding the 100-event threshold before read rules.",
+      "match": {
+        "targetSystems": ["aws"],
+        "actionClasses": ["read"],
+        "toolNames": ["aws.logs.filter_log_events"],
+        "requiredSignals": ["OVERSIZED_RESULT_WINDOW"]
+      },
+      "decision": {
+        "outcome": "block",
+        "reasonCode": "OVERSIZED_LOG_WINDOW_BLOCKED"
+      }
+    },
+    {
+      "id": "allow-cli-staging-cloudwatch-read",
+      "priority": 100,
+      "description": "Allow an authenticated CLI human to read bounded CloudWatch log events in the staging simulator environment.",
+      "match": {
+        "origins": ["cli"],
+        "subjectTypes": ["human"],
+        "targetSystems": ["aws"],
+        "environments": ["staging"],
+        "actionClasses": ["read"],
+        "toolNames": ["aws.logs.filter_log_events"]
+      },
+      "decision": {
+        "outcome": "allow",
+        "reasonCode": "CLI_STAGING_LOG_READ_ALLOWED"
+      }
+    }
+  ]
+}
