@@ -101,10 +101,24 @@ authenticated [local MCP request/status/resume](codex-durable-approvals.md)
 shares this durable service. These are not the default demo console backend.
 Previously pending/approved v1 records cannot execute under v2: request fresh
 review of the current policy rather than rewriting the stored approval.
-In durable policy lifecycle mode (ADR 0042), approvals are bound to the active
-policy activation generation; any policy activation or rollback advances the
-generation, rejecting previously created approvals with STALE_POLICY_GENERATION
-(HTTP 409 Conflict / MCP tool error).
+Durable policy lifecycle binding is a separate **opt-in Java factory**
+composition ([ADR 0042](../architecture/0042-durable-policy-generation-binding.md)).
+The launcher described here, including the source-free distribution, still uses
+the fixed static policy; no configuration field turns it into durable policy
+administration. In the opt-in service, a generation-changing activation or
+rollback rejects an older approval at execution with `STALE_POLICY_GENERATION`
+(HTTP 409 Conflict / MCP tool error), even when rollback restores identical
+policy content. Idempotent activation does not advance generation. Rejection
+leaves the stored pending/approved status unchanged; it is not execution or
+automatic cancellation.
+
+The Java precheck avoids minting when it already observes a stale generation.
+An activation racing after that check can still allow an internal permit to be
+minted; the database claim then prevents consumption and dispatch. A claim
+committed before activation is not retroactively cancelled. The durable service
+also rejects unbound legacy approvals, but the trusted raw persistence port
+retains static compatibility when neither saved binding nor claim policy
+context exists. Do not treat that port as a database-global mode fence.
 
 Startup errors return code 2 with `APPROVAL_STARTUP_FAILED`, without raw exception
 details. Check file paths/ownership/permissions, configuration fields, key formats,

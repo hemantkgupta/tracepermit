@@ -1,6 +1,6 @@
 # Durable policy lifecycle foundation
 
-Requirements: FR-013; REL-006; SEC-002/009; OPS-002.
+Requirements: FR-007/008/013; REL-004/006; SEC-001/002/005/006/009; OPS-002.
 See [ADR 0039](../architecture/0039-policy-lifecycle-staging-rollback-and-simulation.md) and [ADR 0042](../architecture/0042-durable-policy-generation-binding.md).
 
 This is an optional trusted Java library over PostgreSQL, not an administrative
@@ -59,10 +59,13 @@ Constructing the PostgreSQL store automatically runs Flyway migrations. V7 adds
 the policy tables/triggers and V8 adds `tp_approval_policy_bindings`, advancing
 the existing enforcement schema guard to 8 without deleting approval, execution,
 permit or evidence rows. A real-PostgreSQL regression upgrades a V6 fixture and
-verifies its prior permit claim survives. Existing V1–V7 migrations are unchanged.
+verifies its prior permit claim survives. A populated V7-to-V8 fixture also
+checks preservation of existing table row counts. These are bounded migration
+regressions, not a production backup/restore qualification. Existing V1–V7
+migrations are unchanged.
 
-Use the matching application/schema version; old binaries expecting V6 cannot
-use V7. The policy store also rejects an unknown or missing schema guard at
+Use the matching application/schema version; binaries expecting V6 or V7 cannot
+use the V8 schema. The policy store also rejects an unknown or missing schema guard at
 startup. This is not a rolling-deployment compatibility promise. Do not manually
 edit Flyway checksums, reset an operator database or delete state to fix an error.
 An earlier unmerged V7 development fixture may need recreation **only if it is
@@ -103,7 +106,36 @@ workspace mutations, SQL immutability, V6-to-V7 upgrade and incompatible/missing
 schema-guard rejection. `PostgresPolicyBoundApprovalTest` verifies durable
 approval policy generation binding, rejection of stale approvals across activation
 and rollback, fail-closed handling of unbound approvals, and concurrent claim/activation
-serialization.
+serialization. `PostgresPolicyGenerationBoundaryTest` adds eight forced
+interleaving/fault regressions. To run just that class after installing dependencies:
+
+```bash
+source scripts/configure-java-environment.sh
+java/gradlew -p java :persistence-postgres:test --tests io.tracepermit.persistence.postgres.PostgresPolicyGenerationBoundaryTest
+```
+
+Interpret the boundary results precisely:
+
+- **Claim first:** a real PostgreSQL lock wait proves activation cannot commit
+  while the claim holds the active-policy share lock. The committed claim is
+  not retroactively cancelled by a later activation.
+- **Activation first:** the waiting claim sees the new generation and returns
+  `STALE_POLICY_GENERATION`; approval, permit consumption, execution attempt and
+  approval evidence remain unchanged by the rejected claim.
+- **Java precheck race:** one internal permit can be minted after a concurrent
+  activation, but the atomic database claim rejects it before consumption or
+  target dispatch. Do not report unconditional zero permits minted.
+- **Legacy compatibility:** the durable service rejects unbound approvals, and
+  a saved binding is checked even if claim context is omitted. An unbound raw
+  claim with no policy context retains trusted static-mode compatibility; the
+  database does not infer a global durable-mode setting from an active policy.
+- **Lost commit acknowledgement:** a committed claim stays consumed while the
+  service dispatches nothing after the injected error. Do not retry it as new
+  authority or infer a real-world target outcome from this synthetic fault test.
+
+Stale rows keep their pending/approved status; rejection does not automatically
+cancel them. Use fresh review under the current generation. No test prints
+credentials, enables a real target or requires a model invocation.
 
 The approval and numbered scenario reruns establish compatibility of the existing
 static-policy compositions, not durable policy administration wiring. Invalidation

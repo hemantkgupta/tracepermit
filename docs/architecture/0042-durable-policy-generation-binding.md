@@ -60,7 +60,7 @@ an approval created under an old policy to execute against a new active policy.
      `v.content_hash == binding.policyContentHash()`.
    - If any field mismatches or no active policy exists, the claim returns
      `ApprovalConsumptionStatus.STALE_POLICY_GENERATION` and performs zero state
-     mutations: no permit consumption, no approval status transition to `EXECUTED`,
+     mutations: no permit consumption, no approval status transition to `consumed`,
      no execution record, and no evidence event emitted.
    - The row-level `FOR SHARE` lock on `tp_active_policies` serializes against
      concurrent `tp_active_policies` updates (which take `FOR UPDATE`), preventing
@@ -73,13 +73,21 @@ an approval created under an old policy to execute against a new active policy.
    it throws `IllegalStateException("STALE_POLICY_GENERATION")` immediately,
    guaranteeing that no execution permit is minted. If a concurrent activation
    commits between this check and database claim, the PostgreSQL transaction
-   aborts the claim with `STALE_POLICY_GENERATION`.
+   rejects the claim with `STALE_POLICY_GENERATION`. In that interleaving, an
+   internal permit may already have been minted; it is not consumed or returned
+   as a successful execution result, and no target is dispatched. The guarantee
+   is **no stale claim or dispatch**, not unconditional zero permit minting.
 
 5. **Fail-closed on unbound legacy approvals:**
    When running in durable policy mode, an approval lacking a row in
    `tp_approval_policy_bindings` is rejected with `STALE_POLICY_GENERATION`.
    Unbound approvals created outside durable lifecycle mode cannot execute
-   in a durable-bound environment.
+   through the durable-mode service. A saved binding is also revalidated when
+   a trusted Java caller uses the legacy four-argument claim constructor.
+   However, the raw persistence port retains static compatibility when both the
+   saved binding and claim policy context are absent. This is not a
+   database-global durable-mode fence or a defense against arbitrary in-process
+   Java callers; transports must use the correctly configured service.
 
 6. **Database schema and immutability:**
    Migration `V8__policy_bound_approvals.sql` advances the schema contract
@@ -101,5 +109,31 @@ an approval created under an old policy to execute against a new active policy.
 - This foundation secures simulator approvals against policy activation races
   and cyclic rollback reuse. It does not introduce remote policy administration
   endpoints or operator UI editors.
+- Claim commit is the ordering boundary. If the claim holds the share lock
+  first, activation waits for that transaction to commit; the already-claimed
+  simulator operation may finish after the new generation becomes active.
+  Activation does not retroactively cancel a committed claim, and the row lock
+  is not held across target dispatch. If activation commits first, the waiting
+  stale claim is rejected without consuming authority.
+- Stale pending/approved rows remain stored with their existing status; the
+  claim fails rather than automatically cancelling or relabeling them.
+- Durable lifecycle integration requires the opt-in Java factory. Default
+  launchers and the source-free distribution still use static policies. This
+  change does not add runtime configuration for durable policy administration.
 - Foreign keys and database triggers enforce relational consistency within
   PostgreSQL; they do not defend against an administrative database operator.
+
+## Regression evidence
+
+`PostgresPolicyGenerationBoundaryTest` adds eight independent real-PostgreSQL
+tests: forced claim-first and activation-first row-lock schedules, creation
+racing activation, legacy claim-context omission, atomic rollback on binding
+insert failure, lost claim-commit acknowledgement, explicit static compatibility,
+and activation between Java precheck and permit issuance. Lock tests observe
+actual PostgreSQL lock waits, not elapsed time alone. Service tests count only
+synthetic target invocations; no real downstream system is contacted.
+
+The lost-acknowledgement test commits the claim before injecting the connection
+failure: dispatch stays at zero, authority remains consumed, and a subsequent
+execution is not treated as fresh. This is bounded fault coverage, not a claim
+of distributed exactly-once execution or automatic reconciliation.
