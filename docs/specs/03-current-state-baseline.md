@@ -100,10 +100,15 @@ host; it does not require Node.js, pnpm, Gradle, or the source repository checko
 `--check` validates configuration, permissions, Ed25519 keypair math, and bundled assets
 completely offline without network, database, or IdP traffic. Build manifests
 (`manifest.json`) and SHA-256 integrity checksums are included; checksums are explicitly
-distinguished from third-party code signing. All credentials and private keys remain
+distinguished from third-party code signing. Manifest schema `1.1` identifies the
+clean source commit and commit timestamp; packaging tracks these as cache inputs
+and rejects dirty or missing source metadata. Shared runtime JARs retain other
+main entry points, but the supported launcher selects only `SimulatorApprovalMain`.
+All credentials and private keys remain
 operator-managed outside the bundle. Automated tests (`scripts/simulator-approval-distribution.test.mjs`,
 `pnpm test:distribution`) verify archive layout, offline checking without build tools on `PATH`,
-redacted fail-closed errors, and clean SIGTERM shutdown with port release.
+redacted fail-closed errors, clean SIGTERM shutdown with port release, commit-only
+cache invalidation, exact file/JAR inventories and repeated staging stability.
 See [ADR 0040](../architecture/0040-source-free-simulator-approval-distribution.md) and
 the [distribution runbook](../runbooks/simulator-approval-distribution.md).
 

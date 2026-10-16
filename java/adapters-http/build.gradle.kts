@@ -112,14 +112,23 @@ abstract class StageSimulatorApprovalDistribution : DefaultTask() {
   @get:InputFile
   abstract val notice: RegularFileProperty
 
-  @get:Internal
-  abstract val repoDir: DirectoryProperty
+  @get:Input
+  abstract val sourceCommit: Property<String>
+
+  @get:Input
+  abstract val sourceCommitEpochSeconds: Property<Long>
+
+  @get:Input
+  abstract val sourceTreeClean: Property<Boolean>
 
   @get:OutputDirectory
   abstract val outputDir: DirectoryProperty
 
   @TaskAction
   fun stage() {
+    if (!sourceTreeClean.get()) {
+      throw GradleException("Distribution packaging requires a clean Git source tree. Commit or isolate source changes before packaging.")
+    }
     val stageDir = outputDir.get().asFile
     stageDir.deleteRecursively()
     stageDir.mkdirs()
@@ -176,23 +185,14 @@ abstract class StageSimulatorApprovalDistribution : DefaultTask() {
     val jars = libDir.listFiles { f -> f.isFile && f.name.endsWith(".jar") }
       ?.sortedBy { it.name } ?: emptyList()
 
-    val commit = try {
-      val proc = ProcessBuilder("git", "rev-parse", "HEAD")
-        .directory(repoDir.get().asFile)
-        .redirectError(ProcessBuilder.Redirect.DISCARD)
-        .start()
-      val out = proc.inputStream.bufferedReader().readText().trim()
-      if (proc.waitFor() == 0 && out.isNotEmpty()) out else "unknown"
-    } catch (_: Exception) {
-      "unknown"
-    }
     val manifestJson = buildString {
       append("{\n")
-      append("  \"schemaVersion\": \"1.0\",\n")
+      append("  \"schemaVersion\": \"1.1\",\n")
       append("  \"packageName\": \"tracepermit-simulator-approval\",\n")
       append("  \"packageVersion\": \"0.1.0\",\n")
-      append("  \"sourceCommit\": \"$commit\",\n")
-      append("  \"buildTimestamp\": \"${Instant.now()}\",\n")
+      append("  \"sourceCommit\": \"${sourceCommit.get()}\",\n")
+      append("  \"sourceCommitTimestamp\": \"${Instant.ofEpochSecond(sourceCommitEpochSeconds.get())}\",\n")
+      append("  \"sourceTree\": \"clean\",\n")
       append("  \"requiredJava\": \"21\",\n")
       append("  \"supportedPlatforms\": [\n    \"macOS\",\n    \"Linux\"\n  ],\n")
       append("  \"entryPoint\": \"io.tracepermit.adapters.http.SimulatorApprovalMain\",\n")
@@ -254,6 +254,31 @@ abstract class GenerateArchiveChecksum : DefaultTask() {
   }
 }
 
+// Exec-backed providers are tracked by Gradle's configuration cache and are explicit
+// task inputs. A commit-only change must invalidate both caches; no "unknown" fallback.
+val distributionRepository = layout.projectDirectory.dir("../..")
+val distributionCommit = providers.exec {
+  workingDir(distributionRepository)
+  commandLine("git", "rev-parse", "--verify", "HEAD")
+}.standardOutput.asText.map { output ->
+  output.trim().also { commit ->
+    if (!commit.matches(Regex("[0-9a-f]{40}|[0-9a-f]{64}"))) {
+      throw GradleException("Distribution source commit is unavailable.")
+    }
+  }
+}
+val distributionCommitEpoch = providers.exec {
+  workingDir(distributionRepository)
+  commandLine("git", "show", "-s", "--format=%ct", "HEAD")
+}.standardOutput.asText.map { output ->
+  output.trim().toLongOrNull()?.takeIf { it >= 0 }
+    ?: throw GradleException("Distribution source commit timestamp is unavailable.")
+}
+val distributionSourceClean = providers.exec {
+  workingDir(distributionRepository)
+  commandLine("git", "status", "--porcelain=v1", "--untracked-files=all", "--ignore-submodules=none")
+}.standardOutput.asText.map { it.isBlank() }
+
 val stageSimulatorApprovalDistribution = tasks.register<StageSimulatorApprovalDistribution>("stageSimulatorApprovalDistribution") {
   group = "distribution"
   description = "Stages files for the source-free simulator approval distribution."
@@ -266,11 +291,13 @@ val stageSimulatorApprovalDistribution = tasks.register<StageSimulatorApprovalDi
   runbook.set(layout.projectDirectory.file("../../docs/runbooks/simulator-approval-distribution.md"))
   license.set(layout.projectDirectory.file("../../LICENSE"))
   notice.set(layout.projectDirectory.file("../../NOTICE"))
-  repoDir.set(layout.projectDirectory.dir("../.."))
+  sourceCommit.set(distributionCommit)
+  sourceCommitEpochSeconds.set(distributionCommitEpoch)
+  sourceTreeClean.set(distributionSourceClean)
   outputDir.set(layout.buildDirectory.dir("staged-distribution/tracepermit-simulator-approval-0.1.0"))
 }
 
-val packageSimulatorApprovalDistribution = tasks.register<Tar>("packageSimulatorApprovalDistribution") {
+val archiveSimulatorApprovalDistribution = tasks.register<Tar>("archiveSimulatorApprovalDistribution") {
   group = "distribution"
   description = "Packages the source-free simulator approval host-native archive."
   dependsOn(stageSimulatorApprovalDistribution)
@@ -279,7 +306,13 @@ val packageSimulatorApprovalDistribution = tasks.register<Tar>("packageSimulator
   archiveExtension.set("tar.gz")
   compression = Compression.GZIP
   destinationDirectory.set(layout.buildDirectory.dir("distributions"))
-  from(layout.buildDirectory.dir("staged-distribution"))
+  isPreserveFileTimestamps = false
+  isReproducibleFileOrder = true
+  dirPermissions { unix("0755") }
+  filePermissions { unix("0644") }
+  from(stageSimulatorApprovalDistribution.flatMap { it.outputDir }) {
+    into("tracepermit-simulator-approval-0.1.0")
+  }
   filesMatching("**/bin/*") {
     filePermissions {
       unix(0b111_101_101)
@@ -290,14 +323,16 @@ val packageSimulatorApprovalDistribution = tasks.register<Tar>("packageSimulator
 val checksumSimulatorApprovalDistribution = tasks.register<GenerateArchiveChecksum>("checksumSimulatorApprovalDistribution") {
   group = "distribution"
   description = "Generates SHA-256 checksum for the simulator approval archive."
-  archiveFile.set(packageSimulatorApprovalDistribution.flatMap { it.archiveFile })
-  checksumFile.set(packageSimulatorApprovalDistribution.flatMap { tar ->
+  archiveFile.set(archiveSimulatorApprovalDistribution.flatMap { it.archiveFile })
+  checksumFile.set(archiveSimulatorApprovalDistribution.flatMap { tar ->
     tar.destinationDirectory.file(tar.archiveFile.map { "${it.asFile.name}.sha256" })
   })
 }
 
-packageSimulatorApprovalDistribution.configure {
-  finalizedBy(checksumSimulatorApprovalDistribution)
+tasks.register("packageSimulatorApprovalDistribution") {
+  group = "distribution"
+  description = "Builds and checksums the source-free simulator approval host-native archive."
+  dependsOn(checksumSimulatorApprovalDistribution)
 }
 
 tasks.register<Sync>("installSimulatorApprovalDistribution") {

@@ -166,8 +166,13 @@ Java 21 and forwards strictly to `SimulatorApprovalMain` without requiring a sou
 checkout, Node, pnpm, or Gradle on the running host. Offline `--check` validates
 configuration, file permissions (0600/0400 owner-only), Ed25519 keypair math, and
 bundled assets without network, database, or IdP traffic. The archive includes
-`manifest.json` recording the source Git commit, package version, required Java 21,
-and SHA-256 dependency inventory, alongside `SHA256SUMS`. Checksums provide file
+`manifest.json` schema `1.1` recording the clean source Git commit and commit
+timestamp, package version, required Java 21, and SHA-256 dependency inventory,
+alongside `SHA256SUMS`. Commit/time/cleanliness are declared Gradle inputs;
+dirty or unavailable metadata fails packaging instead of emitting stale or
+`unknown` provenance. Tar metadata is normalized and sibling build outputs are
+excluded. Shared runtime JARs are not class-stripped; only the launcher entry
+point is fixed. Checksums provide file
 integrity verification, not third-party code signing. All credentials and private keys
 remain operator-owned outside the bundle. See
 [ADR 0040](../architecture/0040-source-free-simulator-approval-distribution.md).

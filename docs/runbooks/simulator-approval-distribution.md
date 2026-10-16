@@ -18,6 +18,9 @@ without requiring Node.js, pnpm, Gradle, or a source checkout on the host.
 - **Identity Provider:** An OIDC-compliant provider issuing RS256 `at+jwt` access tokens.
 - **Tools not required:** Node.js, pnpm, and Gradle are **not** required to run or offline-validate this bundle.
 
+The host-native launcher is architecture-independent; automated qualification runs
+on the available macOS host and Linux CI, not on every listed CPU/OS combination.
+
 ## Archive verification and extraction
 
 Verify archive integrity before extracting:
@@ -35,7 +38,14 @@ Extract the archive into your chosen installation directory:
 ```bash
 tar -xzf tracepermit-simulator-approval-0.1.0.tar.gz
 cd tracepermit-simulator-approval-0.1.0
+shasum -a 256 -c SHA256SUMS
 ```
+
+Inspect `manifest.json`: schema `1.1` records `sourceCommit`,
+`sourceCommitTimestamp` (the commit time, not the packaging time), `sourceTree: "clean"`,
+and an exact runtime JAR inventory. Compare the commit to the release you intended
+to install. These fields identify a trusted local build; they are not signed
+provenance. Do not use an archive left over from a failed packaging command.
 
 The extracted archive layout:
 
@@ -71,12 +81,20 @@ cd "$HOME/.config/tracepermit-approvals"
 
 ### 1. Generate simulator permit keys
 
-Generate a persistent Ed25519 keypair for execution permit signing:
+For a first installation only, generate a persistent Ed25519 keypair for execution
+permit signing. The guard prevents accidental overwrite of existing keys:
 
 ```bash
-openssl genpkey -algorithm ED25519 -outform DER -out permit.pk8
-openssl pkey -inform DER -in permit.pk8 -pubout -outform DER -out permit.spki
-chmod 600 permit.pk8 permit.spki
+(
+  set -euo pipefail
+  if [ -e permit.pk8 ] || [ -e permit.spki ]; then
+    echo 'Existing permit key files found; reuse them, do not overwrite.' >&2
+    exit 2
+  fi
+  openssl genpkey -algorithm ED25519 -outform DER -out permit.pk8
+  openssl pkey -inform DER -in permit.pk8 -pubout -outform DER -out permit.spki
+  chmod 600 permit.pk8 permit.spki
+)
 ```
 
 > [!WARNING]
@@ -85,20 +103,20 @@ chmod 600 permit.pk8 permit.spki
 
 ### 2. Configure database credentials
 
-Write your dedicated PostgreSQL role's password (at least 16 non-control characters)
-to a private file:
+Using a private local editor (not synchronized notes), create `database.secret`
+with your dedicated PostgreSQL role's password (at least 16 non-control characters)
+as its only line. Do not put the value in a shell command, command argument or chat:
 
 ```bash
-echo -n "your-secure-local-database-password" > database.secret
 chmod 600 database.secret
 ```
 
 ### 3. Configure browser client secret (optional)
 
-If using the browser approval inbox, store the OIDC client secret:
+If using the browser approval inbox, similarly create `browser.secret` with the
+OIDC client secret in your private editor. Do not overwrite it on subsequent starts:
 
 ```bash
-echo -n "your-registered-oidc-client-secret" > browser.secret
 chmod 600 browser.secret
 ```
 
@@ -160,7 +178,8 @@ Start the approval service:
 During startup:
 
 1. Validates operator configuration and credentials.
-2. Applies PostgreSQL Flyway migrations (`V1` through `V6`).
+2. Applies the packaged PostgreSQL Flyway migrations (currently `V1` through `V7`)
+   and verifies the supported schema before opening the listener.
 3. Binds the HTTP listener strictly to `http://127.0.0.1:<port>`.
 4. Outputs: `TracePermit simulator approval API listening on http://127.0.0.1:<port>`.
 
@@ -187,6 +206,32 @@ and releases the port immediately.
    No AWS, Jira, or cloud provider SDK or credential is included or contacted.
 4. **Independent IdP:** Operator configuration enrolls an external OIDC provider.
    Offline check does not certify that the provider will issue compatible tokens.
+5. **Fixed launcher, shared JARs:** The launcher selects only `SimulatorApprovalMain`.
+   Shared runtime JARs also contain development/hosted-client entry points; they
+   have not been stripped. Direct Java invocation by a local host user is not
+   constrained by the launcher. Test-only account pickers and IdP classes are absent.
+6. **Redaction scope:** Launcher validation and Java bootstrap handlers omit private
+   paths and secret values. Damaged archives or JVM/OS errors can produce diagnostics
+   outside those handlers; preserve logs privately and verify integrity first.
+
+## Building and qualifying from source (maintainers only)
+
+Run from a clean, committed checkout with Node.js 22+, pnpm 11.25.0 and Java 21:
+
+```bash
+pnpm install --frozen-lockfile
+pnpm build:distribution
+pnpm test:distribution
+```
+
+Packaging rejects tracked/non-ignored untracked changes and missing Git metadata.
+There is no dirty-release override. Generated build output stays ignored; run tests
+in an isolated checkout with no concurrent source edits. Commit-only changes are
+tracked inputs, so Gradle cannot reuse a manifest naming the previous commit.
+Qualification always requests a build before inspecting an existing archive and
+compares the manifest to the current commit. Checksums verify exact file contents,
+not an independent release authority. Rebuilding identical inputs is tested;
+cross-host/JDK bit-for-bit reproducibility and signed release publication are not.
 
 ## References
 
