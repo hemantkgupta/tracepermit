@@ -70,6 +70,7 @@ public final class PostgresPolicyLifecycleStore implements PolicyLifecycleStore 
     this.createId = Objects.requireNonNull(createId, "createId must not be null");
     try {
       PostgresDurableEnforcementState.migrate(dataSource, PostgresDurableEnforcementState.MIGRATION_LOCATION);
+      verifySchemaVersion();
     } catch (FlywayException ex) {
       throw new PostgresStateException("Failed to migrate database schema for policy lifecycle store", ex);
     }
@@ -92,72 +93,33 @@ public final class PostgresPolicyLifecycleStore implements PolicyLifecycleStore 
     requirePolicyId(policyId);
     requireVersion(version);
 
-    try (Connection connection = dataSource.getConnection()) {
-      connection.setAutoCommit(false);
-      try {
-        Optional<PolicyVersionRecord> existing = findVersion(connection, workspaceId, policyId, version);
-        if (existing.isPresent()) {
-          PolicyVersionRecord record = existing.get();
-          if (record.contentHash().equals(contentHash)) {
-            connection.rollback();
-            return record;
-          }
-          connection.rollback();
-          throw new IllegalStateException(
-              "POLICY_VERSION_IMMUTABLE: version " + version + " of policy " + policyId
-                  + " already exists with differing content hash");
-        }
-
-        try (PreparedStatement insert = connection.prepareStatement("""
-            INSERT INTO tp_policy_versions (
-              workspace_id, policy_id, version, name, description,
-              content_hash, document, current_state, staged_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?::jsonb, 'staged', ?)
-            """)) {
-          insert.setString(1, workspaceId);
-          insert.setString(2, policyId);
-          insert.setInt(3, version);
-          insert.setString(4, name);
-          insert.setString(5, description);
-          insert.setString(6, contentHash);
-          insert.setString(7, documentJson);
-          insert.setTimestamp(8, Timestamp.from(now));
-          insert.executeUpdate();
-        }
-
-        connection.commit();
-        return new PolicyVersionRecord(
-            policyId,
-            version,
-            name,
-            description,
-            PolicyState.STAGED,
-            contentHash,
-            validated,
-            now,
-            null,
-            null,
-            null,
-            null);
-      } catch (SQLException failure) {
-        connection.rollback();
-        if ("23505".equals(failure.getSQLState())) {
-          // Concurrent insert race on primary key
-          Optional<PolicyVersionRecord> raced = findVersion(connection, workspaceId, policyId, version);
-          if (raced.isPresent()) {
-            if (raced.get().contentHash().equals(contentHash)) {
-              return raced.get();
-            }
-            throw new IllegalStateException(
-                "POLICY_VERSION_IMMUTABLE: version " + version + " of policy " + policyId
-                    + " already exists with differing content hash");
-          }
-        }
-        throw new PostgresStateException("Failed to stage policy document", failure);
+    return inTransaction("Failed to stage policy document", connection -> {
+      // ON CONFLICT waits for the competing insertion; the following READ COMMITTED
+      // query sees its committed revision without an aborted-transaction retry path.
+      try (PreparedStatement insert = connection.prepareStatement("""
+          INSERT INTO tp_policy_versions (
+            workspace_id, policy_id, version, name, description,
+            content_hash, document, current_state, staged_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?::jsonb, 'staged', ?)
+          ON CONFLICT (workspace_id, policy_id, version) DO NOTHING
+          """)) {
+        insert.setString(1, workspaceId);
+        insert.setString(2, policyId);
+        insert.setInt(3, version);
+        insert.setString(4, name);
+        insert.setString(5, description);
+        insert.setString(6, contentHash);
+        insert.setString(7, documentJson);
+        insert.setTimestamp(8, Timestamp.from(now));
+        insert.executeUpdate();
       }
-    } catch (SQLException failure) {
-      throw new PostgresStateException("Database error during policy staging", failure);
-    }
+      PolicyVersionRecord record = findVersion(connection, workspaceId, policyId, version)
+          .orElseThrow(() -> new IllegalStateException("POLICY_VERSION_NOT_FOUND"));
+      if (!record.contentHash().equals(contentHash)) {
+        throw new IllegalStateException("POLICY_VERSION_IMMUTABLE");
+      }
+      return record;
+    });
   }
 
   @Override
@@ -176,134 +138,111 @@ public final class PostgresPolicyLifecycleStore implements PolicyLifecycleStore 
     validateActor(actorId);
     Objects.requireNonNull(now, "now must not be null");
 
-    try (Connection connection = dataSource.getConnection()) {
-      connection.setAutoCommit(false);
-      try {
-        Integer currentActiveVersion = null;
-        try (PreparedStatement checkActive = connection.prepareStatement(
-            "SELECT active_version FROM tp_active_policies WHERE workspace_id = ? AND policy_id = ? FOR UPDATE")) {
-          checkActive.setString(1, workspaceId);
-          checkActive.setString(2, policyId);
-          try (ResultSet rs = checkActive.executeQuery()) {
-            if (rs.next()) {
-              currentActiveVersion = rs.getInt("active_version");
-            }
+    return inTransaction("Failed to activate policy version", connection -> {
+      lockPolicy(connection, workspaceId, policyId);
+      Integer currentActiveVersion = null;
+      try (PreparedStatement checkActive = connection.prepareStatement(
+          "SELECT active_version FROM tp_active_policies WHERE workspace_id = ? AND policy_id = ? FOR UPDATE")) {
+        checkActive.setString(1, workspaceId);
+        checkActive.setString(2, policyId);
+        try (ResultSet rs = checkActive.executeQuery()) {
+          if (rs.next()) {
+            currentActiveVersion = rs.getInt("active_version");
           }
         }
+      }
 
-        if (expectedActiveVersion != null && !Objects.equals(expectedActiveVersion, currentActiveVersion)) {
-          connection.rollback();
-          throw new PolicyConcurrencyException(
-              "POLICY_CONCURRENCY_CONFLICT: Expected active version " + expectedActiveVersion
-                  + " but found " + currentActiveVersion);
-        }
+      if (expectedActiveVersion != null && !Objects.equals(expectedActiveVersion, currentActiveVersion)) {
+        throw new PolicyConcurrencyException(
+            "POLICY_CONCURRENCY_CONFLICT: Expected active version " + expectedActiveVersion
+                + " but found " + currentActiveVersion);
+      }
 
-        if (currentActiveVersion != null && currentActiveVersion == version) {
-          connection.rollback();
-          return getVersion(workspaceId, policyId, version)
-              .orElseThrow(() -> new IllegalStateException("Active version record not found"));
-        }
+      if (currentActiveVersion != null && currentActiveVersion == version) {
+        return findVersion(connection, workspaceId, policyId, version)
+            .orElseThrow(() -> new IllegalStateException("Active version record not found"));
+      }
 
-        Optional<PolicyVersionRecord> targetOpt = findVersionForUpdate(connection, workspaceId, policyId, version);
-        if (targetOpt.isEmpty()) {
-          connection.rollback();
-          throw new IllegalArgumentException("POLICY_VERSION_NOT_FOUND: " + policyId + "@v" + version);
-        }
+      Optional<PolicyVersionRecord> targetOpt = findVersionForUpdate(connection, workspaceId, policyId, version);
+      if (targetOpt.isEmpty()) {
+        throw new IllegalArgumentException("POLICY_VERSION_NOT_FOUND: " + policyId + "@v" + version);
+      }
 
-        if (currentActiveVersion != null) {
-          try (PreparedStatement deprecate = connection.prepareStatement("""
-              UPDATE tp_policy_versions
-              SET current_state = 'deprecated', deprecated_at = ?
-              WHERE workspace_id = ? AND policy_id = ? AND version = ?
-              """)) {
-            deprecate.setTimestamp(1, Timestamp.from(now));
-            deprecate.setString(2, workspaceId);
-            deprecate.setString(3, policyId);
-            deprecate.setInt(4, currentActiveVersion);
-            deprecate.executeUpdate();
-          }
-        }
-
-        try (PreparedStatement activateVersion = connection.prepareStatement("""
+      if (currentActiveVersion != null) {
+        try (PreparedStatement deprecate = connection.prepareStatement("""
             UPDATE tp_policy_versions
-            SET current_state = 'active', activated_at = ?
+            SET current_state = 'deprecated', deprecated_at = ?
             WHERE workspace_id = ? AND policy_id = ? AND version = ?
             """)) {
-          activateVersion.setTimestamp(1, Timestamp.from(now));
-          activateVersion.setString(2, workspaceId);
-          activateVersion.setString(3, policyId);
-          activateVersion.setInt(4, version);
-          activateVersion.executeUpdate();
+          deprecate.setTimestamp(1, Timestamp.from(now));
+          deprecate.setString(2, workspaceId);
+          deprecate.setString(3, policyId);
+          deprecate.setInt(4, currentActiveVersion);
+          deprecate.executeUpdate();
         }
-
-        try (PreparedStatement upsertActive = connection.prepareStatement("""
-            INSERT INTO tp_active_policies (
-              workspace_id, policy_id, active_version, activated_at, activation_sequence, updated_at
-            ) VALUES (?, ?, ?, ?, 1, ?)
-            ON CONFLICT (workspace_id, policy_id) DO UPDATE SET
-              active_version = EXCLUDED.active_version,
-              activated_at = EXCLUDED.activated_at,
-              activation_sequence = tp_active_policies.activation_sequence + 1,
-              updated_at = EXCLUDED.updated_at
-            """)) {
-          upsertActive.setString(1, workspaceId);
-          upsertActive.setString(2, policyId);
-          upsertActive.setInt(3, version);
-          upsertActive.setTimestamp(4, Timestamp.from(now));
-          upsertActive.setTimestamp(5, Timestamp.from(now));
-          upsertActive.executeUpdate();
-        }
-
-        long nextSequence = getNextTransitionSequence(connection, workspaceId, policyId);
-        String transitionId = createId.get();
-        try (PreparedStatement logTransition = connection.prepareStatement("""
-            INSERT INTO tp_policy_lifecycle_transitions (
-              transition_id, workspace_id, policy_id, transition_sequence, transition_type,
-              from_version, to_version, occurred_at, actor_id, reason
-            ) VALUES (?, ?, ?, ?, 'activate', ?, ?, ?, ?, ?)
-            """)) {
-          logTransition.setString(1, transitionId);
-          logTransition.setString(2, workspaceId);
-          logTransition.setString(3, policyId);
-          logTransition.setLong(4, nextSequence);
-          if (currentActiveVersion != null) {
-            logTransition.setInt(5, currentActiveVersion);
-          } else {
-            logTransition.setNull(5, Types.INTEGER);
-          }
-          logTransition.setInt(6, version);
-          logTransition.setTimestamp(7, Timestamp.from(now));
-          if (actorId != null) {
-            logTransition.setString(8, actorId);
-          } else {
-            logTransition.setNull(8, Types.VARCHAR);
-          }
-          logTransition.setString(9, reason);
-          logTransition.executeUpdate();
-        }
-
-        connection.commit();
-        PolicyVersionRecord target = targetOpt.get();
-        return new PolicyVersionRecord(
-            target.policyId(),
-            target.version(),
-            target.name(),
-            target.description(),
-            PolicyState.ACTIVE,
-            target.contentHash(),
-            target.document(),
-            target.stagedAt(),
-            now,
-            null,
-            null,
-            target.rollbackTargetVersion());
-      } catch (SQLException failure) {
-        connection.rollback();
-        throw new PostgresStateException("Failed to activate policy version", failure);
       }
-    } catch (SQLException failure) {
-      throw new PostgresStateException("Database error during policy activation", failure);
-    }
+
+      try (PreparedStatement activateVersion = connection.prepareStatement("""
+          UPDATE tp_policy_versions
+          SET current_state = 'active', activated_at = ?, deprecated_at = NULL, rolled_back_at = NULL
+          WHERE workspace_id = ? AND policy_id = ? AND version = ?
+          """)) {
+        activateVersion.setTimestamp(1, Timestamp.from(now));
+        activateVersion.setString(2, workspaceId);
+        activateVersion.setString(3, policyId);
+        activateVersion.setInt(4, version);
+        activateVersion.executeUpdate();
+      }
+
+      try (PreparedStatement upsertActive = connection.prepareStatement("""
+          INSERT INTO tp_active_policies (
+            workspace_id, policy_id, active_version, activated_at, activation_sequence, updated_at
+          ) VALUES (?, ?, ?, ?, 1, ?)
+          ON CONFLICT (workspace_id, policy_id) DO UPDATE SET
+            active_version = EXCLUDED.active_version,
+            activated_at = EXCLUDED.activated_at,
+            activation_sequence = tp_active_policies.activation_sequence + 1,
+            updated_at = EXCLUDED.updated_at
+          """)) {
+        upsertActive.setString(1, workspaceId);
+        upsertActive.setString(2, policyId);
+        upsertActive.setInt(3, version);
+        upsertActive.setTimestamp(4, Timestamp.from(now));
+        upsertActive.setTimestamp(5, Timestamp.from(now));
+        upsertActive.executeUpdate();
+      }
+
+      long nextSequence = getNextTransitionSequence(connection, workspaceId, policyId);
+      String transitionId = createId.get();
+      try (PreparedStatement logTransition = connection.prepareStatement("""
+          INSERT INTO tp_policy_lifecycle_transitions (
+            transition_id, workspace_id, policy_id, transition_sequence, transition_type,
+            from_version, to_version, occurred_at, actor_id, reason
+          ) VALUES (?, ?, ?, ?, 'activate', ?, ?, ?, ?, ?)
+          """)) {
+        logTransition.setString(1, transitionId);
+        logTransition.setString(2, workspaceId);
+        logTransition.setString(3, policyId);
+        logTransition.setLong(4, nextSequence);
+        if (currentActiveVersion != null) {
+          logTransition.setInt(5, currentActiveVersion);
+        } else {
+          logTransition.setNull(5, Types.INTEGER);
+        }
+        logTransition.setInt(6, version);
+        logTransition.setTimestamp(7, Timestamp.from(now));
+        if (actorId != null) {
+          logTransition.setString(8, actorId);
+        } else {
+          logTransition.setNull(8, Types.VARCHAR);
+        }
+        logTransition.setString(9, reason);
+        logTransition.executeUpdate();
+      }
+
+      return findVersion(connection, workspaceId, policyId, version)
+          .orElseThrow(() -> new IllegalStateException("POLICY_VERSION_NOT_FOUND"));
+    });
   }
 
   @Override
@@ -321,152 +260,139 @@ public final class PostgresPolicyLifecycleStore implements PolicyLifecycleStore 
     validateActor(actorId);
     Objects.requireNonNull(now, "now must not be null");
 
-    try (Connection connection = dataSource.getConnection()) {
-      connection.setAutoCommit(false);
-      try {
-        Integer currentActiveVersion = null;
-        try (PreparedStatement checkActive = connection.prepareStatement(
-            "SELECT active_version FROM tp_active_policies WHERE workspace_id = ? AND policy_id = ? FOR UPDATE")) {
-          checkActive.setString(1, workspaceId);
-          checkActive.setString(2, policyId);
-          try (ResultSet rs = checkActive.executeQuery()) {
-            if (rs.next()) {
-              currentActiveVersion = rs.getInt("active_version");
-            }
+    return inTransaction("Failed to rollback policy version", connection -> {
+      lockPolicy(connection, workspaceId, policyId);
+      Integer currentActiveVersion = null;
+      try (PreparedStatement checkActive = connection.prepareStatement(
+          "SELECT active_version FROM tp_active_policies WHERE workspace_id = ? AND policy_id = ? FOR UPDATE")) {
+        checkActive.setString(1, workspaceId);
+        checkActive.setString(2, policyId);
+        try (ResultSet rs = checkActive.executeQuery()) {
+          if (rs.next()) {
+            currentActiveVersion = rs.getInt("active_version");
           }
         }
-
-        if (currentActiveVersion == null) {
-          connection.rollback();
-          throw new IllegalStateException("NO_ACTIVE_POLICY: Policy " + policyId + " has no active version to roll back");
-        }
-
-        if (expectedActiveVersion != null && expectedActiveVersion != (int) currentActiveVersion) {
-          connection.rollback();
-          throw new PolicyConcurrencyException(
-              "POLICY_CONCURRENCY_CONFLICT: Expected active version " + expectedActiveVersion
-                  + " but found " + currentActiveVersion);
-        }
-
-        int resolvedTargetVersion;
-        if (targetVersion != null) {
-          resolvedTargetVersion = targetVersion;
-          Optional<PolicyVersionRecord> targetRecord = findVersion(connection, workspaceId, policyId, resolvedTargetVersion);
-          if (targetRecord.isEmpty()) {
-            connection.rollback();
-            throw new IllegalArgumentException("POLICY_VERSION_NOT_FOUND: " + policyId + "@v" + targetVersion);
-          }
-        } else {
-          // Look up previous activation in transition history
-          List<Integer> historyVersions = new ArrayList<>();
-          try (PreparedStatement queryHistory = connection.prepareStatement("""
-              SELECT to_version FROM tp_policy_lifecycle_transitions
-              WHERE workspace_id = ? AND policy_id = ?
-              ORDER BY transition_sequence DESC
-              LIMIT 2
-              """)) {
-            queryHistory.setString(1, workspaceId);
-            queryHistory.setString(2, policyId);
-            try (ResultSet rs = queryHistory.executeQuery()) {
-              while (rs.next()) {
-                historyVersions.add(rs.getInt("to_version"));
-              }
-            }
-          }
-
-          if (historyVersions.size() < 2) {
-            connection.rollback();
-            throw new IllegalStateException(
-                "NO_PREVIOUS_ACTIVE_VERSION: Policy " + policyId + " has no previous active version to roll back to");
-          }
-          resolvedTargetVersion = historyVersions.get(1);
-        }
-
-        Optional<PolicyVersionRecord> targetOpt = findVersionForUpdate(connection, workspaceId, policyId, resolvedTargetVersion);
-        if (targetOpt.isEmpty()) {
-          connection.rollback();
-          throw new IllegalStateException(
-              "PREVIOUS_ACTIVE_VERSION_MISSING: Version " + resolvedTargetVersion + " not found in policy catalog");
-        }
-
-        try (PreparedStatement rollBackCurrent = connection.prepareStatement("""
-            UPDATE tp_policy_versions
-            SET current_state = 'rolled_back', rolled_back_at = ?, rollback_target_version = ?
-            WHERE workspace_id = ? AND policy_id = ? AND version = ?
-            """)) {
-          rollBackCurrent.setTimestamp(1, Timestamp.from(now));
-          rollBackCurrent.setInt(2, resolvedTargetVersion);
-          rollBackCurrent.setString(3, workspaceId);
-          rollBackCurrent.setString(4, policyId);
-          rollBackCurrent.setInt(5, currentActiveVersion);
-          rollBackCurrent.executeUpdate();
-        }
-
-        try (PreparedStatement reactivate = connection.prepareStatement("""
-            UPDATE tp_policy_versions
-            SET current_state = 'active', activated_at = ?
-            WHERE workspace_id = ? AND policy_id = ? AND version = ?
-            """)) {
-          reactivate.setTimestamp(1, Timestamp.from(now));
-          reactivate.setString(2, workspaceId);
-          reactivate.setString(3, policyId);
-          reactivate.setInt(4, resolvedTargetVersion);
-          reactivate.executeUpdate();
-        }
-
-        try (PreparedStatement updateActive = connection.prepareStatement("""
-            UPDATE tp_active_policies
-            SET active_version = ?, activated_at = ?, activation_sequence = activation_sequence + 1, updated_at = ?
-            WHERE workspace_id = ? AND policy_id = ?
-            """)) {
-          updateActive.setInt(1, resolvedTargetVersion);
-          updateActive.setTimestamp(2, Timestamp.from(now));
-          updateActive.setTimestamp(3, Timestamp.from(now));
-          updateActive.setString(4, workspaceId);
-          updateActive.setString(5, policyId);
-          updateActive.executeUpdate();
-        }
-
-        long nextSequence = getNextTransitionSequence(connection, workspaceId, policyId);
-        String transitionId = createId.get();
-        try (PreparedStatement logTransition = connection.prepareStatement("""
-            INSERT INTO tp_policy_lifecycle_transitions (
-              transition_id, workspace_id, policy_id, transition_sequence, transition_type,
-              from_version, to_version, occurred_at, actor_id, reason
-            ) VALUES (?, ?, ?, ?, 'rollback', ?, ?, ?, ?, ?)
-            """)) {
-          logTransition.setString(1, transitionId);
-          logTransition.setString(2, workspaceId);
-          logTransition.setString(3, policyId);
-          logTransition.setLong(4, nextSequence);
-          logTransition.setInt(5, currentActiveVersion);
-          logTransition.setInt(6, resolvedTargetVersion);
-          logTransition.setTimestamp(7, Timestamp.from(now));
-          if (actorId != null) {
-            logTransition.setString(8, actorId);
-          } else {
-            logTransition.setNull(8, Types.VARCHAR);
-          }
-          logTransition.setString(9, reason);
-          logTransition.executeUpdate();
-        }
-
-        connection.commit();
-        return new RollbackRecord(
-            workspaceId,
-            policyId,
-            currentActiveVersion,
-            resolvedTargetVersion,
-            now,
-            actorId,
-            reason);
-      } catch (SQLException failure) {
-        connection.rollback();
-        throw new PostgresStateException("Failed to rollback policy version", failure);
       }
-    } catch (SQLException failure) {
-      throw new PostgresStateException("Database error during policy rollback", failure);
-    }
+
+      if (currentActiveVersion == null) {
+        throw new IllegalStateException("NO_ACTIVE_POLICY: Policy " + policyId + " has no active version to roll back");
+      }
+
+      if (expectedActiveVersion != null && expectedActiveVersion != (int) currentActiveVersion) {
+        throw new PolicyConcurrencyException(
+            "POLICY_CONCURRENCY_CONFLICT: Expected active version " + expectedActiveVersion
+                + " but found " + currentActiveVersion);
+      }
+
+      int resolvedTargetVersion;
+      if (targetVersion != null) {
+        resolvedTargetVersion = targetVersion;
+        Optional<PolicyVersionRecord> targetRecord = findVersion(connection, workspaceId, policyId, resolvedTargetVersion);
+        if (targetRecord.isEmpty()) {
+          throw new IllegalArgumentException("POLICY_VERSION_NOT_FOUND: " + policyId + "@v" + targetVersion);
+        }
+      } else {
+        // Look up previous activation in transition history
+        List<Integer> historyVersions = new ArrayList<>();
+        try (PreparedStatement queryHistory = connection.prepareStatement("""
+            SELECT to_version FROM tp_policy_lifecycle_transitions
+            WHERE workspace_id = ? AND policy_id = ?
+            ORDER BY transition_sequence DESC
+            LIMIT 2
+            """)) {
+          queryHistory.setString(1, workspaceId);
+          queryHistory.setString(2, policyId);
+          try (ResultSet rs = queryHistory.executeQuery()) {
+            while (rs.next()) {
+              historyVersions.add(rs.getInt("to_version"));
+            }
+          }
+        }
+
+        if (historyVersions.size() < 2) {
+          throw new IllegalStateException(
+              "NO_PREVIOUS_ACTIVE_VERSION: Policy " + policyId + " has no previous active version to roll back to");
+        }
+        resolvedTargetVersion = historyVersions.get(1);
+      }
+
+      Optional<PolicyVersionRecord> targetOpt = findVersionForUpdate(connection, workspaceId, policyId, resolvedTargetVersion);
+      if (targetOpt.isEmpty()) {
+        throw new IllegalStateException(
+            "PREVIOUS_ACTIVE_VERSION_MISSING: Version " + resolvedTargetVersion + " not found in policy catalog");
+      }
+
+      try (PreparedStatement rollBackCurrent = connection.prepareStatement("""
+          UPDATE tp_policy_versions
+          SET current_state = 'rolled_back', rolled_back_at = ?, rollback_target_version = ?
+          WHERE workspace_id = ? AND policy_id = ? AND version = ?
+          """)) {
+        rollBackCurrent.setTimestamp(1, Timestamp.from(now));
+        rollBackCurrent.setInt(2, resolvedTargetVersion);
+        rollBackCurrent.setString(3, workspaceId);
+        rollBackCurrent.setString(4, policyId);
+        rollBackCurrent.setInt(5, currentActiveVersion);
+        rollBackCurrent.executeUpdate();
+      }
+
+      try (PreparedStatement reactivate = connection.prepareStatement("""
+          UPDATE tp_policy_versions
+          SET current_state = 'active', activated_at = ?, deprecated_at = NULL, rolled_back_at = NULL
+          WHERE workspace_id = ? AND policy_id = ? AND version = ?
+          """)) {
+        reactivate.setTimestamp(1, Timestamp.from(now));
+        reactivate.setString(2, workspaceId);
+        reactivate.setString(3, policyId);
+        reactivate.setInt(4, resolvedTargetVersion);
+        reactivate.executeUpdate();
+      }
+
+      try (PreparedStatement updateActive = connection.prepareStatement("""
+          UPDATE tp_active_policies
+          SET active_version = ?, activated_at = ?, activation_sequence = activation_sequence + 1, updated_at = ?
+          WHERE workspace_id = ? AND policy_id = ?
+          """)) {
+        updateActive.setInt(1, resolvedTargetVersion);
+        updateActive.setTimestamp(2, Timestamp.from(now));
+        updateActive.setTimestamp(3, Timestamp.from(now));
+        updateActive.setString(4, workspaceId);
+        updateActive.setString(5, policyId);
+        updateActive.executeUpdate();
+      }
+
+      long nextSequence = getNextTransitionSequence(connection, workspaceId, policyId);
+      String transitionId = createId.get();
+      try (PreparedStatement logTransition = connection.prepareStatement("""
+          INSERT INTO tp_policy_lifecycle_transitions (
+            transition_id, workspace_id, policy_id, transition_sequence, transition_type,
+            from_version, to_version, occurred_at, actor_id, reason
+          ) VALUES (?, ?, ?, ?, 'rollback', ?, ?, ?, ?, ?)
+          """)) {
+        logTransition.setString(1, transitionId);
+        logTransition.setString(2, workspaceId);
+        logTransition.setString(3, policyId);
+        logTransition.setLong(4, nextSequence);
+        logTransition.setInt(5, currentActiveVersion);
+        logTransition.setInt(6, resolvedTargetVersion);
+        logTransition.setTimestamp(7, Timestamp.from(now));
+        if (actorId != null) {
+          logTransition.setString(8, actorId);
+        } else {
+          logTransition.setNull(8, Types.VARCHAR);
+        }
+        logTransition.setString(9, reason);
+        logTransition.executeUpdate();
+      }
+
+      return new RollbackRecord(
+          workspaceId,
+          policyId,
+          currentActiveVersion,
+          resolvedTargetVersion,
+          now,
+          actorId,
+          reason);
+    });
   }
 
   @Override
@@ -626,6 +552,53 @@ public final class PostgresPolicyLifecycleStore implements PolicyLifecycleStore 
     }
   }
 
+  /**
+   * Serializes the namespace before looking for an active row, including the first
+   * activation when SELECT FOR UPDATE alone would lock nothing. Hash collisions
+   * only serialize unrelated policies; they cannot change the SQL workspace filter.
+   */
+  private static void lockPolicy(Connection connection, String workspaceId, String policyId) throws SQLException {
+    try (PreparedStatement lock = connection.prepareStatement(
+        "SELECT pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtext(?), pg_catalog.hashtext(?))")) {
+      lock.setString(1, "tracepermit:policy:" + workspaceId);
+      lock.setString(2, policyId);
+      lock.setQueryTimeout(5);
+      lock.execute();
+    }
+  }
+
+  /** Owns a fresh/exclusive lease, never a caller-owned or thread-bound transaction. */
+  private <T> T inTransaction(String message, SqlWork<T> work) {
+    try (Connection connection = dataSource.getConnection()) {
+      boolean originalAutoCommit = connection.getAutoCommit();
+      int originalIsolation = connection.getTransactionIsolation();
+      connection.setTransactionIsolation(Connection.TRANSACTION_READ_COMMITTED);
+      connection.setAutoCommit(false);
+      try {
+        T result = work.run(connection);
+        connection.commit();
+        connection.setTransactionIsolation(originalIsolation);
+        connection.setAutoCommit(originalAutoCommit);
+        return result;
+      } catch (RuntimeException | SQLException failure) {
+        try {
+          connection.rollback();
+        } catch (SQLException rollbackFailure) {
+          failure.addSuppressed(rollbackFailure);
+        }
+        // Do not enable auto-commit after failure: it could commit unrolled-back work.
+        throw failure;
+      }
+    } catch (SQLException failure) {
+      throw new PostgresStateException(message, failure);
+    }
+  }
+
+  @FunctionalInterface
+  private interface SqlWork<T> {
+    T run(Connection connection) throws SQLException;
+  }
+
   private Optional<PolicyVersionRecord> findVersion(
       Connection connection, String workspaceId, String policyId, int version) throws SQLException {
     try (PreparedStatement query = connection.prepareStatement("""
@@ -642,6 +615,19 @@ public final class PostgresPolicyLifecycleStore implements PolicyLifecycleStore 
         if (!rs.next()) return Optional.empty();
         return Optional.of(mapRecord(rs));
       }
+    }
+  }
+
+  private void verifySchemaVersion() {
+    try (Connection connection = dataSource.getConnection();
+         PreparedStatement query = connection.prepareStatement(
+             "SELECT contract_version FROM tp_enforcement_schema_guard WHERE singleton = TRUE");
+         ResultSet rows = query.executeQuery()) {
+      if (!rows.next() || rows.getInt(1) != 7 || rows.next()) {
+        throw new IllegalStateException("INCOMPATIBLE_DURABLE_STATE_SCHEMA");
+      }
+    } catch (SQLException failure) {
+      throw new PostgresStateException("Failed to verify policy lifecycle schema", failure);
     }
   }
 

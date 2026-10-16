@@ -23,7 +23,6 @@ import io.tracepermit.identity.TrustedScheduledActionContext;
 import io.tracepermit.identity.WorkloadTrustRegistry;
 import io.tracepermit.policy.PolicyEvaluator;
 import io.tracepermit.security.ExecutionPermitAuthority;
-import io.tracepermit.security.InMemoryPermitConsumptionStore;
 import io.tracepermit.simulator.StatefulTargetSimulator;
 import org.postgresql.ds.PGSimpleDataSource;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -110,7 +109,7 @@ public final class ProductionDeletionApprovalDemoMain {
             30,
             clock,
             () -> "scenario8-permit-" + identifiers.incrementAndGet(),
-            new InMemoryPermitConsumptionStore()),
+            new PostgresPermitConsumptionStore(dataSource, TENANT)),
         state,
         state,
         action -> {

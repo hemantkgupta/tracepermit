@@ -35,7 +35,6 @@ import io.tracepermit.identity.CredentialFingerprint;
 import io.tracepermit.identity.TokenSenderConstraint;
 import io.tracepermit.policy.PolicyEvaluator;
 import io.tracepermit.security.ExecutionPermitAuthority;
-import io.tracepermit.security.InMemoryPermitConsumptionStore;
 import io.tracepermit.simulator.StatefulTargetSimulator;
 import org.flywaydb.core.api.FlywayException;
 import org.junit.jupiter.api.AfterAll;
@@ -1021,7 +1020,7 @@ final class PostgresDurableEnforcementStateTest {
         30,
         Clock.fixed(NOW, ZoneOffset.UTC),
         () -> "permit-service-" + permits.incrementAndGet(),
-        new InMemoryPermitConsumptionStore());
+        new PostgresPermitConsumptionStore(dataSource, ACME));
     return new DurableExecutionService(
         new PolicyEvaluator(),
         JsonSupport.read(ROOT.resolve("policies/aws-web-readonly.json")),
@@ -1046,7 +1045,7 @@ final class PostgresDurableEnforcementStateTest {
         30,
         serviceClock,
         () -> "approval-permit-" + IDS.incrementAndGet(),
-        new InMemoryPermitConsumptionStore());
+        new PostgresPermitConsumptionStore(dataSource, ACME));
     return new HumanApprovalService(
         new PolicyEvaluator(),
         activePolicy,

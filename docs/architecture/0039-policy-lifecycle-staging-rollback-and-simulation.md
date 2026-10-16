@@ -42,7 +42,9 @@ static-policy composition; no writable HTTP/MCP endpoint or React editor is adde
    executor, target or evidence-ledger port. It does not stage/activate candidates
    or perform even a simulated target effect.
 5. **Serialized writes and atomic active selection:** per-policy mutation uses
-   a monitor in the in-memory store and transactional row-level locking in PostgreSQL.
+   a monitor in the in-memory store and a transaction-scoped advisory lock plus
+   row-level locking in PostgreSQL. The advisory lock is taken before reading
+   the active pointer, including when no row exists on first activation.
    Activation deprecates the current version, creates an ACTIVE record,
    appends activation history and publishes the active reference. Rollback marks
    the current revision ROLLED_BACK, restores the preceding activation and appends
@@ -60,14 +62,30 @@ static-policy composition; no writable HTTP/MCP endpoint or React editor is adde
    and `PostgresPolicyLifecycleStore` in `java/persistence-postgres`.
    - **Flyway V7 migration:** creates `tp_policy_versions`, `tp_active_policies`,
      and `tp_policy_lifecycle_transitions`, bumping the enforcement schema guard to version 7.
-   - **Database immutability triggers:** `tp_guard_policy_version_mutation()` rejects any
-     `UPDATE` or `DELETE` to revision records (content hash, version, document), and
+   - **Database immutability triggers:** `tp_guard_policy_version_mutation()` rejects
+     deletion and changes to revision identity, name/description, content hash,
+     document and staged time. Lifecycle state/timestamps remain mutable. The
      `tp_reject_append_only_mutation()` rejects modification or deletion of lifecycle transition history.
    - **Optimistic concurrency & atomic transitions:** `tp_active_policies` maintains a monotonic
      `activation_sequence` and current `active_version`. Activations and rollbacks support an optional
      `expectedActiveVersion` precondition; conflicting transitions throw `PolicyConcurrencyException`.
-     Active pointer updates and append-only transition logs commit atomically in a single transaction
-     under `SELECT ... FOR UPDATE` row locks.
+     Active pointer updates and append-only transition logs commit atomically.
+     `pg_advisory_xact_lock` serializes the workspace/policy namespace before
+     `SELECT ... FOR UPDATE`; hash collisions can only add contention, not
+     change workspace filtering. Advisory lock acquisition has a five-second
+     query timeout. Each write owns a fresh/exclusive DataSource lease and
+     READ COMMITTED transaction, commits before returning, and restores the
+     original isolation/auto-commit modes after success. Caller-owned or
+     thread-bound transactions are unsupported. SQL and unchecked failures
+     explicitly roll back; rollback failures are suppressed on the original
+     failure, with no failure-path switch to auto-commit. Commit acknowledgement,
+     mode-restoration or connection-close failure never reports success and
+     never automatically retries. The transaction may already be durable:
+     inspect active state/history through a fresh connection before proceeding.
+     Idempotent activation queries within the same lease, not a nested one.
+     Restaging uses conflict-safe insertion and checks the committed content hash.
+     Reactivation clears obsolete deprecated/rolled-back timestamps consistently
+     in both returned and persisted revision state.
    - **Rollback semantics:** automatic rollback queries the transition log to identify the
      immediate predecessor activation, enabling repeated rollbacks to cleanly toggle between
      versions. Explicit target rollback validates existence and precondition before atomic transition.
@@ -90,6 +108,12 @@ static-policy composition; no writable HTTP/MCP endpoint or React editor is adde
 - Authenticated HTTP/MCP administration endpoints, React console policy editors,
   and distributed multi-region policy synchronization remain deferred target work.
 - Calls are trusted in-process Java APIs, not policy-changing agent tools.
+  A null expected version is an unconditional serialized transition; a non-null
+  expected version compares only the current version. It is not an ABA-resistant
+  generation token: v1 to v2 to v1 can again satisfy expected v1. The monotonic
+  sequence is history metadata, not a caller-supplied concurrency precondition.
+  Workspace query filters are application-level isolation, not PostgreSQL RLS
+  or authorization of arbitrary caller-supplied workspace names.
   Defensive copies are not a sandbox against malicious JVM code, reflection,
   memory access or a compromised operator.
 - Simulation explains policy matching for a canonical vector; it does not
@@ -124,3 +148,17 @@ static-policy composition; no writable HTTP/MCP endpoint or React editor is adde
   - `existingInMemoryLifecycleAndSimulatorBehaviorRemainCompatible`: `PolicyLifecycleService` with `PostgresPolicyLifecycleStore` composes end-to-end with `SecureExecutionService`, correctly honoring allow-block-rollback transitions;
   - `repeatedRollbackTogglesBetweenVersions`: repeated rollback alternates between active versions by querying predecessor transitions;
   - `explicitTargetRollbackRespectsPreconditionAndTarget`: explicit rollback restores specified target version and validates preconditions.
+
+- `PostgresPolicyLifecycleBoundaryTest`: first-activation interleaving with one
+  active revision and connected history; unchecked activation/rollback failure
+  with a commit-on-release connection; single-lease idempotence; persisted/returned
+  metadata agreement; manual transactions; failed/lost commits and close failures;
+  concurrent restaging, workspace mutations, SQL immutability and V6-to-V7 upgrade
+  preserving an existing permit claim. Seven of the initial eight assertions
+  failed against the submitted implementation before the fixes. The complete
+  regression class adds 16 real-PostgreSQL tests. A separate failing probe first
+  reproduced acceptance of an incompatible schema guard; startup now requires
+  the exact V7 contract and rejects unknown/missing guard state.
+
+See the [durable lifecycle runbook](../runbooks/durable-policy-lifecycle.md)
+for schema upgrade, fault interpretation and reproducible local verification.

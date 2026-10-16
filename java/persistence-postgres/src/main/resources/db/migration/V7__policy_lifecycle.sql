@@ -40,6 +40,8 @@ BEGIN
     IF NEW.workspace_id <> OLD.workspace_id OR
        NEW.policy_id <> OLD.policy_id OR
        NEW.version <> OLD.version OR
+       NEW.name <> OLD.name OR
+       NEW.description <> OLD.description OR
        NEW.content_hash <> OLD.content_hash OR
        NEW.document::text <> OLD.document::text OR
        NEW.staged_at <> OLD.staged_at THEN

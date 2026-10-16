@@ -7,8 +7,8 @@ import io.tracepermit.identity.BrowserIdTokenVerifier;
 import io.tracepermit.identity.OidcAccessTokenVerifier;
 import io.tracepermit.identity.StaticOidcProviderRegistry;
 import io.tracepermit.persistence.postgres.PostgresDurableEnforcementState;
+import io.tracepermit.persistence.postgres.PostgresPermitConsumptionStore;
 import io.tracepermit.security.ExecutionPermitAuthority;
-import io.tracepermit.security.InMemoryPermitConsumptionStore;
 import io.tracepermit.simulator.StatefulTargetSimulator;
 import java.net.InetSocketAddress;
 import java.net.URI;
@@ -107,7 +107,7 @@ final class SimulatorApprovalBrowserFixture implements AutoCloseable {
         verifier, new BrowserIdTokenVerifier(config.provider(), resolver, clock), config.memberships(), clock);
     var permits = new ExecutionPermitAuthority(ExecutionPermitAuthority.DEFAULT_ISSUER,
         config.keyId(), config.permitKey(), 30, clock, () -> UUID.randomUUID().toString(),
-        new InMemoryPermitConsumptionStore());
+        new PostgresPermitConsumptionStore(config.database()));
     server = SimulatorApprovalServer.start(new InetSocketAddress("127.0.0.1", 0), verifier,
         config.memberships(), state, SimulatorApprovalMain.policy(), permits, simulator, clock, browser);
   }

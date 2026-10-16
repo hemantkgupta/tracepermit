@@ -58,12 +58,25 @@ implemented by `InMemoryPolicyLifecycleStore` and `PostgresPolicyLifecycleStore`
    Identical restaging is idempotent; different content fails closed.
 2. **Transactional activation & rollback:** `tp_active_policies` maintains `activation_sequence`
    and `active_version`. Active updates and `tp_policy_lifecycle_transitions` history commit
-   atomically under row locks (`FOR UPDATE`). Competing transitions with `expectedActiveVersion`
-   fail with `PolicyConcurrencyException`.
+   atomically under a transaction-scoped workspace/policy advisory lock followed
+   by row locks (`FOR UPDATE`). This also serializes the first activation when
+   the active row is absent. A non-null `expectedActiveVersion` mismatch fails
+   with `PolicyConcurrencyException`; null is unconditional and the version
+   precondition is not an ABA-resistant generation check.
 3. **Rollback traversal:** rollback resolves predecessor activations from transition history,
    supporting repeated rollback toggling and explicit target rollbacks.
 4. **Workspace isolation:** storage is partitioned by trusted caller-supplied `workspace_id`.
    Unavailability fails closed without silent in-memory fallback.
+
+Writes own a fresh/exclusive READ COMMITTED connection lease, commit before
+returning, and restore its original modes after success. SQL and unchecked
+failures roll back without enabling auto-commit; rollback failure is suppressed.
+Ambiguous commit/restoration/close failure reports failure, not success or an
+automatic retry. Inspect durable pointer/history before further operator action.
+Idempotent activation uses the same connection; reactivation metadata agrees
+between the returned record and a fresh query. Caller-owned transactions and
+database-admin tamper resistance are not supported. Advisory lock acquisition
+has a five-second query timeout; there is no end-to-end latency guarantee.
 
 The current Java profile accepts versions 1..2147483647 and priorities
 -2147483648..2147483647, including negative priorities. Reject unsupported values
@@ -89,11 +102,30 @@ See [ADR 0039](../architecture/0039-policy-lifecycle-staging-rollback-and-simula
    exact request binding. A request-body approval flag is never authority.
 5. On allow or valid approval, issue a short-lived request-bound permit.
    The executor checks signature, audience, hash, expiry, and single-use
-   claim before invoking the simulator. A denial issues no permit.
+   claim before invoking the simulator. Durable execution/approval already
+   inserts the permit with execution state and evidence in the existing
+   `PostgresDurableEnforcementState` transaction; it does not call standalone
+   `verifyAndConsume`. A denial issues no permit.
 6. Record only bounded, redacted evidence and expose read-only projections
    to the React console.
 
 ## State and transaction boundaries
+
+The optional standalone `PostgresPermitConsumptionStore` supports a separate
+consumption caller. Both authority overloads route by the organization in the
+private, hash-verified canonical action snapshot; an explicit tenant mismatch
+fails before storage. Missing/invalid tenant fails closed in the durable store.
+The port's legacy in-memory defaults retain global rather than tenant-aware
+replay tracking. Live durable claims require the verified action hash, never a
+hash fabricated from the permit ID.
+
+Consumption and foreign-key-aware pruning each own a fresh/exclusive database
+lease and commit before returning. Initially manual-transaction connections are
+supported; caller-owned/thread-bound transactions are not. SQL/commit/close
+failures never return success, rollback failures are preserved, and an ambiguous
+commit may leave a consumed row without dispatch. No automatic retry occurs.
+This standalone claim must not precede the composed durable claim transaction.
+See [ADR 0041](../architecture/0041-postgres-durable-permit-consumption.md).
 
 The default loopback demo uses process-local stores. Those stores are not
 safe for multi-replica or restart-persistent enforcement. The optional
