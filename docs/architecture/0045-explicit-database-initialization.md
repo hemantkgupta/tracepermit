@@ -44,12 +44,11 @@ The operator connection is pinned to `public`; strict opening also rejects an
 unexpected current schema. The initializer holds a database-local session
 advisory lock on one owned connection through the empty-state check, Flyway
 migration and final validation. Another cooperating initializer fails fast with
-`DATABASE_INITIALIZATION_BUSY`, rather than waiting indefinitely. Closure of the
+`DATABASE_INITIALIZATION_BUSY`, rather than waiting indefinitely. The session
 lock is explicitly released in `finally`; physical connection closure also
 releases it if the session fails. A retained-session lease regression tests
 explicit release rather than assuming every lease close destroys its session.
-Metadata queries have a
-5-second JDBC timeout; Flyway connections set a 10-second statement timeout,
+Metadata queries have a 5-second JDBC timeout; Flyway connections set a 10-second statement timeout,
 5-second lock timeout and five lock retries. These are per-operation bounds,
 not a measured total recovery-time promise.
 
