@@ -127,4 +127,3 @@ final class LogWindowClassificationReviewTest {
     return event;
   }
 }
-
