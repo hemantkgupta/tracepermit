@@ -125,6 +125,22 @@ the [distribution runbook](../runbooks/simulator-approval-distribution.md).
 - Java 21 is the sole backend. TypeScript is limited to the React console and
   its tooling; the static site is documentation, not an enforcement service.
 
+### Opt-in simulator policy templates
+
+Two default-block candidate templates have a pinned 19-case synthetic corpus
+covering 38 dry-run evaluations and 14 qualification tests. Read/write scope
+negatives, exact classification/decision fields, mutation sensitivity, input/
+catalog isolation and unknown schemas are tested through Java simulation.
+See the [runbook](../runbooks/simulator-policy-templates.md).
+
+These candidates are not installed or active by default. Simulation validates
+canonical structure, not authentication, tool argument schemas or runtime
+authority. It creates no pending approval, permit, target effect or evidence
+record. Log-window classification now compares integral limits exactly without
+numeric narrowing; 26 delivered boundary tests and five independent regressions
+cover that fix. Malformed raw arguments still require trusted-adapter validation.
+No broad requirement or production claim is upgraded by these qualifications.
+
 ## Controls not yet established
 
 The repository is a security-control POC, **not** a deployable enterprise

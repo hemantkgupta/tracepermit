@@ -47,6 +47,43 @@ upgraded to production-qualified.
 
 See [ADR 0039](../architecture/0039-policy-lifecycle-staging-rollback-and-simulation.md).
 
+## Simulator policy-template qualification
+
+Requirements: FR-005/006/013; SEC-001/002/003; OPS-002.
+
+Two opt-in default-block candidates and a pinned 19-case corpus exercise
+`PolicyLifecycleService.simulate`; `PolicyTemplateQualificationTest` has
+14 tests and 38 matrix evaluations. Exact classification/decision/provenance,
+isolated read/write scope negatives, predicate/priority mutations, both-template
+input/catalog isolation and unknown policy/action schemas are covered.
+
+| Added evidence                                                                                                  | Qualification boundary                                                                                             |
+| --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| FR-005/006; SEC-002: exact class, score, severity, signals, outcome, reason, rule and approval-group assertions | Candidate simulation only; not runtime authentication or general argument validation                               |
+| FR-013: no catalog method call, revision, active pointer or history change during candidate simulation          | Not authenticated policy administration or installed runtime activation                                            |
+| SEC-001/003; OPS-002: canonical-identity characterization, synthetic fixture hygiene, candidate ID/version      | No authentication or complete secret-retention proof; result has no schemaVersion or runtime key/adapter inventory |
+
+See the [template qualification runbook](../runbooks/simulator-policy-templates.md).
+Default policies/launchers and enforcement code remain unchanged.
+
+## Exact integral log-window classification
+
+Requirements: FR-005/006; SEC-002; REL-001; OPS-002.
+
+`PolicyEvaluator` retains its integral-node guard but compares the original
+integer value with 100 using `BigInteger`, without int/long narrowing or floating
+conversion. `LogWindowNumericBoundaryTest` has 26 tests; five independent
+`LogWindowClassificationReviewTest` regressions add wide signed/parsed families,
+short nodes, exact operation scope, context deduplication/score behavior and
+both-template forbidden-catalog/input isolation. The old comparison independently
+reproduces 12 failures in the original 26-test class.
+
+This repairs raw classification, not authentication or tool-argument validation.
+Missing/non-integral limits retain existing behavior; no real target is contacted.
+Candidate ID/version assertions do not qualify active key/schema/adapter inventory
+or complete broad SEC/REL/OPS requirements. See the
+[numeric boundary runbook](../runbooks/log-window-classification.md).
+
 ## Private endpoint observation capture
 
 | Requirements                     | Implementation and verification                                                                                                                                                                                                                      | Boundary                                                                                                                                                        |
