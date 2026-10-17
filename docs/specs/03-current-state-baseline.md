@@ -1,6 +1,6 @@
 # Current-state capability matrix
 
-**As of:** 2026-10-16
+**As of:** 2026-10-17
 **Scope:** public Java-backend/React-console proof of concept
 
 This is the authoritative boundary between running POC behavior and product
@@ -60,8 +60,11 @@ The authenticated approval collection supports exact metadata filters and
 bounded keyset pagination, retaining current enrollment/scope/tenant/owner
 checks and response redaction. Cursors are unsigned positions, not authority;
 reads do not change approval/effect state. This is not a complete action-history,
-retention or export feature. React search/pagination controls remain a separate
-slice; the existing UI still consumes its first page. See the
+retention or export feature. The React inbox has exact filters, explicit older
+pages and a250-row cap, with response validation, abort/generation guards and
+read-error/logout invalidation. Mutation controls require fresh current authority.
+Actual synthetic browser review/request/execute and client fault tests qualify
+this local profile only; no external provider compatibility is implied. See the
 [history API](../runbooks/approval-history-api.md).
 
 `SimulatorApprovalServer` is a separate, loopback-only Java HTTP factory,
