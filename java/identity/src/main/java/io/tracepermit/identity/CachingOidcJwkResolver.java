@@ -22,8 +22,9 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
-public final class CachingOidcJwkResolver implements OidcVerificationKeyResolver {
+public final class CachingOidcJwkResolver implements OidcVerificationKeyResolver, AutoCloseable {
   static final int MAXIMUM_JWKS_LENGTH = 65_536;
   private static final int MINIMUM_RSA_MODULUS_BITS = 2048;
   private static final Set<String> PRIVATE_JWK_FIELDS =
@@ -34,14 +35,20 @@ public final class CachingOidcJwkResolver implements OidcVerificationKeyResolver
           .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
 
   private final OidcJwkSetSource source;
-  private final Map<String, CacheEntry> cache = new HashMap<>();
+  private final JwksRefreshCoordinator coordinator;
+  private final ConcurrentHashMap<String, CacheEntry> cache = new ConcurrentHashMap<>();
 
   public CachingOidcJwkResolver(OidcJwkSetSource source) {
+    this(source, new JwksRefreshCoordinator());
+  }
+
+  CachingOidcJwkResolver(OidcJwkSetSource source, JwksRefreshCoordinator coordinator) {
     this.source = Objects.requireNonNull(source);
+    this.coordinator = Objects.requireNonNull(coordinator);
   }
 
   @Override
-  public synchronized RSAPublicKey resolve(
+  public RSAPublicKey resolve(
       OidcProviderConfiguration provider, String keyId, String algorithm, Instant now) {
     Objects.requireNonNull(provider);
     Objects.requireNonNull(now);
@@ -55,7 +62,21 @@ public final class CachingOidcJwkResolver implements OidcVerificationKeyResolver
       if (current.nextForcedRefreshAt().isAfter(now)) throw invalidToken();
     }
 
-    CacheEntry refreshed = refresh(provider, now);
+    CacheEntry refreshed =
+        coordinator.refresh(
+            cacheKey,
+            provider,
+            now,
+            () -> {
+              CacheEntry latest = cache.get(cacheKey);
+              if (latest != null && latest.expiresAt().isAfter(now)) {
+                if (latest.keys().containsKey(keyId) || latest.nextForcedRefreshAt().isAfter(now)) {
+                  return latest;
+                }
+              }
+              return refresh(provider, now);
+            },
+            entry -> updateCacheIfMonotonic(cacheKey, entry));
     RSAPublicKey resolved = refreshed.keys().get(keyId);
     if (resolved == null) throw invalidToken();
     return resolved;
@@ -75,13 +96,21 @@ public final class CachingOidcJwkResolver implements OidcVerificationKeyResolver
     }
 
     Map<String, RSAPublicKey> keys = parseKeys(document);
-    CacheEntry refreshed =
-        new CacheEntry(
-            Map.copyOf(keys),
-            now.plus(provider.jwksCacheLifetime()),
-            now.plus(provider.forcedRefreshCooldown()));
-    cache.put(cacheKey(provider), refreshed);
-    return refreshed;
+    return new CacheEntry(
+        Map.copyOf(keys),
+        now.plus(provider.jwksCacheLifetime()),
+        now.plus(provider.forcedRefreshCooldown()));
+  }
+
+  private void updateCacheIfMonotonic(String cacheKey, CacheEntry refreshed) {
+    cache.compute(
+        cacheKey,
+        (key, current) -> {
+          if (current == null || refreshed.expiresAt().isAfter(current.expiresAt())) {
+            return refreshed;
+          }
+          return current;
+        });
   }
 
   private static Map<String, RSAPublicKey> parseKeys(String document) {
@@ -140,10 +169,14 @@ public final class CachingOidcJwkResolver implements OidcVerificationKeyResolver
 
   private static RSAPublicKey toPublicKey(RSAKey key) {
     try {
-      var specification = new RSAPublicKeySpec(key.getModulus().decodeToBigInteger(), key.getPublicExponent().decodeToBigInteger());
+      var specification =
+          new RSAPublicKeySpec(
+              key.getModulus().decodeToBigInteger(),
+              key.getPublicExponent().decodeToBigInteger());
       return (RSAPublicKey) KeyFactory.getInstance("RSA").generatePublic(specification);
     } catch (Exception exception) {
-      throw new IllegalArgumentException("The configured JWKS contains an unusable RSA key.", exception);
+      throw new IllegalArgumentException(
+          "The configured JWKS contains an unusable RSA key.", exception);
     }
   }
 
@@ -168,6 +201,11 @@ public final class CachingOidcJwkResolver implements OidcVerificationKeyResolver
         "OIDC_KEY_SET_UNAVAILABLE", "The configured OIDC verification keys are unavailable.");
   }
 
-  private record CacheEntry(
+  @Override
+  public void close() {
+    coordinator.close();
+  }
+
+  record CacheEntry(
       Map<String, RSAPublicKey> keys, Instant expiresAt, Instant nextForcedRefreshAt) {}
 }

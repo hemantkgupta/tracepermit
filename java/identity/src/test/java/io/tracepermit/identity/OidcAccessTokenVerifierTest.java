@@ -2,10 +2,12 @@ package io.tracepermit.identity;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.time.Clock;
+import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.Base64;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.Test;
@@ -343,6 +345,51 @@ final class OidcAccessTokenVerifierTest {
         .hasMessageNotContaining(token)
         .hasMessageNotContaining("endpoint-secret");
     assertThat(fetches).hasValue(1);
+  }
+
+  @Test
+  void tokenExpiringDuringKeyResolutionFailsClosedWhenTimeIsResampled() {
+    AtomicReference<Instant> currentClockTime = new AtomicReference<>(OidcTestSupport.NOW);
+    Clock advancingClock =
+        new Clock() {
+          @Override
+          public java.time.ZoneId getZone() {
+            return ZoneOffset.UTC;
+          }
+
+          @Override
+          public Clock withZone(java.time.ZoneId zone) {
+            return this;
+          }
+
+          @Override
+          public Instant instant() {
+            return currentClockTime.get();
+          }
+        };
+
+    String token =
+        OidcTestSupport.token(
+            keyPair,
+            header -> {},
+            claims -> claims.put("exp", OidcTestSupport.NOW.getEpochSecond() + 5));
+
+    OidcVerificationKeyResolver delayedResolver =
+        (provider, keyId, algorithm, now) -> {
+          currentClockTime.set(OidcTestSupport.NOW.plusSeconds(6));
+          return (java.security.interfaces.RSAPublicKey) keyPair.getPublic();
+        };
+
+    OidcAccessTokenVerifier verifier =
+        new OidcAccessTokenVerifier(
+            issuer -> java.util.Optional.of(OidcTestSupport.provider()),
+            delayedResolver,
+            advancingClock);
+
+    assertThatThrownBy(() -> verifier.authenticate("Bearer " + token))
+        .isInstanceOf(AuthenticationException.class)
+        .extracting(error -> ((AuthenticationException) error).code())
+        .isEqualTo("EXPIRED_ACCESS_TOKEN");
   }
 
   private OidcAccessTokenVerifier verifier() {

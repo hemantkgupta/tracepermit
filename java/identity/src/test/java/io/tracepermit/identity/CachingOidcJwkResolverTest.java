@@ -7,11 +7,17 @@ import com.nimbusds.jose.jwk.RSAKey;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
 import java.security.interfaces.RSAPublicKey;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -224,6 +230,394 @@ final class CachingOidcJwkResolverTest {
   private static void assertCode(
       org.assertj.core.api.ThrowableAssert.ThrowingCallable operation, String expectedCode) {
     assertCode("operation", operation, expectedCode);
+  }
+
+  @Test
+  void latchControlledProviderABlockedWhileWarmProviderBResolves() throws Exception {
+    KeyPair keyA = OidcTestSupport.rsaKeyPair();
+    KeyPair keyB = OidcTestSupport.rsaKeyPair();
+    OidcProviderConfiguration providerA = OidcTestSupport.provider();
+    OidcProviderConfiguration providerB = providerWithIssuer("https://provider-b.example.invalid");
+
+    CountDownLatch fetchAStarted = new CountDownLatch(1);
+    CountDownLatch releaseFetchA = new CountDownLatch(1);
+
+    CachingOidcJwkResolver resolver =
+        new CachingOidcJwkResolver(
+            uri -> {
+              if (uri.equals(providerA.jwksUri())) {
+                fetchAStarted.countDown();
+                try {
+                  if (!releaseFetchA.await(5, TimeUnit.SECONDS)) {
+                    throw new IllegalStateException("latch timed out");
+                  }
+                } catch (InterruptedException exception) {
+                  Thread.currentThread().interrupt();
+                }
+                return OidcTestSupport.publicJwks(keyA);
+              }
+              if (uri.equals(providerB.jwksUri())) {
+                return OidcTestSupport.publicJwks(keyB);
+              }
+              throw new IllegalArgumentException("Unexpected URI: " + uri);
+            });
+
+    try {
+      // Warm provider B first
+      assertThat(resolver.resolve(providerB, OidcTestSupport.KEY_ID, "RS256", OidcTestSupport.NOW))
+          .isEqualTo(keyB.getPublic());
+
+      ExecutorService executor = Executors.newSingleThreadExecutor();
+      try {
+        Future<RSAPublicKey> futureA =
+            executor.submit(
+                () ->
+                    resolver.resolve(
+                        providerA, OidcTestSupport.KEY_ID, "RS256", OidcTestSupport.NOW));
+
+        assertThat(fetchAStarted.await(5, TimeUnit.SECONDS)).isTrue();
+
+        // While Provider A is blocked in source.fetch, warm Provider B resolves immediately
+        long start = System.nanoTime();
+        RSAPublicKey resolvedB =
+            resolver.resolve(
+                providerB, OidcTestSupport.KEY_ID, "RS256", OidcTestSupport.NOW.plusSeconds(1));
+        long durationMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
+
+        assertThat(resolvedB).isEqualTo(keyB.getPublic());
+        assertThat(durationMs).isLessThan(500);
+
+        releaseFetchA.countDown();
+        assertThat(futureA.get(5, TimeUnit.SECONDS)).isEqualTo(keyA.getPublic());
+      } finally {
+        releaseFetchA.countDown();
+        executor.shutdown();
+        assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+      }
+    } finally {
+      resolver.close();
+    }
+  }
+
+  @Test
+  void independentProviderRefreshProgress() throws Exception {
+    KeyPair keyA = OidcTestSupport.rsaKeyPair();
+    KeyPair keyB = OidcTestSupport.rsaKeyPair();
+    OidcProviderConfiguration providerA = OidcTestSupport.provider();
+    OidcProviderConfiguration providerB = providerWithIssuer("https://provider-b.example.invalid");
+
+    CountDownLatch fetchAStarted = new CountDownLatch(1);
+    CountDownLatch releaseFetchA = new CountDownLatch(1);
+
+    CachingOidcJwkResolver resolver =
+        new CachingOidcJwkResolver(
+            uri -> {
+              if (uri.equals(providerA.jwksUri())) {
+                fetchAStarted.countDown();
+                try {
+                  if (!releaseFetchA.await(5, TimeUnit.SECONDS)) {
+                    throw new IllegalStateException("latch timed out");
+                  }
+                } catch (InterruptedException exception) {
+                  Thread.currentThread().interrupt();
+                }
+                return OidcTestSupport.publicJwks(keyA);
+              }
+              if (uri.equals(providerB.jwksUri())) {
+                return OidcTestSupport.publicJwks(keyB);
+              }
+              throw new IllegalArgumentException("Unexpected URI: " + uri);
+            });
+
+    ExecutorService executor = Executors.newSingleThreadExecutor();
+    try {
+      Future<RSAPublicKey> futureA =
+          executor.submit(
+              () ->
+                  resolver.resolve(
+                      providerA, OidcTestSupport.KEY_ID, "RS256", OidcTestSupport.NOW));
+
+      assertThat(fetchAStarted.await(5, TimeUnit.SECONDS)).isTrue();
+
+      // Provider B needs cold refresh and must make progress independently of stuck Provider A
+      RSAPublicKey resolvedB =
+          resolver.resolve(providerB, OidcTestSupport.KEY_ID, "RS256", OidcTestSupport.NOW);
+      assertThat(resolvedB).isEqualTo(keyB.getPublic());
+
+      releaseFetchA.countDown();
+      assertThat(futureA.get(5, TimeUnit.SECONDS)).isEqualTo(keyA.getPublic());
+    } finally {
+      releaseFetchA.countDown();
+      executor.shutdown();
+      assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+      resolver.close();
+    }
+  }
+
+  @Test
+  void refreshFailureStormCooldownPreventsRepeatedFetches() {
+    OidcProviderConfiguration provider = OidcTestSupport.provider();
+    AtomicInteger fetchCount = new AtomicInteger();
+    CachingOidcJwkResolver resolver =
+        new CachingOidcJwkResolver(
+            ignored -> {
+              fetchCount.incrementAndGet();
+              throw new IllegalStateException("simulated upstream failure");
+            });
+
+    try {
+      assertCode(
+          () -> resolver.resolve(provider, OidcTestSupport.KEY_ID, "RS256", OidcTestSupport.NOW),
+          "OIDC_KEY_SET_UNAVAILABLE");
+      assertThat(fetchCount).hasValue(1);
+
+      for (int i = 1; i <= 5; i++) {
+        int offset = i;
+        assertCode(
+            () ->
+                resolver.resolve(
+                    provider,
+                    OidcTestSupport.KEY_ID,
+                    "RS256",
+                    OidcTestSupport.NOW.plusSeconds(offset)),
+            "OIDC_KEY_SET_UNAVAILABLE");
+      }
+      assertThat(fetchCount).hasValue(1);
+
+      assertCode(
+          () ->
+              resolver.resolve(
+                  provider,
+                  OidcTestSupport.KEY_ID,
+                  "RS256",
+                  OidcTestSupport.NOW.plusSeconds(35)),
+          "OIDC_KEY_SET_UNAVAILABLE");
+      assertThat(fetchCount).hasValue(2);
+    } finally {
+      resolver.close();
+    }
+  }
+
+  @Test
+  void waiterTimeoutAndInterruptCleanUpInFlightState() throws Exception {
+    OidcProviderConfiguration provider = OidcTestSupport.provider();
+    CountDownLatch fetchStarted = new CountDownLatch(1);
+    CountDownLatch releaseFetch = new CountDownLatch(1);
+
+    JwksRefreshCoordinator coordinator =
+        new JwksRefreshCoordinator(
+            2, 4, Duration.ofMillis(100), Duration.ofSeconds(10));
+    CachingOidcJwkResolver resolver =
+        new CachingOidcJwkResolver(
+            ignored -> {
+              fetchStarted.countDown();
+              try {
+                if (!releaseFetch.await(5, TimeUnit.SECONDS)) {
+                  throw new IllegalStateException("latch timed out");
+                }
+              } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+              }
+              return OidcTestSupport.publicJwks(OidcTestSupport.rsaKeyPair());
+            },
+            coordinator);
+
+    try {
+      assertCode(
+          () -> resolver.resolve(provider, OidcTestSupport.KEY_ID, "RS256", OidcTestSupport.NOW),
+          "OIDC_KEY_SET_UNAVAILABLE");
+      assertThat(fetchStarted.await(5, TimeUnit.SECONDS)).isTrue();
+      releaseFetch.countDown();
+      Thread.sleep(100);
+
+      CountDownLatch interruptStarted = new CountDownLatch(1);
+      CountDownLatch releaseInterrupt = new CountDownLatch(1);
+      OidcProviderConfiguration providerB = providerWithIssuer("https://provider-b.example.invalid");
+
+      CachingOidcJwkResolver interruptResolver =
+          new CachingOidcJwkResolver(
+              uri -> {
+                interruptStarted.countDown();
+                try {
+                  if (!releaseInterrupt.await(5, TimeUnit.SECONDS)) {
+                    throw new IllegalStateException("latch timed out");
+                  }
+                } catch (InterruptedException exception) {
+                  Thread.currentThread().interrupt();
+                }
+                return OidcTestSupport.publicJwks(OidcTestSupport.rsaKeyPair());
+              },
+              coordinator);
+
+      try {
+        Thread testThread = Thread.currentThread();
+        ExecutorService interruptExecutor = Executors.newSingleThreadExecutor();
+        try {
+          Future<?> interruptFuture =
+              interruptExecutor.submit(
+                  () -> {
+                    try {
+                      assertThat(interruptStarted.await(5, TimeUnit.SECONDS)).isTrue();
+                      testThread.interrupt();
+                    } catch (InterruptedException ignored) {
+                    }
+                  });
+
+          assertCode(
+              () ->
+                  interruptResolver.resolve(
+                      providerB, OidcTestSupport.KEY_ID, "RS256", OidcTestSupport.NOW),
+              "OIDC_KEY_SET_UNAVAILABLE");
+          assertThat(Thread.interrupted()).isTrue();
+          interruptFuture.get(5, TimeUnit.SECONDS);
+        } finally {
+          interruptExecutor.shutdown();
+          assertThat(interruptExecutor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+        }
+      } finally {
+        releaseInterrupt.countDown();
+        interruptResolver.close();
+      }
+    } finally {
+      releaseFetch.countDown();
+      resolver.close();
+    }
+  }
+
+  @Test
+  void lateResultCannotPublishOrExtendFreshness() throws Exception {
+    KeyPair key = OidcTestSupport.rsaKeyPair();
+    OidcProviderConfiguration provider = OidcTestSupport.provider();
+    CountDownLatch fetchStarted = new CountDownLatch(1);
+    CountDownLatch completeLateFetch = new CountDownLatch(1);
+
+    JwksRefreshCoordinator coordinator =
+        new JwksRefreshCoordinator(
+            2, 4, Duration.ofMillis(50), Duration.ofMillis(10));
+    CachingOidcJwkResolver resolver =
+        new CachingOidcJwkResolver(
+            ignored -> {
+              fetchStarted.countDown();
+              try {
+                if (!completeLateFetch.await(5, TimeUnit.SECONDS)) {
+                  throw new IllegalStateException("latch timed out");
+                }
+              } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+              }
+              return OidcTestSupport.publicJwks(key);
+            },
+            coordinator);
+
+    try {
+      assertCode(
+          () -> resolver.resolve(provider, OidcTestSupport.KEY_ID, "RS256", OidcTestSupport.NOW),
+          "OIDC_KEY_SET_UNAVAILABLE");
+      assertThat(fetchStarted.await(5, TimeUnit.SECONDS)).isTrue();
+
+      completeLateFetch.countDown();
+      Thread.sleep(100);
+
+      // Verify that late result was discarded and did not populate cache.
+      // Next call attempts resolution and fails since source is now unavailable.
+      CachingOidcJwkResolver checkResolver =
+          new CachingOidcJwkResolver(ignored -> null, coordinator);
+      assertCode(
+          () ->
+              checkResolver.resolve(
+                  provider,
+                  OidcTestSupport.KEY_ID,
+                  "RS256",
+                  OidcTestSupport.NOW.plusSeconds(1)),
+          "OIDC_KEY_SET_UNAVAILABLE");
+    } finally {
+      completeLateFetch.countDown();
+      resolver.close();
+    }
+  }
+
+  @Test
+  void exhaustedBoundedRefreshWorkersFailClosedAndRecoverWhenReleased() throws Exception {
+    KeyPair key = OidcTestSupport.rsaKeyPair();
+    CountDownLatch workerRunning = new CountDownLatch(1);
+    CountDownLatch releaseWorker = new CountDownLatch(1);
+
+    JwksRefreshCoordinator coordinator =
+        new JwksRefreshCoordinator(1, 0, Duration.ofSeconds(5), Duration.ofMillis(10));
+
+    OidcProviderConfiguration providerA = OidcTestSupport.provider();
+    OidcProviderConfiguration providerB = providerWithIssuer("https://provider-b.example.invalid");
+
+    CachingOidcJwkResolver resolver =
+        new CachingOidcJwkResolver(
+            uri -> {
+              if (uri.equals(providerA.jwksUri())) {
+                workerRunning.countDown();
+                try {
+                  if (!releaseWorker.await(5, TimeUnit.SECONDS)) {
+                    throw new IllegalStateException("latch timed out");
+                  }
+                } catch (InterruptedException exception) {
+                  Thread.currentThread().interrupt();
+                }
+                return OidcTestSupport.publicJwks(key);
+              }
+              return OidcTestSupport.publicJwks(key);
+            },
+            coordinator);
+
+    ExecutorService executor = Executors.newSingleThreadExecutor();
+    try {
+      Future<RSAPublicKey> futureA =
+          executor.submit(
+              () ->
+                  resolver.resolve(
+                      providerA, OidcTestSupport.KEY_ID, "RS256", OidcTestSupport.NOW));
+
+      assertThat(workerRunning.await(5, TimeUnit.SECONDS)).isTrue();
+
+      // Worker is fully occupied by Provider A. Provider B refresh must fail closed immediately!
+      assertCode(
+          () -> resolver.resolve(providerB, OidcTestSupport.KEY_ID, "RS256", OidcTestSupport.NOW),
+          "OIDC_KEY_SET_UNAVAILABLE");
+
+      // Release worker
+      releaseWorker.countDown();
+      assertThat(futureA.get(5, TimeUnit.SECONDS)).isEqualTo(key.getPublic());
+      Thread.sleep(50);
+
+      // Worker is released. Provider B can now refresh and succeed!
+      assertThat(
+              resolver.resolve(
+                  providerB,
+                  OidcTestSupport.KEY_ID,
+                  "RS256",
+                  OidcTestSupport.NOW.plusSeconds(1)))
+          .isEqualTo(key.getPublic());
+    } finally {
+      releaseWorker.countDown();
+      executor.shutdown();
+      assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+      resolver.close();
+    }
+  }
+
+  private static OidcProviderConfiguration providerWithIssuer(String issuer) {
+    return new OidcProviderConfiguration(
+        java.net.URI.create(issuer),
+        OidcTestSupport.AUDIENCE,
+        java.net.URI.create(issuer + "/.well-known/jwks.json"),
+        java.net.URI.create(OidcTestSupport.AUDIENCE + "/.well-known/oauth-protected-resource"),
+        List.of(java.net.URI.create(issuer)),
+        "TracePermit MCP",
+        Map.of("chatgpt-connector", "ChatGPT Web"),
+        "org_id",
+        Map.of("enterprise-acme", "tenant:acme"),
+        Set.of(ConnectorScope.of("aws.logs.discover"), ConnectorScope.of("aws.logs.read")),
+        ConnectorOrigin.CHATGPT_WEB,
+        Duration.ofMinutes(5),
+        Duration.ofMinutes(1),
+        Duration.ofSeconds(30));
   }
 
   private static void assertCode(

@@ -5,6 +5,11 @@ import java.net.URI;
 import java.time.Duration;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
 import okhttp3.mockwebserver.SocketPolicy;
@@ -237,6 +242,111 @@ final class SsrfSafeHttpsJwkSetSourceTest {
                     null))
         .isInstanceOf(IllegalArgumentException.class)
         .hasMessageContaining("together");
+  }
+
+  @Test
+  void dnsResolutionStageIsBoundedByTotalCallTimeout() throws Exception {
+    RemoteTestSupport.TlsMaterial tls = RemoteTestSupport.tlsMaterial();
+    try (MockWebServer server = tlsServer(tls)) {
+      URI uri = server.url("/jwks").uri();
+      CountDownLatch release = new CountDownLatch(1);
+      SsrfSafeHttpsJwkSetSource slowDnsSource =
+          new SsrfSafeHttpsJwkSetSource(
+              Set.of(uri),
+              Duration.ofMillis(50),
+              Duration.ofMillis(100),
+              hostname -> {
+                try {
+                  if (!release.await(5, TimeUnit.SECONDS)) {
+                    throw new IllegalStateException("latch timed out");
+                  }
+                } catch (InterruptedException exception) {
+                  Thread.currentThread().interrupt();
+                }
+                return List.of(InetAddress.getByName("127.0.0.1"));
+              },
+              ignored -> true,
+              tls.client().sslSocketFactory(),
+              tls.client().trustManager());
+
+      try {
+        long start = System.nanoTime();
+        assertSafeFailure(() -> slowDnsSource.fetch(uri));
+        long durationMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - start);
+        assertThat(durationMs).isLessThan(1000);
+      } finally {
+        release.countDown();
+      }
+    }
+  }
+
+  @Test
+  void exhaustedBoundedDnsWorkersFailClosedAndRecoverWhenReleased() throws Exception {
+    RemoteTestSupport.TlsMaterial tls = RemoteTestSupport.tlsMaterial();
+    try (MockWebServer server = tlsServer(tls)) {
+      URI uri = server.url("/jwks").uri();
+      server.enqueue(
+          new MockResponse()
+              .setResponseCode(200)
+              .setHeader("Content-Type", "application/json")
+              .setBody("{\"keys\":[]}"));
+      server.enqueue(
+          new MockResponse()
+              .setResponseCode(200)
+              .setHeader("Content-Type", "application/json")
+              .setBody("{\"keys\":[]}"));
+
+      CountDownLatch dnsRunning = new CountDownLatch(1);
+      CountDownLatch releaseDns = new CountDownLatch(1);
+
+      try (BoundedHostResolver boundedResolver = new BoundedHostResolver(1, 0)) {
+        SsrfSafeHttpsJwkSetSource.HostResolver blockingResolver =
+            hostname -> {
+              dnsRunning.countDown();
+              try {
+                if (!releaseDns.await(5, TimeUnit.SECONDS)) {
+                  throw new IllegalStateException("latch timed out");
+                }
+              } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+              }
+              return List.of(InetAddress.getByName("127.0.0.1"));
+            };
+
+        SsrfSafeHttpsJwkSetSource source =
+            new SsrfSafeHttpsJwkSetSource(
+                Set.of(uri),
+                Duration.ofSeconds(1),
+                Duration.ofSeconds(5),
+                blockingResolver,
+                ignored -> true,
+                tls.client().sslSocketFactory(),
+                tls.client().trustManager(),
+                boundedResolver);
+
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        try {
+          Future<String> future1 = executor.submit(() -> source.fetch(uri));
+
+          assertThat(dnsRunning.await(5, TimeUnit.SECONDS)).isTrue();
+
+          // Saturated DNS worker capacity fails closed immediately
+          assertSafeFailure(() -> source.fetch(uri));
+
+          // Release worker
+          releaseDns.countDown();
+          assertThat(future1.get(5, TimeUnit.SECONDS)).isEqualTo("{\"keys\":[]}");
+          Thread.sleep(50);
+
+          // Succeeded once worker capacity was released
+          assertThat(source.fetch(uri)).isEqualTo("{\"keys\":[]}");
+        } finally {
+          releaseDns.countDown();
+          executor.shutdown();
+          assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+        }
+      }
+    }
   }
 
   private static MockWebServer tlsServer(RemoteTestSupport.TlsMaterial tls) throws Exception {

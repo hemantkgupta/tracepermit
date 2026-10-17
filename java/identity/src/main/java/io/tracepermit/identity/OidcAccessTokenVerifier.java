@@ -89,10 +89,11 @@ public final class OidcAccessTokenVerifier implements ConnectorAuthenticator {
       throw unavailableConfiguration(exception);
     }
 
-    Instant verifiedAt = clock.instant();
-    var verificationKey = keys.resolve(provider, keyId, algorithm, verifiedAt);
+    Instant start = clock.instant();
+    var verificationKey = keys.resolve(provider, keyId, algorithm, start);
     verifySignature(token, verificationKey);
 
+    Instant verifiedAt = clock.instant();
     ParsedClaims parsed = parseClaims(claims, provider);
     validateClaims(parsed, provider, verifiedAt);
     return new AuthenticatedConnector(
