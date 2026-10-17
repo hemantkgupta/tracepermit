@@ -1,0 +1,76 @@
+{
+  "schemaVersion": "1.0",
+  "eventId": "018f47a2-f5ce-7a4b-8f54-80e5d3eaf108",
+  "observedAt": "2026-10-16T12:00:00.000Z",
+  "traceId": "10010010010010010010010010010008",
+  "identity": {
+    "subject": {
+      "id": "workload:metrics-collector",
+      "type": "workload",
+      "displayName": "Metrics Collector",
+      "organizationId": "acme",
+      "authenticationMethod": "mtls",
+      "assurance": "authenticated"
+    },
+    "actor": {
+      "id": "workload:metrics-collector",
+      "type": "workload",
+      "displayName": "Metrics Collector",
+      "organizationId": "acme",
+      "authenticationMethod": "mtls",
+      "assurance": "authenticated"
+    },
+    "evidence": [
+      {
+        "evidenceId": "evidence-mtls-collector",
+        "subjectId": "workload:metrics-collector",
+        "kind": "mtls_certificate",
+        "assurance": "authenticated",
+        "issuer": "acme-ca",
+        "verifiedAt": "2026-10-16T11:59:59.000Z",
+        "credentialFingerprint": "sha256:1001001001001001001001001001001001001001001001001001001001001001"
+      }
+    ]
+  },
+  "trigger": {
+    "kind": "service",
+    "origin": "api",
+    "requestId": "req-api-108",
+    "clientName": "MetricsCollector"
+  },
+  "declaredIntent": {
+    "goal": "Collect staging log metrics",
+    "source": "api_field"
+  },
+  "action": {
+    "protocol": "sdk",
+    "toolName": "aws.logs.filter_log_events",
+    "arguments": {
+      "logGroupName": "/app/staging",
+      "limit": 50
+    },
+    "target": {
+      "system": "aws",
+      "environment": "staging",
+      "accountId": "simulated-123",
+      "resourceType": "cloudwatch-log-group"
+    }
+  },
+  "lineage": {
+    "rootPrincipalId": "workload:metrics-collector",
+    "hops": [
+      {
+        "hopId": "hop-collector",
+        "kind": "principal",
+        "subjectId": "workload:metrics-collector",
+        "assurance": "authenticated",
+        "source": "acme-mtls",
+        "observedAt": "2026-10-16T11:59:59.000Z"
+      }
+    ],
+    "delegations": []
+  },
+  "clientClaims": {
+    "profile": "workload-collector"
+  }
+}

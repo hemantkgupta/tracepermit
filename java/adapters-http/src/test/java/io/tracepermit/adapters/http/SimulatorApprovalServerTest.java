@@ -15,8 +15,9 @@ import io.tracepermit.identity.OidcAccessTokenVerifier;
 import io.tracepermit.identity.OidcProviderConfiguration;
 import io.tracepermit.identity.StaticOidcProviderRegistry;
 import io.tracepermit.persistence.postgres.PostgresDurableEnforcementState;
+import io.tracepermit.persistence.postgres.PostgresPermitConsumptionStore;
+import io.tracepermit.persistence.postgres.PostgresPolicyLifecycleStore;
 import io.tracepermit.security.ExecutionPermitAuthority;
-import io.tracepermit.security.InMemoryPermitConsumptionStore;
 import io.tracepermit.simulator.StatefulTargetSimulator;
 import java.net.InetSocketAddress;
 import java.net.URI;
@@ -124,7 +125,7 @@ final class SimulatorApprovalServerTest {
     state = new PostgresDurableEnforcementState(dataSource, clock, () -> UUID.randomUUID().toString());
     var permits = new ExecutionPermitAuthority(ExecutionPermitAuthority.DEFAULT_ISSUER,
         "fixture-ed25519", permitKey, 30, clock, () -> UUID.randomUUID().toString(),
-        new InMemoryPermitConsumptionStore());
+        new PostgresPermitConsumptionStore(dataSource));
     server = SimulatorApprovalServer.start(new InetSocketAddress("127.0.0.1", 0), verifier,
         memberships, state, policy, permits, simulator, clock);
   }
@@ -400,6 +401,101 @@ final class SimulatorApprovalServerTest {
   @Test void mcpDatabaseOutageNeverCreatesAuthorityOrDispatches() throws Exception {
     dataSource.setPortNumbers(new int[] {1}); dataSource.setConnectTimeout(1);
     assertThat(mcp(token("alice"), ApprovalMcpAdapter.REQUEST, ACTION).path("errorCode").asText()).isEqualTo("SECURITY_STATE_UNAVAILABLE");
+    assertThat(rules()).isZero();
+  }
+
+  @Test void durablePolicyGenerationBindingRejectsStaleApprovalsAcrossActivationAndRollback() throws Exception {
+    var policyStore = new PostgresPolicyLifecycleStore(dataSource, clock, () -> "plt-" + UUID.randomUUID());
+    String policyId = "pol-aws-web-001";
+    ObjectNode policyV1 = ((ObjectNode) JsonSupport.read(ROOT.resolve("policies/aws-web-readonly.json"))).deepCopy();
+    policyV1.put("version", 1);
+    policyStore.stage(TENANT.value(), policyV1, clock.instant());
+    policyStore.activate(TENANT.value(), policyId, 1, null, clock.instant(), null, "initial activation");
+
+    // Restart server in durable mode
+    if (server != null) server.close();
+    state = new PostgresDurableEnforcementState(dataSource, clock, () -> UUID.randomUUID().toString());
+    var permits = new ExecutionPermitAuthority(ExecutionPermitAuthority.DEFAULT_ISSUER,
+        "fixture-ed25519", permitKey, 30, clock, () -> UUID.randomUUID().toString(),
+        new PostgresPermitConsumptionStore(dataSource));
+    server = SimulatorApprovalServer.start(new InetSocketAddress("127.0.0.1", 0), verifier,
+        memberships, state, policyStore, TENANT.value(), policyId, permits, simulator, clock);
+
+    String aliceToken = token("alice");
+    JsonNode pending = create(aliceToken);
+    String id = pending.path("approvalRequestId").asText();
+    String path = path(pending);
+
+    JsonNode mcpPending = mcp(aliceToken, ApprovalMcpAdapter.REQUEST, ACTION);
+    String mcpId = mcpPending.path("approvalRequestId").asText();
+    String mcpPath = path(mcpPending);
+    assertThat(rules()).isZero();
+
+    // Bob approves both
+    assertStatus(call("POST", path + "/decision", token("bob"), decision(pending, "approve")), 200);
+    assertStatus(call("POST", mcpPath + "/decision", token("bob"), decision(mcpPending, "approve")), 200);
+
+    // Operator activates v2 (generation 2)
+    ObjectNode policyV2 = policyV1.deepCopy();
+    policyV2.put("version", 2);
+    policyStore.stage(TENANT.value(), policyV2, clock.instant().plusSeconds(1));
+    policyStore.activate(TENANT.value(), policyId, 2, 1, clock.instant().plusSeconds(2), null, "v2 activation");
+
+    // Alice attempts HTTP execution: must fail with 409 STALE_POLICY_GENERATION
+    var executeResponse = call("POST", path + "/execute", aliceToken, hash(pending));
+    assertStatus(executeResponse, 409);
+    assertThat(json(executeResponse).path("error").path("code").asText()).isEqualTo("STALE_POLICY_GENERATION");
+    assertThat(rules()).isZero();
+
+    // Alice attempts MCP resumption: must fail with tool error STALE_POLICY_GENERATION
+    String mcpArgs = "{\"approvalRequestId\":\"" + mcpId + "\",\"requestHash\":\"" + mcpPending.path("requestHash").asText() + "\"}";
+    JsonNode mcpResume = mcp(aliceToken, ApprovalMcpAdapter.RESUME, mcpArgs);
+    assertThat(mcpResume.path("errorCode").asText()).isEqualTo("STALE_POLICY_GENERATION");
+    assertThat(rules()).isZero();
+
+    // Rollback to v1 (generation 3)
+    policyStore.rollback(TENANT.value(), policyId, null, 1, clock.instant().plusSeconds(5), null, "rollback to v1");
+
+    // Alice attempts execution again on original HTTP approval: STILL 409 STALE_POLICY_GENERATION
+    var executeResponse2 = call("POST", path + "/execute", aliceToken, hash(pending));
+    assertStatus(executeResponse2, 409);
+    assertThat(json(executeResponse2).path("error").path("code").asText()).isEqualTo("STALE_POLICY_GENERATION");
+    assertThat(rules()).isZero();
+
+    // MCP resume call on original MCP approval STILL returns tool error STALE_POLICY_GENERATION
+    JsonNode mcpResume2 = mcp(aliceToken, ApprovalMcpAdapter.RESUME, mcpArgs);
+    assertThat(mcpResume2.path("errorCode").asText()).isEqualTo("STALE_POLICY_GENERATION");
+    assertThat(rules()).isZero();
+
+    // Fresh approval created under restored v1 (generation 3) succeeds
+    JsonNode freshPending = create(aliceToken);
+    String freshPath = path(freshPending);
+    assertStatus(call("POST", freshPath + "/decision", token("bob"), decision(freshPending, "approve")), 200);
+    JsonNode freshExecuted = json(call("POST", freshPath + "/execute", aliceToken, hash(freshPending)));
+    assertThat(freshExecuted.path("executionStatus").asText()).isEqualTo("succeeded");
+    assertThat(freshExecuted.path("status").asText()).isEqualTo("consumed");
+    assertThat(rules()).isEqualTo(1);
+
+    // Replay of consumed approval is rejected with 409 APPROVAL_NOT_EXECUTABLE
+    HttpResponse<String> replay = call("POST", freshPath + "/execute", aliceToken, hash(freshPending));
+    assertStatus(replay, 409);
+    assertThat(json(replay).path("error").path("code").asText()).isEqualTo("APPROVAL_NOT_EXECUTABLE");
+  }
+
+  @Test void durablePolicyModeFailsClosedWhenActivePolicyIsUnavailable() throws Exception {
+    var policyStore = new PostgresPolicyLifecycleStore(dataSource, clock, () -> "plt-" + UUID.randomUUID());
+    if (server != null) server.close();
+    state = new PostgresDurableEnforcementState(dataSource, clock, () -> UUID.randomUUID().toString());
+    var permits = new ExecutionPermitAuthority(ExecutionPermitAuthority.DEFAULT_ISSUER,
+        "fixture-ed25519", permitKey, 30, clock, () -> UUID.randomUUID().toString(),
+        new PostgresPermitConsumptionStore(dataSource));
+    server = SimulatorApprovalServer.start(new InetSocketAddress("127.0.0.1", 0), verifier,
+        memberships, state, policyStore, TENANT.value(), "pol-nonexistent", permits, simulator, clock);
+
+    // Requesting approval fails closed with 503 SECURITY_STATE_UNAVAILABLE
+    var response = call("POST", "/api/v1/approvals", token("alice"), ACTION);
+    assertStatus(response, 503);
+    assertThat(json(response).path("error").path("code").asText()).isEqualTo("SECURITY_STATE_UNAVAILABLE");
     assertThat(rules()).isZero();
   }
 

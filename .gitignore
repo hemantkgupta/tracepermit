@@ -12,6 +12,8 @@ coverage/
 java/**/bin/
 **/__pycache__/
 *.py[cod]
+*.tar.gz
+*.sha256
 
 # Generated printable notes and local demo recordings. Keep the Markdown and
 # generator sources in Git; rebuild binary artifacts locally under output/.

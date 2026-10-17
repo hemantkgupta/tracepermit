@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.tracepermit.contracts.JsonSupport;
 import io.tracepermit.identity.OidcVerificationKeyResolver;
+import io.tracepermit.persistence.postgres.PostgresDatabaseLifecycle;
 import java.net.ServerSocket;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -60,6 +61,22 @@ final class SimulatorApprovalBootstrapTest {
   }
 
   @Test void operatorCompositionReconstructsPendingAndConsumedStateWithPersistentKey() throws Exception {
+    var admin = fixture.load().database();
+    PostgresDatabaseLifecycle.initializeEmpty(admin);
+    // Runtime cannot own/alter schema objects or write migration history. Only this owned fixture is changed.
+    try (var connection = admin.getConnection(); var sql = connection.createStatement()) {
+      sql.execute("CREATE ROLE simulated_runtime LOGIN PASSWORD 'synthetic-local-test-password'");
+      sql.execute("CREATE SCHEMA simulated_runtime AUTHORIZATION simulated_runtime; CREATE TABLE simulated_runtime.tp_approval_requests(synthetic_shadow int)");
+      sql.execute("REVOKE CREATE ON SCHEMA public FROM PUBLIC; GRANT USAGE ON SCHEMA public TO simulated_runtime");
+      sql.execute("GRANT SELECT ON ALL TABLES IN SCHEMA public TO simulated_runtime");
+      sql.execute("""
+          GRANT INSERT, UPDATE ON tp_approval_requests, tp_approval_transitions,
+          tp_approval_action_snapshots, tp_consumed_execution_permits, tp_execution_attempts,
+          tp_execution_transitions, tp_evidence_streams, tp_evidence_events, tp_evidence_outbox
+          TO simulated_runtime
+          """);
+    }
+    fixture.json.withObject("/postgres").put("user", "simulated_runtime");
     OidcVerificationKeyResolver resolver = (provider, kid, algorithm, now) -> {
       verifications.incrementAndGet();
       assertThat(kid).isEqualTo("synthetic-idp-key");
@@ -88,6 +105,7 @@ final class SimulatorApprovalBootstrapTest {
   }
 
   @Test void optionalOperatorBrowserModeServesBuiltAssetsAndStartsConfiguredLoginWithoutIdpTraffic() throws Exception {
+    PostgresDatabaseLifecycle.initializeEmpty(fixture.load().database());
     Path console = directory.resolve("console"); Files.createDirectory(console);
     Files.writeString(console.resolve("index.html"), "<!doctype html><html>synthetic-console</html>");
     fixture.write("browser.secret", "synthetic-browser-client-secret".getBytes(StandardCharsets.UTF_8));
@@ -120,6 +138,26 @@ final class SimulatorApprovalBootstrapTest {
       assertThat(Files.readString(output)).contains("APPROVAL_CONFIGURATION_VALID").doesNotContain("jdbc:");
     } finally { if (check.isAlive()) check.destroyForcibly().waitFor(); }
     fixture.json.withObject("/postgres").put("port", postgres.getMappedPort(5432)); fixture.save();
+    Process emptyRun = launch("--run", output);
+    try {
+      assertThat(emptyRun.waitFor(15, TimeUnit.SECONDS)).isTrue();
+      assertThat(emptyRun.exitValue()).isEqualTo(2);
+      assertThat(Files.readString(output)).contains("APPROVAL_STARTUP_FAILED").doesNotContain("API listening", "jdbc:");
+    } finally { if (emptyRun.isAlive()) emptyRun.destroyForcibly().waitFor(); }
+    assertEmptyDatabaseAndNoListener();
+    Process initialize = launch("--init-db", output);
+    try {
+      assertThat(initialize.waitFor(20, TimeUnit.SECONDS)).isTrue();
+      assertThat(initialize.exitValue()).isZero();
+      assertThat(Files.readString(output)).contains("APPROVAL_DATABASE_INITIALIZED")
+          .doesNotContain("API listening", "jdbc:", fixture.config.toString(), "synthetic-local-test-password");
+    } finally { if (initialize.isAlive()) initialize.destroyForcibly().waitFor(); }
+    Process repeated = launch("--init-db", output);
+    try {
+      assertThat(repeated.waitFor(15, TimeUnit.SECONDS)).isTrue();
+      assertThat(repeated.exitValue()).isEqualTo(2);
+      assertThat(Files.readString(output)).contains("APPROVAL_STARTUP_FAILED").doesNotContain("jdbc:");
+    } finally { if (repeated.isAlive()) repeated.destroyForcibly().waitFor(); }
     Process runtime = launch("--run", output);
     try {
       long deadline = System.nanoTime() + Duration.ofSeconds(20).toNanos();
@@ -154,6 +192,32 @@ final class SimulatorApprovalBootstrapTest {
       assertThat(Files.readString(output)).contains("APPROVAL_STARTUP_FAILED")
           .doesNotContain("synthetic-local-test-password", fixture.config.toString(), "alice", "Exception");
     } finally { if (child.isAlive()) child.destroyForcibly().waitFor(); }
+  }
+
+  @Test void missingInvariantTriggerRefusesOperatorStartupWithoutRepairOrIdpCall() throws Exception {
+    var database = fixture.load().database();
+    PostgresDatabaseLifecycle.initializeEmpty(database);
+    try (var c = database.getConnection(); var s = c.createStatement()) {
+      s.execute("ALTER TABLE tp_approval_policy_bindings DISABLE TRIGGER tp_approval_policy_binding_immutable");
+    }
+    assertThatThrownBy(() -> SimulatorApprovalMain.start(fixture.load(), Clock.systemUTC(),
+        (p, kid, alg, now) -> { throw new AssertionError("No JWKS call at startup"); }))
+        .hasMessage("DATABASE_SCHEMA_NOT_READY");
+    try (var c = database.getConnection(); var s = c.createStatement(); var rows = s.executeQuery(
+        "SELECT tgenabled FROM pg_trigger WHERE tgname = 'tp_approval_policy_binding_immutable'")) {
+      assertThat(rows.next()).isTrue(); assertThat(rows.getString(1)).isEqualTo("D");
+    }
+    try (var rebound = new ServerSocket(fixture.json.path("port").intValue(), 1,
+        java.net.InetAddress.getByName("127.0.0.1"))) { assertThat(rebound.isBound()).isTrue(); }
+  }
+
+  private void assertEmptyDatabaseAndNoListener() throws Exception {
+    try (var c = fixture.load().database().getConnection(); var s = c.createStatement(); var rows = s.executeQuery(
+        "SELECT count(*) FROM pg_tables WHERE schemaname = 'public'")) {
+      rows.next(); assertThat(rows.getInt(1)).isZero();
+    }
+    try (var rebound = new ServerSocket(fixture.json.path("port").intValue(), 1,
+        java.net.InetAddress.getByName("127.0.0.1"))) { assertThat(rebound.isBound()).isTrue(); }
   }
 
   private Process launch(String argument, Path output) throws Exception {

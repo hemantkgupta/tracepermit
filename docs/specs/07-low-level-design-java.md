@@ -19,26 +19,72 @@ No database migration or real target is introduced. See
 
 ## Module ownership
 
-| Module                 | Responsibility                                                                |
-| ---------------------- | ----------------------------------------------------------------------------- |
-| `contracts`            | Canonical JSON, strict action and signed-claim validation                     |
-| `identity`             | Development token, source proof, workload/delegation, OAuth/OIDC verification |
-| `policy`               | Deterministic classifier, sequence signals, ordered policy evaluation         |
-| `security`             | Request-bound permit issue, verification, and consumption                     |
-| `execution`            | Attempts, idempotency, unknown outcomes, evidence chain                       |
-| `application`          | Fail-closed orchestration and trusted reviewer workflow                       |
-| `simulator`            | Bounded, stateful AWS/Jira fakes; no real target SDK                          |
-| `adapters-http`        | Combined loopback MCP backend and read-only projections                       |
-| `adapters-remote`      | Authenticated MCP edge and SSRF-safe JWKS HTTPS                               |
-| `endpoint-connector`   | MCP stdio origin observation and loopback forwarding                          |
-| `persistence-postgres` | Durable claims, approvals, evidence, outbox, reconciliation                   |
-| `observability-otel`   | Bounded telemetry projection                                                  |
-| `conformance`          | Checked-in schema, vector, and invariant tests                                |
+| Module                 | Responsibility                                                                                                                     |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `contracts`            | Canonical JSON, strict action and signed-claim validation, bounded opt-in projection redaction (ADR 0043)                          |
+| `identity`             | Development token, source proof, workload/delegation, OAuth/OIDC verification                                                      |
+| `policy`               | Deterministic classifier, sequence signals, strict policy schema validation, lifecycle staging/activation/rollback, and simulation |
+| `security`             | Request-bound permit issue, verification, and consumption                                                                          |
+| `execution`            | Attempts, idempotency, unknown outcomes, evidence chain                                                                            |
+| `application`          | Fail-closed orchestration and trusted reviewer workflow                                                                            |
+| `simulator`            | Bounded, stateful AWS/Jira fakes; no real target SDK                                                                               |
+| `adapters-http`        | Combined loopback MCP backend and read-only projections                                                                            |
+| `adapters-remote`      | Authenticated MCP edge and SSRF-safe JWKS HTTPS                                                                                    |
+| `endpoint-connector`   | MCP stdio origin observation and loopback forwarding                                                                               |
+| `persistence-postgres` | Durable claims, approvals, policy revisions/lifecycle, evidence, outbox, reconciliation                                            |
+| `observability-otel`   | Bounded telemetry projection                                                                                                       |
+| `conformance`          | Checked-in schema, vector, and invariant tests                                                                                     |
 
 Transport code stays in adapters. All origins converge on the canonical
 action contract before classification or policy. Application and domain code
 receive trusted identity context from adapters; they do not infer it from tool
 arguments. The executor has no route to a real AWS or Jira service.
+
+## Policy lifecycle and durable persistence foundation
+
+`PolicyLifecycleService` is a trusted Java library, not a policy administration
+API wired into the default backend. Candidate validation operates on a private
+snapshot. `PolicyVersionRecord` copies constructor input and every `document()`
+result, including records returned by stage/active/query/list/restage. Callers
+cannot mutate current or rollback content through these APIs. Dynamic execution
+obtains one policy snapshot per action and reuses it for sanitization re-evaluation.
+
+The `PolicyLifecycleStore` SPI in `java/policy` abstracts revision and state storage,
+implemented by `InMemoryPolicyLifecycleStore` and `PostgresPolicyLifecycleStore` in
+`java/persistence-postgres`:
+
+1. **Durable revisions:** PostgreSQL V7 migration introduces `tp_policy_versions` with
+   database trigger `tp_guard_policy_version_mutation()` preventing mutation or deletion.
+   Identical restaging is idempotent; different content fails closed.
+2. **Transactional activation & rollback:** `tp_active_policies` maintains `activation_sequence`
+   and `active_version`. Active updates and `tp_policy_lifecycle_transitions` history commit
+   atomically under a transaction-scoped workspace/policy advisory lock followed
+   by row locks (`FOR UPDATE`). This also serializes the first activation when
+   the active row is absent. A non-null `expectedActiveVersion` mismatch fails
+   with `PolicyConcurrencyException`; null is unconditional and the version
+   precondition is not an ABA-resistant generation check.
+3. **Rollback traversal:** rollback resolves predecessor activations from transition history,
+   supporting repeated rollback toggling and explicit target rollbacks.
+4. **Workspace isolation:** storage is partitioned by trusted caller-supplied `workspace_id`.
+   Unavailability fails closed without silent in-memory fallback.
+
+Writes own a fresh/exclusive READ COMMITTED connection lease, commit before
+returning, and restore its original modes after success. SQL and unchecked
+failures roll back without enabling auto-commit; rollback failure is suppressed.
+Ambiguous commit/restoration/close failure reports failure, not success or an
+automatic retry. Inspect durable pointer/history before further operator action.
+Idempotent activation uses the same connection; reactivation metadata agrees
+between the returned record and a fresh query. Caller-owned transactions and
+database-admin tamper resistance are not supported. Advisory lock acquisition
+has a five-second query timeout; there is no end-to-end latency guarantee.
+
+The current Java profile accepts versions 1..2147483647 and priorities
+-2147483648..2147483647, including negative priorities. Reject unsupported values
+before lifecycle insertion or dry-run evaluation rather than silently narrowing them.
+Actor tracking IDs are unauthenticated caller metadata, not verified operator provenance;
+DB history is not tamper-proof against a DBA; and pending-approval stale-policy integration
+and remote administration APIs remain deferred.
+See [ADR 0039](../architecture/0039-policy-lifecycle-staging-rollback-and-simulation.md).
 
 ## Authorization and execution
 
@@ -56,11 +102,30 @@ arguments. The executor has no route to a real AWS or Jira service.
    exact request binding. A request-body approval flag is never authority.
 5. On allow or valid approval, issue a short-lived request-bound permit.
    The executor checks signature, audience, hash, expiry, and single-use
-   claim before invoking the simulator. A denial issues no permit.
+   claim before invoking the simulator. Durable execution/approval already
+   inserts the permit with execution state and evidence in the existing
+   `PostgresDurableEnforcementState` transaction; it does not call standalone
+   `verifyAndConsume`. A denial issues no permit.
 6. Record only bounded, redacted evidence and expose read-only projections
    to the React console.
 
 ## State and transaction boundaries
+
+The optional standalone `PostgresPermitConsumptionStore` supports a separate
+consumption caller. Both authority overloads route by the organization in the
+private, hash-verified canonical action snapshot; an explicit tenant mismatch
+fails before storage. Missing/invalid tenant fails closed in the durable store.
+The port's legacy in-memory defaults retain global rather than tenant-aware
+replay tracking. Live durable claims require the verified action hash, never a
+hash fabricated from the permit ID.
+
+Consumption and foreign-key-aware pruning each own a fresh/exclusive database
+lease and commit before returning. Initially manual-transaction connections are
+supported; caller-owned/thread-bound transactions are not. SQL/commit/close
+failures never return success, rollback failures are preserved, and an ambiguous
+commit may leave a consumed row without dispatch. No automatic retry occurs.
+This standalone claim must not precede the composed durable claim transaction.
+See [ADR 0041](../architecture/0041-postgres-durable-permit-consumption.md).
 
 The default loopback demo uses process-local stores. Those stores are not
 safe for multi-replica or restart-persistent enforcement. The optional
@@ -80,18 +145,64 @@ verifies signed anchor receipts before storing immutable delivery evidence.
 The separate loopback `SimulatorApprovalServer` derives reviewer authority
 from verified access tokens plus operator-owned `ApprovalMemberships`.
 `DurableApprovalActionState` extends approval persistence with an atomic exact
-action snapshot and tenant-scoped reads. PostgreSQL V6 implements this port;
+action snapshot and tenant-scoped reads. PostgreSQL V6/V8 implements this port;
 `HumanApprovalService.requestApprovalWithSnapshot` requires it. Execution uses
 the original stored canonical action rather than a new client submission.
-The existing console and demo launchers do not use this foundation yet.
+In durable policy mode, approvals are bound to the active policy version,
+canonical content hash, and monotonic activation generation via
+`ApprovalPolicyBinding` and `tp_approval_policy_bindings` (migration V8).
+`HumanApprovalService` re-verifies generation prior to permit issuance, and
+`PostgresDurableEnforcementState.consumeAndClaim` locks `tp_active_policies` `FOR SHARE`,
+failing closed with `STALE_POLICY_GENERATION` if generation, version, or content
+hash differs from the binding snapshot. The durable service rejects unbound
+approvals. The raw claim port retains static compatibility only when both
+saved binding and claim policy context are absent; a saved binding cannot be
+bypassed by omitting claim context. This is not a database-global mode fence.
+Rollback to an identical prior policy version advances generation and rejects
+previous approvals. Stale pending/approved rows are retained, not automatically
+cancelled. See [ADR 0042](../architecture/0042-durable-policy-generation-binding.md).
+
+Activation after the Java precheck may allow an internal permit to be minted,
+but the atomic claim still prevents stale consumption and dispatch. Claim
+commit is the ordering point: later activation does not cancel a committed
+claim, and locks are released before target invocation.
+`PostgresPolicyGenerationBoundaryTest` forces both row-lock schedules and
+checks creation/precheck races, legacy compatibility, insert rollback and lost
+commit acknowledgement. Default launchers and the source-free distribution
+remain static-policy compositions; only the opt-in Java factory wires this
+durable lifecycle integration.
 
 `SimulatorApprovalConfiguration` validates private bounded POSIX files,
 explicit single-client/tenant OIDC trust, independent requester/reviewer enrollment,
 numeric loopback DB configuration and matching Ed25519 keys. The separate
-`SimulatorApprovalMain` runs migrations/schema verification before binding the
+`SimulatorApprovalMain` separates explicit empty-only `--init-db` from normal
+run. `PostgresDatabaseLifecycle` checks existing tables, invariant triggers,
+schema guard and complete migration history/checksums; strict state/permit-store
+factories never migrate. Legacy development constructors remain auto-migrating.
+See [ADR 0045](../architecture/0045-explicit-database-initialization.md).
+The runtime validates before binding the
 loopback approval service with a fixed default-block/explicit-approval policy.
 Offline check mode performs no DB, DNS, IdP or listener operation. See
 [ADR 0035](../architecture/0035-local-approval-operator-bootstrap.md).
+
+`packageSimulatorApprovalDistribution` packages the loopback approval API,
+runtime JARs, built React inbox assets, and a thin bash launcher
+(`tracepermit-simulator-approval`) into a host-native archive
+(`tracepermit-simulator-approval-0.1.0.tar.gz`). The launcher requires only
+Java 21 and forwards strictly to `SimulatorApprovalMain` without requiring a source
+checkout, Node, pnpm, or Gradle on the running host. Offline `--check` validates
+configuration, file permissions (0600/0400 owner-only), Ed25519 keypair math, and
+bundled assets without network, database, or IdP traffic. The archive includes
+`manifest.json` schema `1.1` recording the clean source Git commit and commit
+timestamp, package version, required Java 21, and SHA-256 dependency inventory,
+alongside `SHA256SUMS`. Commit/time/cleanliness are declared Gradle inputs;
+dirty or unavailable metadata fails packaging instead of emitting stale or
+`unknown` provenance. Tar metadata is normalized and sibling build outputs are
+excluded. Shared runtime JARs are not class-stripped; only the launcher entry
+point is fixed. Checksums provide file
+integrity verification, not third-party code signing. All credentials and private keys
+remain operator-owned outside the bundle. See
+[ADR 0040](../architecture/0040-source-free-simulator-approval-distribution.md).
 
 Signed artifacts use named canonicalization and algorithm profiles with
 allowlisted keys. An endpoint source proof binds the exact MCP method/params

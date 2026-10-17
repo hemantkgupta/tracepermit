@@ -12,16 +12,18 @@ import io.tracepermit.execution.InMemoryExecutionLedger;
 import io.tracepermit.policy.ClassificationContext;
 import io.tracepermit.policy.PolicyEvaluation;
 import io.tracepermit.policy.PolicyEvaluator;
+import io.tracepermit.policy.PolicyLifecycleService;
 import io.tracepermit.security.ExecutionPermitAuthority;
 
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Objects;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Supplier;
 
 public final class SecureExecutionService implements ActionEnforcer {
   private final PolicyEvaluator policyEvaluator;
-  private final JsonNode policy;
+  private final Supplier<JsonNode> policySupplier;
   private final ExecutionPermitAuthority permits;
   private final InMemoryExecutionLedger executions;
   private final InMemoryEvidenceLedger evidence;
@@ -31,10 +33,18 @@ public final class SecureExecutionService implements ActionEnforcer {
   private final String audience;
   private final ActionSanitizer sanitizer;
   private final ActionSequenceStore sequenceStore;
+  private final StripedMonitors stripes = new StripedMonitors();
 
-  public SecureExecutionService(PolicyEvaluator policyEvaluator, JsonNode policy, ExecutionPermitAuthority permits,
-      InMemoryExecutionLedger executions, InMemoryEvidenceLedger evidence, SimulatedTarget target,
-      Supplier<SecurityReadiness> readiness, Clock clock, String audience) {
+  public SecureExecutionService(
+      PolicyEvaluator policyEvaluator,
+      JsonNode policy,
+      ExecutionPermitAuthority permits,
+      InMemoryExecutionLedger executions,
+      InMemoryEvidenceLedger evidence,
+      SimulatedTarget target,
+      Supplier<SecurityReadiness> readiness,
+      Clock clock,
+      String audience) {
     this(
         policyEvaluator,
         policy,
@@ -61,8 +71,86 @@ public final class SecureExecutionService implements ActionEnforcer {
       String audience,
       ActionSanitizer sanitizer,
       ActionSequenceStore sequenceStore) {
+    this(
+        policyEvaluator,
+        () -> Objects.requireNonNull(policy, "policy must not be null").deepCopy(),
+        permits,
+        executions,
+        evidence,
+        target,
+        readiness,
+        clock,
+        audience,
+        sanitizer,
+        sequenceStore);
+  }
+
+  public SecureExecutionService(
+      PolicyLifecycleService policyLifecycleService,
+      String policyId,
+      ExecutionPermitAuthority permits,
+      InMemoryExecutionLedger executions,
+      InMemoryEvidenceLedger evidence,
+      SimulatedTarget target,
+      Supplier<SecurityReadiness> readiness,
+      Clock clock,
+      String audience) {
+    this(
+        policyLifecycleService,
+        policyId,
+        permits,
+        executions,
+        evidence,
+        target,
+        readiness,
+        clock,
+        audience,
+        ActionSanitizer.NONE,
+        ActionSequenceStore.DISABLED);
+  }
+
+  public SecureExecutionService(
+      PolicyLifecycleService policyLifecycleService,
+      String policyId,
+      ExecutionPermitAuthority permits,
+      InMemoryExecutionLedger executions,
+      InMemoryEvidenceLedger evidence,
+      SimulatedTarget target,
+      Supplier<SecurityReadiness> readiness,
+      Clock clock,
+      String audience,
+      ActionSanitizer sanitizer,
+      ActionSequenceStore sequenceStore) {
+    this(
+        Objects.requireNonNull(policyLifecycleService, "policyLifecycleService must not be null").evaluator(),
+        () -> policyLifecycleService.activeVersion(policyId)
+            .map(io.tracepermit.policy.PolicyVersionRecord::document)
+            .orElseThrow(() -> new IllegalStateException("NO_ACTIVE_POLICY: " + policyId)),
+        permits,
+        executions,
+        evidence,
+        target,
+        readiness,
+        clock,
+        audience,
+        sanitizer,
+        sequenceStore);
+  }
+
+  public SecureExecutionService(
+      PolicyEvaluator policyEvaluator,
+      Supplier<JsonNode> policySupplier,
+      ExecutionPermitAuthority permits,
+      InMemoryExecutionLedger executions,
+      InMemoryEvidenceLedger evidence,
+      SimulatedTarget target,
+      Supplier<SecurityReadiness> readiness,
+      Clock clock,
+      String audience,
+      ActionSanitizer sanitizer,
+      ActionSequenceStore sequenceStore) {
     this.policyEvaluator = Objects.requireNonNull(policyEvaluator);
-    this.policy = policy.deepCopy();
+    this.policySupplier = Objects.requireNonNull(policySupplier);
     this.permits = Objects.requireNonNull(permits);
     this.executions = Objects.requireNonNull(executions);
     this.evidence = Objects.requireNonNull(evidence);
@@ -75,65 +163,15 @@ public final class SecureExecutionService implements ActionEnforcer {
   }
 
   @Override
-  public synchronized ExecutionResult execute(JsonNode event) {
+  public ExecutionResult execute(JsonNode event) {
     if (!readiness.get().ready()) throw new IllegalStateException("SECURITY_DEPENDENCY_UNAVAILABLE");
     event = ActionValidator.validate(event);
-    Instant now = clock.instant();
-    ClassificationContext sequenceContext;
-    try {
-      sequenceContext = sequenceStore.contextFor(event, now);
-    } catch (RuntimeException failure) {
-      throw new IllegalStateException("SEQUENCE_STATE_UNAVAILABLE", failure);
-    }
-    PolicyEvaluation evaluation = policyEvaluator.evaluate(event, policy, sequenceContext);
-    appendEvidence("action.observed", event, evaluation);
-    appendEvidence("policy.evaluated", event, evaluation);
-    JsonNode effectiveEvent = event;
-    PolicyEvaluation effectiveEvaluation = evaluation;
-    SanitizationSummary sanitization = null;
-    if ("sanitize".equals(evaluation.decision().outcome())) {
-      SanitizedAction sanitized;
-      try {
-        sanitized = sanitizer.sanitize(event, evaluation, now).orElse(null);
-      } catch (RuntimeException failure) {
-        appendEvidence("sanitization.failed", event, evaluation);
-        return new ExecutionResult("sanitize", evaluation, null, null);
-      }
-      if (sanitized == null) {
-        appendEvidence("sanitization.unavailable", event, evaluation);
-        return new ExecutionResult("sanitize", evaluation, null, null);
-      }
-      effectiveEvent = sanitized.event();
-      sanitization = sanitized.summary();
-      if (!reviewedTransformation(event, evaluation, now, sanitized)) {
-        appendEvidence("sanitization.rejected", event, evaluation);
-        return new ExecutionResult("sanitize", evaluation, null, null);
-      }
-      effectiveEvaluation = policyEvaluator.evaluate(effectiveEvent, policy, sequenceContext);
-      appendSanitizationEvidence(event, sanitization, effectiveEvaluation);
-      appendEvidence("policy.re_evaluated", effectiveEvent, effectiveEvaluation);
-      if (!"allow".equals(effectiveEvaluation.decision().outcome())) {
-        appendEvidence("sanitization.unresolved", effectiveEvent, effectiveEvaluation);
-        return new ExecutionResult(
-            "sanitize",
-            evaluation,
-            null,
-            null,
-            effectiveEvent,
-            effectiveEvaluation,
-            sanitization);
-      }
-    } else if (!"allow".equals(evaluation.decision().outcome())) {
-      appendEvidence("authorization.denied", event, evaluation);
-      return new ExecutionResult(evaluation.decision().outcome(), evaluation, null, null);
-    }
-    // Record only authorized proposals. A denied read must not establish the
-    // cross-tool history used to classify a later external-send proposal.
-    try {
-      sequenceStore.record(effectiveEvent, effectiveEvaluation.classification(), now);
-    } catch (RuntimeException failure) {
-      throw new IllegalStateException("SEQUENCE_STATE_UNAVAILABLE", failure);
-    }
+    Authorized authorized = authorize(event);
+    if (authorized.denied() != null) return authorized.denied();
+    JsonNode effectiveEvent = authorized.effectiveEvent();
+    PolicyEvaluation evaluation = authorized.evaluation();
+    PolicyEvaluation effectiveEvaluation = authorized.effectiveEvaluation();
+    SanitizationSummary sanitization = authorized.sanitization();
     String permit =
         permits.issue(
             effectiveEvent,
@@ -181,6 +219,105 @@ public final class SecureExecutionService implements ActionEnforcer {
         sanitization == null ? null : effectiveEvent,
         effectiveEvaluation,
         sanitization);
+  }
+
+  /**
+   * Authorization window: the principal stripe lock protects the entire authorization
+   * transaction (timestamp capture, sequence snapshot, single active-policy snapshot,
+   * evaluation, optional reviewed sanitization and re-evaluation, and sequence record).
+   * Capturing the trusted timestamp after acquiring the stripe lock linearizes the
+   * observation timestamp with the principal's recorded sequence history, preventing
+   * concurrent actions from interleaving between timestamp capture and authorization.
+   * Principal-history records track authorized proposals, not universal target effects.
+   * Everything after the record relies on the components' own atomicity.
+   */
+  private Authorized authorize(JsonNode event) {
+    ReentrantLock stripe = stripes.lockFor(principalKey(event));
+    stripe.lock();
+    try {
+      Instant now = clock.instant();
+      ClassificationContext sequenceContext;
+      try {
+        sequenceContext = sequenceStore.contextFor(event, now);
+      } catch (RuntimeException failure) {
+        throw new IllegalStateException("SEQUENCE_STATE_UNAVAILABLE", failure);
+      }
+      JsonNode activePolicy = policySupplier.get();
+      PolicyEvaluation evaluation = policyEvaluator.evaluate(event, activePolicy, sequenceContext);
+      appendEvidence("action.observed", event, evaluation);
+      appendEvidence("policy.evaluated", event, evaluation);
+      JsonNode effectiveEvent = event;
+      PolicyEvaluation effectiveEvaluation = evaluation;
+      SanitizationSummary sanitization = null;
+      if ("sanitize".equals(evaluation.decision().outcome())) {
+        SanitizedAction sanitized;
+        try {
+          sanitized = sanitizer.sanitize(event, evaluation, now).orElse(null);
+        } catch (RuntimeException failure) {
+          appendEvidence("sanitization.failed", event, evaluation);
+          return denied(new ExecutionResult("sanitize", evaluation, null, null));
+        }
+        if (sanitized == null) {
+          appendEvidence("sanitization.unavailable", event, evaluation);
+          return denied(new ExecutionResult("sanitize", evaluation, null, null));
+        }
+        effectiveEvent = sanitized.event();
+        sanitization = sanitized.summary();
+        if (!reviewedTransformation(event, evaluation, now, sanitized)) {
+          appendEvidence("sanitization.rejected", event, evaluation);
+          return denied(new ExecutionResult("sanitize", evaluation, null, null));
+        }
+        effectiveEvaluation = policyEvaluator.evaluate(effectiveEvent, activePolicy, sequenceContext);
+        appendSanitizationEvidence(event, sanitization, effectiveEvaluation);
+        appendEvidence("policy.re_evaluated", effectiveEvent, effectiveEvaluation);
+        if (!"allow".equals(effectiveEvaluation.decision().outcome())) {
+          appendEvidence("sanitization.unresolved", effectiveEvent, effectiveEvaluation);
+          return denied(
+              new ExecutionResult(
+                  "sanitize",
+                  evaluation,
+                  null,
+                  null,
+                  effectiveEvent,
+                  effectiveEvaluation,
+                  sanitization));
+        }
+      } else if (!"allow".equals(evaluation.decision().outcome())) {
+        appendEvidence("authorization.denied", event, evaluation);
+        return denied(
+            new ExecutionResult(evaluation.decision().outcome(), evaluation, null, null));
+      }
+      // Record only authorized proposals. A denied read must not establish the
+      // cross-tool history used to classify a later external-send proposal.
+      try {
+        sequenceStore.record(effectiveEvent, effectiveEvaluation.classification(), now);
+      } catch (RuntimeException failure) {
+        throw new IllegalStateException("SEQUENCE_STATE_UNAVAILABLE", failure);
+      }
+      return new Authorized(null, evaluation, effectiveEvaluation, effectiveEvent, sanitization);
+    } finally {
+      stripe.unlock();
+    }
+  }
+
+  private static Authorized denied(ExecutionResult result) {
+    return new Authorized(result, null, null, null, null);
+  }
+
+  private record Authorized(
+      ExecutionResult denied,
+      PolicyEvaluation evaluation,
+      PolicyEvaluation effectiveEvaluation,
+      JsonNode effectiveEvent,
+      SanitizationSummary sanitization) {}
+
+  /**
+   * Stripe domain equal to the sequence store's principal keying; the store's own
+   * derivation is private, so it is duplicated here and must not drift.
+   */
+  private static String principalKey(JsonNode event) {
+    JsonNode subject = event.path("identity").path("subject");
+    return subject.path("organizationId").asText() + "\u0000" + subject.path("id").asText();
   }
 
   private static boolean reviewedTransformation(

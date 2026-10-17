@@ -105,13 +105,8 @@ public final class DurableExecutionService implements TenantActionEnforcer {
       throw uncertain;
     }
 
-    ExecutionAttempt attempt;
-    try {
-      attempt = state.complete(
-          context.tenant(), begun.attempt().attemptId(), "succeeded", "TARGET_CONFIRMED_SUCCESS", clock.instant());
-    } catch (RuntimeException failure) {
-      throw new IllegalStateException("DURABLE_STATE_UNAVAILABLE_AFTER_DISPATCH", failure);
-    }
+    ExecutionAttempt attempt = DurableOutcomeRecorder.complete(
+        state, context.tenant(), begun.attempt(), "succeeded", "TARGET_CONFIRMED_SUCCESS", clock);
     return new ExecutionResult("succeeded", evaluation, attempt, result);
   }
 
@@ -122,10 +117,10 @@ public final class DurableExecutionService implements TenantActionEnforcer {
       String reasonCode,
       RuntimeException targetFailure) {
     try {
-      state.complete(context.tenant(), attempt.attemptId(), outcome, reasonCode, clock.instant());
+      DurableOutcomeRecorder.complete(state, context.tenant(), attempt, outcome, reasonCode, clock);
     } catch (RuntimeException persistenceFailure) {
-      persistenceFailure.addSuppressed(targetFailure);
-      throw new IllegalStateException("DURABLE_STATE_UNAVAILABLE_AFTER_DISPATCH", persistenceFailure);
+      if (persistenceFailure != targetFailure) persistenceFailure.addSuppressed(targetFailure);
+      throw persistenceFailure;
     }
   }
 

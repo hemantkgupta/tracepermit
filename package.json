@@ -19,6 +19,7 @@
     "dev:console": "pnpm --filter @tracepermit/console dev",
     "dev:approvals": "scripts/run-java-simulator-approvals.sh",
     "demo:approvals:browser": "bash scripts/run-approval-browser-qualification.sh",
+    "test:approvals:browser": "node --test scripts/approval-history-browser.test.mjs",
     "demo:approvals:codex": "bash scripts/run-approval-codex-qualification.sh",
     "site:dev": "npm --prefix site run dev",
     "site:build": "npm --prefix site run build",
@@ -63,10 +64,13 @@
     "test:approval-api": "scripts/run-java-approval-api-tests.sh",
     "java:env-check": "scripts/test-java-environment.sh",
     "build:java-endpoint": "scripts/build-java-endpoint-connector.sh",
-    "test:endpoint-connector-e2e": "scripts/test-java-endpoint-connector-e2e.sh"
+    "test:endpoint-connector-e2e": "scripts/test-java-endpoint-connector-e2e.sh",
+    "build:distribution": "scripts/build-simulator-approval-distribution.sh",
+    "test:distribution": "node --test scripts/simulator-approval-distribution.test.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.7.2",
+    "playwright": "1.64.1",
     "prettier": "^3.6.2",
     "typescript": "^5.9.3",
     "vitest": "^4.1.11"

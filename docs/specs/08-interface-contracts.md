@@ -33,11 +33,25 @@ launcher starts these routes. See the
 [API runbook](../runbooks/authenticated-approval-api-foundation.md) and
 [ADR 0034](../architecture/0034-authenticated-loopback-approval-api.md).
 
+The collection GET now accepts exact `status`, `toolName`, `approvalRequestId`,
+bounded `limit` and unsigned `cursor` parameters. Responses add `pageSize`,
+nullable `nextCursor` and per-item `createdAt`. Every page re-derives tenant/owner
+authority before a bounded read-only PostgreSQL query and existing redacted
+projection. All other approval routes and MCP envelopes retain query rejection.
+This is approval history, not full action search or snapshot export. See the
+[history contract](../runbooks/approval-history-api.md) and
+[ADR 0046](../architecture/0046-authenticated-approval-history-pagination.md).
+
 The optional `pnpm dev:approvals` command starts only this separate local API
 from private operator JSON. `--check` validates offline, not IdP/DB readiness.
 Its numeric-loopback listener/database, one-client/tenant enrollment, persistent
 Ed25519 files, fixed default-block policy and migration behavior are specified
-in [ADR 0035](../architecture/0035-local-approval-operator-bootstrap.md).
+in [ADR 0035](../architecture/0035-local-approval-operator-bootstrap.md), with
+schema lifecycle superseded by [ADR 0045](../architecture/0045-explicit-database-initialization.md):
+`--check` is offline; `--init-db` installs only fresh empty state without
+starting a listener; normal run validates existing state without implicit DDL.
+Failures return exit 2/code-only redacted diagnostics; no public init, repair,
+upgrade or recovery-resume HTTP/MCP endpoint is added.
 The `/health`, `/ready` and `/mcp` surfaces below belong to other compositions,
 not to this approval listener.
 
@@ -161,6 +175,11 @@ The simulated termination tool accepts only 1–10 IDs matching
 destructive production action and reaches policy, whose explicit deny rule
 prevents executor invocation. An unregistered tool is instead rejected at the
 MCP boundary and does not reach policy.
+
+When dispatcher enforcement capacity is saturated, proposals fail closed
+without queueing. The tool call returns an MCP tool error (`isError: true`) with
+`error: "ENFORCEMENT_CAPACITY_EXCEEDED"`, `execution.status: "not_executed"`,
+and does not invoke the enforcer or target.
 
 ### Java MCP stdio connector
 
@@ -400,69 +419,70 @@ Its deny and approval controls are disabled and do not construct HTTP requests.
 
 ## 4. Current error semantics
 
-| Code                                       | Meaning                                                 | Execution state      |
-| ------------------------------------------ | ------------------------------------------------------- | -------------------- |
-| `INVALID_ACTION`                           | Schema, identity, or lineage validation failed          | `not_executed`       |
-| `MISSING_BEARER_TOKEN`                     | Authentication header missing/invalid form              | No dispatch          |
-| `MALFORMED_ACCESS_TOKEN`                   | Token encoding or JSON cannot be safely parsed          | No dispatch          |
-| `INVALID_ACCESS_TOKEN`                     | Token claims or signature invalid                       | No dispatch          |
-| `EXPIRED_ACCESS_TOKEN`                     | Token lifetime elapsed                                  | No dispatch          |
-| `OIDC_CONFIGURATION_UNAVAILABLE`           | Trusted provider registry could not answer              | No dispatch          |
-| `OIDC_KEY_SET_UNAVAILABLE`                 | Configured OIDC verification keys unavailable           | No dispatch          |
-| `AUTHENTICATION_REQUIRED`                  | Remote OAuth credential is missing                      | No dispatch          |
-| `AUTHENTICATION_UNAVAILABLE`               | Remote OAuth trust dependency is unavailable            | No dispatch          |
-| `INVALID_SENDER_CONSTRAINT`                | Token certificate binding is absent or does not match   | No dispatch          |
-| `RATE_LIMITED`                             | Network or authenticated-principal quota is exhausted   | No dispatch          |
-| `ABUSE_CONTROL_UNAVAILABLE`                | Required rate/abuse state cannot be claimed             | No dispatch          |
-| `REMOTE_EDGE_NOT_READY`                    | A hardened deployment prerequisite is unavailable       | No dispatch          |
-| `INVALID_HOST`                             | Remote request Host is outside the exact allowlist      | No dispatch          |
-| `ORIGIN_NOT_ALLOWED`                       | Present remote request Origin is not allowed            | No dispatch          |
-| `REQUEST_TOO_LARGE`                        | Remote MCP body exceeds its configured bound            | No dispatch          |
-| `INVALID_MCP_REQUEST`                      | Remote MCP JSON/framing is malformed or ambiguous       | No dispatch          |
-| `UNSUPPORTED_MEDIA_TYPE`                   | Remote MCP body is not JSON                             | No dispatch          |
-| `REMOTE_TOOL_INVOCATION_NOT_CONFIGURED`    | Remote foundation intentionally has no tools/call path  | No dispatch          |
-| `REMOTE_CONNECTOR_ORIGIN_NOT_SUPPORTED`    | Connector origin requires another trusted adapter       | No dispatch          |
-| `TOOL_NOT_FOUND`                           | Remote tool is not registered                           | No dispatch          |
-| `INVALID_TOOL_ARGUMENTS`                   | Remote tool arguments violate the exact schema          | No dispatch          |
-| `REMOTE_ENFORCEMENT_FAILED`                | Remote action failed safely inside enforcement          | Not executed/unknown |
-| `MISSING_SOURCE_ATTESTATION`               | Required CLI source proof is absent                     | No dispatch          |
-| `MALFORMED_SOURCE_ATTESTATION`             | Source JWS encoding is malformed                        | No dispatch          |
-| `INVALID_SOURCE_ATTESTATION`               | Source signature, claims, or binding is invalid         | No dispatch          |
-| `EXPIRED_SOURCE_ATTESTATION`               | Source proof lifetime elapsed                           | No dispatch          |
-| `SOURCE_ATTESTATION_NOT_ALLOWED`           | A web profile attempted to supply endpoint proof        | No dispatch          |
-| `SOURCE_TRIGGER_NOT_INTERACTIVE`           | Current CLI profile lacks interactive evidence          | No dispatch          |
-| `SOURCE_ATTESTATION_REPLAYED`              | Source proof token ID was already consumed              | No dispatch          |
-| `SOURCE_ATTESTATION_UNAVAILABLE`           | Required endpoint verifier/replay port is absent        | No dispatch          |
-| `INVALID_SCHEDULED_ACTION`                 | Scheduled envelope or trusted-field boundary invalid    | No dispatch          |
-| `MALFORMED_WORKLOAD_CREDENTIAL`            | Workload compact encoding is malformed                  | No dispatch          |
-| `INVALID_WORKLOAD_CREDENTIAL`              | Workload signature, trust, claims, or binding invalid   | No dispatch          |
-| `EXPIRED_WORKLOAD_CREDENTIAL`              | Workload proof lifetime elapsed                         | No dispatch          |
-| `WORKLOAD_KEY_REVOKED`                     | Registered workload-verification key is revoked         | No dispatch          |
-| `WORKLOAD_CREDENTIAL_REVOKED`              | Workload credential token is revoked                    | No dispatch          |
-| `WORKLOAD_REVOCATION_UNAVAILABLE`          | Workload revocation status is unknown                   | No dispatch          |
-| `WORKLOAD_CREDENTIAL_REPLAYED`             | Workload token ID was already consumed                  | No dispatch          |
-| `MALFORMED_DELEGATION_CREDENTIAL`          | Delegation compact encoding is malformed                | No dispatch          |
-| `INVALID_DELEGATION_CREDENTIAL`            | Delegation signature, trust, claims, or binding invalid | No dispatch          |
-| `EXPIRED_DELEGATION_CREDENTIAL`            | Delegation lifetime elapsed                             | No dispatch          |
-| `DELEGATION_KEY_REVOKED`                   | Registered delegation-signing key is revoked            | No dispatch          |
-| `DELEGATION_REVOKED`                       | Delegation grant is revoked                             | No dispatch          |
-| `DELEGATION_REVOCATION_UNAVAILABLE`        | Delegation revocation status is unknown                 | No dispatch          |
-| `INVALID_DELEGATION_CHAIN`                 | Complete chain/topology/narrowing/leaf check failed     | No dispatch          |
-| `ENDPOINT_OBSERVATION_UNAVAILABLE`         | Required process/session facts could not be read        | No dispatch          |
-| `ENDPOINT_EXECUTABLE_CHANGED`              | Observed executable changed before forwarding           | No dispatch          |
-| `ENDPOINT_KEY_UNAVAILABLE`                 | Development signing provider is unavailable             | No dispatch          |
-| `CONNECTOR_CREDENTIAL_UNAVAILABLE`         | Connector credential is absent or unsafe                | No dispatch          |
-| `GATEWAY_UNAVAILABLE`                      | Loopback gateway could not be reached safely            | No dispatch          |
-| `AUTHORIZATION_DENIED`                     | Authenticated identity lacks invocation authority       | `not_executed`       |
-| `SANITIZER_NOT_CONFIGURED`                 | Policy required unavailable transformation              | `not_executed`       |
-| `EXECUTION_PERMIT_ISSUANCE_FAILED`         | Allow could not become execution authority              | `not_executed`       |
-| `TARGET_EXECUTION_FAILED`                  | Executor or target path failed                          | `failed`             |
-| `EXECUTION_ALREADY_IN_PROGRESS`            | Same logical event is currently running                 | `executing`          |
-| `EXECUTION_PREVIOUSLY_FAILED`              | Prior attempt has a confirmed failure                   | `failed`             |
-| `EXECUTION_OUTCOME_UNKNOWN`                | Prior target outcome requires reconciliation            | `unknown`            |
-| `DURABLE_STATE_UNAVAILABLE`                | Required claim/evidence transaction failed              | Not dispatched       |
-| `DURABLE_STATE_UNAVAILABLE_AFTER_DISPATCH` | Outcome could not be durably recorded after dispatch    | `executing`/unknown  |
-| `SECURITY_DEPENDENCY_UNAVAILABLE`          | A required enforcement dependency is unavailable        | `not_executed`       |
+| Code                                       | Meaning                                                      | Execution state      |
+| ------------------------------------------ | ------------------------------------------------------------ | -------------------- |
+| `INVALID_ACTION`                           | Schema, identity, or lineage validation failed               | `not_executed`       |
+| `MISSING_BEARER_TOKEN`                     | Authentication header missing/invalid form                   | No dispatch          |
+| `MALFORMED_ACCESS_TOKEN`                   | Token encoding or JSON cannot be safely parsed               | No dispatch          |
+| `INVALID_ACCESS_TOKEN`                     | Token claims or signature invalid                            | No dispatch          |
+| `EXPIRED_ACCESS_TOKEN`                     | Token lifetime elapsed                                       | No dispatch          |
+| `OIDC_CONFIGURATION_UNAVAILABLE`           | Trusted provider registry could not answer                   | No dispatch          |
+| `OIDC_KEY_SET_UNAVAILABLE`                 | Configured OIDC verification keys unavailable                | No dispatch          |
+| `AUTHENTICATION_REQUIRED`                  | Remote OAuth credential is missing                           | No dispatch          |
+| `AUTHENTICATION_UNAVAILABLE`               | Remote OAuth trust dependency is unavailable                 | No dispatch          |
+| `INVALID_SENDER_CONSTRAINT`                | Token certificate binding is absent or does not match        | No dispatch          |
+| `RATE_LIMITED`                             | Network or authenticated-principal quota is exhausted        | No dispatch          |
+| `ABUSE_CONTROL_UNAVAILABLE`                | Required rate/abuse state cannot be claimed                  | No dispatch          |
+| `REMOTE_EDGE_NOT_READY`                    | A hardened deployment prerequisite is unavailable            | No dispatch          |
+| `INVALID_HOST`                             | Remote request Host is outside the exact allowlist           | No dispatch          |
+| `ORIGIN_NOT_ALLOWED`                       | Present remote request Origin is not allowed                 | No dispatch          |
+| `REQUEST_TOO_LARGE`                        | Remote MCP body exceeds its configured bound                 | No dispatch          |
+| `INVALID_MCP_REQUEST`                      | Remote MCP JSON/framing is malformed or ambiguous            | No dispatch          |
+| `UNSUPPORTED_MEDIA_TYPE`                   | Remote MCP body is not JSON                                  | No dispatch          |
+| `REMOTE_TOOL_INVOCATION_NOT_CONFIGURED`    | Remote foundation intentionally has no tools/call path       | No dispatch          |
+| `REMOTE_CONNECTOR_ORIGIN_NOT_SUPPORTED`    | Connector origin requires another trusted adapter            | No dispatch          |
+| `TOOL_NOT_FOUND`                           | Remote tool is not registered                                | No dispatch          |
+| `INVALID_TOOL_ARGUMENTS`                   | Remote tool arguments violate the exact schema               | No dispatch          |
+| `REMOTE_ENFORCEMENT_FAILED`                | Remote action failed safely inside enforcement               | Not executed/unknown |
+| `MISSING_SOURCE_ATTESTATION`               | Required CLI source proof is absent                          | No dispatch          |
+| `MALFORMED_SOURCE_ATTESTATION`             | Source JWS encoding is malformed                             | No dispatch          |
+| `INVALID_SOURCE_ATTESTATION`               | Source signature, claims, or binding is invalid              | No dispatch          |
+| `EXPIRED_SOURCE_ATTESTATION`               | Source proof lifetime elapsed                                | No dispatch          |
+| `SOURCE_ATTESTATION_NOT_ALLOWED`           | A web profile attempted to supply endpoint proof             | No dispatch          |
+| `SOURCE_TRIGGER_NOT_INTERACTIVE`           | Current CLI profile lacks interactive evidence               | No dispatch          |
+| `SOURCE_ATTESTATION_REPLAYED`              | Source proof token ID was already consumed                   | No dispatch          |
+| `SOURCE_ATTESTATION_UNAVAILABLE`           | Required endpoint verifier/replay port is absent             | No dispatch          |
+| `INVALID_SCHEDULED_ACTION`                 | Scheduled envelope or trusted-field boundary invalid         | No dispatch          |
+| `MALFORMED_WORKLOAD_CREDENTIAL`            | Workload compact encoding is malformed                       | No dispatch          |
+| `INVALID_WORKLOAD_CREDENTIAL`              | Workload signature, trust, claims, or binding invalid        | No dispatch          |
+| `EXPIRED_WORKLOAD_CREDENTIAL`              | Workload proof lifetime elapsed                              | No dispatch          |
+| `WORKLOAD_KEY_REVOKED`                     | Registered workload-verification key is revoked              | No dispatch          |
+| `WORKLOAD_CREDENTIAL_REVOKED`              | Workload credential token is revoked                         | No dispatch          |
+| `WORKLOAD_REVOCATION_UNAVAILABLE`          | Workload revocation status is unknown                        | No dispatch          |
+| `WORKLOAD_CREDENTIAL_REPLAYED`             | Workload token ID was already consumed                       | No dispatch          |
+| `MALFORMED_DELEGATION_CREDENTIAL`          | Delegation compact encoding is malformed                     | No dispatch          |
+| `INVALID_DELEGATION_CREDENTIAL`            | Delegation signature, trust, claims, or binding invalid      | No dispatch          |
+| `EXPIRED_DELEGATION_CREDENTIAL`            | Delegation lifetime elapsed                                  | No dispatch          |
+| `DELEGATION_KEY_REVOKED`                   | Registered delegation-signing key is revoked                 | No dispatch          |
+| `DELEGATION_REVOKED`                       | Delegation grant is revoked                                  | No dispatch          |
+| `DELEGATION_REVOCATION_UNAVAILABLE`        | Delegation revocation status is unknown                      | No dispatch          |
+| `INVALID_DELEGATION_CHAIN`                 | Complete chain/topology/narrowing/leaf check failed          | No dispatch          |
+| `ENDPOINT_OBSERVATION_UNAVAILABLE`         | Required process/session facts could not be read             | No dispatch          |
+| `ENDPOINT_EXECUTABLE_CHANGED`              | Observed executable changed before forwarding                | No dispatch          |
+| `ENDPOINT_KEY_UNAVAILABLE`                 | Development signing provider is unavailable                  | No dispatch          |
+| `CONNECTOR_CREDENTIAL_UNAVAILABLE`         | Connector credential is absent or unsafe                     | No dispatch          |
+| `GATEWAY_UNAVAILABLE`                      | Loopback gateway could not be reached safely                 | No dispatch          |
+| `AUTHORIZATION_DENIED`                     | Authenticated identity lacks invocation authority            | `not_executed`       |
+| `SANITIZER_NOT_CONFIGURED`                 | Policy required unavailable transformation                   | `not_executed`       |
+| `EXECUTION_PERMIT_ISSUANCE_FAILED`         | Allow could not become execution authority                   | `not_executed`       |
+| `TARGET_EXECUTION_FAILED`                  | Executor or target path failed                               | `failed`             |
+| `EXECUTION_ALREADY_IN_PROGRESS`            | Same logical event is currently running                      | `executing`          |
+| `EXECUTION_PREVIOUSLY_FAILED`              | Prior attempt has a confirmed failure                        | `failed`             |
+| `EXECUTION_OUTCOME_UNKNOWN`                | Prior target outcome requires reconciliation                 | `unknown`            |
+| `DURABLE_STATE_UNAVAILABLE`                | Required claim/evidence transaction failed                   | Not dispatched       |
+| `DURABLE_STATE_UNAVAILABLE_AFTER_DISPATCH` | Outcome could not be durably recorded after dispatch         | `executing`/unknown  |
+| `SECURITY_DEPENDENCY_UNAVAILABLE`          | A required enforcement dependency is unavailable             | `not_executed`       |
+| `ENFORCEMENT_CAPACITY_EXCEEDED`            | Saturated enforcement capacity fails closed without queueing | `not_executed`       |
 
 Production evidence should retain a more precise internal reason while public
 responses stay bounded.
@@ -482,6 +502,26 @@ issuedAt, expiresAt, maxUses=1
 The current compact token uses an HS256 header with an ephemeral key. The
 enterprise format must add an explicit canonicalization profile and use a
 reviewed asymmetric/KMS-backed signing configuration.
+
+### Standalone Java consumption adapter
+
+`ExecutionPermitAuthority.verifyAndConsume` snapshots the action before verifying
+its hash. The explicit-tenant overload rejects null, invalid or different tenant
+IDs with `PERMIT_TENANT_MISMATCH` before a claim. Both overloads route to the
+organization in that same verified action, not a configured default namespace.
+The PostgreSQL adapter rejects a missing/invalid organization and requires the
+verified canonical action hash for live claims; no-hash overloads fail closed.
+Legacy in-memory ports retain global replay tracking, not tenant-aware isolation.
+
+Standalone consumption and pruning own fresh/exclusive DataSource leases and
+commit before returning. SQL/commit/close failures never return success; an
+ambiguous acknowledgement can leave a consumed row and is not permission to
+retry or dispatch. Caller-owned/thread-bound transactions are unsupported.
+These Java ports do not authenticate body claims or expose a new remote API.
+The existing durable execution/approval services instead consume permits with
+execution state and evidence in their established atomic transaction; do not
+pre-consume through this adapter. See
+[ADR 0041](../architecture/0041-postgres-durable-permit-consumption.md).
 
 ## 6. Audit evidence contract
 
@@ -580,6 +620,28 @@ GET    /api/v1/evidence
 Control-plane APIs require tenant-aware authorization distinct from an agent's
 tool-execution authority.
 
+The Java `PolicyLifecycleService` delegates to an in-memory or optional PostgreSQL
+store and does not implement the policy mutation endpoints listed above. Its current runtime profile requires
+policy versions 1..2147483647 and rule priorities -2147483648..2147483647;
+negative priorities are allowed. Unsupported numeric values fail closed before
+catalog mutation; they are not truncated to a different identity or precedence.
+The frozen policy JSON schema retains its wider language-neutral safe-integer
+envelope. Widening the Java profile requires an end-to-end compatibility decision,
+not a local integer cast. Returned lifecycle documents are defensive copies,
+not writable references to active/staged/rollback state.
+
+The durable store uses trusted caller workspace names and optional expected
+active-version preconditions, not HTTP authentication or ETags. Null means an
+unconditional serialized transition; comparison is by version, not an
+ABA-resistant activation generation. First activation is serialized even before
+an active row exists. Immutable revision identity/content and lifecycle history
+persist through Flyway V7; lifecycle state/timestamps can change. Store writes
+own exclusive transactions, including on auto-commit-disabled leases; idempotent
+activation does not acquire a nested connection. Transaction/commit/close errors
+do not report success or automatically retry. A failure can follow a durable
+commit, so read the pointer/history before deciding what to do next. See the
+[lifecycle runbook](../runbooks/durable-policy-lifecycle.md).
+
 The listed approval endpoints remain target APIs. The request-bound approval implementation deliberately does
 not expose them until production reviewer authentication, tenant roles, CSRF/
 session behavior, concurrency/idempotency responses, and mutation audit are
@@ -594,7 +656,19 @@ specified and implemented.
 - Duplicate idempotent requests return the original result or a conflict with
   a safe reference.
 
-## 9. Protocol compatibility
+## 9. Durable outcome-recording uncertainty
+
+After dispatch, a completion exception produces
+`DURABLE_STATE_UNAVAILABLE_AFTER_DISPATCH` even if commit may have succeeded.
+The direct and approval services make one additional same-tenant/attempt unknown
+recording; the PostgreSQL operation accepts only executing state and atomically
+records evidence/outbox and a lookup queue entry. Already committed succeeded,
+failed or unknown state is not overwritten. No target retry, replacement claim
+or restored approval authority is implied. A persistent outage/crash can still
+leave executing state; no automatic worker or restore fence is added. See
+[the completion runbook](../runbooks/durable-completion-uncertainty.md).
+
+## 10. Protocol compatibility
 
 The current MCP implementation supports the 2026-07-28 protocol and a stateless
 request/response fallback for 2025-era clients. Legacy session GET/DELETE,

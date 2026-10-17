@@ -35,7 +35,6 @@ import io.tracepermit.identity.CredentialFingerprint;
 import io.tracepermit.identity.TokenSenderConstraint;
 import io.tracepermit.policy.PolicyEvaluator;
 import io.tracepermit.security.ExecutionPermitAuthority;
-import io.tracepermit.security.InMemoryPermitConsumptionStore;
 import io.tracepermit.simulator.StatefulTargetSimulator;
 import org.flywaydb.core.api.FlywayException;
 import org.junit.jupiter.api.AfterAll;
@@ -103,7 +102,8 @@ final class PostgresDurableEnforcementStateTest {
     state = repository(dataSource);
     try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {
       statement.execute("""
-          TRUNCATE tp_approval_action_snapshots, tp_approval_transitions, tp_approval_requests,
+          TRUNCATE tp_approval_policy_bindings,
+                   tp_approval_action_snapshots, tp_approval_transitions, tp_approval_requests,
                    tp_evidence_anchors, tp_evidence_outbox,
                    tp_evidence_events, tp_evidence_streams,
                    tp_reconciliation_queue,
@@ -583,7 +583,7 @@ final class PostgresDurableEnforcementStateTest {
         incompatible, PostgresDurableEnforcementState.MIGRATION_LOCATION);
     try (Connection connection = incompatible.getConnection(); Statement statement = connection.createStatement()) {
       statement.execute("ALTER TABLE tp_enforcement_schema_guard DROP CONSTRAINT tp_enforcement_schema_guard_contract_version_check");
-      statement.execute("UPDATE tp_enforcement_schema_guard SET contract_version = 7");
+      statement.execute("UPDATE tp_enforcement_schema_guard SET contract_version = 9");
     }
     assertThatThrownBy(() -> new PostgresDurableEnforcementState(
         incompatible, Clock.fixed(NOW, ZoneOffset.UTC), PostgresDurableEnforcementStateTest::nextId))
@@ -1021,7 +1021,7 @@ final class PostgresDurableEnforcementStateTest {
         30,
         Clock.fixed(NOW, ZoneOffset.UTC),
         () -> "permit-service-" + permits.incrementAndGet(),
-        new InMemoryPermitConsumptionStore());
+        new PostgresPermitConsumptionStore(dataSource, ACME));
     return new DurableExecutionService(
         new PolicyEvaluator(),
         JsonSupport.read(ROOT.resolve("policies/aws-web-readonly.json")),
@@ -1046,7 +1046,7 @@ final class PostgresDurableEnforcementStateTest {
         30,
         serviceClock,
         () -> "approval-permit-" + IDS.incrementAndGet(),
-        new InMemoryPermitConsumptionStore());
+        new PostgresPermitConsumptionStore(dataSource, ACME));
     return new HumanApprovalService(
         new PolicyEvaluator(),
         activePolicy,

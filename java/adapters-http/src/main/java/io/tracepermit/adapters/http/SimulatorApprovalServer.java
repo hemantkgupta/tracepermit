@@ -16,6 +16,7 @@ import io.tracepermit.application.TrustedTenantContext;
 import io.tracepermit.contracts.ActionValidator;
 import io.tracepermit.contracts.CanonicalJson;
 import io.tracepermit.contracts.JsonSupport;
+import io.tracepermit.contracts.redaction.EvidenceRedactor;
 import io.tracepermit.execution.ApprovalRequestState;
 import io.tracepermit.execution.InMemoryExecutionLedger;
 import io.tracepermit.identity.AuthenticatedConnector;
@@ -24,6 +25,7 @@ import io.tracepermit.identity.ConnectorScope;
 import io.tracepermit.identity.OidcAccessTokenVerifier;
 import io.tracepermit.persistence.postgres.PostgresDurableEnforcementState;
 import io.tracepermit.policy.PolicyEvaluator;
+import io.tracepermit.policy.PolicyLifecycleStore;
 import io.tracepermit.security.ExecutionPermitAuthority;
 import io.tracepermit.simulator.StatefulTargetSimulator;
 import java.io.IOException;
@@ -80,6 +82,30 @@ public final class SimulatorApprovalServer implements AutoCloseable {
         simulator, clock, browser);
   }
 
+  public static SimulatorApprovalServer start(
+      InetSocketAddress address, OidcAccessTokenVerifier verifier, ApprovalMemberships memberships,
+      PostgresDurableEnforcementState state, PolicyLifecycleStore policyStore, String workspaceId,
+      String policyId, ExecutionPermitAuthority permits, StatefulTargetSimulator simulator, Clock clock)
+      throws IOException {
+    if (address.getAddress() == null
+        || !"127.0.0.1".equals(address.getAddress().getHostAddress())) {
+      throw new IllegalArgumentException("The approval foundation must bind to IPv4 loopback.");
+    }
+    return start(address, verifier, memberships, state, policyStore, workspaceId, policyId, permits, simulator, clock, null);
+  }
+
+  static SimulatorApprovalServer start(
+      InetSocketAddress address, OidcAccessTokenVerifier verifier, ApprovalMemberships memberships,
+      PostgresDurableEnforcementState state, PolicyLifecycleStore policyStore, String workspaceId,
+      String policyId, ExecutionPermitAuthority permits, StatefulTargetSimulator simulator, Clock clock,
+      ApprovalBrowserAdapter browser) throws IOException {
+    if (address.getAddress() == null || !"127.0.0.1".equals(address.getAddress().getHostAddress())) {
+      throw new IllegalArgumentException("The approval foundation must bind to IPv4 loopback.");
+    }
+    return new SimulatorApprovalServer(address, verifier, memberships, state, policyStore, workspaceId,
+        policyId, permits, simulator, clock, browser);
+  }
+
   private SimulatorApprovalServer(
       InetSocketAddress address, OidcAccessTokenVerifier verifier, ApprovalMemberships memberships,
       PostgresDurableEnforcementState state, JsonNode policy, ExecutionPermitAuthority permits,
@@ -91,6 +117,27 @@ public final class SimulatorApprovalServer implements AutoCloseable {
     this.clock = java.util.Objects.requireNonNull(clock);
     this.approvals = new HumanApprovalService(new PolicyEvaluator(), policy, permits, state, state,
         simulator, () -> SecurityReadiness.allReady(clock.instant()), clock,
+        () -> UUID.randomUUID().toString(), "urn:tracepermit:approval-api:simulator", "simulator", 300);
+    this.server = HttpServer.create(address, 32);
+    // Bounded parallelism; this local foundation is not a production abuse-control layer.
+    this.workers = Executors.newFixedThreadPool(8);
+    server.setExecutor(workers);
+    server.createContext("/", this::handle);
+    server.start();
+  }
+
+  private SimulatorApprovalServer(
+      InetSocketAddress address, OidcAccessTokenVerifier verifier, ApprovalMemberships memberships,
+      PostgresDurableEnforcementState state, PolicyLifecycleStore policyStore, String workspaceId,
+      String policyId, ExecutionPermitAuthority permits, StatefulTargetSimulator simulator, Clock clock,
+      ApprovalBrowserAdapter browser) throws IOException {
+    this.browser = browser;
+    this.verifier = java.util.Objects.requireNonNull(verifier);
+    this.memberships = java.util.Objects.requireNonNull(memberships);
+    this.state = java.util.Objects.requireNonNull(state);
+    this.clock = java.util.Objects.requireNonNull(clock);
+    this.approvals = new HumanApprovalService(new PolicyEvaluator(), policyStore, workspaceId, policyId,
+        permits, state, state, simulator, () -> SecurityReadiness.allReady(clock.instant()), clock,
         () -> UUID.randomUUID().toString(), "urn:tracepermit:approval-api:simulator", "simulator", 300);
     this.server = HttpServer.create(address, 32);
     // Bounded parallelism; this local foundation is not a production abuse-control layer.
@@ -138,7 +185,8 @@ public final class SimulatorApprovalServer implements AutoCloseable {
       // A cnf claim is not proof of possession; this bearer-only local adapter cannot verify it.
       if (connector.senderConstraint().isPresent()) throw failure(401, "SENDER_PROOF_NOT_SUPPORTED");
       ApprovalMemberships.Entry member = memberships.resolve(connector);
-      if (uri.getRawQuery() != null) {
+      if (uri.getRawQuery() != null
+          && !(ROOT.equals(path) && "GET".equals(exchange.getRequestMethod()))) {
         throw failure(400, "INVALID_REQUEST");
       }
       String method = exchange.getRequestMethod();
@@ -175,9 +223,14 @@ public final class SimulatorApprovalServer implements AutoCloseable {
           var items = page.putArray("items");
           String owner = member.roles().equals(Set.of(ApprovalMemberships.Role.REQUESTER))
               ? member.principalId() : null;
-          for (var approval : state.listApprovals(member.tenant(), owner, 50)) {
+          var parameters = ApprovalHistoryParameters.parse(uri.getRawQuery(), member.tenant().value(), member.principalId(), owner);
+          var history = state.approvalHistory(member.tenant(), owner, parameters.query());
+          for (var approval : history.items()) {
             items.add(projection(approval, member));
           }
+          page.put("pageSize", parameters.query().limit());
+          if (history.hasMore()) page.put("nextCursor", parameters.nextCursor(history.items().getLast()));
+          else page.putNull("nextCursor");
           send(exchange, 200, page);
         } else throw failure(405, "METHOD_NOT_ALLOWED");
       } else if (path.startsWith(ROOT + "/")) {
@@ -230,7 +283,7 @@ public final class SimulatorApprovalServer implements AutoCloseable {
       String code = failure.getMessage();
       if (Set.of("APPROVAL_ALREADY_DECIDED", "APPROVAL_NOT_EXECUTABLE", "APPROVAL_REPLAYED",
           "APPROVAL_EXPIRED", "APPROVAL_BINDING_MISMATCH", "APPROVAL_POLICY_MISMATCH",
-          "APPROVAL_NOT_REQUIRED")
+          "APPROVAL_NOT_REQUIRED", "STALE_POLICY_GENERATION")
           .contains(code == null ? "" : code)) error(exchange, 409, code);
       else error(exchange, 503, "SECURITY_STATE_UNAVAILABLE");
     } catch (RuntimeException failure) {
@@ -313,12 +366,13 @@ public final class SimulatorApprovalServer implements AutoCloseable {
     result.put("requestHash", approval.binding().requestHash());
     result.put("requesterId", approval.binding().subjectId());
     result.put("status", approval.status());
+    result.put("createdAt", approval.binding().createdAt().toString());
     result.put("expiresAt", approval.binding().expiresAt().toString());
     result.put("expired", !approval.binding().expiresAt().isAfter(clock.instant()));
     result.put("policyId", approval.binding().policyId());
     result.put("policyVersion", approval.binding().policyVersion());
     result.put("originalPolicyOutcome", approval.binding().originalDecision());
-    result.set("action", event.path("action").deepCopy());
+    result.set("action", EvidenceRedactor.enterpriseDefault().redact(event.path("action")));
     if (approval.reviewerSubjectId() != null) result.put("reviewerId", approval.reviewerSubjectId());
     if (approval.consumedAttemptId() != null) {
       var attempt = state.findByIdempotencyKey(member.tenant(), "simulator",

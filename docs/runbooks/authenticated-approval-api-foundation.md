@@ -62,8 +62,11 @@ references resolve from the configuration file's directory, not the shell's
 directory. Server and PostgreSQL host are fixed to `127.0.0.1`; choose valid
 nonzero ports. The local DB connection uses no TLS and has 3-second connect and
 5-second socket timeouts; secure its PostgreSQL authentication/bind separately.
-The role needs migration rights in its dedicated database/schema. Do not point
-this composition at a shared or production database.
+First-install `--init-db` needs migration rights in its dedicated empty database.
+Normal runtime can use a separately provisioned non-owner role with application
+DML and metadata/history read access, without schema-creation/history-write
+rights. Role provisioning is operator-owned; no role manager is supplied.
+Do not point this composition at a shared or production database.
 
 Replace the `.invalid` issuer/audience/JWKS, client and tenant mapping with
 operator-approved IdP configuration. Membership `subject` is the exact verified
@@ -85,14 +88,22 @@ provider tokens itself.
 ```bash
 export TRACEPERMIT_APPROVAL_CONFIG="$PWD/.cache/local-approvals/operator.json"
 pnpm dev:approvals --check
+# FIRST INSTALL ONLY, never after a restore or for an existing/older database:
+pnpm dev:approvals --init-db
 pnpm dev:approvals
 ```
 
 `--check` is entirely offline: it checks schema, files, enrollment and key pair,
 **not** DB connectivity, IdP compatibility/JWKS availability or port availability.
 It can pass for the `.invalid` placeholders; that does not mean login will work.
-`--run` (the default launcher mode) validates before database migration, then
-opens only the approval listener, by default sample port 8085. Use `Ctrl+C` to stop.
+`--init-db` explicitly installs the packaged schema in a dedicated empty local
+database and exits without a listener/IdP call. It refuses existing/partial state;
+it is not an upgrade or recovery command. `--run` (the default launcher mode)
+requires a compatible initialized schema/history and never migrates or repairs
+it. It then opens only the approval listener, by default sample port 8085.
+See [ADR 0045](../architecture/0045-explicit-database-initialization.md) for
+the precise checks, initialization lock, privileges and recovery limits.
+Use `Ctrl+C` to stop.
 The fixed policy `pol-local-simulator-approval` v2 requires exact review for
 `aws.ec2.update_security_group` from API/CLI and blocks unmatched actions.
 There is no public health endpoint or development token route. Optional browser
@@ -101,6 +112,24 @@ authenticated [local MCP request/status/resume](codex-durable-approvals.md)
 shares this durable service. These are not the default demo console backend.
 Previously pending/approved v1 records cannot execute under v2: request fresh
 review of the current policy rather than rewriting the stored approval.
+Durable policy lifecycle binding is a separate **opt-in Java factory**
+composition ([ADR 0042](../architecture/0042-durable-policy-generation-binding.md)).
+The launcher described here, including the source-free distribution, still uses
+the fixed static policy; no configuration field turns it into durable policy
+administration. In the opt-in service, a generation-changing activation or
+rollback rejects an older approval at execution with `STALE_POLICY_GENERATION`
+(HTTP 409 Conflict / MCP tool error), even when rollback restores identical
+policy content. Idempotent activation does not advance generation. Rejection
+leaves the stored pending/approved status unchanged; it is not execution or
+automatic cancellation.
+
+The Java precheck avoids minting when it already observes a stale generation.
+An activation racing after that check can still allow an internal permit to be
+minted; the database claim then prevents consumption and dispatch. A claim
+committed before activation is not retroactively cancelled. The durable service
+also rejects unbound legacy approvals, but the trusted raw persistence port
+retains static compatibility when neither saved binding nor claim policy
+context exists. Do not treat that port as a database-global mode fence.
 
 Startup errors return code 2 with `APPROVAL_STARTUP_FAILED`, without raw exception
 details. Check file paths/ownership/permissions, configuration fields, key formats,
@@ -108,29 +137,38 @@ DB availability/schema and port conflicts privately. Never enable driver/debug
 credential logging. A successful startup is not evidence of IdP readiness: the
 first token requiring an uncached JWKS key triggers bounded HTTPS verification.
 
-Back up the database before startup: Flyway applies migrations through V6 and
-checks the schema guard. Migrations may commit even if the later port bind fails.
-Do not downgrade an older binary against this schema. Membership/key configuration
+Normal startup validates packaged V1–V8 history/checksums, guard, tables and
+enabled invariant triggers without DDL. Older populated or partial schemas fail;
+there is no in-place upgrade command in this slice. Do not reset, baseline or
+repair history to force startup, or downgrade an older binary against this schema.
+Explicit initialization can partially commit migrations if a later step fails;
+retain that DB for investigation rather than retry/reset it automatically.
+Membership/key configuration
 is a startup snapshot; use a controlled stop/edit/restart for changes. Protect
 the persistent keys and DB together. This is not managed key custody/rotation,
-immediate IdP revocation or a backup/restore qualification.
+immediate IdP revocation or a safe restore/resume procedure. An older complete
+snapshot can still pass validation and revive consumed approval authority.
+Keep agents/effectful services disconnected after restore or restore failure;
+schema validity is not recovery authorization.
 
 ## API contract
 
 Every route requires one `Authorization: Bearer` header, an allowlisted
 issuer/audience/client/tenant, and an operator-enrolled principal. POST bodies
 must use exactly `Content-Type: application/json`. Unknown/duplicate fields,
-trailing JSON, invalid UTF-8 and bodies above 64 KiB are rejected. No query
-parameters, cookies, browser origins or forwarded identity headers are used.
+trailing JSON, invalid UTF-8 and bodies above 64 KiB are rejected. Only the
+collection GET accepts the strict [history parameters](approval-history-api.md);
+all other routes reject query parameters. No cookies, browser origins or
+forwarded identity headers are used on bearer routes.
 Responses use `Cache-Control: no-store` and contain no reusable credentials.
 
-| Route                                  | Required authority                       | Body / outcome                                                    |
-| -------------------------------------- | ---------------------------------------- | ----------------------------------------------------------------- |
-| `POST /api/v1/approvals`               | Requester role + `approvals.request`     | Fixed simulator arguments; creates pending, no dispatch           |
-| `GET /api/v1/approvals`                | Enrolled role + `approvals.read`         | Up to 50 newest snapshots in tenant; requester-only role sees own |
-| `GET /api/v1/approvals/{id}`           | Same read authority, tenant/owner check  | Exact action, request hash, policy, expiry, status/outcome        |
-| `POST /api/v1/approvals/{id}/decision` | Human reviewer role + `approvals.decide` | Exact hash and `approve` or `deny`; no self-approval              |
-| `POST /api/v1/approvals/{id}/execute`  | Original requester + `approvals.execute` | Exact hash only; load stored action and consume once              |
+| Route                                  | Required authority                       | Body / outcome                                                  |
+| -------------------------------------- | ---------------------------------------- | --------------------------------------------------------------- |
+| `POST /api/v1/approvals`               | Requester role + `approvals.request`     | Fixed simulator arguments; creates pending, no dispatch         |
+| `GET /api/v1/approvals`                | Enrolled role + `approvals.read`         | Filtered pages up to 50 in tenant; requester-only role sees own |
+| `GET /api/v1/approvals/{id}`           | Same read authority, tenant/owner check  | Exact action, request hash, policy, expiry, status/outcome      |
+| `POST /api/v1/approvals/{id}/decision` | Human reviewer role + `approvals.decide` | Exact hash and `approve` or `deny`; no self-approval            |
+| `POST /api/v1/approvals/{id}/execute`  | Original requester + `approvals.execute` | Exact hash only; load stored action and consume once            |
 
 Create body:
 

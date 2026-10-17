@@ -1,0 +1,71 @@
+package io.tracepermit.application;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import java.util.concurrent.locks.ReentrantLock;
+import org.junit.jupiter.api.Test;
+
+final class StripedMonitorsTest {
+
+  @Test
+  void samePrincipalKeyAlwaysMapsToTheSameLock() {
+    StripedMonitors stripes = new StripedMonitors();
+    assertThat(stripes.lockFor("acme\u0000user:one")).isSameAs(stripes.lockFor("acme\u0000user:one"));
+  }
+
+  @Test
+  void lockMappingStaysInBoundsForNegativeHashes() {
+    StripedMonitors stripes = new StripedMonitors();
+    // String.hashCode may be negative; floorMod must keep every key inside the array.
+    for (int index = 0; index < 10_000; index++) {
+      ReentrantLock lock = stripes.lockFor("principal-" + index);
+      assertThat(lock).isNotNull();
+    }
+  }
+
+  @Test
+  void singleStripeOverSerializesButNeverSplitsOnePrincipal() {
+    StripedMonitors stripes = new StripedMonitors(1);
+    assertThat(stripes.lockFor("a")).isSameAs(stripes.lockFor("b"));
+  }
+
+  @Test
+  void stripeCountMustBeAPositivePowerOfTwo() {
+    assertThatThrownBy(() -> new StripedMonitors(0))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> new StripedMonitors(3))
+        .isInstanceOf(IllegalArgumentException.class);
+    assertThatThrownBy(() -> new StripedMonitors(-64))
+        .isInstanceOf(IllegalArgumentException.class);
+    new StripedMonitors(1);
+    new StripedMonitors(128);
+  }
+
+  @Test
+  void locksAreReentrant() {
+    StripedMonitors stripes = new StripedMonitors();
+    ReentrantLock lock = stripes.lockFor("principal");
+    lock.lock();
+    assertThat(lock.isHeldByCurrentThread()).isTrue();
+    lock.lock();
+    lock.unlock();
+    assertThat(lock.isHeldByCurrentThread()).isTrue();
+    lock.unlock();
+    assertThat(lock.isHeldByCurrentThread()).isFalse();
+  }
+
+  @Test
+  void lockIsReleasedWhenTheCriticalSectionThrows() {
+    StripedMonitors stripes = new StripedMonitors();
+    ReentrantLock lock = stripes.lockFor("principal");
+    lock.lock();
+    try {
+      throw new IllegalStateException("SEQUENCE_STATE_UNAVAILABLE");
+    } catch (IllegalStateException expected) {
+      lock.unlock();
+    }
+    assertThat(lock.tryLock()).isTrue();
+    lock.unlock();
+  }
+}

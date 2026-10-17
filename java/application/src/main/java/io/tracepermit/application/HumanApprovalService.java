@@ -10,15 +10,19 @@ import io.tracepermit.execution.ApprovalConsumptionResult;
 import io.tracepermit.execution.ApprovalConsumptionStatus;
 import io.tracepermit.execution.ApprovalDecision;
 import io.tracepermit.execution.ApprovalExecutionClaim;
+import io.tracepermit.execution.ApprovalPolicyBinding;
 import io.tracepermit.execution.ApprovalRequestState;
 import io.tracepermit.execution.DurableApprovalState;
 import io.tracepermit.execution.DurableApprovalActionState;
+import io.tracepermit.execution.DurablePolicyBoundApprovalState;
 import io.tracepermit.execution.DurableEnforcementState;
 import io.tracepermit.execution.DurableExecutionClaim;
 import io.tracepermit.execution.ExecutionAttempt;
 import io.tracepermit.execution.InMemoryExecutionLedger;
+import io.tracepermit.policy.ActivePolicySnapshot;
 import io.tracepermit.policy.PolicyEvaluation;
 import io.tracepermit.policy.PolicyEvaluator;
+import io.tracepermit.policy.PolicyLifecycleStore;
 import io.tracepermit.security.ExecutionPermitAuthority;
 
 import java.time.Clock;
@@ -34,6 +38,9 @@ public final class HumanApprovalService {
 
   private final PolicyEvaluator policyEvaluator;
   private final JsonNode policy;
+  private final PolicyLifecycleStore policyStore;
+  private final String workspaceId;
+  private final String policyId;
   private final ExecutionPermitAuthority permits;
   private final DurableApprovalState approvals;
   private final DurableEnforcementState executions;
@@ -60,6 +67,44 @@ public final class HumanApprovalService {
       int approvalLifetimeSeconds) {
     this.policyEvaluator = Objects.requireNonNull(policyEvaluator);
     this.policy = Objects.requireNonNull(policy).deepCopy();
+    this.policyStore = null;
+    this.workspaceId = null;
+    this.policyId = null;
+    this.permits = Objects.requireNonNull(permits);
+    this.approvals = Objects.requireNonNull(approvals);
+    this.executions = Objects.requireNonNull(executions);
+    this.target = Objects.requireNonNull(target);
+    this.readiness = Objects.requireNonNull(readiness);
+    this.clock = Objects.requireNonNull(clock);
+    this.createId = Objects.requireNonNull(createId);
+    this.audience = Objects.requireNonNull(audience);
+    this.adapterId = Objects.requireNonNull(adapterId);
+    if (approvalLifetimeSeconds < 1 || approvalLifetimeSeconds > 3600) {
+      throw new IllegalArgumentException("Approval lifetime must be between 1 and 3600 seconds.");
+    }
+    this.approvalLifetimeSeconds = approvalLifetimeSeconds;
+  }
+
+  public HumanApprovalService(
+      PolicyEvaluator policyEvaluator,
+      PolicyLifecycleStore policyStore,
+      String workspaceId,
+      String policyId,
+      ExecutionPermitAuthority permits,
+      DurableApprovalState approvals,
+      DurableEnforcementState executions,
+      SimulatedTarget target,
+      Supplier<SecurityReadiness> readiness,
+      Clock clock,
+      Supplier<String> createId,
+      String audience,
+      String adapterId,
+      int approvalLifetimeSeconds) {
+    this.policyEvaluator = Objects.requireNonNull(policyEvaluator);
+    this.policy = null;
+    this.policyStore = Objects.requireNonNull(policyStore);
+    this.workspaceId = Objects.requireNonNull(workspaceId);
+    this.policyId = Objects.requireNonNull(policyId);
     this.permits = Objects.requireNonNull(permits);
     this.approvals = Objects.requireNonNull(approvals);
     this.executions = Objects.requireNonNull(executions);
@@ -88,7 +133,16 @@ public final class HumanApprovalService {
   private ApprovalExecutionResult requestApproval(
       TrustedTenantContext context, JsonNode candidate, boolean persistAction) {
     JsonNode event = validateContext(context, candidate);
-    PolicyEvaluation evaluation = policyEvaluator.evaluate(event, policy);
+    JsonNode effectivePolicy;
+    ActivePolicySnapshot snapshot = null;
+    if (policyStore != null) {
+      snapshot = policyStore.activePolicySnapshot(workspaceId, policyId)
+          .orElseThrow(() -> new IllegalStateException("ACTIVE_POLICY_UNAVAILABLE"));
+      effectivePolicy = snapshot.document();
+    } else {
+      effectivePolicy = policy;
+    }
+    PolicyEvaluation evaluation = policyEvaluator.evaluate(event, effectivePolicy);
     if (!"require_approval".equals(evaluation.decision().outcome())) {
       throw new IllegalStateException("APPROVAL_NOT_REQUIRED");
     }
@@ -98,7 +152,19 @@ public final class HumanApprovalService {
     ApprovalBinding binding = binding(
         context, event, evaluation, requestId, createdAt, createdAt.plusSeconds(approvalLifetimeSeconds));
     ApprovalRequestState request;
-    if (persistAction) {
+    if (snapshot != null) {
+      if (!(approvals instanceof DurablePolicyBoundApprovalState policyBoundState)) {
+        throw new IllegalStateException("APPROVAL_SNAPSHOT_UNAVAILABLE");
+      }
+      ApprovalPolicyBinding policyBinding = new ApprovalPolicyBinding(
+          workspaceId,
+          policyId,
+          snapshot.version(),
+          snapshot.activationGeneration(),
+          snapshot.contentHash(),
+          createdAt);
+      request = policyBoundState.createPendingBound(binding, persistAction ? event : null, policyBinding);
+    } else if (persistAction) {
       if (!(approvals instanceof DurableApprovalActionState snapshots)) {
         throw new IllegalStateException("APPROVAL_SNAPSHOT_UNAVAILABLE");
       }
@@ -147,7 +213,30 @@ public final class HumanApprovalService {
       throw new IllegalStateException("APPROVAL_NOT_EXECUTABLE");
     }
 
-    PolicyEvaluation evaluation = policyEvaluator.evaluate(event, policy);
+    JsonNode effectivePolicy;
+    ApprovalPolicyBinding policyBinding = null;
+    if (policyStore != null) {
+      ActivePolicySnapshot snapshot = policyStore.activePolicySnapshot(workspaceId, policyId)
+          .orElseThrow(() -> new IllegalStateException("ACTIVE_POLICY_UNAVAILABLE"));
+      if (approvals instanceof DurablePolicyBoundApprovalState policyBoundState) {
+        policyBinding = policyBoundState.findPolicyBinding(context.tenant(), approvalRequestId).orElse(null);
+      }
+      if (policyBinding == null) {
+        throw new IllegalStateException("STALE_POLICY_GENERATION");
+      }
+      if (!policyBinding.workspaceId().equals(workspaceId)
+          || !policyBinding.policyId().equals(policyId)
+          || policyBinding.policyGeneration() != snapshot.activationGeneration()
+          || policyBinding.policyVersion() != snapshot.version()
+          || !policyBinding.policyContentHash().equals(snapshot.contentHash())) {
+        throw new IllegalStateException("STALE_POLICY_GENERATION");
+      }
+      effectivePolicy = snapshot.document();
+    } else {
+      effectivePolicy = policy;
+    }
+
+    PolicyEvaluation evaluation = policyEvaluator.evaluate(event, effectivePolicy);
     if (!"require_approval".equals(evaluation.decision().outcome())) {
       throw new IllegalStateException("APPROVAL_POLICY_MISMATCH");
     }
@@ -194,7 +283,7 @@ public final class HumanApprovalService {
         credentialFingerprints(event),
         now);
     ApprovalConsumptionResult begun = approvals.consumeAndClaim(new ApprovalExecutionClaim(
-        current, approved.approvalDecisionId(), executionClaim, now));
+        current, approved.approvalDecisionId(), executionClaim, now, policyBinding));
     if (!begun.started()) return existing(evaluation, begun);
 
     JsonNode result;
@@ -209,17 +298,8 @@ public final class HumanApprovalService {
       throw uncertain;
     }
 
-    ExecutionAttempt attempt;
-    try {
-      attempt = executions.complete(
-          context.tenant(),
-          begun.attempt().attemptId(),
-          "succeeded",
-          "TARGET_CONFIRMED_SUCCESS",
-          clock.instant());
-    } catch (RuntimeException failure) {
-      throw new IllegalStateException("DURABLE_STATE_UNAVAILABLE_AFTER_DISPATCH", failure);
-    }
+    ExecutionAttempt attempt = DurableOutcomeRecorder.complete(
+        executions, context.tenant(), begun.attempt(), "succeeded", "TARGET_CONFIRMED_SUCCESS", clock);
     return new ApprovalExecutionResult("succeeded", evaluation, begun.approval(), attempt, result);
   }
 
@@ -331,10 +411,10 @@ public final class HumanApprovalService {
       String reasonCode,
       RuntimeException targetFailure) {
     try {
-      executions.complete(context.tenant(), attempt.attemptId(), outcome, reasonCode, clock.instant());
+      DurableOutcomeRecorder.complete(executions, context.tenant(), attempt, outcome, reasonCode, clock);
     } catch (RuntimeException persistenceFailure) {
-      persistenceFailure.addSuppressed(targetFailure);
-      throw new IllegalStateException("DURABLE_STATE_UNAVAILABLE_AFTER_DISPATCH", persistenceFailure);
+      if (persistenceFailure != targetFailure) persistenceFailure.addSuppressed(targetFailure);
+      throw persistenceFailure;
     }
   }
 
@@ -345,6 +425,9 @@ public final class HumanApprovalService {
     }
     if (consumption.status() == ApprovalConsumptionStatus.APPROVAL_REPLAYED) {
       throw new IllegalStateException("APPROVAL_REPLAYED");
+    }
+    if (consumption.status() == ApprovalConsumptionStatus.STALE_POLICY_GENERATION) {
+      throw new IllegalStateException("STALE_POLICY_GENERATION");
     }
     ExecutionAttempt attempt = consumption.attempt();
     if (attempt == null) throw new IllegalStateException("APPROVAL_NOT_EXECUTABLE");

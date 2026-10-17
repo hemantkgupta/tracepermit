@@ -16,7 +16,8 @@ final class ApprovalMcpAdapter {
   private static final Set<String> ROOT_FIELDS = Set.of("jsonrpc", "id", "method", "params");
   private static final Set<String> STATE_ERRORS = Set.of("APPROVAL_ALREADY_DECIDED",
       "APPROVAL_NOT_EXECUTABLE", "APPROVAL_REPLAYED", "APPROVAL_EXPIRED",
-      "APPROVAL_BINDING_MISMATCH", "APPROVAL_POLICY_MISMATCH", "APPROVAL_NOT_REQUIRED");
+      "APPROVAL_BINDING_MISMATCH", "APPROVAL_POLICY_MISMATCH", "APPROVAL_NOT_REQUIRED",
+      "STALE_POLICY_GENERATION");
   @FunctionalInterface interface Operations { JsonNode call(String name, JsonNode arguments); }
   record Response(int status, JsonNode body) {}
   private final Operations operations;
