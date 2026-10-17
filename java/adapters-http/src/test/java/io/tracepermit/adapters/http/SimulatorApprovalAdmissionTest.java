@@ -44,6 +44,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -123,15 +125,7 @@ final class SimulatorApprovalAdmissionTest {
     memberships = new ApprovalMemberships(entries());
     simulator = new StatefulTargetSimulator();
     policy = JsonSupport.read(ROOT.resolve("policies/aws-web-readonly.json"));
-    Set<ConnectorScope> scopes = Set.of(SCOPES.split(" ")).stream()
-        .map(ConnectorScope::of).collect(java.util.stream.Collectors.toUnmodifiableSet());
-    var provider = new OidcProviderConfiguration(URI.create(ISSUER), AUDIENCE,
-        URI.create(ISSUER + "/jwks"), URI.create(AUDIENCE + "/metadata"),
-        List.of(URI.create(ISSUER)), "Simulator approvals",
-        Map.of("approval-client", "Approval API", "alternate-client", "Alternate API"), "org_id",
-        Map.of("alpha", TENANT.value(), "beta", "simulated-beta"), scopes,
-        ConnectorOrigin.CLI, Duration.ofMinutes(15), Duration.ofMinutes(1), Duration.ofSeconds(5));
-    verifier = new OidcAccessTokenVerifier(new StaticOidcProviderRegistry(List.of(provider)),
+    verifier = new OidcAccessTokenVerifier(new StaticOidcProviderRegistry(List.of(provider())),
         (p, keyId, algorithm, now) -> {
           if ("park-key".equals(keyId)) {
             parkCalls.incrementAndGet();
@@ -178,6 +172,15 @@ final class SimulatorApprovalAdmissionTest {
     restart(2, 2);
     parkSignal.set(new CountDownLatch(2));
     parkGate.set(new CountDownLatch(1));
+    try {
+      saturateBothLanesAndProveRejectedOffersDoNoWork();
+    } finally {
+      CountDownLatch gate = parkGate.get();
+      if (gate != null) gate.countDown();
+    }
+  }
+
+  private void saturateBothLanesAndProveRejectedOffersDoNoWork() throws Exception {
     int baselineConnections = dataSource.connections.get();
     var parkedFirst = CompletableFuture.supplyAsync(() -> {
       try { return call("POST", "/api/v1/approvals", token("alice", "park-key"), ACTION); }
@@ -242,6 +245,59 @@ final class SimulatorApprovalAdmissionTest {
     assertThat(rules()).isZero();
   }
 
+  @Test void saturatedApprovedExecuteDoesNoWorkUntilCapacityFrees() throws Exception {
+    restart(1, 1);
+    String alice = token("alice");
+    JsonNode approved = create(alice);
+    String approvalPath = path(approved);
+    assertStatus(call("POST", approvalPath + "/decision", token("bob"), decision(approved, "approve")), 200);
+    parkSignal.set(new CountDownLatch(1));
+    parkGate.set(new CountDownLatch(1));
+    try {
+      var parked = CompletableFuture.supplyAsync(() -> {
+        try { return call("GET", approvalPath, token("alice", "park-key"), null); }
+        catch (Exception failure) { throw new IllegalStateException(failure); }
+      });
+      assertThat(parkSignal.get().await(15, TimeUnit.SECONDS))
+          .as("the single lane must be occupied inside authentication").isTrue();
+      var queued = CompletableFuture.supplyAsync(() -> {
+        try { return call("GET", approvalPath, token("alice"), null); }
+        catch (Exception failure) { throw new IllegalStateException(failure); }
+      });
+      assertThatThrownBy(() -> queued.get(300, TimeUnit.MILLISECONDS))
+          .as("the next request must wait in the bounded queue, neither started nor rejected")
+          .isInstanceOf(TimeoutException.class);
+
+      // Full capacity is observed: one active lane plus one queued exchange. An
+      // already approved execute offered beyond that is rejected by the executor
+      // before any handler runs, so it cannot authenticate, claim a permit, or
+      // reach the target.
+      int baselineConnections = dataSource.connections.get();
+      int baselineResolutions = normalCalls.get();
+      assertThatThrownBy(() -> call("POST", approvalPath + "/execute", alice, hash(approved)))
+          .as("an execute offered beyond the accepted bound must fail at the transport")
+          .isInstanceOf(IOException.class);
+      assertThat(dataSource.connections.get())
+          .as("the rejected execute must not attempt any database work").isEqualTo(baselineConnections);
+      assertThat(normalCalls.get())
+          .as("the rejected execute must not resolve any verification key").isEqualTo(baselineResolutions);
+      assertThat(rules()).isZero();
+
+      parkGate.get().countDown();
+      assertStatus(parked.get(15, TimeUnit.SECONDS), 200);
+      assertStatus(queued.get(15, TimeUnit.SECONDS), 200);
+      assertThat(rules()).isZero();
+
+      assertStatus(call("POST", approvalPath + "/execute", alice, hash(approved)), 200);
+      assertThat(rules()).as("the approved execute dispatches to the target exactly once").isEqualTo(1);
+      assertStatus(call("POST", approvalPath + "/execute", alice, hash(approved)), 409);
+      assertThat(rules()).as("a replay of the executed approval is denied and dispatches nothing").isEqualTo(1);
+    } finally {
+      CountDownLatch gate = parkGate.get();
+      if (gate != null) gate.countDown();
+    }
+  }
+
   @Test void dispatchPoolHoldsExactLaneAndQueueBounds() throws Exception {
     ApprovalAdmissionExecutors.validate(1, 1);
     ApprovalAdmissionExecutors.validate(64, 1024);
@@ -251,6 +307,19 @@ final class SimulatorApprovalAdmissionTest {
     assertThatThrownBy(() -> ApprovalAdmissionExecutors.validate(1, 1025)).isInstanceOf(IllegalArgumentException.class);
 
     ExecutorService pool = ApprovalAdmissionExecutors.newDispatchPool(1, 2);
+    try {
+      qualifyDispatchPoolBounds(pool);
+    } finally {
+      pool.shutdownNow();
+      try {
+        pool.awaitTermination(15, TimeUnit.SECONDS);
+      } catch (InterruptedException poolShutdown) {
+        Thread.currentThread().interrupt();
+      }
+    }
+  }
+
+  private void qualifyDispatchPoolBounds(ExecutorService pool) throws Exception {
     var release = new CountDownLatch(1);
     var firstStarted = new CountDownLatch(1);
     var laneSeen = new AtomicReference<Thread>();
@@ -339,25 +408,124 @@ final class SimulatorApprovalAdmissionTest {
     Thread lane = parkedLane;
     assertThat(lane).isNotNull();
 
-    long startedAt = System.nanoTime();
-    server.close();
-    long elapsedMillis = (System.nanoTime() - startedAt) / 1_000_000;
-    assertThat(elapsedMillis)
-        .as("close must return within the documented bound even while a handler is blocked")
-        .isLessThan(10_000);
-    server.close();
+    // Close runs on a daemon task behind a finite deadline: a regression to an
+    // unbounded close fails this get promptly instead of hanging the suite until
+    // an external job timeout. The gate is always released in finally, so even
+    // that failure path unwinds the parked lane and finishes cleanup.
+    var closer = Executors.newSingleThreadExecutor(r -> {
+      var thread = new Thread(r, "admission-close-probe");
+      thread.setDaemon(true);
+      return thread;
+    });
+    try {
+      long startedAt = System.nanoTime();
+      Future<?> closed = closer.submit(server::close);
+      closed.get(10, TimeUnit.SECONDS);
+      long elapsedMillis = (System.nanoTime() - startedAt) / 1_000_000;
+      assertThat(elapsedMillis)
+          .as("close must return within the documented bound even while a handler is blocked")
+          .isLessThan(10_000);
+      server.close();
 
-    parkGate.get().countDown();
-    lane.join(15_000);
-    assertThat(lane.isAlive())
-        .as("the interrupted handler thread must unwind after close returns").isFalse();
-    assertThat(lane.isDaemon()).isTrue();
-    // Close tears down the in-flight connection: the parked client observes connection
-    // teardown (never a fabricated status), and its call completes instead of hanging.
-    assertThatThrownBy(() -> parked.get(15, TimeUnit.SECONDS))
-        .as("the parked client call must complete with connection teardown, not hang")
-        .isInstanceOf(ExecutionException.class);
-    assertThat(rules()).isZero();
+      parkGate.get().countDown();
+      lane.join(15_000);
+      assertThat(lane.isAlive())
+          .as("the interrupted handler thread must unwind after close returns").isFalse();
+      assertThat(lane.isDaemon()).isTrue();
+      // Close tears down the in-flight connection: the parked client observes connection
+      // teardown (never a fabricated status), and its call completes instead of hanging.
+      assertThatThrownBy(() -> parked.get(15, TimeUnit.SECONDS))
+          .as("the parked client call must complete with connection teardown, not hang")
+          .isInstanceOf(ExecutionException.class);
+      assertThat(rules()).isZero();
+    } finally {
+      parkGate.get().countDown();
+      closer.shutdownNow();
+      try {
+        closer.awaitTermination(10, TimeUnit.SECONDS);
+      } catch (InterruptedException closeTask) {
+        Thread.currentThread().interrupt();
+      }
+      try {
+        lane.join(15_000);
+      } catch (InterruptedException laneThread) {
+        Thread.currentThread().interrupt();
+      }
+    }
+  }
+
+  @Test void closeReturnsWhileAdmittedResolverIgnoresInterruption() throws Exception {
+    var entered = new CountDownLatch(1);
+    var release = new CountDownLatch(1);
+    var interrupted = new CountDownLatch(1);
+    var laneSeen = new AtomicReference<Thread>();
+    verifier = new OidcAccessTokenVerifier(new StaticOidcProviderRegistry(List.of(provider())),
+        (p, keyId, algorithm, now) -> {
+          laneSeen.set(Thread.currentThread());
+          entered.countDown();
+          while (release.getCount() != 0) {
+            try {
+              release.await();
+            } catch (InterruptedException swallowed) {
+              interrupted.countDown();
+            }
+          }
+          return (RSAPublicKey) rsa.getPublic();
+        }, clock);
+    restart(1, 1);
+    var parked = CompletableFuture.supplyAsync(() -> {
+      try { return call("GET", "/api/v1/approvals", token("alice"), null); }
+      catch (Exception failure) { return failure; }
+    });
+    assertThat(entered.await(15, TimeUnit.SECONDS))
+        .as("the admitted lane must be parked inside key resolution").isTrue();
+    Thread lane = laneSeen.get();
+    assertThat(lane).isNotNull();
+
+    var closer = Executors.newSingleThreadExecutor(r -> {
+      var thread = new Thread(r, "admission-close-probe");
+      thread.setDaemon(true);
+      return thread;
+    });
+    try {
+      long startedAt = System.nanoTime();
+      Future<?> closed = closer.submit(server::close);
+      closed.get(10, TimeUnit.SECONDS);
+      long elapsedMillis = (System.nanoTime() - startedAt) / 1_000_000;
+      assertThat(elapsedMillis)
+          .as("close must return even though the parked resolver ignored interruption")
+          .isLessThan(10_000);
+      assertThat(interrupted.await(5, TimeUnit.SECONDS))
+          .as("shutdownNow must have reached the parked resolver, which swallowed it").isTrue();
+      assertThat(lane.isAlive())
+          .as("the lane stays parked until the test releases it, despite the interrupt").isTrue();
+      assertThat(lane.isDaemon()).isTrue();
+      assertThat(rules()).isZero();
+      server.close();
+      Object parkedResult = parked.get(15, TimeUnit.SECONDS);
+      assertThat(parkedResult)
+          .as("the parked client observes connection teardown, never a fabricated status")
+          .isInstanceOf(IOException.class);
+
+      release.countDown();
+      lane.join(15_000);
+      assertThat(lane.isAlive())
+          .as("the lane unwinds once the test releases it").isFalse();
+      assertThat(rules()).isZero();
+    } finally {
+      release.countDown();
+      closer.shutdownNow();
+      try {
+        closer.awaitTermination(10, TimeUnit.SECONDS);
+      } catch (InterruptedException closeTask) {
+        Thread.currentThread().interrupt();
+      }
+      try {
+        lane.join(15_000);
+      } catch (InterruptedException laneThread) {
+        Thread.currentThread().interrupt();
+      }
+    }
   }
 
   @Test void concurrentCloseAndSubmissionsStayBounded() throws Exception {
@@ -458,6 +626,16 @@ final class SimulatorApprovalAdmissionTest {
     return input + "." + Base64.getUrlEncoder().withoutPadding().encodeToString(signer.sign());
   }
   private static String encode(JsonNode value) throws Exception { return Base64.getUrlEncoder().withoutPadding().encodeToString(JsonSupport.MAPPER.writeValueAsBytes(value)); }
+  private static OidcProviderConfiguration provider() {
+    Set<ConnectorScope> scopes = Set.of(SCOPES.split(" ")).stream()
+        .map(ConnectorScope::of).collect(java.util.stream.Collectors.toUnmodifiableSet());
+    return new OidcProviderConfiguration(URI.create(ISSUER), AUDIENCE,
+        URI.create(ISSUER + "/jwks"), URI.create(AUDIENCE + "/metadata"),
+        List.of(URI.create(ISSUER)), "Simulator approvals",
+        Map.of("approval-client", "Approval API", "alternate-client", "Alternate API"), "org_id",
+        Map.of("alpha", TENANT.value(), "beta", "simulated-beta"), scopes,
+        ConnectorOrigin.CLI, Duration.ofMinutes(15), Duration.ofMinutes(1), Duration.ofSeconds(5));
+  }
   private static List<ApprovalMemberships.Entry> entries() {
     return List.of(
         entry("alice", true, Set.of(ApprovalMemberships.Role.REQUESTER, ApprovalMemberships.Role.REVIEWER)),
