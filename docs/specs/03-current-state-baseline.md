@@ -56,6 +56,14 @@ native/model qualification is implied.
 
 ### Authenticated approval API foundation
 
+The authenticated approval collection supports exact metadata filters and
+bounded keyset pagination, retaining current enrollment/scope/tenant/owner
+checks and response redaction. Cursors are unsigned positions, not authority;
+reads do not change approval/effect state. This is not a complete action-history,
+retention or export feature. React search/pagination controls remain a separate
+slice; the existing UI still consumes its first page. See the
+[history API](../runbooks/approval-history-api.md).
+
 `SimulatorApprovalServer` is a separate, loopback-only Java HTTP factory,
 not part of either current demo launcher. `SimulatorApprovalMain` now supplies
 the optional `pnpm dev:approvals` startup with strict operator-owned JSON,
