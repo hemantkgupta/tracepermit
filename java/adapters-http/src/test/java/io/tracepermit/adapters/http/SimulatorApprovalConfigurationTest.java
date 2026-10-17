@@ -185,7 +185,7 @@ final class SimulatorApprovalConfigurationTest {
 
   @Test void sourceWrapperAcceptsAllThreeExplicitCommandsBeforeRequiringPrivateConfig() throws Exception {
     var root = Path.of(System.getProperty("tracepermit.repositoryRoot"));
-    for (String command : new String[] {"--check", "--init-db", "--run", "--repair"}) {
+    for (String command : new String[] {"--check", "--init-db", "--run", "--quarantine-db", "--recovery-status", "--recovery-inspect", "--repair"}) {
       var builder = new ProcessBuilder("/bin/bash", root.resolve("scripts/run-java-simulator-approvals.sh").toString(), command)
           .redirectErrorStream(true);
       builder.environment().remove("TRACEPERMIT_APPROVAL_CONFIG");

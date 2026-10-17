@@ -233,6 +233,42 @@ final class SimulatorApprovalBootstrapTest {
     } finally { if (child.isAlive()) child.destroyForcibly().waitFor(); }
   }
 
+  @Test void ownerInspectionEmitsOnlyCountsAndNeverStartsListenerOrTarget() throws Exception {
+    var database = fixture.load().database();
+    PostgresDatabaseLifecycle.initializeEmpty(database);
+    PostgresRecoveryQuarantine.quarantine(database, java.time.Instant.now());
+    Path output = directory.resolve("inspection-child.txt");
+    Process child = launch("--recovery-inspect", output);
+    try {
+      assertThat(child.waitFor(15, TimeUnit.SECONDS)).isTrue();
+      assertThat(child.exitValue()).isZero();
+      String text = Files.readString(output);
+      assertThat(text).contains("APPROVAL_RECOVERY_SNAPSHOT", "INSPECTION_ONLY", "\"recoveryMode\":\"quarantined\"")
+          .doesNotContain("API listening", "synthetic-local-test-password", fixture.config.toString(), "jdbc:", "alice", "principal:", "requestHash", "Exception");
+      var line = text.lines().filter(l -> l.startsWith("APPROVAL_RECOVERY_SNAPSHOT: ")).findFirst().orElseThrow();
+      var report = JsonSupport.MAPPER.readTree(line.substring("APPROVAL_RECOVERY_SNAPSHOT: ".length()));
+      assertThat(report.size()).isEqualTo(6);
+      assertThat(report.path("executions").size()).isEqualTo(4);
+      assertThat(report.path("approvals").size()).isEqualTo(5);
+      assertThat(report.path("reconciliationQueued").longValue()).isZero();
+      try (var rebound = new ServerSocket(fixture.json.path("port").intValue(), 1,
+          java.net.InetAddress.getByName("127.0.0.1"))) { assertThat(rebound.isBound()).isTrue(); }
+    } finally { if (child.isAlive()) child.destroyForcibly().waitFor(); }
+  }
+
+  @Test void failedInspectionEmitsNoPartialReportOrListenerAndRedactsConfiguration() throws Exception {
+    Path output = directory.resolve("inspection-failed.txt");
+    // Empty database: inspection must not initialize/migrate it or contact the configured .invalid IdP.
+    Process child = launch("--recovery-inspect", output);
+    try {
+      assertThat(child.waitFor(15, TimeUnit.SECONDS)).isTrue();
+      assertThat(child.exitValue()).isEqualTo(2);
+      assertThat(Files.readString(output)).contains("APPROVAL_STARTUP_FAILED")
+          .doesNotContain("APPROVAL_RECOVERY_SNAPSHOT", "INSPECTION_ONLY", "API listening", "synthetic-local-test-password", fixture.config.toString(), "jdbc:", "Exception");
+      assertEmptyDatabaseAndNoListener();
+    } finally { if (child.isAlive()) child.destroyForcibly().waitFor(); }
+  }
+
   @Test void missingInvariantTriggerRefusesOperatorStartupWithoutRepairOrIdpCall() throws Exception {
     var database = fixture.load().database();
     PostgresDatabaseLifecycle.initializeEmpty(database);
