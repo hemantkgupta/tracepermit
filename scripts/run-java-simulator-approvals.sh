@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -gt 1 || ( $# -eq 1 && "$1" != "--check" && "$1" != "--init-db" && "$1" != "--run" ) ]]; then
-  echo 'Usage: pnpm dev:approvals [--check|--init-db|--run]' >&2
+if [[ $# -gt 1 || ( $# -eq 1 && "$1" != "--check" && "$1" != "--init-db" && "$1" != "--run" && "$1" != "--quarantine-db" && "$1" != "--recovery-status" ) ]]; then
+  echo 'Usage: pnpm dev:approvals [--check|--init-db|--run|--quarantine-db|--recovery-status]' >&2
   exit 2
 fi
 if [[ -z "${TRACEPERMIT_APPROVAL_CONFIG:-}" ]]; then

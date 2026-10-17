@@ -52,6 +52,15 @@ schema lifecycle superseded by [ADR 0045](../architecture/0045-explicit-database
 starting a listener; normal run validates existing state without implicit DDL.
 Failures return exit 2/code-only redacted diagnostics; no public init, repair,
 upgrade or recovery-resume HTTP/MCP endpoint is added.
+`--recovery-status` and owner-only `--quarantine-db` operate without a listener,
+IdP or target against existing V1–V9 state. The latter is installation-wide,
+one-way containment of new durable claims/reviews, not automatic rollback
+detection or cancellation. Already quarantined state refuses operator `--run`;
+already-running replicas retain reads/completion but authority writes return
+their existing generic unavailable errors. Internal permit minting is unchanged.
+There is no resume or in-place upgrade command; strict V8 startup is refused
+without migration. See [ADR 0051](../architecture/0051-operator-declared-recovery-quarantine.md)
+and the [runbook](../runbooks/operator-recovery-quarantine.md).
 The `/health`, `/ready` and `/mcp` surfaces below belong to other compositions,
 not to this approval listener.
 
@@ -656,7 +665,19 @@ specified and implemented.
 - Duplicate idempotent requests return the original result or a conflict with
   a safe reference.
 
-## 9. Protocol compatibility
+## 9. Durable outcome-recording uncertainty
+
+After dispatch, a completion exception produces
+`DURABLE_STATE_UNAVAILABLE_AFTER_DISPATCH` even if commit may have succeeded.
+The direct and approval services make one additional same-tenant/attempt unknown
+recording; the PostgreSQL operation accepts only executing state and atomically
+records evidence/outbox and a lookup queue entry. Already committed succeeded,
+failed or unknown state is not overwritten. No target retry, replacement claim
+or restored approval authority is implied. A persistent outage/crash can still
+leave executing state; no automatic worker or restore fence is added. See
+[the completion runbook](../runbooks/durable-completion-uncertainty.md).
+
+## 10. Protocol compatibility
 
 The current MCP implementation supports the 2026-07-28 protocol and a stateless
 request/response fallback for 2025-era clients. Legacy session GET/DELETE,

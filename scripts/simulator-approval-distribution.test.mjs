@@ -992,4 +992,25 @@ test("online --run starts, binds loopback port, and terminates cleanly on SIGTER
     !childStderr.includes(pgPassword),
     "Password must not appear in stderr",
   );
+
+  // Packaged containment commands require neither a source checkout nor an IdP connection.
+  for (const argument of [
+    "--recovery-status",
+    "--quarantine-db",
+    "--quarantine-db",
+    "--recovery-status",
+    "--run",
+  ]) {
+    const result = spawnSync(launcher, [argument], commandOptions);
+    assert.equal(result.status, argument === "--run" ? 2 : 0, result.stderr);
+    const output = result.stdout + result.stderr;
+    assert.ok(!output.includes("API listening"));
+    assert.ok(!output.includes(pgPassword));
+    assert.ok(!output.includes(configPath));
+    assert.ok(!output.includes("jdbc:"));
+    if (argument === "--quarantine-db")
+      assert.ok(output.includes("APPROVAL_DATABASE_QUARANTINED"));
+    if (argument === "--run")
+      assert.ok(output.includes("APPROVAL_STARTUP_FAILED"));
+  }
 });

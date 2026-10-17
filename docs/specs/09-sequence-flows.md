@@ -377,11 +377,24 @@ sequenceDiagram
 
 ## 7. Crash and reconciliation
 
-The Java simulator composition now implements durable claims, attempts,
-transitions, evidence, and append-only reconciliation in PostgreSQL. The reconciliation worker
-adds the durable unknown queue and leased background worker. Its target port is
-lookup-only and currently simulated; production target lookup remains future
-work, and the Java development path remains process-local.
+The durable Java simulator services implement claims, attempts, transitions,
+evidence and lookup-only reconciliation ports in PostgreSQL. A completion
+exception triggers one additional same-attempt unknown recording, not another
+target call. The original response stays uncertain; a committed non-executing
+state cannot be overwritten. Persistent outage or crash can still leave executing
+state without a queued unknown. See [ADR 0048](../architecture/0048-bounded-durable-completion-uncertainty.md).
+
+The separately configured leased worker queries only already queued unknowns;
+it is not automatically scheduled by the approval launcher. Production target
+lookup, abandoned-execution recovery and restore fencing remain future work.
+
+Explicit [operator quarantine](../architecture/0051-operator-declared-recovery-quarantine.md)
+adds a separate one-way containment flow: authority transactions first share-lock
+the recovery row and commit their claim; declaration update-locks the same row
+and commits quarantined state. Later claims/reviews fail closed across replicas.
+Prior admitted claims may still dispatch/complete after declaration, and existing
+completion/evidence/lookup transactions are not gated. This does not detect a
+restored old ready row or define safe effectful resume.
 
 ```mermaid
 sequenceDiagram
@@ -390,19 +403,23 @@ sequenceDiagram
   participant D as Execution store
   participant T as Target
   participant R as Reconciler
-  participant A as Audit store
 
   G->>D: TX1 claim permit + attempt + evidence/outbox
   D-->>G: commit; state=executing
   G->>T: request + stable idempotency key
   T-->>G: target may complete
   G->>D: TX2 append confirmed/unknown outcome + evidence/outbox
-  G-xG: crash before recording outcome
-  D->>A: append outcome_indeterminate
-  R->>D: lease unknown queue row; commit
-  R->>T: read-only lookup by idempotency key
-  T-->>R: confirmed result
-  R->>D: TX append terminal state + evidence; delete queue row
+  opt completion throws (commit not assumed)
+    G->>D: One same-attempt executing-to-unknown completion
+    Note over G,D: Preserve any committed non-executing state; original response stays uncertain
+  end
+  Note over G,D: Crash/outage may leave executing; no automatic queue insertion is promised
+  opt unknown committed and lookup worker separately configured
+    R->>D: lease unknown queue row; commit
+    R->>T: read-only lookup by tenant, adapter and idempotency key
+    T-->>R: confirmed result
+    R->>D: TX append confirmed state + evidence; delete queue row
+  end
 ```
 
 ## 8. Current process-local evidence flow

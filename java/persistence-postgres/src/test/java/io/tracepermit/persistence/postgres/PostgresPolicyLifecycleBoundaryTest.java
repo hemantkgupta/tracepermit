@@ -268,7 +268,7 @@ final class PostgresPolicyLifecycleBoundaryTest {
     try (var connection = upgrade.getConnection(); var statement = connection.createStatement();
          var rows = statement.executeQuery("SELECT contract_version FROM tp_enforcement_schema_guard")) {
       assertThat(rows.next()).isTrue();
-      assertThat(rows.getInt(1)).isEqualTo(8);
+      assertThat(rows.getInt(1)).isEqualTo(9);
     }
   }
 
@@ -281,7 +281,7 @@ final class PostgresPolicyLifecycleBoundaryTest {
     PostgresDurableEnforcementState.migrate(incompatible, PostgresDurableEnforcementState.MIGRATION_LOCATION);
     try (var connection = incompatible.getConnection(); var statement = connection.createStatement()) {
       statement.execute("ALTER TABLE tp_enforcement_schema_guard DROP CONSTRAINT tp_enforcement_schema_guard_contract_version_check");
-      statement.execute("UPDATE tp_enforcement_schema_guard SET contract_version = 9");
+      statement.execute("UPDATE tp_enforcement_schema_guard SET contract_version = 999");
       assertThatThrownBy(() -> new PostgresPolicyLifecycleStore(incompatible))
           .isInstanceOf(IllegalStateException.class).hasMessage("INCOMPATIBLE_DURABLE_STATE_SCHEMA");
       statement.execute("DELETE FROM tp_enforcement_schema_guard");
