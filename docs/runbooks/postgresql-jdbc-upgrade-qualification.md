@@ -8,9 +8,15 @@ This runbook documents the primary-source security and behavioral assessment, de
 
 ## 1. Upstream Changelog and Primary-Source Assessment
 
-The upgrade spans patch releases `42.7.6` through `42.7.14` of the PostgreSQL JDBC driver (`pgjdbc`). Below is a systematic assessment of upstream changes, security advisories, bug fixes, and their relevance to TracePermit.
+The upgrade spans patch releases `42.7.6` through `42.7.14` of the PostgreSQL JDBC driver (`pgjdbc`). Primary sources include:
 
-### 42.7.6
+- [pgjdbc Upstream Releases](https://github.com/pgjdbc/pgjdbc/releases)
+- [pgjdbc Master CHANGELOG](https://github.com/pgjdbc/pgjdbc/blob/master/CHANGELOG.md)
+- [Release Comparison REL42.7.5...REL42.7.14](https://github.com/pgjdbc/pgjdbc/compare/REL42.7.5...REL42.7.14)
+
+Below is a systematic assessment of upstream changes, security advisories, bug fixes, and their relevance to TracePermit.
+
+### [42.7.6](https://github.com/pgjdbc/pgjdbc/releases/tag/REL42.7.6)
 
 - **Metadata and Introspection**:
   - `DatabaseMetaData.getIndexInfo()` now includes index comments in the `REMARKS` column (PR #3513).
@@ -23,13 +29,13 @@ The upgrade spans patch releases `42.7.6` through `42.7.14` of the PostgreSQL JD
   - Updated default build target to Java 21 (PR #3612).
 - **TracePermit Relevance**: Compatible with TracePermit's Java 21 baseline. Introspection improvements align with schema guard queries in [`PostgresDatabaseLifecycle.java`](../../java/persistence-postgres/src/main/java/io/tracepermit/persistence/postgres/PostgresDatabaseLifecycle.java).
 
-### 42.7.7
+### [42.7.7](https://github.com/pgjdbc/pgjdbc/releases/tag/REL42.7.7)
 
 - **Security Advisory (CVE-2025-49146)**:
   - _Insecure Authentication Fallback_: Fixed an issue where the driver silently ignored the `channelBinding=require` configuration parameter when non-SASL authentication methods were requested by the server. Under `42.7.7+`, the driver strictly fails closed if channel binding is required but SASL is not used or fails to complete.
 - **TracePermit Relevance**: Eliminates silent authentication fallback vulnerabilities in TLS environments. TracePermit test fixtures run in isolated local Docker containers; in any future networked deployment, this fail-closed behavior enforces required channel binding.
 
-### 42.7.8
+### [42.7.8](https://github.com/pgjdbc/pgjdbc/releases/tag/REL42.7.8)
 
 - **Performance and Metadata**:
   - Server-prepared statements enabled for `DatabaseMetaData` queries to improve metadata call latency.
@@ -41,7 +47,7 @@ The upgrade spans patch releases `42.7.6` through `42.7.14` of the PostgreSQL JD
   - Added missing `SELF_REFERENCING_COL_NAME` column to `getTables()` `ResultSetMetaData` (PR #3660).
 - **TracePermit Relevance**: Accelerates Flyway schema verification and [`PostgresDatabaseLifecycle.validateExisting`](../../java/persistence-postgres/src/main/java/io/tracepermit/persistence/postgres/PostgresDatabaseLifecycle.java) metadata introspection; prevents timer exceptions during statement cancellation.
 
-### 42.7.9
+### [42.7.9](https://github.com/pgjdbc/pgjdbc/releases/tag/REL42.7.9)
 
 - **Connection and Certificate Management**:
   - Added `queryTimeout` connection property to enforce global statement timeout policies at the connection level.
@@ -52,7 +58,7 @@ The upgrade spans patch releases `42.7.6` through `42.7.14` of the PostgreSQL JD
   - Fixed numeric array decoding containing special values like `NaN`.
 - **TracePermit Relevance**: Memory leak resolution directly benefits long-running Java 21 daemon services. Hardened class loading protects against unintended static initialization.
 
-### 42.7.10
+### [42.7.10](https://github.com/pgjdbc/pgjdbc/releases/tag/REL42.7.10)
 
 - **Regression Reversion**:
   - Reverted proleptic Gregorian Calendar change due to regressions with date handling.
@@ -60,7 +66,7 @@ The upgrade spans patch releases `42.7.6` through `42.7.14` of the PostgreSQL JD
   - Processed pending responses before fastpath execution to prevent protocol synchronization errors.
 - **TracePermit Relevance**: Maintains predictable timestamp parsing across `Instant`, `OffsetDateTime`, and `Timestamp` columns used in durable enforcement state records.
 
-### 42.7.11
+### [42.7.11](https://github.com/pgjdbc/pgjdbc/releases/tag/REL42.7.11)
 
 - **Security Advisory (CVE-2026-42198)**:
   - _Client-side DoS via SCRAM Iteration Count_: Malicious or compromised PostgreSQL servers could specify an excessively large PBKDF2 iteration count during SCRAM authentication, causing client CPU exhaustion. Introduced `scramMaxIterations` (default `100,000`) to bound computational cost.
@@ -71,13 +77,13 @@ The upgrade spans patch releases `42.7.6` through `42.7.14` of the PostgreSQL JD
   - Fixed `jsonb` column types to return as `PGobject` rather than raw strings.
 - **TracePermit Relevance**: Mitigates client CPU exhaustion on authentication. The reentrant lock on connection closure safeguards against concurrent connection pool cleanup races.
 
-### 42.7.12
+### [42.7.12](https://github.com/pgjdbc/pgjdbc/releases/tag/REL42.7.12)
 
 - **Security Advisory (CVE-2026-54291)**:
   - _Enforced SCRAM Channel-Binding Policy / Silent Downgrade Prevention_: Under `channelBinding=require`, the driver previously could silently downgrade from `SCRAM-SHA-256-PLUS` (with channel binding) to plain `SCRAM-SHA-256` (without channel binding) if the server presented a certificate with a signature algorithm lacking a `tls-server-end-point` hash (e.g. Ed25519 or post-quantum schemes). The driver now fails closed.
 - **TracePermit Relevance**: Prevents man-in-the-middle channel-stripping attacks.
 
-### 42.7.13
+### [42.7.13](https://github.com/pgjdbc/pgjdbc/releases/tag/REL42.7.13)
 
 - **Prepared Statement Caching and DDL**:
   - Invalidate prepared statement cache via `search_path` GUC_REPORT on PostgreSQL 18+.
@@ -88,7 +94,7 @@ The upgrade spans patch releases `42.7.6` through `42.7.14` of the PostgreSQL JD
   - Empty timestamp, date, and time string values now reject with a clear error.
 - **TracePermit Relevance**: Primary key derivation optimization benefits Flyway migrations and schema checks. Strict rejection of empty timestamp strings aligns with TracePermit's fail-closed input validation.
 
-### 42.7.14
+### [42.7.14](https://github.com/pgjdbc/pgjdbc/releases/tag/REL42.7.14)
 
 - **Security Advisory (CVE-2026-107314)**:
   - _`requireAuth` Enforcement Validation_: Addressed a bug where a `requireAuth` configuration excluding all authentication methods or given an empty/invalid value was silently treated as unset by versions `42.7.11` through `42.7.13`. Invalid configurations now fail with `SQLState 22023` or `08004`.
