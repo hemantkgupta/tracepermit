@@ -7,7 +7,7 @@ Related runbook: [Simulator approval-history API](approval-history-api.md).
 This runbook documents the role-safe React controls in TracePermit's browser approval inbox for interacting with the authenticated approval-history API. It provides metadata filtering, keyset pagination, and race-safe state transitions over the same-origin session authenticated `/browser/api/v1/approvals` route.
 
 > [!IMPORTANT]
-> This is a bounded UI slice of **TP-MVP-17**, not retention, export, full action history or a production deployment. It operates exclusively against loopback simulator targets. No tokens are pasted into the browser or saved in browser storage.
+> This is a bounded authenticated history UI slice, not retention, export, full action history or a production deployment. It operates exclusively against loopback simulator targets. No tokens are pasted into the browser or saved in browser storage.
 
 ---
 
@@ -101,6 +101,50 @@ The frontend consumes `GET /browser/api/v1/approvals` with same-origin credentia
 ---
 
 ## 4. Verification and Browser Qualification
+
+### Integrator repair and observed qualification (2026-10-17)
+
+The initial producer head `1e6edd45dd525a6e33a358cab948f62ea905fe7e`
+passed helper tests but failed mounted browser entry: state generation0 rejected
+the initial generation1 response, leaving both anonymous401 and signed-in200
+responses permanently loading. The repair initializes through the same transition
+as refresh, synchronizes refs/state before dispatch, and invalidates both on
+logout, expiry and read errors. Session and page requests remain parallel.
+Changed authority context cannot append to a previous traversal. Failed reads
+clear rows/selection; mutations require current, non-loading, error-free authority.
+There is no automatic retry. Client reads have a15-second abort deadline.
+
+Session/page/item shapes, mode, timestamps, scalar bounds and continuation are
+checked at runtime; body JSON is rejected above1MiB after receipt (not a streaming
+wire-byte limit). Unknown outcomes fail closed. Incoming rows are deduplicated
+within and across pages. The250-row cap is distinct from observed exhaustion.
+Stored pending/approved status remains visible alongside derived expiry.
+
+Actual built React/Java/PostgreSQL16.4 qualification used installed Chrome through
+Playwright on numeric loopback, with synthetic accounts only. Browser plugin was
+unavailable; no browser/dependency download or personal account was used.
+The live fixture seeded51 Alice and201 Dave pending requests through authenticated
+browser APIs with session/CSRF values kept only in memory. Observed checks:
+
+- Anonymous entry/sign-in; authenticated viewer controls; real older-page
+  traversal through100/150/200/250 rows with explicit cap, not “all.”
+- Alice sees only her51 rows, not Dave's201; a new request resets to page one.
+- Bob's explicit decision produces approved/not-executed; Alice's subsequent
+  exact action produces consumed/succeeded. Explicit replay returns409.
+- Desktop1440×1000 and mobile390×844 render; mobile has no document overflow.
+  No JavaScript page exceptions or framework overlay appeared in this flow.
+- Controlled client transport400/403/503 and malformed200 responses clear stale
+  data, disable mutations and omit raw diagnostic canaries. These are client
+  fault simulations, not claims that the real backend emitted malformed data.
+- A deliberately delayed fetch resolving after cancellation/logout cannot restore
+  identity or rows. This exercises actual component wiring, not only pure helpers.
+- Additional controlled session/page responses verify changed-principal context
+  discards the old traversal, pending status remains visible with derived expiry,
+  and local session-expiry timers remove cached authority and rows.
+
+Screenshots and browser profiles/logs are private, not committed evidence or
+external IdP certification. The manual checklist below is for future reruns;
+starting the fixture alone does not establish that its interactions passed.
 
 ### Unit and State Test Execution
 

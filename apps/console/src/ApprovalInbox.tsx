@@ -18,6 +18,8 @@ import {
 } from "./approval-api.js";
 import {
   MAX_ACCUMULATED_ROWS,
+  authorityContext,
+  historyAuthorityReady,
   initialHistoryState,
   pageFailure,
   pageSuccess,
@@ -26,7 +28,6 @@ import {
   startLoadOlder,
   startRefresh,
   startSearch,
-  toApprovalQuery,
   type HistoryFilters,
   type HistoryState,
 } from "./approval-history-state.js";
@@ -47,12 +48,46 @@ export function ApprovalInbox() {
   const [port, setPort] = useState("443");
   const [cidr, setCidr] = useState("192.0.2.0/24");
 
+  // Refs are updated synchronously with transitions, before React renders.
+  const stateRef = useRef(state);
+  const sessionRef = useRef(session);
   const generationRef = useRef(0);
   const abortControllerRef = useRef<AbortController | null>(null);
-
   const selected = state.items.find(
     (item) => item.approvalRequestId === state.selectedId,
   );
+  const authorityReady = historyAuthorityReady(state, session);
+
+  function commit(next: HistoryState) {
+    stateRef.current = next;
+    setState(next);
+  }
+
+  function rememberSession(next: ApprovalSession | null) {
+    sessionRef.current = next;
+    setSession(next);
+  }
+
+  function invalidate(status?: number, error?: string) {
+    abortControllerRef.current?.abort();
+    const cleared = sessionLoggedOut({
+      ...stateRef.current,
+      generation: generationRef.current,
+    });
+    generationRef.current = cleared.generation;
+    commit(
+      status
+        ? pageFailure(
+            cleared,
+            cleared.generation,
+            status,
+            error ?? message(new ApprovalApiError(status)),
+          )
+        : cleared,
+    );
+    rememberSession(null);
+    setConfirmation(null);
+  }
 
   function executeQuery(
     query: ApprovalQuery,
@@ -62,118 +97,188 @@ export function ApprovalInbox() {
     abortControllerRef.current?.abort();
     const controller = new AbortController();
     abortControllerRef.current = controller;
-
     setConfirmation(null);
-
-    void Promise.all([
+    const previous = sessionRef.current;
+    void Promise.allSettled([
       loadApprovalSession(controller.signal),
       loadApprovalPage(query, controller.signal),
-    ])
-      .then(([nextSession, page]) => {
-        if (controller.signal.aborted || generation !== generationRef.current) {
-          return;
-        }
-        setSession(nextSession);
-        setState((current) => pageSuccess(current, generation, page, isOlder));
-      })
-      .catch((failure: unknown) => {
-        if (controller.signal.aborted || generation !== generationRef.current) {
-          return;
-        }
-        const status =
-          failure instanceof ApprovalApiError ? failure.status : 500;
-        const errMessage = message(failure);
-
-        if (status === 401) {
-          setSession(null);
-        }
-        setState((current) =>
-          pageFailure(current, generation, status, errMessage),
+    ]).then(([identity, result]) => {
+      if (controller.signal.aborted || generation !== generationRef.current)
+        return;
+      if (identity.status === "rejected") {
+        invalidate(
+          identity.reason instanceof ApprovalApiError
+            ? identity.reason.status
+            : 503,
         );
-      });
+        return;
+      }
+      const nextSession = identity.value;
+      if (Date.parse(nextSession.expiresAt) <= Date.now()) {
+        invalidate(401);
+        return;
+      }
+      rememberSession(nextSession);
+      if (
+        isOlder &&
+        previous &&
+        authorityContext(previous) !== authorityContext(nextSession)
+      ) {
+        commit(
+          pageFailure(
+            stateRef.current,
+            generation,
+            409,
+            "Current authority changed. Refresh to start a new traversal.",
+          ),
+        );
+        return;
+      }
+      if (result.status === "rejected") {
+        const status =
+          result.reason instanceof ApprovalApiError
+            ? result.reason.status
+            : 503;
+        if (status === 401 || status === 403) invalidate(status);
+        else
+          commit(
+            pageFailure(
+              stateRef.current,
+              generation,
+              status,
+              message(result.reason),
+            ),
+          );
+        return;
+      }
+      commit(pageSuccess(stateRef.current, generation, result.value, isOlder));
+    });
   }
 
-  // Initial load
-  useEffect(() => {
-    const initialGen = 1;
-    generationRef.current = initialGen;
-    const initialQuery = toApprovalQuery(state.activeFilters);
-    executeQuery(initialQuery, initialGen, false);
+  function begin(
+    transition: {
+      nextState: HistoryState;
+      query: ApprovalQuery | null;
+      generation: number;
+    },
+    older = false,
+  ) {
+    if (!transition.query) return;
+    generationRef.current = transition.generation;
+    commit(transition.nextState);
+    executeQuery(transition.query, transition.generation, older);
+  }
 
+  useEffect(() => {
+    begin(startRefresh(stateRef.current));
     return () => {
       abortControllerRef.current?.abort();
+      generationRef.current++;
+      stateRef.current = {
+        ...stateRef.current,
+        generation: generationRef.current,
+      };
     };
   }, []);
 
+  useEffect(() => {
+    if (!session) return;
+    const timer = window.setTimeout(
+      () => invalidate(401),
+      Math.max(0, Date.parse(session.expiresAt) - Date.now()),
+    );
+    return () => window.clearTimeout(timer);
+  }, [session]);
+
   function handleApplyFilters(event: React.FormEvent) {
     event.preventDefault();
-    if (busy || state.loading || state.loadingOlder) return;
+    if (
+      submitting.current ||
+      stateRef.current.loading ||
+      stateRef.current.loadingOlder
+    )
+      return;
     setNotice(null);
-    const { nextState, query, generation } = startSearch(
-      state,
-      state.draftFilters,
-    );
-    generationRef.current = generation;
-    setState(nextState);
-    executeQuery(query, generation, false);
+    begin(startSearch(stateRef.current, stateRef.current.draftFilters));
   }
 
   function handleResetFilters() {
-    if (busy || state.loading || state.loadingOlder) return;
+    if (
+      submitting.current ||
+      stateRef.current.loading ||
+      stateRef.current.loadingOlder
+    )
+      return;
     setNotice(null);
-    const { nextState, query, generation } = resetHistoryFilters(state);
-    generationRef.current = generation;
-    setState(nextState);
-    executeQuery(query, generation, false);
+    begin(resetHistoryFilters(stateRef.current));
   }
 
   function handleRefresh() {
-    if (busy || state.loading || state.loadingOlder) return;
+    if (
+      submitting.current ||
+      stateRef.current.loading ||
+      stateRef.current.loadingOlder
+    )
+      return;
     setNotice(null);
-    const { nextState, query, generation } = startRefresh(state);
-    generationRef.current = generation;
-    setState(nextState);
-    executeQuery(query, generation, false);
+    begin(startRefresh(stateRef.current));
   }
 
   function handleLoadOlder() {
-    if (busy || state.loading || state.loadingOlder || !state.nextCursor)
-      return;
-    const { nextState, query, generation } = startLoadOlder(state);
-    if (!query) return;
-    generationRef.current = generation;
-    setState(nextState);
-    executeQuery(query, generation, true);
+    if (submitting.current || stateRef.current.error) return;
+    begin(startLoadOlder(stateRef.current), true);
+  }
+
+  function updateDraft(change: Partial<HistoryFilters>) {
+    setConfirmation(null);
+    commit({
+      ...stateRef.current,
+      draftFilters: { ...stateRef.current.draftFilters, ...change },
+    });
   }
 
   async function perform(
     operation: () => Promise<unknown>,
     successNotice: string,
   ) {
-    if (submitting.current) return;
+    if (
+      submitting.current ||
+      !historyAuthorityReady(stateRef.current, sessionRef.current)
+    )
+      return;
     submitting.current = true;
+    const generation = generationRef.current;
     setBusy(true);
     setNotice(null);
+    setConfirmation(null);
     try {
       await operation();
-      setConfirmation(null);
+      if (generation !== generationRef.current) return;
       setNotice(successNotice);
-      // Successful mutation: refresh from page 1
-      handleRefresh();
+      begin(startRefresh(stateRef.current));
     } catch (failure: unknown) {
-      setConfirmation(null);
-      const status = failure instanceof ApprovalApiError ? failure.status : 500;
-      const errMessage = message(failure);
-      if (status === 401) {
-        setSession(null);
-        setState(sessionLoggedOut);
-      } else {
-        setState((current) => ({
-          ...current,
-          error: errMessage,
-          errorStatus: status,
-        }));
-      }
+      if (generation !== generationRef.current) return;
+      const status = failure instanceof ApprovalApiError ? failure.status : 503;
+      invalidate(status, message(failure));
+    } finally {
+      submitting.current = false;
+      setBusy(false);
+    }
+  }
+
+  async function handleSignOut() {
+    if (submitting.current || !sessionRef.current) return;
+    const signingOut = sessionRef.current;
+    submitting.current = true;
+    setBusy(true);
+    invalidate();
+    try {
+      await signOut(signingOut);
+      setNotice("Signed out.");
+    } catch {
+      setNotice(
+        "Sign-out could not be confirmed. Local authority was cleared; no operation was retried.",
+      );
     } finally {
       submitting.current = false;
       setBusy(false);
@@ -210,12 +315,7 @@ export function ApprovalInbox() {
             >
               Refresh
             </button>
-            <button
-              disabled={busy}
-              onClick={() =>
-                void perform(() => signOut(session), "Signed out.")
-              }
-            >
+            <button disabled={busy} onClick={() => void handleSignOut()}>
               Sign out
             </button>
           </div>
@@ -225,7 +325,7 @@ export function ApprovalInbox() {
       {state.error && (
         <div className="approval-error-banner" role="alert">
           <p className="approval-error">{state.error}</p>
-          {state.errorStatus === 400 && (
+          {state.errorStatus !== 401 && (
             <button
               type="button"
               disabled={busy || state.loading}
@@ -331,7 +431,7 @@ export function ApprovalInbox() {
               </label>
               <button
                 className="approval-primary"
-                disabled={busy || state.loading || state.loadingOlder}
+                disabled={busy || !authorityReady}
               >
                 Request approval
               </button>
@@ -347,7 +447,7 @@ export function ApprovalInbox() {
                 Requests{" "}
                 <span className="approval-muted">
                   {state.items.length} loaded
-                  {state.nextCursor ? "" : " · all"}
+                  {state.endOfResults ? " · end of observed results" : ""}
                 </span>
               </h2>
               <p className="approval-muted">
@@ -369,13 +469,9 @@ export function ApprovalInbox() {
                       id="filter-status"
                       value={state.draftFilters.status}
                       onChange={(e) =>
-                        setState((current) => ({
-                          ...current,
-                          draftFilters: {
-                            ...current.draftFilters,
-                            status: e.target.value as "" | ApprovalStatusFilter,
-                          },
-                        }))
+                        updateDraft({
+                          status: e.target.value as "" | ApprovalStatusFilter,
+                        })
                       }
                     >
                       <option value="">All statuses</option>
@@ -396,13 +492,7 @@ export function ApprovalInbox() {
                       placeholder="e.g. aws.ec2.update_security_group"
                       value={state.draftFilters.toolName}
                       onChange={(e) =>
-                        setState((current) => ({
-                          ...current,
-                          draftFilters: {
-                            ...current.draftFilters,
-                            toolName: e.target.value,
-                          },
-                        }))
+                        updateDraft({ toolName: e.target.value })
                       }
                     />
                   </div>
@@ -416,13 +506,7 @@ export function ApprovalInbox() {
                       placeholder="Exact request ID"
                       value={state.draftFilters.approvalRequestId}
                       onChange={(e) =>
-                        setState((current) => ({
-                          ...current,
-                          draftFilters: {
-                            ...current.draftFilters,
-                            approvalRequestId: e.target.value,
-                          },
-                        }))
+                        updateDraft({ approvalRequestId: e.target.value })
                       }
                     />
                   </div>
@@ -456,7 +540,7 @@ export function ApprovalInbox() {
                 const expired = isExpired(item);
                 const displayStatus =
                   expired && item.status === "pending"
-                    ? "expired"
+                    ? "pending (expired)"
                     : expired && item.status === "approved"
                       ? "approved (expired)"
                       : item.status;
@@ -469,10 +553,10 @@ export function ApprovalInbox() {
                     disabled={busy}
                     key={item.approvalRequestId}
                     onClick={() => {
-                      setState((current) => ({
-                        ...current,
+                      commit({
+                        ...stateRef.current,
                         selectedId: item.approvalRequestId,
-                      }));
+                      });
                       setConfirmation(null);
                     }}
                   >
@@ -525,7 +609,7 @@ export function ApprovalInbox() {
                   )}
                 {!state.loadingOlder &&
                   !state.atCapacity &&
-                  !state.nextCursor &&
+                  state.endOfResults &&
                   state.items.length > 0 && (
                     <p
                       className="approval-muted approval-end-of-results"
@@ -549,6 +633,10 @@ export function ApprovalInbox() {
                       className={`approval-status ${selected.status}${isExpired(selected) ? " expired" : ""}`}
                     >
                       {selected.status}
+                      {isExpired(selected) &&
+                      ["pending", "approved"].includes(selected.status)
+                        ? " (expired)"
+                        : ""}
                     </span>
                   </div>
                   <h3>{selected.action.toolName}</h3>
@@ -608,7 +696,7 @@ export function ApprovalInbox() {
                       <>
                         <button
                           className="approval-primary"
-                          disabled={busy || state.loading || state.loadingOlder}
+                          disabled={busy || !authorityReady}
                           onClick={() =>
                             setConfirmation({
                               approval: selected,
@@ -620,7 +708,7 @@ export function ApprovalInbox() {
                         </button>
                         <button
                           className="approval-danger"
-                          disabled={busy || state.loading || state.loadingOlder}
+                          disabled={busy || !authorityReady}
                           onClick={() =>
                             setConfirmation({
                               approval: selected,
@@ -635,7 +723,7 @@ export function ApprovalInbox() {
                     {canExecute(session, selected) && (
                       <button
                         className="approval-primary"
-                        disabled={busy || state.loading || state.loadingOlder}
+                        disabled={busy || !authorityReady}
                         onClick={() =>
                           setConfirmation({
                             approval: selected,
@@ -661,7 +749,7 @@ export function ApprovalInbox() {
                         Read-only access. No authorized mutation is available.
                       </p>
                     )}
-                  {confirmation && (
+                  {confirmation && authorityReady && (
                     <section
                       className="approval-confirm"
                       aria-label="Confirm exact action"
@@ -679,7 +767,7 @@ export function ApprovalInbox() {
                       <div className="approval-toolbar">
                         <button
                           className="approval-primary"
-                          disabled={busy || state.loading || state.loadingOlder}
+                          disabled={busy || !authorityReady}
                           onClick={() =>
                             void perform(
                               () =>

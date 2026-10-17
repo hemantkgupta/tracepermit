@@ -89,12 +89,18 @@ describe("role-scoped approval client", () => {
     const fetcher = vi.fn((_path: string, _init: RequestInit) =>
       Promise.resolve(
         new Response(
-          JSON.stringify({
-            mode: "simulated",
-            items: [],
-            pageSize: 50,
-            nextCursor: null,
-          }),
+          JSON.stringify(
+            _path === "/browser/session"
+              ? session
+              : _init.method === "POST"
+                ? approval
+                : {
+                    mode: "simulated",
+                    items: [],
+                    pageSize: 50,
+                    nextCursor: null,
+                  },
+          ),
         ),
       ),
     );
@@ -208,5 +214,68 @@ describe("role-scoped approval client", () => {
     // 5. loadApprovals compatibility calls loadApprovalPage and returns items
     const items = await loadApprovals();
     expect(items).toEqual([approval]);
+  });
+
+  it.each([
+    { mode: "real" },
+    { pageSize: 500 },
+    { pageSize: 0 },
+    { pageSize: 1.5 },
+    { nextCursor: 42 },
+    { nextCursor: "x".repeat(2049) },
+    { items: [{ ...approval, action: null }] },
+    { items: [{ ...approval, executionStatus: [] }] },
+    { items: [{ ...approval, status: ["pending"] }] },
+    { items: [{ ...approval, createdAt: "invalid" }] },
+    { items: [{ ...approval, expiresAt: "invalid" }] },
+    { items: [{ ...approval, requestHash: "" }] },
+    { pageSize: 1, items: [approval, approval] },
+  ])(
+    "rejects malformed successful pages without raw fallback: %j",
+    async (override) => {
+      const fetcher = vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              mode: "simulated",
+              items: [approval],
+              pageSize: 50,
+              nextCursor: null,
+              ...override,
+            }),
+          ),
+      );
+      vi.stubGlobal("fetch", fetcher);
+      await expect(loadApprovalPage()).rejects.toMatchObject({ status: 502 });
+      expect(fetcher).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it("rejects malformed session and JSON data using safe code-only messages", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("synthetic-sensitive-canary")),
+    );
+    await expect(loadApprovalPage()).rejects.toMatchObject({ status: 502 });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ ...session, roles: ["ADMIN"] })),
+      ),
+    );
+    await expect(loadApprovalSession()).rejects.toMatchObject({ status: 502 });
+    expect(isExpired({ ...approval, expiresAt: "invalid" })).toBe(true);
+  });
+
+  it("does not treat a malformed mutation response as success", async () => {
+    const fetcher = vi.fn(
+      async () => new Response(JSON.stringify({ mode: "real" })),
+    );
+    vi.stubGlobal("fetch", fetcher);
+    await expect(
+      decideApproval(session, approval, "execute"),
+    ).rejects.toMatchObject({ status: 502 });
+    expect(fetcher).toHaveBeenCalledTimes(1);
   });
 });

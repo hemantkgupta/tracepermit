@@ -3,6 +3,7 @@ import type {
   ApprovalPage,
   ApprovalQuery,
   ApprovalStatusFilter,
+  ApprovalSession,
 } from "./approval-api.js";
 
 export const MAX_ACCUMULATED_ROWS = 250;
@@ -52,7 +53,33 @@ export function initialHistoryState(): HistoryState {
 }
 
 export function sanitizeFilterString(val: string): string {
-  return val.trim().slice(0, 256);
+  if (val.trim().length > 256) throw new Error("Exact filter is too long.");
+  return val.trim();
+}
+
+export function authorityContext(session: ApprovalSession): string {
+  return JSON.stringify([
+    session.tenantId,
+    session.principalId,
+    session.human,
+    [...session.roles].sort(),
+    [...session.scopes].sort(),
+    session.csrfToken,
+  ]);
+}
+
+export function historyAuthorityReady(
+  state: HistoryState,
+  session: ApprovalSession | null,
+): boolean {
+  return (
+    session !== null &&
+    Number.isFinite(Date.parse(session.expiresAt)) &&
+    Date.parse(session.expiresAt) > Date.now() &&
+    !state.loading &&
+    !state.loadingOlder &&
+    state.error === null
+  );
 }
 
 export function toApprovalQuery(
@@ -86,9 +113,11 @@ export function deduplicateApprovals(
   incoming: Approval[],
 ): Approval[] {
   const seen = new Set(existing.map((item) => item.approvalRequestId));
-  const dedupedIncoming = incoming.filter(
-    (item) => !seen.has(item.approvalRequestId),
-  );
+  const dedupedIncoming = incoming.filter((item) => {
+    if (seen.has(item.approvalRequestId)) return false;
+    seen.add(item.approvalRequestId);
+    return true;
+  });
   return [...existing, ...dedupedIncoming];
 }
 
@@ -244,7 +273,7 @@ export function pageSuccess(
   }
 
   if (!isOlder) {
-    const rawItems = page.items ?? [];
+    const rawItems = deduplicateApprovals([], page.items);
     const atCapacity = rawItems.length >= MAX_ACCUMULATED_ROWS;
     const clampedItems = atCapacity
       ? rawItems.slice(0, MAX_ACCUMULATED_ROWS)
@@ -263,7 +292,7 @@ export function pageSuccess(
       loading: false,
       loadingOlder: false,
       atCapacity,
-      endOfResults: nextCursor === null,
+      endOfResults: !atCapacity && page.nextCursor === null,
       selectedId,
       error: null,
       errorStatus: null,
@@ -289,7 +318,7 @@ export function pageSuccess(
     nextCursor,
     loadingOlder: false,
     atCapacity,
-    endOfResults: nextCursor === null,
+    endOfResults: !atCapacity && page.nextCursor === null,
     selectedId,
     error: null,
     errorStatus: null,
@@ -338,6 +367,11 @@ export function pageFailure(
 
   return {
     ...state,
+    items: [],
+    nextCursor: null,
+    selectedId: null,
+    atCapacity: false,
+    endOfResults: false,
     loading: false,
     loadingOlder: false,
     error: errorMessage,

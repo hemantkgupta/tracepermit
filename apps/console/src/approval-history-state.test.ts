@@ -14,6 +14,9 @@ import {
   startSearch,
   toApprovalQuery,
   type HistoryFilters,
+  authorityContext,
+  historyAuthorityReady,
+  sanitizeFilterString,
 } from "./approval-history-state.js";
 
 function makeMockApproval(
@@ -261,14 +264,14 @@ describe("approval history state helper", () => {
     expect(state403.selectedId).toBeNull();
     expect(state403.errorStatus).toBe(403);
 
-    // 400: Keeps existing items, sets errorStatus = 400 for restart button
+    // 400: Clears stale rows and authority-dependent selection, offers restart
     const state400 = pageFailure(
       baseState,
       2,
       400,
       "Invalid query or continuation.",
     );
-    expect(state400.items).toHaveLength(1);
+    expect(state400.items).toHaveLength(0);
     expect(state400.errorStatus).toBe(400);
   });
 
@@ -307,5 +310,81 @@ describe("approval history state helper", () => {
       status: "consumed",
       toolName: "aws.ec2.update_security_group",
     });
+  });
+
+  it("aligns the initial request with success and error generations", () => {
+    const first = startRefresh(initialHistoryState());
+    expect(first.nextState.generation).toBe(first.generation);
+    const success = pageSuccess(
+      first.nextState,
+      first.generation,
+      { mode: "simulated", items: [], pageSize: 50, nextCursor: null },
+      false,
+    );
+    expect(success.loading).toBe(false);
+    expect(
+      pageFailure(first.nextState, first.generation, 401, "Ended").loading,
+    ).toBe(false);
+    const loggedOut = sessionLoggedOut(first.nextState);
+    expect(
+      pageSuccess(
+        loggedOut,
+        first.generation,
+        { mode: "simulated", items: [], pageSize: 50, nextCursor: null },
+        false,
+      ),
+    ).toBe(loggedOut);
+  });
+
+  it("deduplicates within a page and distinguishes cap from exhaustion", () => {
+    const row = makeMockApproval("duplicate");
+    expect(deduplicateApprovals([], [row, row])).toEqual([row]);
+    const rows = Array.from({ length: 250 }, (_, i) =>
+      makeMockApproval(String(i)),
+    );
+    const capped = pageSuccess(
+      initialHistoryState(),
+      0,
+      { mode: "simulated", items: rows, pageSize: 50, nextCursor: "more" },
+      false,
+    );
+    expect(capped.atCapacity).toBe(true);
+    expect(capped.endOfResults).toBe(false);
+  });
+
+  it("disables every mutation during errors, reads and expired sessions", () => {
+    const identity = {
+      mode: "simulated" as const,
+      principalId: "alice",
+      tenantId: "alpha",
+      human: true,
+      roles: ["REQUESTER"],
+      scopes: ["approvals.request"],
+      csrfToken: "synthetic",
+      expiresAt: "2099-01-01T00:00:00Z",
+    };
+    const ready = { ...initialHistoryState(), loading: false };
+    expect(historyAuthorityReady(ready, identity)).toBe(true);
+    for (const status of [400, 401, 403, 503]) {
+      expect(
+        historyAuthorityReady(
+          pageFailure(ready, 0, status, "safe error"),
+          identity,
+        ),
+      ).toBe(false);
+    }
+    expect(
+      historyAuthorityReady({ ...ready, loadingOlder: true }, identity),
+    ).toBe(false);
+    expect(
+      historyAuthorityReady(ready, { ...identity, expiresAt: "invalid" }),
+    ).toBe(false);
+    expect(authorityContext(identity)).not.toBe(
+      authorityContext({ ...identity, principalId: "bob" }),
+    );
+    expect(authorityContext(identity)).not.toBe(
+      authorityContext({ ...identity, roles: ["VIEWER"] }),
+    );
+    expect(() => sanitizeFilterString("x".repeat(257))).toThrow();
   });
 });
