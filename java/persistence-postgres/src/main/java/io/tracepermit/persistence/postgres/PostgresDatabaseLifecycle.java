@@ -14,13 +14,14 @@ import org.flywaydb.core.api.MigrationState;
 public final class PostgresDatabaseLifecycle {
   // Database-local, session-scoped; cooperating initializers fail fast rather than wait indefinitely.
   static final long INITIALIZATION_LOCK = 0x54504d4954475241L;
-  private static final Set<String> VERSIONS = Set.of("1", "2", "3", "4", "5", "6", "7", "8");
+  private static final Set<String> VERSIONS = Set.of("1", "2", "3", "4", "5", "6", "7", "8", "9");
   private static final Set<String> TABLES = Set.of(
       "flyway_schema_history", "tp_enforcement_schema_guard", "tp_consumed_execution_permits",
       "tp_execution_attempts", "tp_execution_transitions", "tp_evidence_streams", "tp_evidence_events",
       "tp_evidence_outbox", "tp_approval_requests", "tp_approval_transitions", "tp_evidence_anchors",
       "tp_reconciliation_queue", "tp_policy_versions", "tp_active_policies",
-      "tp_policy_lifecycle_transitions", "tp_approval_action_snapshots", "tp_approval_policy_bindings");
+      "tp_policy_lifecycle_transitions", "tp_approval_action_snapshots", "tp_approval_policy_bindings",
+      "tp_recovery_quarantine");
   private static final List<String> TRIGGERS = List.of(
       "tp_execution_transitions:tp_execution_transition_guard:tp_validate_execution_transition",
       "tp_execution_attempts:tp_execution_attempt_update_guard:tp_reject_direct_attempt_mutation",
@@ -35,7 +36,13 @@ public final class PostgresDatabaseLifecycle {
       "tp_policy_versions:tp_policy_version_guard_trigger:tp_guard_policy_version_mutation",
       "tp_policy_lifecycle_transitions:tp_policy_lifecycle_transitions_immutable:tp_reject_append_only_mutation",
       "tp_approval_action_snapshots:tp_approval_action_snapshot_immutable:tp_reject_append_only_mutation",
-      "tp_approval_policy_bindings:tp_approval_policy_binding_immutable:tp_reject_append_only_mutation");
+      "tp_approval_policy_bindings:tp_approval_policy_binding_immutable:tp_reject_append_only_mutation",
+      "tp_recovery_quarantine:tp_recovery_quarantine_guard:tp_guard_recovery_quarantine",
+      "tp_recovery_quarantine:tp_recovery_quarantine_no_truncate:tp_guard_recovery_quarantine",
+      "tp_consumed_execution_permits:tp_00_recovery_permit_guard:tp_require_recovery_ready",
+      "tp_execution_attempts:tp_00_recovery_attempt_guard:tp_require_recovery_ready",
+      "tp_approval_requests:tp_00_recovery_request_guard:tp_require_recovery_ready",
+      "tp_approval_transitions:tp_00_recovery_review_guard:tp_require_recovery_ready");
 
   private PostgresDatabaseLifecycle() {}
 
@@ -117,10 +124,11 @@ public final class PostgresDatabaseLifecycle {
       if (!found.containsAll(TABLES)) throw new IllegalStateException("DATABASE_SCHEMA_NOT_READY");
       try (var rows = query.executeQuery(
           "SELECT contract_version FROM public.tp_enforcement_schema_guard WHERE singleton = TRUE")) {
-        if (!rows.next() || rows.getInt(1) != 8 || rows.next()) {
+        if (!rows.next() || rows.getInt(1) != 9 || rows.next()) {
           throw new IllegalStateException("INCOMPATIBLE_DURABLE_STATE_SCHEMA");
         }
       }
+      PostgresRecoveryQuarantine.read(connection, "");
       Set<String> triggers = new HashSet<>();
       try (var rows = query.executeQuery("""
           SELECT c.relname || ':' || t.tgname || ':' || p.proname

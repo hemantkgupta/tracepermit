@@ -52,6 +52,15 @@ schema lifecycle superseded by [ADR 0045](../architecture/0045-explicit-database
 starting a listener; normal run validates existing state without implicit DDL.
 Failures return exit 2/code-only redacted diagnostics; no public init, repair,
 upgrade or recovery-resume HTTP/MCP endpoint is added.
+`--recovery-status` and owner-only `--quarantine-db` operate without a listener,
+IdP or target against existing V1–V9 state. The latter is installation-wide,
+one-way containment of new durable claims/reviews, not automatic rollback
+detection or cancellation. Already quarantined state refuses operator `--run`;
+already-running replicas retain reads/completion but authority writes return
+their existing generic unavailable errors. Internal permit minting is unchanged.
+There is no resume or in-place upgrade command; strict V8 startup is refused
+without migration. See [ADR 0051](../architecture/0051-operator-declared-recovery-quarantine.md)
+and the [runbook](../runbooks/operator-recovery-quarantine.md).
 The `/health`, `/ready` and `/mcp` surfaces below belong to other compositions,
 not to this approval listener.
 

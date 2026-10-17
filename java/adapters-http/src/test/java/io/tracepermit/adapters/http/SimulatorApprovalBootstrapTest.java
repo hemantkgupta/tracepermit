@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import io.tracepermit.contracts.JsonSupport;
 import io.tracepermit.identity.OidcVerificationKeyResolver;
 import io.tracepermit.persistence.postgres.PostgresDatabaseLifecycle;
+import io.tracepermit.persistence.postgres.PostgresRecoveryQuarantine;
 import java.net.ServerSocket;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -72,7 +73,8 @@ final class SimulatorApprovalBootstrapTest {
       sql.execute("""
           GRANT INSERT, UPDATE ON tp_approval_requests, tp_approval_transitions,
           tp_approval_action_snapshots, tp_consumed_execution_permits, tp_execution_attempts,
-          tp_execution_transitions, tp_evidence_streams, tp_evidence_events, tp_evidence_outbox
+          tp_execution_transitions, tp_evidence_streams, tp_evidence_events, tp_evidence_outbox,
+          tp_recovery_quarantine
           TO simulated_runtime
           """);
     }
@@ -175,6 +177,43 @@ final class SimulatorApprovalBootstrapTest {
         assertThat(rebound.isBound()).isTrue();
       }
     } finally { if (runtime.isAlive()) runtime.destroyForcibly().waitFor(); }
+    for (String command : new String[] {"--recovery-status", "--quarantine-db", "--quarantine-db", "--recovery-status", "--run"}) {
+      Process child = launch(command, output);
+      try {
+        assertThat(child.waitFor(20, TimeUnit.SECONDS)).isTrue();
+        assertThat(child.exitValue()).isEqualTo(command.equals("--run") ? 2 : 0);
+        assertThat(Files.readString(output)).doesNotContain("API listening", "jdbc:",
+            "synthetic-local-test-password", fixture.config.toString(), "Exception");
+        if (command.equals("--run")) assertThat(Files.readString(output)).contains("APPROVAL_STARTUP_FAILED");
+      } finally { if (child.isAlive()) child.destroyForcibly().waitFor(); }
+    }
+    assertThat(PostgresRecoveryQuarantine.status(fixture.load().database()).mode()).isEqualTo("quarantined");
+  }
+
+  @Test void quarantineContainsAlreadyRunningServerButPreservesReadInspectionAndRefusesRestart() throws Exception {
+    var database = fixture.load().database();
+    PostgresDatabaseLifecycle.initializeEmpty(database);
+    OidcVerificationKeyResolver resolver = (p, kid, alg, now) -> (RSAPublicKey) rsa.getPublic();
+    server = SimulatorApprovalMain.start(fixture.load(), Clock.systemUTC(), resolver);
+    var pending = call("POST", "/api/v1/approvals", "alice",
+        "{\"groupId\":\"sg-demo\",\"port\":443,\"cidr\":\"192.0.2.0/24\"}", 201);
+    String path = "/api/v1/approvals/" + pending.path("approvalRequestId").asText();
+    String hash = "{\"requestHash\":\"" + pending.path("requestHash").asText() + "\"}";
+    call("POST", path + "/decision", "bob", hash.replace("}", ",\"decision\":\"approve\"}"), 200);
+    PostgresRecoveryQuarantine.quarantine(database, java.time.Instant.now());
+    call("POST", "/api/v1/approvals", "alice", "{\"groupId\":\"sg-demo\",\"port\":443,\"cidr\":\"192.0.2.0/24\"}", 503);
+    call("POST", path + "/execute", "alice", hash, 503);
+    assertThat(call("GET", path, "alice", null, 200).path("executionStatus").asText()).isEqualTo("not_executed");
+    try (var c = database.getConnection(); var q = c.createStatement(); var r = q.executeQuery(
+        "SELECT (SELECT count(*) FROM tp_execution_attempts), (SELECT count(*) FROM tp_consumed_execution_permits)")) {
+      r.next(); assertThat(r.getLong(1)).isZero(); assertThat(r.getLong(2)).isZero();
+    }
+    int port = server.port(); server.close(); server = null;
+    assertThatThrownBy(() -> SimulatorApprovalMain.start(fixture.load(), Clock.systemUTC(), resolver))
+        .hasMessage("DATABASE_RECOVERY_QUARANTINED");
+    try (var rebound = new ServerSocket(port, 1, java.net.InetAddress.getByName("127.0.0.1"))) {
+      assertThat(rebound.isBound()).isTrue();
+    }
   }
 
   @Test void databaseFailureNeverOpensListenerAndMainRedactsFailure() throws Exception {
