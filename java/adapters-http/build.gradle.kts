@@ -170,6 +170,7 @@ abstract class StageSimulatorApprovalDistribution : DefaultTask() {
     val installedRunbook = runbook.get().asFile.readText()
       .replace("](../architecture/", "]($sourceDocs/architecture/")
       .replace("](authenticated-approval-api-foundation.md)", "]($sourceDocs/runbooks/authenticated-approval-api-foundation.md)")
+      .replace("](operator-recovery-quarantine.md)", "]($sourceDocs/runbooks/operator-recovery-quarantine.md)")
     docsDir.resolve("setup-runbook.md").writeText(installedRunbook)
     license.get().asFile.copyTo(docsDir.resolve("LICENSE"), overwrite = true)
     notice.get().asFile.copyTo(docsDir.resolve("NOTICE"), overwrite = true)

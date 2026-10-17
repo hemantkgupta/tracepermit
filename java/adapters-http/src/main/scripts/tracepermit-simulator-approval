@@ -10,7 +10,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DIST_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # Verify arguments: exactly one explicit command.
-if [ "$#" -ne 1 ] || { [ "$1" != "--check" ] && [ "$1" != "--run" ] && [ "$1" != "--init-db" ]; }; then
+if [ "$#" -ne 1 ] || { [ "$1" != "--check" ] && [ "$1" != "--run" ] && [ "$1" != "--init-db" ] && [ "$1" != "--quarantine-db" ] && [ "$1" != "--recovery-status" ]; }; then
   echo "APPROVAL_STARTUP_FAILED: check private configuration and local dependencies; details redacted." >&2
   exit 2
 fi

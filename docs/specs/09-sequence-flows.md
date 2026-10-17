@@ -388,6 +388,14 @@ The separately configured leased worker queries only already queued unknowns;
 it is not automatically scheduled by the approval launcher. Production target
 lookup, abandoned-execution recovery and restore fencing remain future work.
 
+Explicit [operator quarantine](../architecture/0051-operator-declared-recovery-quarantine.md)
+adds a separate one-way containment flow: authority transactions first share-lock
+the recovery row and commit their claim; declaration update-locks the same row
+and commits quarantined state. Later claims/reviews fail closed across replicas.
+Prior admitted claims may still dispatch/complete after declaration, and existing
+completion/evidence/lookup transactions are not gated. This does not detect a
+restored old ready row or define safe effectful resume.
+
 ```mermaid
 sequenceDiagram
   autonumber

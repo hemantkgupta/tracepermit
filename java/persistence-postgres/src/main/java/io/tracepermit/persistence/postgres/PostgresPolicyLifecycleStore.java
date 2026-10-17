@@ -657,7 +657,7 @@ public final class PostgresPolicyLifecycleStore implements PolicyLifecycleStore 
          PreparedStatement query = connection.prepareStatement(
              "SELECT contract_version FROM tp_enforcement_schema_guard WHERE singleton = TRUE");
          ResultSet rows = query.executeQuery()) {
-      if (!rows.next() || rows.getInt(1) != 8 || rows.next()) {
+      if (!rows.next() || rows.getInt(1) != 9 || rows.next()) {
         throw new IllegalStateException("INCOMPATIBLE_DURABLE_STATE_SCHEMA");
       }
     } catch (SQLException failure) {

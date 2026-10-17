@@ -23,6 +23,11 @@ The legacy auto-migrating constructors used by this characterization remain
 compatible. Strict startup rejects empty/partial state, but a complete older
 snapshot can still pass it; the stale-authority recovery gap remains open.
 
+[ADR 0051](0051-operator-declared-recovery-quarantine.md) later adds explicit
+one-way operator containment. It does not invalidate this limitation: restoring
+an older ready row can erase quarantine. The generation-bound restore regression
+now explicitly demonstrates that loss as well as duplicated simulator authority.
+
 ## Decision and observed boundaries
 
 1. A custom archive captured after consumption preserves the exact recorded

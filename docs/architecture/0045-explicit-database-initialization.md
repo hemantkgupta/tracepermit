@@ -14,6 +14,10 @@ installation. This decision separates first-install intent from normal startup.
 
 ## Decision
 
+Version note: this ADR introduced packaged V1–V8. [ADR 0051](0051-operator-declared-recovery-quarantine.md)
+extends current strict installation/validation to V1–V9 and adds explicit status/
+quarantine commands. It does not add implicit upgrade or recovery resume.
+
 `SimulatorApprovalMain`, the source launcher and the packaged launcher share:
 
 | Command     | Database behavior                                                                                   | Listener / IdP / target |

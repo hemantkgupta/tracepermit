@@ -98,7 +98,9 @@ and model-driven rehearsal are separate from protocol tests.
   An optional `pnpm dev:approvals` operator entry point requires private local
   configuration; `--check` validates it offline, first-install `--init-db`
   explicitly initializes an empty database, and normal run never migrates or
-  repairs state. It is not enabled by the demo
+  repairs state. `--recovery-status` and owner-only `--quarantine-db` add
+  [one-way declared containment](docs/runbooks/operator-recovery-quarantine.md),
+  not automatic rollback detection or effectful resume. It is not enabled by the demo
   launchers. Optional browser configuration adds same-origin OIDC sign-in and
   a role-scoped React inbox; tokens stay in Java session memory. Try the
   test-classpath-only synthetic profile with `pnpm demo:approvals:browser`.

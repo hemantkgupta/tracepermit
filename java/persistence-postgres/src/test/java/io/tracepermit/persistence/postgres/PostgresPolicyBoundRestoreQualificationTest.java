@@ -59,7 +59,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Simulator-only PostgreSQL backup and restore qualification for populated V8
+ * Simulator-only PostgreSQL backup and restore qualification for populated V9
  * policy-generation-bound approvals (ADR 0042, FR-007, FR-008, FR-013, SEC-005,
  * SEC-006, REL-001, REL-003, REL-005, OPS-004).
  *
@@ -112,7 +112,7 @@ final class PostgresPolicyBoundRestoreQualificationTest {
    * Scenario A: Restored valid pending/bound approval.
    *
    * <p>Persists a real nonempty {@code tp_approval_policy_bindings} row and matching policy
-   * catalog/active generation. Verifies raw restored V8 rows, schema guard, and Flyway metadata
+   * catalog/active generation. Verifies raw restored current-schema rows, guard, and Flyway metadata
    * BEFORE constructors can migrate or recreate anything. Confirms reconstructing services dispatches
    * zero effects, distinct synthetic reviewer can approve, exact resumption executes once, and
    * replay adds no dispatch.
@@ -179,24 +179,24 @@ final class PostgresPolicyBoundRestoreQualificationTest {
       createDatabase(destDb);
       restoreDatabase(destDb, dumpPath);
 
-      // STEP 1: Verify raw restored V8 rows, guard, and Flyway metadata BEFORE constructors
+      // STEP 1: Verify raw restored rows, guard, and Flyway metadata BEFORE constructors
       DataSource destDs = dataSourceFor(destDb);
       assertThat(captureDatabase(destDs)).isEqualTo(captured);
       try (Connection conn = destDs.getConnection();
            Statement stmt = conn.createStatement()) {
 
-        // Contract guard version must be 8
+        // Contract guard version must match the current package
         try (ResultSet rs = stmt.executeQuery(
             "SELECT contract_version FROM tp_enforcement_schema_guard WHERE singleton = TRUE")) {
           assertThat(rs.next()).isTrue();
-          assertThat(rs.getInt("contract_version")).isEqualTo(8);
+          assertThat(rs.getInt("contract_version")).isEqualTo(9);
         }
 
-        // Flyway migration history must contain all 8 migrations successful
+        // Flyway migration history must contain all 9 migrations successful
         try (ResultSet rs = stmt.executeQuery(
             "SELECT count(*) FROM flyway_schema_history WHERE success = TRUE")) {
           assertThat(rs.next()).isTrue();
-          assertThat(rs.getInt(1)).isEqualTo(8);
+          assertThat(rs.getInt(1)).isEqualTo(9);
         }
 
         // Raw tp_approval_policy_bindings row check
@@ -271,12 +271,12 @@ final class PostgresPolicyBoundRestoreQualificationTest {
         try (ResultSet rs = stmt.executeQuery(
             "SELECT contract_version FROM tp_enforcement_schema_guard WHERE singleton = TRUE")) {
           assertThat(rs.next()).isTrue();
-          assertThat(rs.getInt("contract_version")).isEqualTo(8);
+          assertThat(rs.getInt("contract_version")).isEqualTo(9);
         }
         try (ResultSet rs = stmt.executeQuery(
             "SELECT count(*) FROM flyway_schema_history WHERE success = TRUE")) {
           assertThat(rs.next()).isTrue();
-          assertThat(rs.getInt(1)).isEqualTo(8);
+          assertThat(rs.getInt(1)).isEqualTo(9);
         }
       }
 
@@ -796,6 +796,8 @@ final class PostgresPolicyBoundRestoreQualificationTest {
       assertThat(sourceSnapT1.activationGeneration()).isEqualTo(2L);
       assertThat(sourceState.find(tenant, reqId).status()).isEqualTo("consumed");
       assertThat(sourceState.findPolicyBinding(tenant, reqId)).contains(originalBinding);
+      // Same-database quarantine is also rolled back by the older archive: not an external witness.
+      assertThat(PostgresRecoveryQuarantine.quarantine(sourceDs, clock.instant()).mode()).isEqualTo("quarantined");
 
       // T2: Restore T0 snapshot into destination DB (still within 300s approval lifetime: T0 + 30s)
       clock.set(T0.plusSeconds(30));
@@ -806,6 +808,7 @@ final class PostgresPolicyBoundRestoreQualificationTest {
       assertThat(captureDatabase(destDs)).isEqualTo(captured);
       // Strict operator schema validation is not an external recovery fence either.
       PostgresDatabaseLifecycle.validateExisting(destDs);
+      assertThat(PostgresRecoveryQuarantine.status(destDs).mode()).isEqualTo("ready");
       PostgresPolicyLifecycleStore destStore =
           new PostgresPolicyLifecycleStore(destDs, clock, () -> "plt-" + nextId());
       PostgresDurableEnforcementState destState =
@@ -867,7 +870,7 @@ final class PostgresPolicyBoundRestoreQualificationTest {
   private static Map<String, List<JsonNode>> captureDatabase(DataSource source) throws Exception {
     Map<String, List<JsonNode>> captured = new LinkedHashMap<>();
     for (String table : List.of(
-        "flyway_schema_history", "tp_enforcement_schema_guard", "tp_approval_requests",
+        "flyway_schema_history", "tp_enforcement_schema_guard", "tp_recovery_quarantine", "tp_approval_requests",
         "tp_approval_transitions", "tp_approval_action_snapshots", "tp_approval_policy_bindings",
         "tp_policy_versions", "tp_active_policies", "tp_policy_lifecycle_transitions",
         "tp_consumed_execution_permits", "tp_execution_attempts", "tp_execution_transitions",
@@ -886,11 +889,11 @@ final class PostgresPolicyBoundRestoreQualificationTest {
     assertThat(captured.get("tp_active_policies")).hasSize(1);
     assertThat(captured.get("tp_enforcement_schema_guard")).hasSize(1);
     assertThat(captured.get("tp_enforcement_schema_guard").getFirst().path("contract_version").asInt())
-        .isEqualTo(8);
+        .isEqualTo(9);
     var history = captured.get("flyway_schema_history");
-    assertThat(history).hasSize(8);
+    assertThat(history).hasSize(9);
     assertThat(history.stream().map(row -> row.path("version").asText()).sorted().toList())
-        .containsExactly("1", "2", "3", "4", "5", "6", "7", "8");
+        .containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9");
     assertThat(history).allSatisfy(row -> {
       assertThat(row.path("success").asBoolean()).isTrue();
       assertThat(row.path("checksum").isIntegralNumber()).isTrue();

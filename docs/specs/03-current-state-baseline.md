@@ -77,7 +77,8 @@ public schema; normal run uses strict non-migrating repository opens and rejects
 empty/partial/incompatible state. See [ADR 0045](../architecture/0045-explicit-database-initialization.md).
 This does not detect a valid older restored snapshot or add a recovery fence.
 The five [generation-bound restore cases](../runbooks/policy-bound-restore-qualification.md)
-compare populated V8 state before/after service recreation and exercise actual
+compare populated current-schema state (V8 policy bindings plus the V9 recovery
+row) before/after service recreation and exercise actual
 opt-in review/resume. Captured consumed state and stale lifecycle generations
 reject replay; an old approved snapshot still revives authority and produces a
 second synthetic effect despite strict schema validation. This is a documented
@@ -173,8 +174,23 @@ distinguish rollback from lost commit acknowledgement in both services. See
 [the runbook](../runbooks/durable-completion-uncertainty.md).
 
 A persistent outage or process crash may still leave executing state. There is
-no new automatic sweeper, installed worker, recovery quarantine or rollback fence;
+no new automatic sweeper, installed worker or rollback fence;
 the extra write count is not a new request-latency guarantee.
+
+## Operator-declared containment
+
+PostgreSQL V9 adds an installation-wide, owner-declared, one-way quarantine.
+`--quarantine-db` serializes against new durable claims, standalone permit
+consumption and approval writes; already-running replicas fail those writes
+closed. Completion/evidence and lookup-only reconciliation remain available for
+previously admitted work. `--recovery-status` inspects without migration;
+effectful operator startup refuses already quarantined state. Internal permit
+minting and process-local demo paths are not fenced. There is no resume or
+in-place upgrade command. See [ADR 0051](../architecture/0051-operator-declared-recovery-quarantine.md).
+
+This contains explicitly declared recovery, not an undetected valid old snapshot.
+Claims committed before quarantine may still dispatch afterward. Restoring an
+older ready row can undo quarantine; no independent monotonic witness is added.
 
 ## Database restore boundary
 
