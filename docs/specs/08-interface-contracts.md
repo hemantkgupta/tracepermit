@@ -176,6 +176,11 @@ destructive production action and reaches policy, whose explicit deny rule
 prevents executor invocation. An unregistered tool is instead rejected at the
 MCP boundary and does not reach policy.
 
+When dispatcher enforcement capacity is saturated, proposals fail closed
+without queueing. The tool call returns an MCP tool error (`isError: true`) with
+`error: "ENFORCEMENT_CAPACITY_EXCEEDED"`, `execution.status: "not_executed"`,
+and does not invoke the enforcer or target.
+
 ### Java MCP stdio connector
 
 The development endpoint executable reads one UTF-8 JSON-RPC object per line
@@ -414,69 +419,70 @@ Its deny and approval controls are disabled and do not construct HTTP requests.
 
 ## 4. Current error semantics
 
-| Code                                       | Meaning                                                 | Execution state      |
-| ------------------------------------------ | ------------------------------------------------------- | -------------------- |
-| `INVALID_ACTION`                           | Schema, identity, or lineage validation failed          | `not_executed`       |
-| `MISSING_BEARER_TOKEN`                     | Authentication header missing/invalid form              | No dispatch          |
-| `MALFORMED_ACCESS_TOKEN`                   | Token encoding or JSON cannot be safely parsed          | No dispatch          |
-| `INVALID_ACCESS_TOKEN`                     | Token claims or signature invalid                       | No dispatch          |
-| `EXPIRED_ACCESS_TOKEN`                     | Token lifetime elapsed                                  | No dispatch          |
-| `OIDC_CONFIGURATION_UNAVAILABLE`           | Trusted provider registry could not answer              | No dispatch          |
-| `OIDC_KEY_SET_UNAVAILABLE`                 | Configured OIDC verification keys unavailable           | No dispatch          |
-| `AUTHENTICATION_REQUIRED`                  | Remote OAuth credential is missing                      | No dispatch          |
-| `AUTHENTICATION_UNAVAILABLE`               | Remote OAuth trust dependency is unavailable            | No dispatch          |
-| `INVALID_SENDER_CONSTRAINT`                | Token certificate binding is absent or does not match   | No dispatch          |
-| `RATE_LIMITED`                             | Network or authenticated-principal quota is exhausted   | No dispatch          |
-| `ABUSE_CONTROL_UNAVAILABLE`                | Required rate/abuse state cannot be claimed             | No dispatch          |
-| `REMOTE_EDGE_NOT_READY`                    | A hardened deployment prerequisite is unavailable       | No dispatch          |
-| `INVALID_HOST`                             | Remote request Host is outside the exact allowlist      | No dispatch          |
-| `ORIGIN_NOT_ALLOWED`                       | Present remote request Origin is not allowed            | No dispatch          |
-| `REQUEST_TOO_LARGE`                        | Remote MCP body exceeds its configured bound            | No dispatch          |
-| `INVALID_MCP_REQUEST`                      | Remote MCP JSON/framing is malformed or ambiguous       | No dispatch          |
-| `UNSUPPORTED_MEDIA_TYPE`                   | Remote MCP body is not JSON                             | No dispatch          |
-| `REMOTE_TOOL_INVOCATION_NOT_CONFIGURED`    | Remote foundation intentionally has no tools/call path  | No dispatch          |
-| `REMOTE_CONNECTOR_ORIGIN_NOT_SUPPORTED`    | Connector origin requires another trusted adapter       | No dispatch          |
-| `TOOL_NOT_FOUND`                           | Remote tool is not registered                           | No dispatch          |
-| `INVALID_TOOL_ARGUMENTS`                   | Remote tool arguments violate the exact schema          | No dispatch          |
-| `REMOTE_ENFORCEMENT_FAILED`                | Remote action failed safely inside enforcement          | Not executed/unknown |
-| `MISSING_SOURCE_ATTESTATION`               | Required CLI source proof is absent                     | No dispatch          |
-| `MALFORMED_SOURCE_ATTESTATION`             | Source JWS encoding is malformed                        | No dispatch          |
-| `INVALID_SOURCE_ATTESTATION`               | Source signature, claims, or binding is invalid         | No dispatch          |
-| `EXPIRED_SOURCE_ATTESTATION`               | Source proof lifetime elapsed                           | No dispatch          |
-| `SOURCE_ATTESTATION_NOT_ALLOWED`           | A web profile attempted to supply endpoint proof        | No dispatch          |
-| `SOURCE_TRIGGER_NOT_INTERACTIVE`           | Current CLI profile lacks interactive evidence          | No dispatch          |
-| `SOURCE_ATTESTATION_REPLAYED`              | Source proof token ID was already consumed              | No dispatch          |
-| `SOURCE_ATTESTATION_UNAVAILABLE`           | Required endpoint verifier/replay port is absent        | No dispatch          |
-| `INVALID_SCHEDULED_ACTION`                 | Scheduled envelope or trusted-field boundary invalid    | No dispatch          |
-| `MALFORMED_WORKLOAD_CREDENTIAL`            | Workload compact encoding is malformed                  | No dispatch          |
-| `INVALID_WORKLOAD_CREDENTIAL`              | Workload signature, trust, claims, or binding invalid   | No dispatch          |
-| `EXPIRED_WORKLOAD_CREDENTIAL`              | Workload proof lifetime elapsed                         | No dispatch          |
-| `WORKLOAD_KEY_REVOKED`                     | Registered workload-verification key is revoked         | No dispatch          |
-| `WORKLOAD_CREDENTIAL_REVOKED`              | Workload credential token is revoked                    | No dispatch          |
-| `WORKLOAD_REVOCATION_UNAVAILABLE`          | Workload revocation status is unknown                   | No dispatch          |
-| `WORKLOAD_CREDENTIAL_REPLAYED`             | Workload token ID was already consumed                  | No dispatch          |
-| `MALFORMED_DELEGATION_CREDENTIAL`          | Delegation compact encoding is malformed                | No dispatch          |
-| `INVALID_DELEGATION_CREDENTIAL`            | Delegation signature, trust, claims, or binding invalid | No dispatch          |
-| `EXPIRED_DELEGATION_CREDENTIAL`            | Delegation lifetime elapsed                             | No dispatch          |
-| `DELEGATION_KEY_REVOKED`                   | Registered delegation-signing key is revoked            | No dispatch          |
-| `DELEGATION_REVOKED`                       | Delegation grant is revoked                             | No dispatch          |
-| `DELEGATION_REVOCATION_UNAVAILABLE`        | Delegation revocation status is unknown                 | No dispatch          |
-| `INVALID_DELEGATION_CHAIN`                 | Complete chain/topology/narrowing/leaf check failed     | No dispatch          |
-| `ENDPOINT_OBSERVATION_UNAVAILABLE`         | Required process/session facts could not be read        | No dispatch          |
-| `ENDPOINT_EXECUTABLE_CHANGED`              | Observed executable changed before forwarding           | No dispatch          |
-| `ENDPOINT_KEY_UNAVAILABLE`                 | Development signing provider is unavailable             | No dispatch          |
-| `CONNECTOR_CREDENTIAL_UNAVAILABLE`         | Connector credential is absent or unsafe                | No dispatch          |
-| `GATEWAY_UNAVAILABLE`                      | Loopback gateway could not be reached safely            | No dispatch          |
-| `AUTHORIZATION_DENIED`                     | Authenticated identity lacks invocation authority       | `not_executed`       |
-| `SANITIZER_NOT_CONFIGURED`                 | Policy required unavailable transformation              | `not_executed`       |
-| `EXECUTION_PERMIT_ISSUANCE_FAILED`         | Allow could not become execution authority              | `not_executed`       |
-| `TARGET_EXECUTION_FAILED`                  | Executor or target path failed                          | `failed`             |
-| `EXECUTION_ALREADY_IN_PROGRESS`            | Same logical event is currently running                 | `executing`          |
-| `EXECUTION_PREVIOUSLY_FAILED`              | Prior attempt has a confirmed failure                   | `failed`             |
-| `EXECUTION_OUTCOME_UNKNOWN`                | Prior target outcome requires reconciliation            | `unknown`            |
-| `DURABLE_STATE_UNAVAILABLE`                | Required claim/evidence transaction failed              | Not dispatched       |
-| `DURABLE_STATE_UNAVAILABLE_AFTER_DISPATCH` | Outcome could not be durably recorded after dispatch    | `executing`/unknown  |
-| `SECURITY_DEPENDENCY_UNAVAILABLE`          | A required enforcement dependency is unavailable        | `not_executed`       |
+| Code                                       | Meaning                                                      | Execution state      |
+| ------------------------------------------ | ------------------------------------------------------------ | -------------------- |
+| `INVALID_ACTION`                           | Schema, identity, or lineage validation failed               | `not_executed`       |
+| `MISSING_BEARER_TOKEN`                     | Authentication header missing/invalid form                   | No dispatch          |
+| `MALFORMED_ACCESS_TOKEN`                   | Token encoding or JSON cannot be safely parsed               | No dispatch          |
+| `INVALID_ACCESS_TOKEN`                     | Token claims or signature invalid                            | No dispatch          |
+| `EXPIRED_ACCESS_TOKEN`                     | Token lifetime elapsed                                       | No dispatch          |
+| `OIDC_CONFIGURATION_UNAVAILABLE`           | Trusted provider registry could not answer                   | No dispatch          |
+| `OIDC_KEY_SET_UNAVAILABLE`                 | Configured OIDC verification keys unavailable                | No dispatch          |
+| `AUTHENTICATION_REQUIRED`                  | Remote OAuth credential is missing                           | No dispatch          |
+| `AUTHENTICATION_UNAVAILABLE`               | Remote OAuth trust dependency is unavailable                 | No dispatch          |
+| `INVALID_SENDER_CONSTRAINT`                | Token certificate binding is absent or does not match        | No dispatch          |
+| `RATE_LIMITED`                             | Network or authenticated-principal quota is exhausted        | No dispatch          |
+| `ABUSE_CONTROL_UNAVAILABLE`                | Required rate/abuse state cannot be claimed                  | No dispatch          |
+| `REMOTE_EDGE_NOT_READY`                    | A hardened deployment prerequisite is unavailable            | No dispatch          |
+| `INVALID_HOST`                             | Remote request Host is outside the exact allowlist           | No dispatch          |
+| `ORIGIN_NOT_ALLOWED`                       | Present remote request Origin is not allowed                 | No dispatch          |
+| `REQUEST_TOO_LARGE`                        | Remote MCP body exceeds its configured bound                 | No dispatch          |
+| `INVALID_MCP_REQUEST`                      | Remote MCP JSON/framing is malformed or ambiguous            | No dispatch          |
+| `UNSUPPORTED_MEDIA_TYPE`                   | Remote MCP body is not JSON                                  | No dispatch          |
+| `REMOTE_TOOL_INVOCATION_NOT_CONFIGURED`    | Remote foundation intentionally has no tools/call path       | No dispatch          |
+| `REMOTE_CONNECTOR_ORIGIN_NOT_SUPPORTED`    | Connector origin requires another trusted adapter            | No dispatch          |
+| `TOOL_NOT_FOUND`                           | Remote tool is not registered                                | No dispatch          |
+| `INVALID_TOOL_ARGUMENTS`                   | Remote tool arguments violate the exact schema               | No dispatch          |
+| `REMOTE_ENFORCEMENT_FAILED`                | Remote action failed safely inside enforcement               | Not executed/unknown |
+| `MISSING_SOURCE_ATTESTATION`               | Required CLI source proof is absent                          | No dispatch          |
+| `MALFORMED_SOURCE_ATTESTATION`             | Source JWS encoding is malformed                             | No dispatch          |
+| `INVALID_SOURCE_ATTESTATION`               | Source signature, claims, or binding is invalid              | No dispatch          |
+| `EXPIRED_SOURCE_ATTESTATION`               | Source proof lifetime elapsed                                | No dispatch          |
+| `SOURCE_ATTESTATION_NOT_ALLOWED`           | A web profile attempted to supply endpoint proof             | No dispatch          |
+| `SOURCE_TRIGGER_NOT_INTERACTIVE`           | Current CLI profile lacks interactive evidence               | No dispatch          |
+| `SOURCE_ATTESTATION_REPLAYED`              | Source proof token ID was already consumed                   | No dispatch          |
+| `SOURCE_ATTESTATION_UNAVAILABLE`           | Required endpoint verifier/replay port is absent             | No dispatch          |
+| `INVALID_SCHEDULED_ACTION`                 | Scheduled envelope or trusted-field boundary invalid         | No dispatch          |
+| `MALFORMED_WORKLOAD_CREDENTIAL`            | Workload compact encoding is malformed                       | No dispatch          |
+| `INVALID_WORKLOAD_CREDENTIAL`              | Workload signature, trust, claims, or binding invalid        | No dispatch          |
+| `EXPIRED_WORKLOAD_CREDENTIAL`              | Workload proof lifetime elapsed                              | No dispatch          |
+| `WORKLOAD_KEY_REVOKED`                     | Registered workload-verification key is revoked              | No dispatch          |
+| `WORKLOAD_CREDENTIAL_REVOKED`              | Workload credential token is revoked                         | No dispatch          |
+| `WORKLOAD_REVOCATION_UNAVAILABLE`          | Workload revocation status is unknown                        | No dispatch          |
+| `WORKLOAD_CREDENTIAL_REPLAYED`             | Workload token ID was already consumed                       | No dispatch          |
+| `MALFORMED_DELEGATION_CREDENTIAL`          | Delegation compact encoding is malformed                     | No dispatch          |
+| `INVALID_DELEGATION_CREDENTIAL`            | Delegation signature, trust, claims, or binding invalid      | No dispatch          |
+| `EXPIRED_DELEGATION_CREDENTIAL`            | Delegation lifetime elapsed                                  | No dispatch          |
+| `DELEGATION_KEY_REVOKED`                   | Registered delegation-signing key is revoked                 | No dispatch          |
+| `DELEGATION_REVOKED`                       | Delegation grant is revoked                                  | No dispatch          |
+| `DELEGATION_REVOCATION_UNAVAILABLE`        | Delegation revocation status is unknown                      | No dispatch          |
+| `INVALID_DELEGATION_CHAIN`                 | Complete chain/topology/narrowing/leaf check failed          | No dispatch          |
+| `ENDPOINT_OBSERVATION_UNAVAILABLE`         | Required process/session facts could not be read             | No dispatch          |
+| `ENDPOINT_EXECUTABLE_CHANGED`              | Observed executable changed before forwarding                | No dispatch          |
+| `ENDPOINT_KEY_UNAVAILABLE`                 | Development signing provider is unavailable                  | No dispatch          |
+| `CONNECTOR_CREDENTIAL_UNAVAILABLE`         | Connector credential is absent or unsafe                     | No dispatch          |
+| `GATEWAY_UNAVAILABLE`                      | Loopback gateway could not be reached safely                 | No dispatch          |
+| `AUTHORIZATION_DENIED`                     | Authenticated identity lacks invocation authority            | `not_executed`       |
+| `SANITIZER_NOT_CONFIGURED`                 | Policy required unavailable transformation                   | `not_executed`       |
+| `EXECUTION_PERMIT_ISSUANCE_FAILED`         | Allow could not become execution authority                   | `not_executed`       |
+| `TARGET_EXECUTION_FAILED`                  | Executor or target path failed                               | `failed`             |
+| `EXECUTION_ALREADY_IN_PROGRESS`            | Same logical event is currently running                      | `executing`          |
+| `EXECUTION_PREVIOUSLY_FAILED`              | Prior attempt has a confirmed failure                        | `failed`             |
+| `EXECUTION_OUTCOME_UNKNOWN`                | Prior target outcome requires reconciliation                 | `unknown`            |
+| `DURABLE_STATE_UNAVAILABLE`                | Required claim/evidence transaction failed                   | Not dispatched       |
+| `DURABLE_STATE_UNAVAILABLE_AFTER_DISPATCH` | Outcome could not be durably recorded after dispatch         | `executing`/unknown  |
+| `SECURITY_DEPENDENCY_UNAVAILABLE`          | A required enforcement dependency is unavailable             | `not_executed`       |
+| `ENFORCEMENT_CAPACITY_EXCEEDED`            | Saturated enforcement capacity fails closed without queueing | `not_executed`       |
 
 Production evidence should retain a more precise internal reason while public
 responses stay bounded.
