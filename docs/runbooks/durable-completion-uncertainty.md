@@ -20,8 +20,10 @@ recording `unknown / DURABLE_COMPLETION_UNCONFIRMED` only if the attempt is stil
 | `unknown`, queued       | A completion/uncertainty transaction committed. A separately configured lookup-only worker can resolve it from a trustworthy observation. |
 | `executing`             | Recording may still be unavailable, or execution may be abandoned. No automatic sweeper or safe target retry is established.              |
 
-Approval/permit consumption stays in place in every case. Repeating the request
-cannot restore that authority or create another effect. The first response stays
+Approval/permit consumption stays in place in every case. Replaying the same
+canonical event/idempotency identity or consumed approval cannot restore that
+authority or create another effect. A new adapter-generated event is a different
+request; this is not business-level deduplication of identical arguments. The first response stays
 uncertain even if the additional unknown recording succeeded; inspect durable
 state through the trusted, tenant-scoped application/repository boundary.
 
