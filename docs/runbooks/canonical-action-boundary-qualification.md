@@ -67,18 +67,19 @@ java/gradlew -p java :contracts:test --tests io.tracepermit.contracts.ActionVali
 
 ### Observed results
 
-The suite was executed against the contracts module sources with the repository's pinned
-dependency set (JUnit 5.12.2, AssertJ 3.27.3, Jackson 2.18.3) via the JUnit Platform
-launcher:
+The canonical Gradle invocation above was executed against this suite and completed
+successfully:
 
 ```
-[        12 tests found           ]
-[        12 tests successful      ]
-[         0 tests failed          ]
+BUILD SUCCESSFUL in 12s
+3 actionable tasks: 3 executed
 ```
 
-Expected result under the canonical Gradle invocation above: the same 12 tests, all
-passing, in under a second.
+The recorded JUnit result for the focused task is `tests="12" skipped="0" failures="0"
+errors="0"`. The suite also runs green under a direct JUnit Platform launcher invocation
+against the contracts module's pinned dependency set (JUnit 5.12.2, AssertJ 3.27.3,
+Jackson 2.18.3), which is how the sensitivity demonstrations below re-ran it inside a
+disposable worktree without a second Gradle daemon.
 
 ### Sensitivity control (guard-removal demonstrations)
 
