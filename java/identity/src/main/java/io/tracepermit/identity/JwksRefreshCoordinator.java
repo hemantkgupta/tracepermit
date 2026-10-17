@@ -106,7 +106,7 @@ public final class JwksRefreshCoordinator implements AutoCloseable {
     Objects.requireNonNull(onSuccess);
 
     CooldownState state = failureCooldowns.get(cacheKey);
-    if (state != null && now.isBefore(state.cooldownUntil())) {
+    if (state != null && state.cooldownUntil != null && now.isBefore(state.cooldownUntil)) {
       throw unavailable();
     }
 
@@ -201,13 +201,14 @@ public final class JwksRefreshCoordinator implements AutoCloseable {
     failureCooldowns.compute(
         cacheKey,
         (key, current) -> {
-          if (current == null) {
-            return null;
+          long lastSuccess =
+              current == null
+                  ? operationId
+                  : Math.max(current.lastSuccessfulOperationId, operationId);
+          if (current == null || current.failureOperationId <= operationId) {
+            return new CooldownState(lastSuccess, 0L, null);
           }
-          if (current.operationId <= operationId) {
-            return null;
-          }
-          return current;
+          return new CooldownState(lastSuccess, current.failureOperationId, current.cooldownUntil);
         });
   }
 
@@ -225,14 +226,18 @@ public final class JwksRefreshCoordinator implements AutoCloseable {
         cacheKey,
         (key, current) -> {
           if (current != null) {
-            if (current.operationId > operationId) {
+            if (current.lastSuccessfulOperationId >= operationId) {
               return current;
             }
-            if (current.cooldownUntil.isAfter(cooldownUntil)) {
+            if (current.failureOperationId > operationId) {
+              return current;
+            }
+            if (current.cooldownUntil != null && current.cooldownUntil.isAfter(cooldownUntil)) {
               return current;
             }
           }
-          return new CooldownState(operationId, cooldownUntil);
+          long lastSuccess = current == null ? 0L : current.lastSuccessfulOperationId;
+          return new CooldownState(lastSuccess, operationId, cooldownUntil);
         });
   }
 
@@ -262,7 +267,8 @@ public final class JwksRefreshCoordinator implements AutoCloseable {
         "OIDC_KEY_SET_UNAVAILABLE", "The configured OIDC verification keys are unavailable.");
   }
 
-  private record CooldownState(long operationId, Instant cooldownUntil) {}
+  private record CooldownState(
+      long lastSuccessfulOperationId, long failureOperationId, Instant cooldownUntil) {}
 
   private static final class InFlightRefresh<T> {
     final CompletableFuture<T> future;

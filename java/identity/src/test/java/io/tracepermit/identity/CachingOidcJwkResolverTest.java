@@ -759,4 +759,52 @@ final class CachingOidcJwkResolverTest {
       callers.shutdownNow(); assertThat(callers.awaitTermination(3, TimeUnit.SECONDS)).isTrue();
     }
   }
+
+  @Test
+  void olderInterruptedOperationCannotReinstallCooldownAfterNewerSuccess() throws Exception {
+    var entered = new CountDownLatch(1);
+    var release = new CountDownLatch(1);
+    var callerThread = new AtomicReference<Thread>();
+    var callers = Executors.newSingleThreadExecutor(r -> { var t = new Thread(r); t.setDaemon(true); return t; });
+    var provider = OidcTestSupport.provider();
+    try (var coordinator = new JwksRefreshCoordinator(2, 0, Duration.ofMillis(400), Duration.ofSeconds(10))) {
+      try {
+        var interrupted = callers.submit(() -> {
+          callerThread.set(Thread.currentThread());
+          return coordinator.refresh("same-provider", provider, OidcTestSupport.NOW, () -> {
+            entered.countDown();
+            if (!release.await(4, TimeUnit.SECONDS)) throw new AssertionError("Worker release timed out");
+            return "old";
+          });
+        });
+        assertThat(entered.await(2, TimeUnit.SECONDS)).isTrue();
+        var mapField = JwksRefreshCoordinator.class.getDeclaredField("inFlight");
+        mapField.setAccessible(true);
+        Object operation = ((Map<?, ?>) mapField.get(coordinator)).get("same-provider");
+        assertThat(operation).isNotNull();
+        var futureMethod = operation.getClass().getDeclaredMethod("future");
+        futureMethod.setAccessible(true);
+        var oldFuture = (CompletableFuture<?>) futureMethod.invoke(operation);
+        var deadlineField = operation.getClass().getDeclaredField("deadlineNanos");
+        deadlineField.setAccessible(true);
+        long operationDeadline = deadlineField.getLong(operation);
+        callerThread.get().interrupt();
+        assertThatThrownBy(() -> interrupted.get(2, TimeUnit.SECONDS)).hasCauseInstanceOf(AuthenticationException.class);
+        // The only waiter is gone; the old background task remains stalled beyond its deadline.
+        long waitLimit = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+        while (System.nanoTime() <= operationDeadline && System.nanoTime() < waitLimit) Thread.sleep(2);
+        assertThat(System.nanoTime()).isGreaterThan(operationDeadline);
+        assertThat(coordinator.refresh("same-provider", provider, OidcTestSupport.NOW.plusSeconds(1), () -> "new"))
+            .isEqualTo("new");
+        release.countDown();
+        assertThatThrownBy(() -> oldFuture.get(2, TimeUnit.SECONDS))
+            .hasCauseInstanceOf(java.util.concurrent.TimeoutException.class);
+        // Completion of the older operation must not regress the newer successful operation state.
+        assertThat(coordinator.refresh("same-provider", provider, OidcTestSupport.NOW.plusSeconds(2), () -> "healthy"))
+            .isEqualTo("healthy");
+      } finally { release.countDown(); }
+    } finally {
+      release.countDown(); callers.shutdownNow(); assertThat(callers.awaitTermination(3, TimeUnit.SECONDS)).isTrue();
+    }
+  }
 }
