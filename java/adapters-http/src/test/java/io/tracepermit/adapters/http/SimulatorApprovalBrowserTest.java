@@ -258,6 +258,31 @@ final class SimulatorApprovalBrowserTest {
     assertThat(rules()).isZero();
   }
 
+  @Test void browserHistoryUsesTheSameFiltersAndNeverReinterpretsQueryAsAuthority() throws Exception {
+    Login alice = login("alice"), viewer = login("carol");
+    var a = mutate(alice, "", SimulatorApprovalBrowserFixture.ACTION, 201);
+    mutate(alice, "", SimulatorApprovalBrowserFixture.ACTION, 201);
+    var first = json(call("GET", fixture.origin() + ApprovalBrowserAdapter.API + "?limit=1&status=pending",
+        viewer.cookie(), null, Map.of()));
+    assertThat(first.path("items")).hasSize(1);
+    assertThat(first.path("nextCursor").isTextual()).isTrue();
+    var next = call("GET", fixture.origin() + ApprovalBrowserAdapter.API + "?limit=1&status=pending&cursor="
+        + first.path("nextCursor").asText(), viewer.cookie(), null, Map.of());
+    assertThat(next.statusCode()).isEqualTo(200);
+    assertThat(json(next).path("items").get(0).path("approvalRequestId"))
+        .isNotEqualTo(first.path("items").get(0).path("approvalRequestId"));
+    assertThat(call("GET", fixture.origin() + ApprovalBrowserAdapter.API + "?tenant=other", viewer.cookie(), null, Map.of())
+        .statusCode()).isEqualTo(400);
+    assertThat(call("GET", fixture.origin() + ApprovalBrowserAdapter.API + "?limit=1", viewer.cookie(), null,
+        Map.of("Origin", "https://attacker.invalid")).statusCode()).isEqualTo(403);
+    assertThat(call("GET", fixture.origin() + ApprovalBrowserAdapter.API + "?limit=1", viewer.cookie(), null,
+        Map.of("Authorization", "Bearer mixed")).statusCode()).isEqualTo(400);
+    assertThat(call("POST", fixture.origin() + ApprovalBrowserAdapter.API + "/" + a.path("approvalRequestId").asText()
+        + "/decision?limit=1", viewer.cookie(), decision(a, "approve"), Map.of("Origin", fixture.origin(),
+            "X-CSRF-Token", viewer.session().path("csrfToken").asText())).statusCode()).isEqualTo(400);
+    assertThat(rules()).isZero();
+  }
+
   private int rules() { return fixture.simulator.snapshot().path("aws").path("securityGroups").path("sg-demo").size(); }
   private static String resume(JsonNode pending) {
     return "{\"approvalRequestId\":\"" + pending.path("approvalRequestId").asText()

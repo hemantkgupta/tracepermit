@@ -5,6 +5,23 @@
 
 Status values: **Implemented**, **Partial**, **Target**, or **Proposed**.
 
+## Authenticated approval-history collection
+
+FR-007/010; SEC-001/003/005/009/012; DATA-003; OPS-002 receive a bounded
+read-side slice: strict exact metadata filters, limit+1 keyset pagination,
+per-page authorization/tenant/owner predicates, opaque unsigned context/position,
+and unchanged exact-snapshot/redaction projection. `ApprovalHistoryQueryTest`,
+`ApprovalHistoryParametersTest`, `PostgresApprovalHistoryTest`,
+`SimulatorApprovalHistoryTest` and the browser/redaction boundary suites cover
+validation, colliding tenant IDs, ties, more than 50 rows, restart/newer inserts,
+roles/ownership, expired display, authentication changes and unchanged state.
+See [ADR 0046](../architecture/0046-authenticated-approval-history-pagination.md)
+and the [API contract](../runbooks/approval-history-api.md).
+
+This is not full action search, rendered UI filtering, customer retention/export,
+constant-cost paging, an SLO or production tenant isolation certification. No
+schema/authority/permit behavior changes, and no whole-ID status is upgraded.
+
 ## Explicit operator database initialization
 
 Requirements: SEC-002/003/006/012; REL-001/005; OPS-001/002/004.

@@ -14,6 +14,8 @@ import io.tracepermit.execution.ApprovalDecision;
 import io.tracepermit.execution.ApprovalExecutionClaim;
 import io.tracepermit.execution.ApprovalPolicyBinding;
 import io.tracepermit.execution.ApprovalRequestState;
+import io.tracepermit.execution.ApprovalHistoryQuery;
+import io.tracepermit.execution.ApprovalHistoryPage;
 import io.tracepermit.execution.DurableClaimResult;
 import io.tracepermit.execution.DurableClaimStatus;
 import io.tracepermit.execution.DurableApprovalActionState;
@@ -38,6 +40,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Types;
+import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.OffsetDateTime;
@@ -783,6 +786,62 @@ public final class PostgresDurableEnforcementState
         }
       }
       return List.copyOf(approvals);
+    } catch (SQLException failure) {
+      throw databaseFailure(failure);
+    }
+  }
+
+  /** Read-only keyset page. Tenant and optional owner are supplied by the trusted adapter. */
+  public ApprovalHistoryPage approvalHistory(
+      TenantPartition tenant, String requesterSubjectId, ApprovalHistoryQuery query) {
+    Objects.requireNonNull(tenant);
+    Objects.requireNonNull(query);
+    if (requesterSubjectId != null
+        && !requesterSubjectId.matches("^[A-Za-z0-9][A-Za-z0-9._:@/+\\-#]{0,255}$")) {
+      throw new IllegalArgumentException("Invalid requester subject ID.");
+    }
+    try (Connection connection = dataSource.getConnection()) {
+      connection.setReadOnly(true);
+      connection.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
+      connection.setAutoCommit(false);
+      try (PreparedStatement statement = connection.prepareStatement("""
+          SELECT r.approval_request_id FROM tp_approval_requests r
+          JOIN tp_approval_action_snapshots s USING (tenant_id, approval_request_id)
+          WHERE r.tenant_id = ? AND (?::text IS NULL OR r.subject_id = ?)
+            AND (?::text IS NULL OR r.status = ?)
+            AND (?::text IS NULL OR r.tool_name = ?)
+            AND (?::text IS NULL OR r.approval_request_id = ?)
+            AND (?::timestamptz IS NULL OR r.created_at < ? OR
+              (r.created_at = ? AND r.approval_request_id COLLATE "C" > ? COLLATE "C"))
+          ORDER BY r.created_at DESC, r.approval_request_id COLLATE "C" ASC LIMIT ?
+          """)) {
+        statement.setQueryTimeout(5);
+        statement.setString(1, tenant.value());
+        statement.setString(2, requesterSubjectId);
+        statement.setString(3, requesterSubjectId);
+        statement.setString(4, query.status());
+        statement.setString(5, query.status());
+        statement.setString(6, query.toolName());
+        statement.setString(7, query.toolName());
+        statement.setString(8, query.approvalRequestId());
+        statement.setString(9, query.approvalRequestId());
+        Timestamp position = query.beforeCreatedAt() == null ? null : Timestamp.from(query.beforeCreatedAt());
+        statement.setTimestamp(10, position);
+        statement.setTimestamp(11, position);
+        statement.setTimestamp(12, position);
+        statement.setString(13, query.afterRequestId());
+        statement.setInt(14, query.limit() + 1);
+        List<String> ids = new ArrayList<>();
+        try (ResultSet rows = statement.executeQuery()) {
+          while (rows.next()) ids.add(rows.getString(1));
+        }
+        List<ApprovalRequestState> items = new ArrayList<>();
+        for (String id : ids.subList(0, Math.min(query.limit(), ids.size()))) {
+          items.add(requireApproval(connection, tenant, id, false));
+        }
+        connection.commit();
+        return new ApprovalHistoryPage(items, ids.size() > query.limit());
+      }
     } catch (SQLException failure) {
       throw databaseFailure(failure);
     }

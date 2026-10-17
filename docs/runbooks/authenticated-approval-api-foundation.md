@@ -156,17 +156,19 @@ schema validity is not recovery authorization.
 Every route requires one `Authorization: Bearer` header, an allowlisted
 issuer/audience/client/tenant, and an operator-enrolled principal. POST bodies
 must use exactly `Content-Type: application/json`. Unknown/duplicate fields,
-trailing JSON, invalid UTF-8 and bodies above 64 KiB are rejected. No query
-parameters, cookies, browser origins or forwarded identity headers are used.
+trailing JSON, invalid UTF-8 and bodies above 64 KiB are rejected. Only the
+collection GET accepts the strict [history parameters](approval-history-api.md);
+all other routes reject query parameters. No cookies, browser origins or
+forwarded identity headers are used on bearer routes.
 Responses use `Cache-Control: no-store` and contain no reusable credentials.
 
-| Route                                  | Required authority                       | Body / outcome                                                    |
-| -------------------------------------- | ---------------------------------------- | ----------------------------------------------------------------- |
-| `POST /api/v1/approvals`               | Requester role + `approvals.request`     | Fixed simulator arguments; creates pending, no dispatch           |
-| `GET /api/v1/approvals`                | Enrolled role + `approvals.read`         | Up to 50 newest snapshots in tenant; requester-only role sees own |
-| `GET /api/v1/approvals/{id}`           | Same read authority, tenant/owner check  | Exact action, request hash, policy, expiry, status/outcome        |
-| `POST /api/v1/approvals/{id}/decision` | Human reviewer role + `approvals.decide` | Exact hash and `approve` or `deny`; no self-approval              |
-| `POST /api/v1/approvals/{id}/execute`  | Original requester + `approvals.execute` | Exact hash only; load stored action and consume once              |
+| Route                                  | Required authority                       | Body / outcome                                                  |
+| -------------------------------------- | ---------------------------------------- | --------------------------------------------------------------- |
+| `POST /api/v1/approvals`               | Requester role + `approvals.request`     | Fixed simulator arguments; creates pending, no dispatch         |
+| `GET /api/v1/approvals`                | Enrolled role + `approvals.read`         | Filtered pages up to 50 in tenant; requester-only role sees own |
+| `GET /api/v1/approvals/{id}`           | Same read authority, tenant/owner check  | Exact action, request hash, policy, expiry, status/outcome      |
+| `POST /api/v1/approvals/{id}/decision` | Human reviewer role + `approvals.decide` | Exact hash and `approve` or `deny`; no self-approval            |
+| `POST /api/v1/approvals/{id}/execute`  | Original requester + `approvals.execute` | Exact hash only; load stored action and consume once            |
 
 Create body:
 
