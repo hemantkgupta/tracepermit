@@ -10,6 +10,13 @@ import java.util.List;
 public interface DurableEnforcementState {
   DurableClaimResult claim(DurableExecutionClaim claim);
 
+  /**
+   * Atomically transitions an executing attempt and records its evidence. Unknown outcomes
+   * must enqueue lookup-only reconciliation in the same transaction. Must reject an attempt
+   * that is already succeeded, failed, or unknown without mutating it; only reconciliation
+   * may resolve unknown to a confirmed outcome.
+   * A thrown exception does not establish whether a transaction committed.
+   */
   ExecutionAttempt complete(
       TenantPartition tenant,
       String attemptId,

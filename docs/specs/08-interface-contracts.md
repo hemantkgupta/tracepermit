@@ -656,7 +656,19 @@ specified and implemented.
 - Duplicate idempotent requests return the original result or a conflict with
   a safe reference.
 
-## 9. Protocol compatibility
+## 9. Durable outcome-recording uncertainty
+
+After dispatch, a completion exception produces
+`DURABLE_STATE_UNAVAILABLE_AFTER_DISPATCH` even if commit may have succeeded.
+The direct and approval services make one additional same-tenant/attempt unknown
+recording; the PostgreSQL operation accepts only executing state and atomically
+records evidence/outbox and a lookup queue entry. Already committed succeeded,
+failed or unknown state is not overwritten. No target retry, replacement claim
+or restored approval authority is implied. A persistent outage/crash can still
+leave executing state; no automatic worker or restore fence is added. See
+[the completion runbook](../runbooks/durable-completion-uncertainty.md).
+
+## 10. Protocol compatibility
 
 The current MCP implementation supports the 2026-07-28 protocol and a stateless
 request/response fallback for 2025-era clients. Legacy session GET/DELETE,

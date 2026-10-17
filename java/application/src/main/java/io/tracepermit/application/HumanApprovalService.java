@@ -298,17 +298,8 @@ public final class HumanApprovalService {
       throw uncertain;
     }
 
-    ExecutionAttempt attempt;
-    try {
-      attempt = executions.complete(
-          context.tenant(),
-          begun.attempt().attemptId(),
-          "succeeded",
-          "TARGET_CONFIRMED_SUCCESS",
-          clock.instant());
-    } catch (RuntimeException failure) {
-      throw new IllegalStateException("DURABLE_STATE_UNAVAILABLE_AFTER_DISPATCH", failure);
-    }
+    ExecutionAttempt attempt = DurableOutcomeRecorder.complete(
+        executions, context.tenant(), begun.attempt(), "succeeded", "TARGET_CONFIRMED_SUCCESS", clock);
     return new ApprovalExecutionResult("succeeded", evaluation, begun.approval(), attempt, result);
   }
 
@@ -420,10 +411,10 @@ public final class HumanApprovalService {
       String reasonCode,
       RuntimeException targetFailure) {
     try {
-      executions.complete(context.tenant(), attempt.attemptId(), outcome, reasonCode, clock.instant());
+      DurableOutcomeRecorder.complete(executions, context.tenant(), attempt, outcome, reasonCode, clock);
     } catch (RuntimeException persistenceFailure) {
-      persistenceFailure.addSuppressed(targetFailure);
-      throw new IllegalStateException("DURABLE_STATE_UNAVAILABLE_AFTER_DISPATCH", persistenceFailure);
+      if (persistenceFailure != targetFailure) persistenceFailure.addSuppressed(targetFailure);
+      throw persistenceFailure;
     }
   }
 
