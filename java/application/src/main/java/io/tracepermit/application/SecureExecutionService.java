@@ -166,7 +166,7 @@ public final class SecureExecutionService implements ActionEnforcer {
   public ExecutionResult execute(JsonNode event) {
     if (!readiness.get().ready()) throw new IllegalStateException("SECURITY_DEPENDENCY_UNAVAILABLE");
     event = ActionValidator.validate(event);
-    Authorized authorized = authorize(event, clock.instant());
+    Authorized authorized = authorize(event);
     if (authorized.denied() != null) return authorized.denied();
     JsonNode effectiveEvent = authorized.effectiveEvent();
     PolicyEvaluation evaluation = authorized.evaluation();
@@ -222,16 +222,20 @@ public final class SecureExecutionService implements ActionEnforcer {
   }
 
   /**
-   * Authorization window: the sequence snapshot, both policy evaluations, and the
-   * sequence record must stay atomic per principal, because gateway-owned history
-   * gates later proposals for the same principal. Reviewed sanitizers preserve
-   * identity and target, so the stripe key of the original event covers the record.
+   * Authorization window: the principal stripe lock protects the entire authorization
+   * transaction (timestamp capture, sequence snapshot, single active-policy snapshot,
+   * evaluation, optional reviewed sanitization and re-evaluation, and sequence record).
+   * Capturing the trusted timestamp after acquiring the stripe lock linearizes the
+   * observation timestamp with the principal's recorded sequence history, preventing
+   * concurrent actions from interleaving between timestamp capture and authorization.
+   * Principal-history records track authorized proposals, not universal target effects.
    * Everything after the record relies on the components' own atomicity.
    */
-  private Authorized authorize(JsonNode event, Instant now) {
+  private Authorized authorize(JsonNode event) {
     ReentrantLock stripe = stripes.lockFor(principalKey(event));
     stripe.lock();
     try {
+      Instant now = clock.instant();
       ClassificationContext sequenceContext;
       try {
         sequenceContext = sequenceStore.contextFor(event, now);

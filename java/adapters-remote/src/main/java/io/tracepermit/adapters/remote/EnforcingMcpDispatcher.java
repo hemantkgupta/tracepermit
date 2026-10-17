@@ -170,8 +170,10 @@ public final class EnforcingMcpDispatcher implements RemoteMcpDispatcher {
 
   /**
    * Full construction with an explicit bound on concurrently executing enforcement
-   * attempts. The bound is admission control, not a throughput target: saturated
-   * capacity fails closed without queueing.
+   * attempts. The bound is admission control, not a throughput target or per-tenant
+   * fairness guarantee: tryAcquire is non-blocking admission, and saturated capacity
+   * fails closed immediately without queueing. Admitted calls can still wait on
+   * downstream principal stripes, sequence stores, execution ledgers, or target locks.
    */
   public EnforcingMcpDispatcher(
       TenantActionEnforcer enforcer,

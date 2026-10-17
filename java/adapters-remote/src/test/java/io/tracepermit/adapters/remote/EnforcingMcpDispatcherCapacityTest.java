@@ -33,8 +33,10 @@ final class EnforcingMcpDispatcherCapacityTest {
   void saturatedCapacityFailsClosedWithoutQueueing() throws Exception {
     CountDownLatch entered = new CountDownLatch(1);
     CountDownLatch release = new CountDownLatch(1);
+    AtomicInteger enforcerCalls = new AtomicInteger();
     TenantActionEnforcer enforcer =
         (context, event) -> {
+          enforcerCalls.incrementAndGet();
           entered.countDown();
           try {
             assertThat(release.await(10, TimeUnit.SECONDS)).isTrue();
@@ -62,6 +64,8 @@ final class EnforcingMcpDispatcherCapacityTest {
           .isEqualTo("ENFORCEMENT_CAPACITY_EXCEEDED");
       assertThat(content(saturated).path("execution").path("status").asText())
           .isEqualTo("not_executed");
+      // Zero enforcer calls on rejection:
+      assertThat(enforcerCalls).hasValue(1);
 
       release.countDown();
       assertThat(content(first.get(10, TimeUnit.SECONDS)).path("execution").path("status").asText())
@@ -75,6 +79,7 @@ final class EnforcingMcpDispatcherCapacityTest {
             RemoteTestSupport.connector(RemoteTestSupport.DISCOVER, RemoteTestSupport.READ));
     assertThat(content(admitted).path("execution").path("status").asText())
         .isEqualTo("executed");
+    assertThat(enforcerCalls).hasValue(2);
   }
 
   @Test
@@ -95,6 +100,33 @@ final class EnforcingMcpDispatcherCapacityTest {
             call(1, EnforcingMcpDispatcher.FILTER_LOG_EVENTS, logArguments()),
             RemoteTestSupport.connector(RemoteTestSupport.DISCOVER, RemoteTestSupport.READ));
     assertThat(content(failed).path("error").asText()).isEqualTo("TARGET_EXECUTION_FAILED");
+
+    RemoteMcpResponse next =
+        dispatcher.dispatch(
+            call(2, EnforcingMcpDispatcher.FILTER_LOG_EVENTS, logArguments()),
+            RemoteTestSupport.connector(RemoteTestSupport.DISCOVER, RemoteTestSupport.READ));
+    assertThat(content(next).path("error").isMissingNode()).isTrue();
+    assertThat(content(next).path("execution").path("status").asText()).isEqualTo("executed");
+  }
+
+  @Test
+  void capacityIsReleasedWhenEnforcementThrowsUnexpectedException() throws Exception {
+    AtomicInteger calls = new AtomicInteger();
+    TenantActionEnforcer enforcer =
+        (context, event) -> {
+          if (calls.incrementAndGet() == 1) {
+            throw new RuntimeException("unexpected crash");
+          }
+          return result(JsonSupport.MAPPER.createObjectNode().put("mode", "simulated"));
+        };
+    EnforcingMcpDispatcher dispatcher = dispatcher(enforcer, 1);
+
+    RemoteMcpResponse failed =
+        dispatcher.dispatch(
+            call(1, EnforcingMcpDispatcher.FILTER_LOG_EVENTS, logArguments()),
+            RemoteTestSupport.connector(RemoteTestSupport.DISCOVER, RemoteTestSupport.READ));
+    assertThat(content(failed).path("error").asText()).isEqualTo("REMOTE_ENFORCEMENT_FAILED");
+    assertThat(content(failed).path("execution").path("status").asText()).isEqualTo("unknown");
 
     RemoteMcpResponse next =
         dispatcher.dispatch(

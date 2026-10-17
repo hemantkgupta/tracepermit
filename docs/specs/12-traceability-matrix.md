@@ -5,6 +5,33 @@
 
 Status values: **Implemented**, **Partial**, **Target**, or **Proposed**.
 
+## Striped authorization concurrency, trusted clock placement, and admission bounds
+
+Requirements: FR-005/006/009; SEC-002/005/006/009/010; REL-001/004/009; OPS-002.
+
+Java `SecureExecutionService` replaces its process-wide monitor with per-principal
+`ReentrantLock` striping (`StripedMonitors`, default 64 stripes), keyed strictly
+by `organizationId + "\u0000" + subject.id` to match the sequence store's conflict
+domain. Trusted timestamp capture (`clock.instant()`) is placed strictly _inside_ the
+stripe lock before `contextFor` and evaluation, ensuring linear sequence observation
+and eliminating pre-lock timestamp stale races. `EnforcingMcpDispatcher` bounds concurrent
+enforcement (1–1,024, default 64) with non-blocking admission, failing closed immediately
+with `ENFORCEMENT_CAPACITY_EXCEEDED` (`not_executed`) and zero enforcer invocations on
+saturation.
+
+`SecureExecutionServiceConcurrencyTest` (13 tests), `StripedMonitorsTest` (6 tests),
+and `EnforcingMcpDispatcherCapacityTest` (4 tests) verify temporal order under shipped
+and test-only baseline-allow policies, serialized send-before-read ordering, service
+lock release under `contextFor`, `record`, and sanitizer faults from distinct threads,
+cross-tool principal lock alignment, safe hash collision over-serialization, racing
+idempotency, distinct-principal target overlap, capacity release on exceptions, and
+constructor bounds. See [ADR 0047](../architecture/0047-striped-authorization-sequence-linearization.md)
+and [interface contracts](08-interface-contracts.md).
+
+This is bounded simulator-path concurrency and admission control, not process-wide
+ingress rate limiting, per-tenant fair queuing, an end-to-end throughput SLO,
+or production certification. No whole-ID requirement is upgraded to production-qualified.
+
 ## Authenticated approval-history collection
 
 FR-007/010; SEC-001/003/005/009/012; DATA-003; OPS-002 receive a bounded
