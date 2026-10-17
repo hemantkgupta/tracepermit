@@ -1,6 +1,6 @@
 # ADR 0046 — Authenticated, bounded approval-history queries
 
-- Status: implemented Java simulator API slice; React filtering controls pending
+- Status: implemented Java simulator API and role-scoped React history controls
 - Requirements: FR-007/010; SEC-001/003/005/009/012; DATA-003; OPS-002
 
 ## Decision
@@ -56,7 +56,10 @@ No total count, foreign owner search or cross-tenant selector is exposed. Additi
   indexing/upgrade work, not an edit to an installed migration.
 - This is approval history only, not full allow/block action search, retention,
   export, external IdP qualification, public hosting or production readiness.
-  The React inbox still shows the existing first page until its separate change.
+  The React inbox adds explicit exact filters, bounded continuation and a250-row
+  memory cap. Its generation/abort guards clear authority on logout/errors and
+  validate simulator page/session shapes before rendering. These are client
+  safety/usability defenses, not a replacement for server authorization.
 
 ## Verification
 

@@ -18,7 +18,12 @@ roles/ownership, expired display, authentication changes and unchanged state.
 See [ADR 0046](../architecture/0046-authenticated-approval-history-pagination.md)
 and the [API contract](../runbooks/approval-history-api.md).
 
-This is not full action search, rendered UI filtering, customer retention/export,
+React `ApprovalInbox`, API validation and history-state tests add exact filters,
+explicit continuation/cap, coherent initial generation, logout invalidation,
+context checks and mutation error gating. Actual synthetic multi-role browser
+QA covers sign-in, >50/250 rows, review versus execution, replay, and controlled
+client fault/late-response cases; see the [browser history runbook](../runbooks/browser-approval-history.md).
+This is not full action search, customer retention/export,
 constant-cost paging, an SLO or production tenant isolation certification. No
 schema/authority/permit behavior changes, and no whole-ID status is upgraded.
 
