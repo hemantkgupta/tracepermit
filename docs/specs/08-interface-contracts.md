@@ -52,6 +52,14 @@ schema lifecycle superseded by [ADR 0045](../architecture/0045-explicit-database
 starting a listener; normal run validates existing state without implicit DDL.
 Failures return exit 2/code-only redacted diagnostics; no public init, repair,
 upgrade or recovery-resume HTTP/MCP endpoint is added.
+Owner-only `--recovery-inspect` emits fixed-format `APPROVAL_RECOVERY_SNAPSHOT`
+JSON (`schemaVersion: 1.0`, database `transactionStartedAt`, `recoveryMode`,
+execution/approval stored-status counts and `reconciliationQueued`) followed by
+an `INSPECTION_ONLY` caveat. It is installation-wide, read-only and non-migrating,
+without per-tenant/request data, expiry refresh, target lookup or authority change.
+Failures emit no partial report. Ordinary runtime SELECT privileges are not
+sufficient. See [ADR 0052](../architecture/0052-owner-only-recovery-inspection.md).
+
 `--recovery-status` and owner-only `--quarantine-db` operate without a listener,
 IdP or target against existing V1–V9 state. The latter is installation-wide,
 one-way containment of new durable claims/reviews, not automatic rollback

@@ -396,6 +396,13 @@ Prior admitted claims may still dispatch/complete after declaration, and existin
 completion/evidence/lookup transactions are not gated. This does not detect a
 restored old ready row or define safe effectful resume.
 
+Owner-only [recovery inspection](../architecture/0052-owner-only-recovery-inspection.md)
+follows a separate read-only path: strict existing-schema validation, then a
+public-schema repeatable-read transaction checks ownership/RLS and reads the
+quarantine row plus aggregate stored statuses/queue count. The transaction ends
+before any report is emitted. It takes no authority row lock and does not mutate,
+refresh expiry, look up a target, release authority or declare safe resume.
+
 ```mermaid
 sequenceDiagram
   autonumber
