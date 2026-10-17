@@ -32,6 +32,26 @@ requirement-to-test mapping is in the [traceability matrix](12-traceability-matr
 | Read console                | React displays bounded Java action, evidence, lineage, and policy projections over loopback.                                                                                                                                                                                                                                                                                                                                                                                                                                                  | It cannot authorize, approve, execute, or mutate policy. It is not remotely authenticated or tenant-authorized.                                                                                                                                                                                                                                                         |
 | Downstream targets          | Deterministic, stateful AWS/Jira simulators support the numbered scenarios.                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | No real AWS/Jira SDK, cloud credential, or production side-effect route is present.                                                                                                                                                                                                                                                                                     |
 
+## OIDC refresh isolation
+
+The Java key resolver serves fresh cached keys without waiting for unrelated
+provider network work. Same issuer/JWKS refreshes coalesce; default coordinator
+capacity is four active workers plus sixteen pending tasks and a five-second
+monotonic waiter budget. Default DNS capacity is eight active workers plus
+sixteen pending tasks, shared across sources using the default resolver. DNS
+elapsed time reduces the remaining HTTP transport budget. Saturation and
+dependency failure refuse authentication rather than using expired keys.
+
+Joining callers check key freshness against their own trusted time. Late
+results cannot extend cache freshness; operation-generation bookkeeping prevents
+an older failure from reinstating cooldown after newer success. Access-token
+claim verification re-samples trusted time after key resolution and signature
+verification. These are tested local-instance controls, not distributed abuse
+state, provider fairness, a universal wall-clock deadline or additional live
+IdP qualification. An uninterruptible DNS syscall can retain a bounded worker
+after its waiter stops. See [ADR 0049](../architecture/0049-bounded-jwks-refresh-isolation.md)
+and the [refresh runbook](../runbooks/jwks-refresh-isolation.md).
+
 ## Runnable paths
 
 ### Named native endpoint rehearsal

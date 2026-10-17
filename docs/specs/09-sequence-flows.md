@@ -77,11 +77,40 @@ sequenceDiagram
   R-->>V: audience, JWKS URI, clients, tenants, scopes
   V->>K: resolve configured issuer/kid/RS256
   K-->>V: fresh trusted RSA public key
-  V->>V: verify signature, audience, time, client, tenant, scopes
+  V->>V: verify signature; re-sample trusted time; validate claims
   V-->>G: issuer-qualified subject + fingerprint-only evidence
   G->>M: dispatch with trusted identity
   Note over C,K: Token cannot supply its trust key or JWKS URL
 ```
+
+### Bounded refresh within key resolution
+
+```mermaid
+flowchart TD
+  R["Resolve configured issuer / JWKS / kid"] --> C{"Fresh cached key?"}
+  C -->|yes| K["Return trusted public key"]
+  C -->|no| J["Join current refresh or admit bounded work"]
+  J -->|capacity / deadline / interruption failure| X["Unavailable; no identity or dispatch"]
+  J --> D["Bounded DNS; validate and pin public addresses"]
+  D --> H["HTTPS with remaining transport budget"]
+  H --> P{"Valid keys before operation deadline?"}
+  P -->|no| F["Operation-ordered failure cooldown; discard late result"]
+  F --> X
+  P -->|yes| S["Publish freshness-ordered cache; record successful generation"]
+  S --> V{"Fresh at joining caller's trusted time?"}
+  V -->|no| X
+  V -->|yes| E{"Requested signing key present?"}
+  E -->|yes| K
+  E -->|no| I["Invalid token; no identity or dispatch"]
+  K --> T["Verify signature; re-sample time; validate token claims"]
+```
+
+Warm reads bypass refresh work. Different providers do not hold one global
+network lock, but share finite configured worker capacity. Waiters do not
+force-stop uninterruptible OS DNS. Late older failures cannot replace newer
+success with stale cooldown. Tests qualify these local boundaries, not a hard
+end-to-end deadline, distributed fairness or a production readiness claim.
+See [ADR 0049](../architecture/0049-bounded-jwks-refresh-isolation.md).
 
 ## 1B. SSRF-safe JWKS and authenticated remote MCP handshake
 
