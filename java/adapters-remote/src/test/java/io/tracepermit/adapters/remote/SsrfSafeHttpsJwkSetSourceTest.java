@@ -380,4 +380,80 @@ final class SsrfSafeHttpsJwkSetSourceTest {
         .hasMessage("The configured OIDC verification keys could not be fetched safely.")
         .hasNoCause();
   }
+
+  @Test
+  void defaultDnsCapacityMustNotQueueHealthyHostBehindTwoStalledLookupsWithSixWorkersUnused() throws Exception {
+    CountDownLatch blocked = new CountDownLatch(2), release = new CountDownLatch(1), healthy = new CountDownLatch(1);
+    var callers = Executors.newFixedThreadPool(3, runnable -> { var t = new Thread(runnable); t.setDaemon(true); return t; });
+    try (var resolver = new BoundedHostResolver(BoundedHostResolver.DEFAULT_MAX_WORKERS, BoundedHostResolver.DEFAULT_MAX_PENDING)) {
+      try {
+        for (String host : new String[] {"a.invalid", "b.invalid"}) callers.submit(() -> resolver.resolve(name -> {
+          blocked.countDown();
+          try { if (!release.await(4, TimeUnit.SECONDS)) throw new IllegalStateException("diagnostic timeout"); }
+          catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); }
+          return List.of(InetAddress.getLoopbackAddress());
+        }, host, Duration.ofSeconds(5)));
+        assertThat(blocked.await(2, TimeUnit.SECONDS)).isTrue();
+        callers.submit(() -> resolver.resolve(name -> {
+          healthy.countDown(); return List.of(InetAddress.getLoopbackAddress());
+        }, "healthy.invalid", Duration.ofSeconds(5)));
+        boolean progressed = healthy.await(2, TimeUnit.SECONDS);
+        var field = BoundedHostResolver.class.getDeclaredField("executor"); field.setAccessible(true);
+        var pool = (java.util.concurrent.ThreadPoolExecutor) field.get(resolver);
+        assertThat(progressed).as("healthy DNS stranded: active=%s, max=%s, queued=%s", pool.getActiveCount(),
+            pool.getMaximumPoolSize(), pool.getQueue().size()).isTrue();
+      } finally { release.countDown(); }
+    } finally {
+      callers.shutdownNow(); assertThat(callers.awaitTermination(3, TimeUnit.SECONDS)).isTrue();
+    }
+  }
+
+  @Test
+  void combinedDnsDelayPlusHttpResponseDelayEnforcesOverallCallTimeout() throws Exception {
+    RemoteTestSupport.TlsMaterial tls = RemoteTestSupport.tlsMaterial();
+    try (MockWebServer server = tlsServer(tls)) {
+      server.enqueue(
+          new MockResponse()
+              .setResponseCode(200)
+              .setHeader("Content-Type", "application/jwk-set+json; charset=utf-8")
+              .setBodyDelay(250, TimeUnit.MILLISECONDS)
+              .setBody("{\"keys\":[]}"));
+      URI uri = server.url("/jwks").uri();
+
+      Duration totalCallTimeout = Duration.ofMillis(300);
+      Duration dnsDelay = Duration.ofMillis(150);
+
+      SsrfSafeHttpsJwkSetSource.HostResolver delayedResolver =
+          hostname -> {
+            try {
+              Thread.sleep(dnsDelay.toMillis());
+            } catch (InterruptedException exception) {
+              Thread.currentThread().interrupt();
+            }
+            return List.of(InetAddress.getByName("127.0.0.1"));
+          };
+
+      try (BoundedHostResolver boundedResolver =
+          new BoundedHostResolver(
+              BoundedHostResolver.DEFAULT_MAX_WORKERS,
+              BoundedHostResolver.DEFAULT_MAX_PENDING)) {
+        SsrfSafeHttpsJwkSetSource source =
+            new SsrfSafeHttpsJwkSetSource(
+                Set.of(uri),
+                Duration.ofMillis(100),
+                totalCallTimeout,
+                delayedResolver,
+                ignored -> true,
+                tls.client().sslSocketFactory(),
+                tls.client().trustManager(),
+                boundedResolver);
+
+        long startNanos = System.nanoTime();
+        assertSafeFailure(() -> source.fetch(uri));
+        long elapsedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNanos);
+
+        assertThat(elapsedMillis).isGreaterThanOrEqualTo(200).isLessThan(2000);
+      }
+    }
+  }
 }

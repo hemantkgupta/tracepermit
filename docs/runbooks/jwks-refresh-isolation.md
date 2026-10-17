@@ -24,27 +24,32 @@ The OIDC key resolution path separates cache lookups from network I/O, isolates 
    - Known unexpired keys resolve directly from the in-memory cache without locking or blocking behind unrelated provider network I/O.
    - Provider A experiencing network degradation does not block or slow Provider B resolution.
 
-2. **In-Flight Coalescing (Single-Flight Refresh)**:
+2. **In-Flight Coalescing and Caller Freshness Validation**:
    - Multiple concurrent callers requesting an unknown key or expired key set for the same provider coalesce onto a single in-flight fetch task.
    - Waiters await the task with a monotonic timeout (`waiterTimeout`). Waiters that are interrupted restore thread interrupt status and fail closed.
+   - Joining callers validate the coalesced entry against their own trusted time (`now`); if the result has expired relative to the joining caller, the request fails closed (`OIDC_KEY_SET_UNAVAILABLE`) rather than accepting expired keys or resetting the waiter timeout.
 
-3. **Worker Capacity Saturation (Fail Closed)**:
+3. **Direct Active-Worker Admission and Capacity Saturation (Fail Closed)**:
+   - Worker pools configure `corePoolSize` equal to maximum workers (4 for JWKS refresh, 8 for DNS) so all active capacity is utilized before tasks queue behind running operations; idle threads time out via `allowCoreThreadTimeOut(true)`.
    - When refresh worker threads and queue slots are fully occupied, new refresh requests are rejected immediately with `RejectedExecutionException`.
    - Saturated workers fail closed with `AuthenticationException("OIDC_KEY_SET_UNAVAILABLE")` without blocking callers indefinitely.
-   - Once running tasks complete, capacity is restored and subsequent refreshes succeed.
+   - Once running tasks complete, capacity is restored and subsequent refreshes succeed without process restart.
 
-4. **Failure Storm Prevention (Cooldown)**:
-   - If a key set refresh fails due to network outage, DNS failure, or malformed JWKS payload, a failure cooldown is recorded: `max(provider.forcedRefreshCooldown(), failureCooldown)`.
-   - Subsequent requests requiring a refresh during the cooldown fail fast with `OIDC_KEY_SET_UNAVAILABLE` without issuing network requests.
+4. **Operation-Level Failure Storm Prevention (Cooldown)**:
+   - Failure cooldowns are recorded directly on the refresh operation itself, tracked race-safely via monotonic operation sequence IDs.
+   - If a key set refresh fails due to network outage, DNS failure, timeout, or malformed JWKS payload, a failure cooldown is recorded: `max(provider.forcedRefreshCooldown(), failureCooldown)` from the latest joining caller's trusted time.
+   - Failure cooldowns are installed even if all waiting caller threads timed out or were interrupted before the background task completed.
+   - Subsequent requests requiring a refresh during the cooldown fail fast with `OIDC_KEY_SET_UNAVAILABLE` without issuing network requests. Older late-failing operations cannot overwrite newer success or cooldown states. Transient capacity rejections do not install cooldowns.
    - Unexpired cached keys continue to serve legitimate traffic during cooldown.
 
 5. **Late Result Discarding**:
    - If a background refresh task exceeds its deadline, the result is marked late and discarded. Late results are never published to the cache and never extend key freshness.
    - Monotonic cache updates ensure older out-of-order results cannot overwrite newer key entries. Expired keys are never accepted as fallback.
 
-6. **Total Transport Deadline**:
+6. **Timed Transport Stage Deadlines**:
    - In `SsrfSafeHttpsJwkSetSource`, pre-call DNS resolution is executed under a bounded worker pool.
-   - Elapsed DNS time is subtracted from the total `callTimeout`. The remaining time governs HTTP connect, read, and call timeouts. Total elapsed transport time never exceeds `callTimeout`.
+   - Monotonic elapsed DNS time (`System.nanoTime()`) is subtracted from the total `callTimeout`. The remaining budget governs HTTP connect, read, and call timeouts for OkHttp. Total transport elapsed time across the DNS and HTTP stages is bounded by `callTimeout`.
+   - Operating bounds and pools are process-local to each JVM instance; OS-level DNS syscalls that ignore thread interruption unblock callers at their deadline while the bounded background worker completes.
 
 7. **Time Re-sampling on Wait**:
    - Trusted time is sampled before key resolution and re-sampled immediately after key resolution completes.

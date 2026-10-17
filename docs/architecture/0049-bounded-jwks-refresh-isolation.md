@@ -20,23 +20,28 @@ Additionally, in `SsrfSafeHttpsJwkSetSource`, pre-call DNS resolution and valida
    - Introduced `JwksRefreshCoordinator` in `io.tracepermit.identity` to manage background key set refreshes.
    - Concurrent requests for the same provider configuration coalesce onto a single in-flight `CompletableFuture`.
    - Waiters await the shared in-flight refresh using a monotonic deadline budget (`waiterTimeout`, default 5 seconds). Waiters handle interruption cleanly (`InterruptedException` restores the thread interrupt flag) and fail closed with `AuthenticationException("OIDC_KEY_SET_UNAVAILABLE")`.
+   - Joining callers validate the resolved key entry against their own trusted time (`now`); if the coalesced refresh result has already expired at the joining caller's trusted time, the caller fails closed (`OIDC_KEY_SET_UNAVAILABLE`) rather than reusing expired keys or resetting the waiter budget.
    - Before executing network fetch, the coordinator re-checks the cache to avoid redundant network calls if a concurrent in-flight refresh completed immediately prior.
 
-3. **Bounded Refresh Capacity and Fail-Closed Saturated Admission**:
+3. **Bounded Refresh Capacity and Direct Active-Worker Admission**:
    - Bounded concurrent refresh workers (default 4 workers) and pending queue capacity (default 16 tasks) using a dedicated daemon `ThreadPoolExecutor`.
+   - Configured active workers (`corePoolSize == maxConcurrentRefreshes == 4`) so intended active capacity is fully used before tasks queue behind running operations; idle threads are reaped via `allowCoreThreadTimeOut(true)`.
    - Saturated refresh capacity immediately rejects new refresh submissions with `RejectedExecutionException` and fails closed with `AuthenticationException("OIDC_KEY_SET_UNAVAILABLE")`.
    - When running tasks complete, capacity is restored, allowing subsequent refreshes to proceed without process restart.
 
-4. **Failure Cooldown and Late-Result Discarding**:
-   - Refreshes that fail (e.g., network unavailability or malformed key set) record a provider failure cooldown (`max(provider.forcedRefreshCooldown(), failureCooldown)`, minimum 10 seconds). Subsequent requests needing refresh during cooldown fail fast with `OIDC_KEY_SET_UNAVAILABLE` without hammering upstream endpoints.
+4. **Operation-Level Failure Cooldown and Late-Result Discarding**:
+   - Failure cooldown bookkeeping belongs directly to the refresh operation itself, tracked race-safely via monotonic operation sequence IDs.
+   - Refreshes that fail (due to network error, parse error, queue timeout, or late completion exceeding the monotonic deadline budget) record a provider failure cooldown (`max(provider.forcedRefreshCooldown(), failureCooldown)`, minimum 10 seconds), keyed from the latest joining caller's trusted time.
+   - Failure cooldowns are recorded even if all waiting caller threads timed out or were interrupted prior to task completion.
+   - Older late-failing operations cannot clobber newer successful operations or newer cooldowns. Transient capacity rejections (`RejectedExecutionException`) recover immediately and do not install cooldowns.
    - Refreshes that exceed their monotonic deadline budget discard late results: late results are marked exceptional, never published into cache, and never extend cache lifetime.
    - Monotonic cache updates (`updateCacheIfMonotonic`) prevent an older or out-of-order fetch from overwriting a newer cache entry. Expired keys are never accepted as fallback.
 
-5. **Bounded Pre-Call DNS and Total Transport Elapsed Deadlines**:
-   - Introduced `BoundedHostResolver` in `io.tracepermit.adapters.remote` with bounded workers (default 8) and bounded queue (default 16).
+5. **Bounded Pre-Call DNS and Transport Stage Deadlines**:
+   - Introduced `BoundedHostResolver` in `io.tracepermit.adapters.remote` with bounded workers (default 8) and bounded queue (default 16), configured with `corePoolSize == maxWorkers` to utilize full worker capacity before queueing.
    - If DNS resolution is attempted while worker capacity is saturated, it immediately fails closed with `JwksFetchException`.
    - In `SsrfSafeHttpsJwkSetSource`, monotonic elapsed time (`System.nanoTime()`) tracks the overall transport budget (`callTimeout`).
-   - The DNS resolution stage runs with a deadline equal to the remaining call timeout budget. The elapsed DNS time is subtracted from the total budget, and the remaining duration is applied as the `callTimeout`, `readTimeout`, and effective `connectTimeout` for OkHttp. Total transport time across DNS and HTTP stages is strictly bounded by the configured `callTimeout`.
+   - The DNS resolution stage runs with a deadline equal to the remaining call timeout budget. The elapsed DNS time is subtracted from the total budget, and the remaining duration is applied as the `callTimeout`, `readTimeout`, and effective `connectTimeout` for OkHttp. Total transport time across DNS and HTTP stages is bounded by the configured `callTimeout`.
 
 6. **Time Re-sampling in Access Token Verification**:
    - In `OidcAccessTokenVerifier`, the trusted wall clock (`clock.instant()`) is sampled before calling `keys.resolve` and re-sampled after `keys.resolve` completes.
@@ -51,5 +56,5 @@ Additionally, in `SsrfSafeHttpsJwkSetSource`, pre-call DNS resolution and valida
 
 ## Consequences and Limitations
 
-- **Process-Local Scope**: Refresh coalescing, worker pools, and failure cooldowns are bounded per JVM instance; multi-instance deployments do not share an in-memory refresh lock or distributed cache.
-- **Un-interruptible OS Resolver**: Because Java's underlying OS host resolution does not abort on thread interruption, a worker thread executing `InetAddress.getAllByName` may remain blocked until the OS-level resolver timeout expires. However, because worker counts are strictly bounded (`maxWorkers`), thread accumulation is prevented, and caller threads unblock at their monotonic deadline.
+- **Process-Local Scope**: Refresh coalescing, worker pools, and failure cooldowns are bounded per JVM instance; multi-instance deployments do not share an in-memory refresh lock or distributed cache. Claims apply strictly to the local resolver and executor instance.
+- **Timed Transport Stages**: The measured transport deadline strictly bounds pre-call DNS execution and the OkHttp connect/read/call exchange via monotonic `System.nanoTime()`. However, standard Java threads cannot forcibly abort underlying un-interruptible operating system host resolution syscalls (`InetAddress.getAllByName`); if the OS resolver hangs, the caller thread unblocks at its deadline while the DNS worker completes or times out in the background within the bounded thread pool limit.

@@ -16,6 +16,8 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 /**
@@ -33,8 +35,9 @@ public final class JwksRefreshCoordinator implements AutoCloseable {
   private final Duration waiterTimeout;
   private final Duration failureCooldown;
   private final ThreadPoolExecutor executor;
+  private final AtomicLong sequenceGenerator = new AtomicLong();
   private final ConcurrentHashMap<String, InFlightRefresh<?>> inFlight = new ConcurrentHashMap<>();
-  private final ConcurrentHashMap<String, Instant> failureCooldowns = new ConcurrentHashMap<>();
+  private final ConcurrentHashMap<String, CooldownState> failureCooldowns = new ConcurrentHashMap<>();
 
   public JwksRefreshCoordinator() {
     this(
@@ -75,7 +78,7 @@ public final class JwksRefreshCoordinator implements AutoCloseable {
             : new ArrayBlockingQueue<>(maxPendingRefreshes);
     this.executor =
         new ThreadPoolExecutor(
-            Math.min(2, maxConcurrentRefreshes),
+            maxConcurrentRefreshes,
             maxConcurrentRefreshes,
             60L,
             TimeUnit.SECONDS,
@@ -102,8 +105,8 @@ public final class JwksRefreshCoordinator implements AutoCloseable {
     Objects.requireNonNull(task);
     Objects.requireNonNull(onSuccess);
 
-    Instant cooldownUntil = failureCooldowns.get(cacheKey);
-    if (cooldownUntil != null && now.isBefore(cooldownUntil)) {
+    CooldownState state = failureCooldowns.get(cacheKey);
+    if (state != null && now.isBefore(state.cooldownUntil())) {
       throw unavailable();
     }
 
@@ -117,17 +120,23 @@ public final class JwksRefreshCoordinator implements AutoCloseable {
             inFlight.compute(
                 cacheKey,
                 (key, existing) -> {
-                  if (existing != null && !existing.future.isDone()) {
+                  if (existing != null
+                      && !existing.future.isDone()
+                      && System.nanoTime() <= existing.deadlineNanos) {
+                    existing.observeCallerTime(now);
                     return existing;
                   }
+                  long operationId = sequenceGenerator.incrementAndGet();
                   CompletableFuture<T> future = new CompletableFuture<>();
                   InFlightRefresh<T> created =
-                      new InFlightRefresh<>(future, startNanos, deadlineNanos);
+                      new InFlightRefresh<>(future, operationId, startNanos, deadlineNanos, now);
+                  future.whenComplete((res, err) -> inFlight.remove(cacheKey, created));
                   try {
                     executor.submit(
                         () -> {
                           try {
                             if (System.nanoTime() > deadlineNanos) {
+                              recordFailure(cacheKey, operationId, provider, created.maxCallerTime());
                               future.completeExceptionally(
                                   new TimeoutException("Queue delay exceeded refresh deadline"));
                               return;
@@ -135,6 +144,7 @@ public final class JwksRefreshCoordinator implements AutoCloseable {
                             T result = task.call();
                             if (System.nanoTime() > deadlineNanos) {
                               // Late result! Must not publish or extend freshness.
+                              recordFailure(cacheKey, operationId, provider, created.maxCallerTime());
                               future.completeExceptionally(
                                   new TimeoutException("Refresh completed after deadline"));
                               return;
@@ -142,11 +152,14 @@ public final class JwksRefreshCoordinator implements AutoCloseable {
                             try {
                               onSuccess.accept(result);
                             } catch (Throwable publishError) {
+                              recordFailure(cacheKey, operationId, provider, created.maxCallerTime());
                               future.completeExceptionally(publishError);
                               return;
                             }
+                            recordSuccess(cacheKey, operationId);
                             future.complete(result);
                           } catch (Throwable throwable) {
+                            recordFailure(cacheKey, operationId, provider, created.maxCallerTime());
                             future.completeExceptionally(throwable);
                           }
                         });
@@ -159,25 +172,20 @@ public final class JwksRefreshCoordinator implements AutoCloseable {
     try {
       long remainingNanos = refresh.deadlineNanos - System.nanoTime();
       if (remainingNanos <= 0) {
+        recordFailure(cacheKey, refresh.operationId, provider, refresh.maxCallerTime());
         throw unavailable();
       }
       T result = refresh.future.get(remainingNanos, TimeUnit.NANOSECONDS);
-      failureCooldowns.remove(cacheKey);
+      recordSuccess(cacheKey, refresh.operationId);
       return result;
     } catch (TimeoutException exception) {
+      recordFailure(cacheKey, refresh.operationId, provider, refresh.maxCallerTime());
       throw unavailable();
     } catch (InterruptedException exception) {
       Thread.currentThread().interrupt();
       throw unavailable();
     } catch (ExecutionException exception) {
       Throwable cause = exception.getCause();
-      if (!(cause instanceof RejectedExecutionException)) {
-        Duration cooldown = provider.forcedRefreshCooldown();
-        if (cooldown.compareTo(failureCooldown) < 0) {
-          cooldown = failureCooldown;
-        }
-        failureCooldowns.put(cacheKey, now.plus(cooldown));
-      }
       if (cause instanceof AuthenticationException authEx) {
         throw authEx;
       }
@@ -187,6 +195,45 @@ public final class JwksRefreshCoordinator implements AutoCloseable {
         inFlight.remove(cacheKey, refresh);
       }
     }
+  }
+
+  private void recordSuccess(String cacheKey, long operationId) {
+    failureCooldowns.compute(
+        cacheKey,
+        (key, current) -> {
+          if (current == null) {
+            return null;
+          }
+          if (current.operationId <= operationId) {
+            return null;
+          }
+          return current;
+        });
+  }
+
+  private void recordFailure(
+      String cacheKey,
+      long operationId,
+      OidcProviderConfiguration provider,
+      Instant callerTime) {
+    Duration cooldown = provider.forcedRefreshCooldown();
+    if (cooldown.compareTo(failureCooldown) < 0) {
+      cooldown = failureCooldown;
+    }
+    Instant cooldownUntil = callerTime.plus(cooldown);
+    failureCooldowns.compute(
+        cacheKey,
+        (key, current) -> {
+          if (current != null) {
+            if (current.operationId > operationId) {
+              return current;
+            }
+            if (current.cooldownUntil.isAfter(cooldownUntil)) {
+              return current;
+            }
+          }
+          return new CooldownState(operationId, cooldownUntil);
+        });
   }
 
   public int maxConcurrentRefreshes() {
@@ -215,6 +262,41 @@ public final class JwksRefreshCoordinator implements AutoCloseable {
         "OIDC_KEY_SET_UNAVAILABLE", "The configured OIDC verification keys are unavailable.");
   }
 
-  private record InFlightRefresh<T>(
-      CompletableFuture<T> future, long startNanos, long deadlineNanos) {}
+  private record CooldownState(long operationId, Instant cooldownUntil) {}
+
+  private static final class InFlightRefresh<T> {
+    final CompletableFuture<T> future;
+    final long operationId;
+    final long startNanos;
+    final long deadlineNanos;
+    final AtomicReference<Instant> maxCallerTime;
+
+    InFlightRefresh(
+        CompletableFuture<T> future,
+        long operationId,
+        long startNanos,
+        long deadlineNanos,
+        Instant initialCallerTime) {
+      this.future = future;
+      this.operationId = operationId;
+      this.startNanos = startNanos;
+      this.deadlineNanos = deadlineNanos;
+      this.maxCallerTime = new AtomicReference<>(Objects.requireNonNull(initialCallerTime));
+    }
+
+    CompletableFuture<T> future() {
+      return future;
+    }
+
+    void observeCallerTime(Instant callerTime) {
+      if (callerTime != null) {
+        maxCallerTime.accumulateAndGet(
+            callerTime, (current, update) -> update.isAfter(current) ? update : current);
+      }
+    }
+
+    Instant maxCallerTime() {
+      return maxCallerTime.get();
+    }
+  }
 }

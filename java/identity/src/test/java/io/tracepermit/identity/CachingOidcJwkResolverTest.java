@@ -14,11 +14,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
@@ -490,13 +492,15 @@ final class CachingOidcJwkResolverTest {
     OidcProviderConfiguration provider = OidcTestSupport.provider();
     CountDownLatch fetchStarted = new CountDownLatch(1);
     CountDownLatch completeLateFetch = new CountDownLatch(1);
+    AtomicInteger calls = new AtomicInteger();
 
     JwksRefreshCoordinator coordinator =
         new JwksRefreshCoordinator(
-            2, 4, Duration.ofMillis(50), Duration.ofMillis(10));
+            2, 4, Duration.ofMillis(50), Duration.ofSeconds(10));
     CachingOidcJwkResolver resolver =
         new CachingOidcJwkResolver(
             ignored -> {
+              calls.incrementAndGet();
               fetchStarted.countDown();
               try {
                 if (!completeLateFetch.await(5, TimeUnit.SECONDS)) {
@@ -515,16 +519,33 @@ final class CachingOidcJwkResolverTest {
           "OIDC_KEY_SET_UNAVAILABLE");
       assertThat(fetchStarted.await(5, TimeUnit.SECONDS)).isTrue();
 
-      completeLateFetch.countDown();
-      Thread.sleep(100);
+      String cacheKey = provider.issuer() + "\u0000" + provider.jwksUri();
+      var inFlightField = JwksRefreshCoordinator.class.getDeclaredField("inFlight");
+      inFlightField.setAccessible(true);
+      Object inFlightRecord = ((Map<?, ?>) inFlightField.get(coordinator)).get(cacheKey);
+      assertThat(inFlightRecord).isNotNull();
+      var futureMethod = inFlightRecord.getClass().getDeclaredMethod("future");
+      futureMethod.setAccessible(true);
+      CompletableFuture<?> old = (CompletableFuture<?>) futureMethod.invoke(inFlightRecord);
 
-      // Verify that late result was discarded and did not populate cache.
-      // Next call attempts resolution and fails since source is now unavailable.
-      CachingOidcJwkResolver checkResolver =
-          new CachingOidcJwkResolver(ignored -> null, coordinator);
+      completeLateFetch.countDown();
+
+      // Observable task completion: wait for background task to complete late without arbitrary sleep
+      assertThatThrownBy(() -> old.get(2, TimeUnit.SECONDS))
+          .hasCauseInstanceOf(TimeoutException.class);
+
+      // Verify on the SAME resolver that the late result was discarded and did not populate cache
+      var cacheField = CachingOidcJwkResolver.class.getDeclaredField("cache");
+      cacheField.setAccessible(true);
+      Map<?, ?> cache = (Map<?, ?>) cacheField.get(resolver);
+      assertThat(cache.get(cacheKey))
+          .as("late result must not populate the original resolver's cache")
+          .isNull();
+
+      // Subsequent call on the same resolver fails closed
       assertCode(
           () ->
-              checkResolver.resolve(
+              resolver.resolve(
                   provider,
                   OidcTestSupport.KEY_ID,
                   "RS256",
@@ -629,5 +650,113 @@ final class CachingOidcJwkResolverTest {
         .isInstanceOf(AuthenticationException.class)
         .extracting(error -> ((AuthenticationException) error).code())
         .isEqualTo(expectedCode);
+  }
+
+  @Test
+  void laterWaiterMustNotAcceptSharedEntryAlreadyExpiredAtItsOwnTrustedTime() throws Exception {
+    var oldKey = OidcTestSupport.rsaKeyPair();
+    var newKey = OidcTestSupport.rsaKeyPair();
+    var original = OidcTestSupport.provider();
+    var provider = new OidcProviderConfiguration(original.issuer(), original.resourceAudience(), original.jwksUri(),
+        original.resourceMetadataUri(), original.authorizationServers(), original.resourceName(), original.clientNames(),
+        original.tenantClaim(), original.tenantMappings(), original.supportedScopes(), original.origin(),
+        original.maximumTokenLifetime(), Duration.ofSeconds(1), Duration.ofMillis(100));
+    CountDownLatch entered = new CountDownLatch(1), release = new CountDownLatch(1);
+    java.util.concurrent.atomic.AtomicInteger fetches = new java.util.concurrent.atomic.AtomicInteger();
+    var callers = Executors.newFixedThreadPool(2, runnable -> { var t = new Thread(runnable); t.setDaemon(true); return t; });
+    try (var resolver = new CachingOidcJwkResolver(uri -> {
+      if (fetches.incrementAndGet() == 1) {
+        entered.countDown();
+        try { if (!release.await(4, TimeUnit.SECONDS)) throw new IllegalStateException(); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        return OidcTestSupport.publicJwks(oldKey);
+      }
+      return OidcTestSupport.publicJwks(newKey);
+    })) {
+      var first = callers.submit(() -> resolver.resolve(provider, OidcTestSupport.KEY_ID, "RS256", OidcTestSupport.NOW));
+      assertThat(entered.await(2, TimeUnit.SECONDS)).isTrue();
+      java.util.concurrent.atomic.AtomicReference<Thread> secondThread = new java.util.concurrent.atomic.AtomicReference<>();
+      var second = callers.submit(() -> {
+        secondThread.set(Thread.currentThread());
+        return resolver.resolve(provider, OidcTestSupport.KEY_ID, "RS256", OidcTestSupport.NOW.plusSeconds(2));
+      });
+      long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+      boolean joined = false;
+      while (!joined && System.nanoTime() < deadline) {
+        Thread thread = secondThread.get();
+        joined = thread != null && java.util.Arrays.stream(thread.getStackTrace()).anyMatch(frame ->
+            frame.getClassName().equals("java.util.concurrent.CompletableFuture") && frame.getMethodName().equals("timedGet"));
+        if (!joined) Thread.sleep(5);
+      }
+      assertThat(joined).as("second caller must join the first refresh before it is released").isTrue();
+      release.countDown();
+      assertThat(first.get(2, TimeUnit.SECONDS)).isEqualTo(oldKey.getPublic());
+      try { second.get(2, TimeUnit.SECONDS); }
+      catch (java.util.concurrent.ExecutionException refused) {
+        assertThat(refused.getCause()).isInstanceOf(AuthenticationException.class);
+        return;
+      }
+      var cacheField = CachingOidcJwkResolver.class.getDeclaredField("cache"); cacheField.setAccessible(true);
+      var entry = (CachingOidcJwkResolver.CacheEntry) ((Map<?, ?>) cacheField.get(resolver))
+          .get(provider.issuer() + "\u0000" + provider.jwksUri());
+      assertThat(entry.expiresAt()).as("a returned shared entry must remain fresh at this caller's trusted T+2")
+          .isAfter(OidcTestSupport.NOW.plusSeconds(2));
+    } finally {
+      release.countDown(); callers.shutdownNow(); assertThat(callers.awaitTermination(3, TimeUnit.SECONDS)).isTrue();
+    }
+  }
+
+  @Test
+  void timedOutRefreshMustImposeFailureCooldownWhenLateTaskEventuallyFinishes() throws Exception {
+    CountDownLatch entered = new CountDownLatch(1), release = new CountDownLatch(1);
+    java.util.concurrent.atomic.AtomicInteger calls = new java.util.concurrent.atomic.AtomicInteger();
+    var provider = OidcTestSupport.provider();
+    try (var coordinator = new JwksRefreshCoordinator(1, 0, Duration.ofMillis(80), Duration.ofSeconds(10))) {
+      try {
+        assertThatThrownBy(() -> coordinator.refresh("provider", provider, OidcTestSupport.NOW, () -> {
+          calls.incrementAndGet(); entered.countDown();
+          try { if (!release.await(4, TimeUnit.SECONDS)) throw new IllegalStateException(); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+          return "late";
+        })).isInstanceOf(AuthenticationException.class);
+        assertThat(entered.getCount()).isZero();
+        var field = JwksRefreshCoordinator.class.getDeclaredField("inFlight"); field.setAccessible(true);
+        Object inFlightRecord = ((Map<?, ?>) field.get(coordinator)).get("provider");
+        assertThat(inFlightRecord).isNotNull();
+        var futureMethod = inFlightRecord.getClass().getDeclaredMethod("future"); futureMethod.setAccessible(true);
+        java.util.concurrent.CompletableFuture<?> old = (java.util.concurrent.CompletableFuture<?>) futureMethod.invoke(inFlightRecord);
+        release.countDown();
+        assertThatThrownBy(() -> old.get(2, TimeUnit.SECONDS)).hasCauseInstanceOf(java.util.concurrent.TimeoutException.class);
+        assertThatThrownBy(() -> coordinator.refresh("provider", provider, OidcTestSupport.NOW.plusSeconds(1), () -> {
+          calls.incrementAndGet(); return "should be suppressed";
+        })).as("timeout must not permit another upstream task inside the documented failure cooldown")
+            .isInstanceOf(AuthenticationException.class);
+        assertThat(calls).hasValue(1);
+      } finally { release.countDown(); }
+    }
+  }
+
+  @Test
+  void defaultRefreshPoolMustUseAvailableWorkersBeforeStrandingHealthyProviderBehindTwoStalls() throws Exception {
+    CountDownLatch blocked = new CountDownLatch(2), release = new CountDownLatch(1), healthy = new CountDownLatch(1);
+    var callers = Executors.newFixedThreadPool(3, runnable -> { var t = new Thread(runnable); t.setDaemon(true); return t; });
+    try (var coordinator = new JwksRefreshCoordinator()) {
+      try {
+        for (String key : new String[] {"a", "b"}) callers.submit(() -> coordinator.refresh(key, OidcTestSupport.provider(),
+            OidcTestSupport.NOW, () -> {
+              blocked.countDown();
+              try { if (!release.await(4, TimeUnit.SECONDS)) throw new IllegalStateException(); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+              return key;
+            }));
+        assertThat(blocked.await(2, TimeUnit.SECONDS)).isTrue();
+        callers.submit(() -> coordinator.refresh("healthy", OidcTestSupport.provider(), OidcTestSupport.NOW,
+            () -> { healthy.countDown(); return "ready"; }));
+        boolean progressed = healthy.await(2, TimeUnit.SECONDS);
+        var field = JwksRefreshCoordinator.class.getDeclaredField("executor"); field.setAccessible(true);
+        var pool = (java.util.concurrent.ThreadPoolExecutor) field.get(coordinator);
+        assertThat(progressed).as("healthy provider stranded: active=%s, max=%s, queued=%s",
+            pool.getActiveCount(), pool.getMaximumPoolSize(), pool.getQueue().size()).isTrue();
+      } finally { release.countDown(); }
+    } finally {
+      callers.shutdownNow(); assertThat(callers.awaitTermination(3, TimeUnit.SECONDS)).isTrue();
+    }
   }
 }

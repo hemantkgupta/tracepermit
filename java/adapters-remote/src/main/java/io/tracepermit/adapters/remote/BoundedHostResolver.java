@@ -54,7 +54,7 @@ public final class BoundedHostResolver implements AutoCloseable {
         maxPending == 0 ? new SynchronousQueue<>() : new ArrayBlockingQueue<>(maxPending);
     this.executor =
         new ThreadPoolExecutor(
-            Math.min(2, maxWorkers),
+            maxWorkers,
             maxWorkers,
             60L,
             TimeUnit.SECONDS,

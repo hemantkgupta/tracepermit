@@ -77,6 +77,14 @@ public final class CachingOidcJwkResolver implements OidcVerificationKeyResolver
               return refresh(provider, now);
             },
             entry -> updateCacheIfMonotonic(cacheKey, entry));
+    if (!refreshed.expiresAt().isAfter(now)) {
+      CacheEntry latest = cache.get(cacheKey);
+      if (latest != null && latest.expiresAt().isAfter(now)) {
+        refreshed = latest;
+      } else {
+        throw unavailable(null);
+      }
+    }
     RSAPublicKey resolved = refreshed.keys().get(keyId);
     if (resolved == null) throw invalidToken();
     return resolved;
