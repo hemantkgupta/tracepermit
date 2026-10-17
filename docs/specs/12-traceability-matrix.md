@@ -5,6 +5,25 @@
 
 Status values: **Implemented**, **Partial**, **Target**, or **Proposed**.
 
+## Owner-only read-only recovery inspection
+
+Requirements: FR-015; SEC-003/012/019; REL-002/005/008; OPS-002/004.
+
+`PostgresRecoveryInspection` and source/installed `--recovery-inspect` qualify
+non-migrating installation-wide stored-state counts under one read-only
+repeatable-read snapshot. Ownership/inherited ownership of all inspected tables
+is required; ordinary runtime SELECT and unexpected RLS are refused. No
+per-request data or partial failure report is emitted. Real PostgreSQL snapshot,
+all-status, read-only, authorization and failure tests plus bootstrap/installed
+commands provide bounded evidence. See [ADR 0052](../architecture/0052-owner-only-recovery-inspection.md).
+
+This is not whole-requirement completion: no evidence-chain verification,
+target lookup, automatic abandoned-executing handling, rollback detection,
+upgrade, authority release or safe resume is added. Output size is bounded;
+table-scan work is timed, not constant. Stored approval counts are not current
+eligibility decisions. Operator ownership is not an authenticated remote admin
+product or proof against a malicious database owner.
+
 ## Operator-declared recovery quarantine
 
 Requirements: FR-007/008/012; SEC-002/005/006/012; REL-001/003/004/005/009; OPS-002/004.

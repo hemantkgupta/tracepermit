@@ -218,6 +218,10 @@ restore or restore failure; no external recovery fence or safe-resume command
 is implemented. There is no in-place schema-upgrade command; never reset or
 rewrite a populated database to make this version start.
 
+Owner-only `--recovery-inspect` prints a read-only, consistent aggregate snapshot
+without identifiers, mutation or target lookup. It is not a safe-resume verdict;
+see [recovery inspection](operator-recovery-inspection.md).
+
 `--recovery-status` and owner-only `--quarantine-db` provide explicit one-way
 containment without IdP/listener/target startup. They block new database authority,
 not already admitted effects or internal permit minting. They do not detect a

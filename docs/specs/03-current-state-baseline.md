@@ -183,7 +183,12 @@ PostgreSQL V9 adds an installation-wide, owner-declared, one-way quarantine.
 `--quarantine-db` serializes against new durable claims, standalone permit
 consumption and approval writes; already-running replicas fail those writes
 closed. Completion/evidence and lookup-only reconciliation remain available for
-previously admitted work. `--recovery-status` inspects without migration;
+previously admitted work. Owner-only `--recovery-inspect` adds a read-only
+repeatable-read snapshot of aggregate stored execution/approval statuses and
+reconciliation queue count, without per-request data, expiry refresh or target
+lookup. It is not quiescence or recovery-success proof and cannot authorize
+resume; see [ADR 0052](../architecture/0052-owner-only-recovery-inspection.md).
+`--recovery-status` inspects without migration;
 effectful operator startup refuses already quarantined state. Internal permit
 minting and process-local demo paths are not fenced. There is no resume or
 in-place upgrade command. See [ADR 0051](../architecture/0051-operator-declared-recovery-quarantine.md).

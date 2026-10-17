@@ -27,6 +27,10 @@ revoke a signer, or provide a way to resume.
 
 ## Declare containment
 
+For owner-only aggregate stored-state counts before/after declaration, use
+the separate [read-only recovery inspection](operator-recovery-inspection.md).
+It neither declares containment nor authorizes resume.
+
 With a separate private config using the quarantine table owner's authority:
 
 ```bash
