@@ -7,13 +7,30 @@ import {
   canReview,
   decideApproval,
   isExpired,
+  loadApprovalPage,
   loadApprovalSession,
-  loadApprovals,
   signOut,
   submitApproval,
   type Approval,
+  type ApprovalQuery,
   type ApprovalSession,
+  type ApprovalStatusFilter,
 } from "./approval-api.js";
+import {
+  MAX_ACCUMULATED_ROWS,
+  initialHistoryState,
+  pageFailure,
+  pageSuccess,
+  resetHistoryFilters,
+  sessionLoggedOut,
+  startLoadOlder,
+  startRefresh,
+  startSearch,
+  toApprovalQuery,
+  type HistoryFilters,
+  type HistoryState,
+} from "./approval-history-state.js";
+import "./approval-history.css";
 
 type Confirmation = {
   approval: Approval;
@@ -22,67 +39,140 @@ type Confirmation = {
 
 export function ApprovalInbox() {
   const [session, setSession] = useState<ApprovalSession | null>(null);
-  const [items, setItems] = useState<Approval[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [state, setState] = useState<HistoryState>(initialHistoryState);
   const [busy, setBusy] = useState(false);
   const submitting = useRef(false);
-  const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
-  const [revision, setRevision] = useState(0);
   const [port, setPort] = useState("443");
   const [cidr, setCidr] = useState("192.0.2.0/24");
-  const selected = items.find((item) => item.approvalRequestId === selectedId);
 
-  useEffect(() => {
+  const generationRef = useRef(0);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  const selected = state.items.find(
+    (item) => item.approvalRequestId === state.selectedId,
+  );
+
+  function executeQuery(
+    query: ApprovalQuery,
+    generation: number,
+    isOlder: boolean,
+  ) {
+    abortControllerRef.current?.abort();
     const controller = new AbortController();
-    setLoading(true);
+    abortControllerRef.current = controller;
+
     setConfirmation(null);
+
     void Promise.all([
       loadApprovalSession(controller.signal),
-      loadApprovals(controller.signal),
+      loadApprovalPage(query, controller.signal),
     ])
-      .then(([nextSession, nextItems]) => {
+      .then(([nextSession, page]) => {
+        if (controller.signal.aborted || generation !== generationRef.current) {
+          return;
+        }
         setSession(nextSession);
-        setItems(nextItems);
-        setSelectedId((current) =>
-          nextItems.some((item) => item.approvalRequestId === current)
-            ? current
-            : (nextItems[0]?.approvalRequestId ?? null),
-        );
-        setError(null);
+        setState((current) => pageSuccess(current, generation, page, isOlder));
       })
       .catch((failure: unknown) => {
-        if (controller.signal.aborted) return;
-        setItems([]);
-        setSession(null);
-        if (!(failure instanceof ApprovalApiError && failure.status === 401))
-          setError(message(failure));
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
-  }, [revision]);
+        if (controller.signal.aborted || generation !== generationRef.current) {
+          return;
+        }
+        const status =
+          failure instanceof ApprovalApiError ? failure.status : 500;
+        const errMessage = message(failure);
 
-  async function perform(operation: () => Promise<unknown>, success: string) {
+        if (status === 401) {
+          setSession(null);
+        }
+        setState((current) =>
+          pageFailure(current, generation, status, errMessage),
+        );
+      });
+  }
+
+  // Initial load
+  useEffect(() => {
+    const initialGen = 1;
+    generationRef.current = initialGen;
+    const initialQuery = toApprovalQuery(state.activeFilters);
+    executeQuery(initialQuery, initialGen, false);
+
+    return () => {
+      abortControllerRef.current?.abort();
+    };
+  }, []);
+
+  function handleApplyFilters(event: React.FormEvent) {
+    event.preventDefault();
+    if (busy || state.loading || state.loadingOlder) return;
+    setNotice(null);
+    const { nextState, query, generation } = startSearch(
+      state,
+      state.draftFilters,
+    );
+    generationRef.current = generation;
+    setState(nextState);
+    executeQuery(query, generation, false);
+  }
+
+  function handleResetFilters() {
+    if (busy || state.loading || state.loadingOlder) return;
+    setNotice(null);
+    const { nextState, query, generation } = resetHistoryFilters(state);
+    generationRef.current = generation;
+    setState(nextState);
+    executeQuery(query, generation, false);
+  }
+
+  function handleRefresh() {
+    if (busy || state.loading || state.loadingOlder) return;
+    setNotice(null);
+    const { nextState, query, generation } = startRefresh(state);
+    generationRef.current = generation;
+    setState(nextState);
+    executeQuery(query, generation, false);
+  }
+
+  function handleLoadOlder() {
+    if (busy || state.loading || state.loadingOlder || !state.nextCursor)
+      return;
+    const { nextState, query, generation } = startLoadOlder(state);
+    if (!query) return;
+    generationRef.current = generation;
+    setState(nextState);
+    executeQuery(query, generation, true);
+  }
+
+  async function perform(
+    operation: () => Promise<unknown>,
+    successNotice: string,
+  ) {
     if (submitting.current) return;
     submitting.current = true;
     setBusy(true);
-    setError(null);
     setNotice(null);
     try {
       await operation();
       setConfirmation(null);
-      setNotice(success);
-      setRevision((value) => value + 1);
+      setNotice(successNotice);
+      // Successful mutation: refresh from page 1
+      handleRefresh();
     } catch (failure: unknown) {
-      setError(message(failure));
       setConfirmation(null);
-      if (failure instanceof ApprovalApiError && failure.status === 401) {
+      const status = failure instanceof ApprovalApiError ? failure.status : 500;
+      const errMessage = message(failure);
+      if (status === 401) {
         setSession(null);
-        setItems([]);
+        setState(sessionLoggedOut);
+      } else {
+        setState((current) => ({
+          ...current,
+          error: errMessage,
+          errorStatus: status,
+        }));
       }
     } finally {
       submitting.current = false;
@@ -115,8 +205,8 @@ export function ApprovalInbox() {
         {session && (
           <div className="approval-toolbar">
             <button
-              disabled={busy || loading}
-              onClick={() => setRevision((value) => value + 1)}
+              disabled={busy || state.loading || state.loadingOlder}
+              onClick={handleRefresh}
             >
               Refresh
             </button>
@@ -131,17 +221,29 @@ export function ApprovalInbox() {
           </div>
         )}
       </div>
-      {error && (
-        <p className="approval-error" role="alert">
-          {error}
-        </p>
+
+      {state.error && (
+        <div className="approval-error-banner" role="alert">
+          <p className="approval-error">{state.error}</p>
+          {state.errorStatus === 400 && (
+            <button
+              type="button"
+              disabled={busy || state.loading}
+              onClick={handleResetFilters}
+            >
+              Restart search
+            </button>
+          )}
+        </div>
       )}
+
       {notice && (
         <p className="approval-notice" role="status">
           {notice}
         </p>
       )}
-      {loading ? (
+
+      {state.loading ? (
         <p role="status">Loading current authority and approval state…</p>
       ) : !session ? (
         <section className="approval-card approval-signin">
@@ -179,6 +281,7 @@ export function ApprovalInbox() {
               Operator-assigned roles
             </span>
           </section>
+
           {canRequest(session) && (
             <form
               className="approval-card approval-request"
@@ -226,11 +329,15 @@ export function ApprovalInbox() {
                   )}
                 </select>
               </label>
-              <button className="approval-primary" disabled={busy}>
+              <button
+                className="approval-primary"
+                disabled={busy || state.loading || state.loadingOlder}
+              >
                 Request approval
               </button>
             </form>
           )}
+
           <div className="approval-grid">
             <section
               className="approval-card approval-list"
@@ -239,7 +346,8 @@ export function ApprovalInbox() {
               <h2>
                 Requests{" "}
                 <span className="approval-muted">
-                  {items.length} / latest 50
+                  {state.items.length} loaded
+                  {state.nextCursor ? "" : " · all"}
                 </span>
               </h2>
               <p className="approval-muted">
@@ -247,35 +355,188 @@ export function ApprovalInbox() {
                   ? "Only your requests are visible."
                   : "Workspace-scoped requests."}
               </p>
-              {items.length === 0 && (
-                <p>No approval requests in your visible scope.</p>
+
+              {/* Accessible Filter Controls */}
+              <form
+                className="approval-filter-form"
+                aria-label="Filter approvals"
+                onSubmit={handleApplyFilters}
+              >
+                <div className="approval-filter-fields">
+                  <div className="approval-filter-field">
+                    <label htmlFor="filter-status">Status</label>
+                    <select
+                      id="filter-status"
+                      value={state.draftFilters.status}
+                      onChange={(e) =>
+                        setState((current) => ({
+                          ...current,
+                          draftFilters: {
+                            ...current.draftFilters,
+                            status: e.target.value as "" | ApprovalStatusFilter,
+                          },
+                        }))
+                      }
+                    >
+                      <option value="">All statuses</option>
+                      <option value="pending">Pending</option>
+                      <option value="approved">Approved</option>
+                      <option value="denied">Denied</option>
+                      <option value="expired">Expired</option>
+                      <option value="consumed">Consumed</option>
+                    </select>
+                  </div>
+
+                  <div className="approval-filter-field">
+                    <label htmlFor="filter-tool">Exact tool name</label>
+                    <input
+                      id="filter-tool"
+                      type="text"
+                      maxLength={256}
+                      placeholder="e.g. aws.ec2.update_security_group"
+                      value={state.draftFilters.toolName}
+                      onChange={(e) =>
+                        setState((current) => ({
+                          ...current,
+                          draftFilters: {
+                            ...current.draftFilters,
+                            toolName: e.target.value,
+                          },
+                        }))
+                      }
+                    />
+                  </div>
+
+                  <div className="approval-filter-field">
+                    <label htmlFor="filter-request-id">Request ID</label>
+                    <input
+                      id="filter-request-id"
+                      type="text"
+                      maxLength={256}
+                      placeholder="Exact request ID"
+                      value={state.draftFilters.approvalRequestId}
+                      onChange={(e) =>
+                        setState((current) => ({
+                          ...current,
+                          draftFilters: {
+                            ...current.draftFilters,
+                            approvalRequestId: e.target.value,
+                          },
+                        }))
+                      }
+                    />
+                  </div>
+                </div>
+
+                <div className="approval-filter-actions">
+                  <button
+                    type="submit"
+                    className="approval-primary"
+                    disabled={busy || state.loading || state.loadingOlder}
+                  >
+                    Apply filters
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy || state.loading || state.loadingOlder}
+                    onClick={handleResetFilters}
+                  >
+                    Reset
+                  </button>
+                </div>
+              </form>
+
+              {state.items.length === 0 && !state.loading && (
+                <p>
+                  No approval requests in your visible scope matching filters.
+                </p>
               )}
-              {items.map((item) => (
-                <button
-                  className={`approval-row${selectedId === item.approvalRequestId ? " selected" : ""}`}
-                  aria-pressed={selectedId === item.approvalRequestId}
-                  disabled={busy}
-                  key={item.approvalRequestId}
-                  onClick={() => {
-                    setSelectedId(item.approvalRequestId);
-                    setConfirmation(null);
-                  }}
-                >
-                  <span>
-                    <strong>{item.action.toolName}</strong>
-                    <small>
-                      {item.approvalRequestId.slice(0, 8)} ·{" "}
-                      {new Date(item.expiresAt).toLocaleTimeString()}
-                    </small>
-                  </span>
-                  <span className={`approval-status ${item.status}`}>
-                    {isExpired(item) && item.status === "pending"
-                      ? "expired"
-                      : item.status}
-                  </span>
-                </button>
-              ))}
+
+              {state.items.map((item) => {
+                const expired = isExpired(item);
+                const displayStatus =
+                  expired && item.status === "pending"
+                    ? "expired"
+                    : expired && item.status === "approved"
+                      ? "approved (expired)"
+                      : item.status;
+                const statusClass = `approval-status ${item.status}${expired ? " expired" : ""}`;
+
+                return (
+                  <button
+                    className={`approval-row${state.selectedId === item.approvalRequestId ? " selected" : ""}`}
+                    aria-pressed={state.selectedId === item.approvalRequestId}
+                    disabled={busy}
+                    key={item.approvalRequestId}
+                    onClick={() => {
+                      setState((current) => ({
+                        ...current,
+                        selectedId: item.approvalRequestId,
+                      }));
+                      setConfirmation(null);
+                    }}
+                  >
+                    <span>
+                      <strong>{item.action.toolName}</strong>
+                      <small>
+                        {item.approvalRequestId.slice(0, 8)} · Created{" "}
+                        {item.createdAt
+                          ? new Date(item.createdAt).toLocaleTimeString()
+                          : "unknown"}
+                      </small>
+                    </span>
+                    <span className={statusClass}>{displayStatus}</span>
+                  </button>
+                );
+              })}
+
+              {/* Pagination Controls */}
+              <div className="approval-pagination-bar">
+                {state.loadingOlder && (
+                  <p role="status">Loading older requests…</p>
+                )}
+                {!state.loadingOlder && state.atCapacity && (
+                  <div className="approval-cap-notice" role="status">
+                    <p>Maximum {MAX_ACCUMULATED_ROWS} requests loaded.</p>
+                    <p className="approval-muted">
+                      Refine your search filters or reset to view other
+                      requests.
+                    </p>
+                    <button
+                      type="button"
+                      disabled={busy || state.loading}
+                      onClick={handleResetFilters}
+                    >
+                      Reset search
+                    </button>
+                  </div>
+                )}
+                {!state.loadingOlder &&
+                  !state.atCapacity &&
+                  state.nextCursor && (
+                    <button
+                      type="button"
+                      className="approval-load-older"
+                      disabled={busy || state.loading || state.loadingOlder}
+                      onClick={handleLoadOlder}
+                    >
+                      Load older requests
+                    </button>
+                  )}
+                {!state.loadingOlder &&
+                  !state.atCapacity &&
+                  !state.nextCursor &&
+                  state.items.length > 0 && (
+                    <p
+                      className="approval-muted approval-end-of-results"
+                      role="status"
+                    >
+                      End of results.
+                    </p>
+                  )}
+              </div>
             </section>
+
             <section
               className="approval-card approval-detail"
               aria-label="Exact action detail"
@@ -284,7 +545,9 @@ export function ApprovalInbox() {
                 <>
                   <div className="approval-detail-title">
                     <h2>Exact action</h2>
-                    <span className={`approval-status ${selected.status}`}>
+                    <span
+                      className={`approval-status ${selected.status}${isExpired(selected) ? " expired" : ""}`}
+                    >
                       {selected.status}
                     </span>
                   </div>
@@ -294,6 +557,12 @@ export function ApprovalInbox() {
                     are simulated.
                   </p>
                   <dl>
+                    <dt>Created</dt>
+                    <dd>
+                      {selected.createdAt
+                        ? new Date(selected.createdAt).toLocaleString()
+                        : "Unknown"}
+                    </dd>
                     <dt>Requester</dt>
                     <dd>
                       <code>{selected.requesterId}</code>
@@ -339,7 +608,7 @@ export function ApprovalInbox() {
                       <>
                         <button
                           className="approval-primary"
-                          disabled={busy}
+                          disabled={busy || state.loading || state.loadingOlder}
                           onClick={() =>
                             setConfirmation({
                               approval: selected,
@@ -351,7 +620,7 @@ export function ApprovalInbox() {
                         </button>
                         <button
                           className="approval-danger"
-                          disabled={busy}
+                          disabled={busy || state.loading || state.loadingOlder}
                           onClick={() =>
                             setConfirmation({
                               approval: selected,
@@ -366,7 +635,7 @@ export function ApprovalInbox() {
                     {canExecute(session, selected) && (
                       <button
                         className="approval-primary"
-                        disabled={busy}
+                        disabled={busy || state.loading || state.loadingOlder}
                         onClick={() =>
                           setConfirmation({
                             approval: selected,
@@ -410,7 +679,7 @@ export function ApprovalInbox() {
                       <div className="approval-toolbar">
                         <button
                           className="approval-primary"
-                          disabled={busy}
+                          disabled={busy || state.loading || state.loadingOlder}
                           onClick={() =>
                             void perform(
                               () =>

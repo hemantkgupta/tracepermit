@@ -16,6 +16,7 @@ export interface Approval {
   requesterId: string;
   reviewerId?: string;
   status: string;
+  createdAt: string;
   expiresAt: string;
   expired: boolean;
   policyId: string;
@@ -25,6 +26,24 @@ export interface Approval {
   action: { toolName: string; target: unknown; arguments: unknown };
 }
 
+export interface ApprovalPage {
+  mode: "simulated";
+  items: Approval[];
+  pageSize: number;
+  nextCursor: string | null;
+}
+
+export type ApprovalStatusFilter =
+  "pending" | "approved" | "denied" | "expired" | "consumed";
+
+export interface ApprovalQuery {
+  limit?: number;
+  status?: ApprovalStatusFilter;
+  toolName?: string;
+  approvalRequestId?: string;
+  cursor?: string;
+}
+
 export class ApprovalApiError extends Error {
   constructor(public readonly status: number) {
     super(
@@ -32,9 +51,11 @@ export class ApprovalApiError extends Error {
         ? "Your session has ended. Sign in again."
         : status === 403
           ? "This operation is not authorized. Refresh to check your current role."
-          : status === 409
-            ? "The request changed, expired or was already handled. Refresh before continuing; nothing will be retried automatically."
-            : "The approval service could not complete this request. Check its state before retrying.",
+          : status === 400
+            ? "Invalid query or continuation. Reset filters to start a fresh search."
+            : status === 409
+              ? "The request changed, expired or was already handled. Refresh before continuing; nothing will be retried automatically."
+              : "The approval service could not complete this request. Check its state before retrying.",
     );
   }
 }
@@ -61,12 +82,33 @@ export function loadApprovalSession(signal?: AbortSignal) {
   return request<ApprovalSession>("/browser/session", undefined, signal);
 }
 
+export function loadApprovalPage(
+  query?: ApprovalQuery,
+  signal?: AbortSignal,
+): Promise<ApprovalPage> {
+  const params = new URLSearchParams();
+  if (query?.limit !== undefined && query.limit !== null) {
+    params.set("limit", String(query.limit));
+  }
+  if (query?.status) {
+    params.set("status", query.status);
+  }
+  if (query?.toolName && query.toolName.trim().length > 0) {
+    params.set("toolName", query.toolName.trim());
+  }
+  if (query?.approvalRequestId && query.approvalRequestId.trim().length > 0) {
+    params.set("approvalRequestId", query.approvalRequestId.trim());
+  }
+  if (query?.cursor && query.cursor.length > 0) {
+    params.set("cursor", query.cursor);
+  }
+  const queryString = params.toString();
+  const path = queryString.length > 0 ? `${root}?${queryString}` : root;
+  return request<ApprovalPage>(path, undefined, signal);
+}
+
 export async function loadApprovals(signal?: AbortSignal) {
-  const page = await request<{ mode: "simulated"; items: Approval[] }>(
-    root,
-    undefined,
-    signal,
-  );
+  const page = await loadApprovalPage(undefined, signal);
   return page.items;
 }
 
