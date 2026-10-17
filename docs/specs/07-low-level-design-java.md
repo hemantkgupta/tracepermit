@@ -40,6 +40,27 @@ action contract before classification or policy. Application and domain code
 receive trusted identity context from adapters; they do not infer it from tool
 arguments. The executor has no route to a real AWS or Jira service.
 
+## OIDC refresh and transport resource boundaries
+
+`CachingOidcJwkResolver` keys its cache by the operator-owned issuer and exact
+JWKS URI. Fresh-key reads do not acquire a resolver-wide network monitor.
+`JwksRefreshCoordinator` coalesces a provider's in-flight work, bounds active and
+queued tasks, uses monotonic waiter deadlines, and records operation-ordered
+failure cooldowns even after waiters leave. Successful generation markers
+prevent late older failures from regressing a newer success. Cache publication
+preserves freshness order; each joining caller independently rejects an entry
+expired at its trusted time.
+
+`BoundedHostResolver` owns finite DNS worker/queue capacity;
+`SsrfSafeHttpsJwkSetSource` subtracts DNS elapsed time from the HTTP budget while
+retaining exact-URI trust, public-address validation, address pinning, TLS and
+no-proxy/no-redirect/no-retry behavior. `OidcAccessTokenVerifier` re-samples its
+trusted clock after key resolution/signature verification before validating
+claims. Interruption, timeout, saturation and source failure cannot grant
+identity. Instance-local pools are shared finite capacity, not per-provider
+reservations or a distributed ingress limit; OS calls may outlive a waiter.
+See [ADR 0049](../architecture/0049-bounded-jwks-refresh-isolation.md).
+
 ## Policy lifecycle and durable persistence foundation
 
 `PolicyLifecycleService` is a trusted Java library, not a policy administration

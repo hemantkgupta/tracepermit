@@ -5,6 +5,35 @@
 
 Status values: **Implemented**, **Partial**, **Target**, or **Proposed**.
 
+## Bounded OIDC/JWKS refresh isolation
+
+Requirements: SEC-002/003/004/015/017; REL-001/009; OPS-001/005.
+
+`CachingOidcJwkResolver`, `JwksRefreshCoordinator`, `OidcAccessTokenVerifier`,
+`BoundedHostResolver` and `SsrfSafeHttpsJwkSetSource` qualify a bounded local
+identity-dependency slice. Fresh keys avoid unrelated provider I/O; same-pair
+refreshes coalesce; finite workers/queues, monotonic wait/transport budgets,
+caller-specific freshness, late-result discard and ordered success/failure
+cooldowns preserve fail-closed behavior. Access-token claims use trusted time
+re-sampled after key resolution/signature verification. Existing destination,
+pinning, TLS, key/JSON, size and bounded-error controls remain in force.
+
+`CachingOidcJwkResolverTest`, `OidcAccessTokenVerifierTest` and
+`SsrfSafeHttpsJwkSetSourceTest` cover warm/independent-provider progress,
+coalescing, late/expired results, timeout/interruption, cooldown storms,
+old-interrupted-worker/new-success ordering, full active capacity before
+queueing, saturation/recovery, combined DNS/HTTP delay, token expiry during
+resolution and retained SSRF/TLS/key negatives. See
+[ADR 0049](../architecture/0049-bounded-jwks-refresh-isolation.md) and the
+[runbook](../runbooks/jwks-refresh-isolation.md).
+
+SEC-017 receives resource-exhaustion defense, not completed pre/post-auth
+distributed abuse control. OPS-001/005 remain partial: no new metrics,
+production bootstrap/readiness or live IdP qualification. Pools and cooldowns
+are instance-local (default DNS is shared across sources); provider fairness,
+process-wide cardinality, forced OS-call cancellation and a universal hard
+wall-clock SLO are not established. No whole-requirement status is promoted.
+
 ## Owner-only read-only recovery inspection
 
 Requirements: FR-015; SEC-003/012/019; REL-002/005/008; OPS-002/004.
