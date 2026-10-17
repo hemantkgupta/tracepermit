@@ -2,6 +2,8 @@ package io.tracepermit.adapters.http;
 
 import org.testcontainers.containers.PostgreSQLContainer;
 
+import java.io.PrintStream;
+
 /**
  * Standalone executable qualification harness that measures reproducible loopback MCP
  * and HTTP approval latency against a containerized PostgreSQL instance.
@@ -13,36 +15,60 @@ public final class SimulatorApprovalLatencyQualificationMain {
 
   private SimulatorApprovalLatencyQualificationMain() {}
 
-  public static void main(String[] args) {
+  /**
+   * Testable runner that executes the full latency qualification suite and returns an exit code.
+   * Guarantees resource cleanup (container, server, client, executors) before returning.
+   *
+   * @param out output stream for reports and progress
+   * @param err error stream for failure diagnostics
+   * @param args optional command-line arguments
+   * @return 0 on success, non-zero on failure or error
+   */
+  public static int run(PrintStream out, PrintStream err, String[] args) {
     int[] concurrencyLevels = new int[] {1, 4, 20};
     int[] warmupCounts = new int[] {5, 8, 20};
     int[] measuredCounts = new int[] {20, 32, 40};
 
-    System.out.println("Starting disposable PostgreSQL container (postgres:16.4-alpine)...");
-    try (PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16.4-alpine")) {
+    PostgreSQLContainer<?> postgres = null;
+    try {
+      out.println("Starting disposable PostgreSQL container (postgres:16.4-alpine)...");
+      postgres = new PostgreSQLContainer<>("postgres:16.4-alpine");
       postgres.start();
 
-      System.out.println("Running closed-loop simulator approval latency qualification...");
+      out.println("Running closed-loop simulator approval latency qualification...");
       ApprovalLatencyMeasurements.LatencyQualificationReport report =
           ApprovalLatencyMeasurements.runQualification(postgres, concurrencyLevels, warmupCounts, measuredCounts);
 
-      System.out.println(report.toConsoleSummary());
-      System.out.println("\nJSON Report:");
-      System.out.println(report.toJson().toPrettyString());
+      out.println(report.toConsoleSummary());
+      out.println("\nJSON Report:");
+      out.println(report.toJson().toPrettyString());
 
       if (!report.passed()) {
-        System.err.println("\n[ERROR] Qualification failed with " + report.failures().size() + " failure(s):");
+        err.println("\n[ERROR] Qualification failed with " + report.failures().size() + " failure(s):");
         for (String failure : report.failures()) {
-          System.err.println("  - " + failure);
+          err.println("  - " + failure);
         }
-        System.exit(1);
+        return 1;
       }
 
-      System.out.println("\n[OK] Qualification passed successfully.");
-    } catch (Exception e) {
-      System.err.println("\n[FATAL] Unexpected error during latency qualification: " + e.getMessage());
-      e.printStackTrace(System.err);
-      System.exit(1);
+      out.println("\n[OK] Qualification passed successfully.");
+      return 0;
+    } catch (Throwable t) {
+      err.println("\n[FATAL] Error during latency qualification: " + t.getClass().getSimpleName());
+      return 1;
+    } finally {
+      if (postgres != null) {
+        try {
+          postgres.close();
+        } catch (Throwable ignored) {}
+      }
+    }
+  }
+
+  public static void main(String[] args) {
+    int exitCode = run(System.out, System.err, args);
+    if (exitCode != 0) {
+      System.exit(exitCode);
     }
   }
 }

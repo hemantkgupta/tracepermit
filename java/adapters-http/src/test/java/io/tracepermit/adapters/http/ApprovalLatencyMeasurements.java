@@ -18,12 +18,13 @@ import io.tracepermit.simulator.StatefulTargetSimulator;
 import org.postgresql.ds.PGSimpleDataSource;
 import org.testcontainers.containers.PostgreSQLContainer;
 
-import java.io.IOException;
+import java.io.InputStream;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.net.http.HttpTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.security.KeyPair;
@@ -41,18 +42,19 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Base64;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -68,6 +70,13 @@ public final class ApprovalLatencyMeasurements {
   public static final String AUDIENCE = "https://approval.example.invalid";
   public static final String CLIENT_ID = "approval-client";
   public static final TenantPartition TENANT = new TenantPartition("simulated-alpha");
+
+  public static final int SERVER_WORKER_THREADS = 8;
+  public static final int MAX_CONCURRENCY = 50;
+  public static final int MAX_WARMUP = 200;
+  public static final int MAX_MEASURED = 500;
+  public static final int MIN_PORT = 1024;
+  public static final int MAX_PORT = 65535;
 
   public static final List<String> TIMING_INCLUDED = List.of(
       "http_client_serialization",
@@ -101,36 +110,42 @@ public final class ApprovalLatencyMeasurements {
     if (size <= 0) {
       throw new IllegalArgumentException("Sample size must be greater than zero.");
     }
-    if (percentile <= 0.0 || percentile > 1.0) {
-      throw new IllegalArgumentException("Percentile must be in range (0.0, 1.0].");
+    if (!Double.isFinite(percentile) || percentile <= 0.0 || percentile > 1.0) {
+      throw new IllegalArgumentException("Percentile must be finite and in range (0.0, 1.0].");
     }
     return Math.max(0, Math.min(size - 1, (int) Math.ceil(percentile * size) - 1));
   }
 
   /**
    * Computes nearest-rank percentiles, min, max, and mean in milliseconds.
+   * Rejects null, empty, or negative durations. Sums with floating-point accumulation
+   * to eliminate 64-bit integer overflow risk while retaining fractional precision.
    */
   public static Percentiles computePercentiles(long[] sampleNanos) {
     if (sampleNanos == null || sampleNanos.length == 0) {
       throw new IllegalArgumentException("Cannot compute percentiles of null or empty sample set.");
     }
-    long[] sorted = sampleNanos.clone();
+    int size = sampleNanos.length;
+    long[] sorted = new long[size];
+    double sumNanos = 0.0;
+    for (int i = 0; i < size; i++) {
+      long val = sampleNanos[i];
+      if (val < 0L) {
+        throw new IllegalArgumentException("Negative duration observed in sample set: " + val);
+      }
+      sorted[i] = val;
+      sumNanos += val;
+    }
     Arrays.sort(sorted);
-    int size = sorted.length;
 
     double p50 = nanosToMillis(sorted[nearestRankIndex(size, 0.50)]);
     double p95 = nanosToMillis(sorted[nearestRankIndex(size, 0.95)]);
     double p99 = nanosToMillis(sorted[nearestRankIndex(size, 0.99)]);
     double min = nanosToMillis(sorted[0]);
     double max = nanosToMillis(sorted[size - 1]);
+    double mean = nanosToMillis((long) (sumNanos / size));
 
-    long sum = 0;
-    for (long val : sorted) {
-      sum += val;
-    }
-    double mean = nanosToMillis(sum / size);
-
-    return new Percentiles(p50, p95, p99, min, max, mean);
+    return new Percentiles(p50, p95, p99, min, max, mean, size, "success_only");
   }
 
   /** Statistical summary for a measured latency distribution in milliseconds. */
@@ -140,10 +155,20 @@ public final class ApprovalLatencyMeasurements {
       double p99Ms,
       double minMs,
       double maxMs,
-      double meanMs) {
+      double meanMs,
+      int sampleCount,
+      String population) {
+
+    public Percentiles(double p50Ms, double p95Ms, double p99Ms, double minMs, double maxMs, double meanMs) {
+      this(p50Ms, p95Ms, p99Ms, minMs, maxMs, meanMs, 0, "success_only");
+    }
 
     public ObjectNode toJson() {
       ObjectNode node = JsonSupport.MAPPER.createObjectNode();
+      node.put("population", population != null ? population : "success_only");
+      if (sampleCount > 0) {
+        node.put("sampleCount", sampleCount);
+      }
       node.put("p50Ms", round(p50Ms));
       node.put("p95Ms", round(p95Ms));
       node.put("p99Ms", round(p99Ms));
@@ -285,8 +310,9 @@ public final class ApprovalLatencyMeasurements {
       sb.append(String.format("Composition: %s%n", composition));
       sb.append(String.format("Clock:       %s%n", clock));
       sb.append(String.format("Commit:      %s (dirty=%s)%n", provenance.get("commitSha"), provenance.get("dirty")));
-      sb.append(String.format("Environment: %s %s, %s CPUs, %s%n",
-          environment.get("os"), environment.get("arch"), environment.get("availableProcessors"), environment.get("javaVersion")));
+      sb.append(String.format("Environment: %s %s, %s host CPUs, %s HTTP worker threads, %s%n",
+          environment.get("os"), environment.get("arch"), environment.get("availableProcessors"),
+          environment.get("serverWorkerThreads"), environment.get("javaVersion")));
       sb.append(String.format("PostgreSQL:  %s%n", environment.get("postgresVersion")));
       sb.append("-----------------------------------------------------------------------------------------\n");
 
@@ -337,6 +363,229 @@ public final class ApprovalLatencyMeasurements {
     }
   }
 
+  enum OperationOutcomeKind {
+    SUCCESS,
+    FAILURE,
+    TIMEOUT,
+    CANCELLED_OR_NOT_STARTED
+  }
+
+  record OperationOutcome(
+      int index,
+      OperationOutcomeKind kind,
+      long elapsedNanos,
+      String safeErrorCode) {}
+
+  record BatchExecution(
+      int plannedCount,
+      int successCount,
+      int failureCount,
+      int timeoutCount,
+      int cancelledCount,
+      long[] successDurationsNanos,
+      long wallElapsedNanos,
+      List<String> failureCodes) {}
+
+  @FunctionalInterface
+  interface ItemOperation {
+    void execute(ApprovalItem item) throws Exception;
+  }
+
+  /**
+   * Executes a bounded concurrent batch of operations with exact accounting.
+   * Every planned operation is accounted for exactly once in the terminal outcomes:
+   * plannedCount == successCount + failureCount + timeoutCount + cancelledCount.
+   */
+  static BatchExecution runConcurrent(
+      int concurrency,
+      List<ApprovalItem> items,
+      ItemOperation operation,
+      Duration timeout) {
+
+    int size = items.size();
+    if (size == 0) {
+      return new BatchExecution(0, 0, 0, 0, 0, new long[0], 0L, List.of());
+    }
+
+    int boundedConcurrency = Math.max(1, Math.min(concurrency, MAX_CONCURRENCY));
+    ExecutorService executor = Executors.newFixedThreadPool(boundedConcurrency);
+
+    OperationOutcome[] outcomes = new OperationOutcome[size];
+    long wallStart = System.nanoTime();
+    long deadlineNanos = wallStart + timeout.toNanos();
+
+    List<Future<?>> futures = new ArrayList<>(size);
+    for (int i = 0; i < size; i++) {
+      final int index = i;
+      final ApprovalItem item = items.get(i);
+      futures.add(executor.submit(() -> {
+        if (Thread.currentThread().isInterrupted() || System.nanoTime() >= deadlineNanos) {
+          outcomes[index] = new OperationOutcome(index, OperationOutcomeKind.CANCELLED_OR_NOT_STARTED, 0L, "NOT_STARTED");
+          return;
+        }
+        long opStart = System.nanoTime();
+        try {
+          operation.execute(item);
+          long opElapsed = Math.max(0L, System.nanoTime() - opStart);
+          outcomes[index] = new OperationOutcome(index, OperationOutcomeKind.SUCCESS, opElapsed, null);
+        } catch (HttpTimeoutException | TimeoutException e) {
+          long opElapsed = Math.max(0L, System.nanoTime() - opStart);
+          outcomes[index] = new OperationOutcome(index, OperationOutcomeKind.TIMEOUT, opElapsed, "TIMEOUT");
+        } catch (Throwable t) {
+          long opElapsed = Math.max(0L, System.nanoTime() - opStart);
+          outcomes[index] = new OperationOutcome(index, OperationOutcomeKind.FAILURE, opElapsed, classifySafeErrorCode(t));
+        }
+      }));
+    }
+
+    // Await completion up to the single phase deadline
+    for (int i = 0; i < size; i++) {
+      Future<?> future = futures.get(i);
+      long remainingNanos = deadlineNanos - System.nanoTime();
+      try {
+        if (remainingNanos > 0) {
+          future.get(remainingNanos, TimeUnit.NANOSECONDS);
+        } else {
+          future.cancel(true);
+        }
+      } catch (TimeoutException e) {
+        for (int j = i; j < size; j++) {
+          futures.get(j).cancel(true);
+        }
+        break;
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        for (Future<?> f : futures) {
+          f.cancel(true);
+        }
+        break;
+      } catch (ExecutionException e) {
+        // Worker recorded terminal outcome in outcomes[index]
+      }
+    }
+
+    executor.shutdownNow();
+    try {
+      if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
+        executor.shutdownNow();
+      }
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+    }
+
+    long wallElapsed = Math.max(0L, System.nanoTime() - wallStart);
+
+    int successes = 0;
+    int failures = 0;
+    int timeouts = 0;
+    int cancelled = 0;
+    List<String> failureCodes = new ArrayList<>();
+
+    for (int i = 0; i < size; i++) {
+      OperationOutcome outcome = outcomes[i];
+      if (outcome == null) {
+        outcome = new OperationOutcome(i, OperationOutcomeKind.CANCELLED_OR_NOT_STARTED, 0L, "CANCELLED");
+        outcomes[i] = outcome;
+      }
+      switch (outcome.kind()) {
+        case SUCCESS -> successes++;
+        case FAILURE -> {
+          failures++;
+          if (outcome.safeErrorCode() != null) {
+            failureCodes.add(outcome.safeErrorCode());
+          }
+        }
+        case TIMEOUT -> timeouts++;
+        case CANCELLED_OR_NOT_STARTED -> cancelled++;
+      }
+    }
+
+    if (successes + failures + timeouts + cancelled != size) {
+      throw new IllegalStateException("Outcome counts do not reconcile: " +
+          successes + " successes + " + failures + " failures + " + timeouts + " timeouts + " + cancelled + " cancelled != " + size);
+    }
+
+    long[] successDurations = new long[successes];
+    int sIdx = 0;
+    for (int i = 0; i < size; i++) {
+      if (outcomes[i].kind() == OperationOutcomeKind.SUCCESS) {
+        successDurations[sIdx++] = outcomes[i].elapsedNanos();
+      }
+    }
+
+    return new BatchExecution(
+        size,
+        successes,
+        failures,
+        timeouts,
+        cancelled,
+        successDurations,
+        wallElapsed,
+        failureCodes);
+  }
+
+  /**
+   * Executes a workflow phase with separate warmup and measured operations.
+   * Any unexpected failure in warm-up or measured batches records an explicit failure.
+   */
+  static PhaseMetrics runPhase(
+      String phaseName,
+      int concurrency,
+      List<ApprovalItem> warmupItems,
+      List<ApprovalItem> measuredItems,
+      ItemOperation operation,
+      List<String> failures) {
+
+    Duration phaseTimeout = Duration.ofSeconds(30);
+
+    // 1. Warm-up operations (exercise exact code path; fail closed on warmup error)
+    if (!warmupItems.isEmpty()) {
+      BatchExecution warmupBatch = runConcurrent(concurrency, warmupItems, operation, phaseTimeout);
+      if (warmupBatch.failureCount() > 0 || warmupBatch.timeoutCount() > 0 || warmupBatch.cancelledCount() > 0) {
+        failures.add(String.format("Phase %s (concurrency=%d) warmup had unexpected failures: %d failed, %d timed out, %d cancelled out of %d operations.",
+            phaseName, concurrency, warmupBatch.failureCount(), warmupBatch.timeoutCount(), warmupBatch.cancelledCount(), warmupItems.size()));
+        return new PhaseMetrics(
+            phaseName,
+            concurrency,
+            warmupItems.size(),
+            measuredItems.size(),
+            0,
+            0,
+            0,
+            0L,
+            null);
+      }
+    }
+
+    // 2. Measured steady-state operations
+    int measuredCount = measuredItems.size();
+    BatchExecution measuredBatch = runConcurrent(concurrency, measuredItems, operation, phaseTimeout);
+    int successes = measuredBatch.successCount();
+    int failed = measuredBatch.failureCount();
+    int timeouts = measuredBatch.timeoutCount();
+    int cancelled = measuredBatch.cancelledCount();
+
+    if (failed > 0 || timeouts > 0 || cancelled > 0 || successes != measuredCount) {
+      failures.add(String.format("Phase %s (concurrency=%d) had %d failure(s), %d timeout(s), %d cancelled out of %d operations.",
+          phaseName, concurrency, failed, timeouts, cancelled, measuredCount));
+    }
+
+    Percentiles percentiles = (successes > 0)
+        ? computePercentiles(measuredBatch.successDurationsNanos())
+        : null;
+
+    return new PhaseMetrics(
+        phaseName,
+        concurrency,
+        warmupItems.size(),
+        measuredCount,
+        successes,
+        failed,
+        timeouts,
+        measuredBatch.wallElapsedNanos(),
+        percentiles);
+  }
+
   /**
    * Executes the full closed-loop qualification against a disposable PostgreSQL container.
    */
@@ -350,21 +599,47 @@ public final class ApprovalLatencyMeasurements {
     if (!postgres.isRunning()) {
       throw new IllegalStateException("PostgreSQL container is not running.");
     }
-    if (concurrencyLevels.length != warmupCounts.length || concurrencyLevels.length != measuredCounts.length) {
-      throw new IllegalArgumentException("Concurrency, warmup, and measured count arrays must have matching lengths.");
+    if (concurrencyLevels == null || warmupCounts == null || measuredCounts == null) {
+      throw new IllegalArgumentException("Concurrency, warmup, and measured count arrays must not be null.");
+    }
+    if (concurrencyLevels.length == 0 || concurrencyLevels.length != warmupCounts.length || concurrencyLevels.length != measuredCounts.length) {
+      throw new IllegalArgumentException("Concurrency, warmup, and measured count arrays must have matching non-zero lengths.");
+    }
+    if (concurrencyLevels.length > 10) {
+      throw new IllegalArgumentException("Maximum of 10 sweeps allowed.");
+    }
+
+    for (int i = 0; i < concurrencyLevels.length; i++) {
+      if (concurrencyLevels[i] < 1 || concurrencyLevels[i] > MAX_CONCURRENCY) {
+        throw new IllegalArgumentException("Concurrency level out of bounds [1, " + MAX_CONCURRENCY + "]: " + concurrencyLevels[i]);
+      }
+      if (warmupCounts[i] < 0 || warmupCounts[i] > MAX_WARMUP) {
+        throw new IllegalArgumentException("Warmup count out of bounds [0, " + MAX_WARMUP + "]: " + warmupCounts[i]);
+      }
+      if (measuredCounts[i] < 1 || measuredCounts[i] > MAX_MEASURED) {
+        throw new IllegalArgumentException("Measured count out of bounds [1, " + MAX_MEASURED + "]: " + measuredCounts[i]);
+      }
+    }
+
+    int totalWarmup = 0;
+    int totalMeasured = 0;
+    for (int i = 0; i < concurrencyLevels.length; i++) {
+      totalWarmup += warmupCounts[i];
+      totalMeasured += measuredCounts[i];
+    }
+    int totalItems = totalWarmup + totalMeasured + 10;
+    if (MIN_PORT + totalItems > MAX_PORT) {
+      throw new IllegalArgumentException("Total requested operations exceeds port address space.");
     }
 
     Path root = Path.of(System.getProperty("tracepermit.repositoryRoot", "."));
-    String commitSha = getGitCommit(root);
-    boolean dirty = isGitDirty(root);
+    Map<String, String> provenance = getGitProvenance(root);
 
-    // Cryptographic keypairs outside measured intervals
     KeyPairGenerator rsaGen = KeyPairGenerator.getInstance("RSA");
     rsaGen.initialize(2048);
     KeyPair rsaKeyPair = rsaGen.generateKeyPair();
     KeyPair permitKeyPair = KeyPairGenerator.getInstance("Ed25519").generateKeyPair();
 
-    // Dedicated database schema
     PGSimpleDataSource dataSource = new PGSimpleDataSource();
     dataSource.setUrl(postgres.getJdbcUrl());
     dataSource.setUser(postgres.getUsername());
@@ -373,31 +648,27 @@ public final class ApprovalLatencyMeasurements {
 
     String schema = "lat_qual_" + UUID.randomUUID().toString().replace("-", "").substring(0, 16);
     try (Connection conn = dataSource.getConnection(); Statement stmt = conn.createStatement()) {
+      stmt.setQueryTimeout(10);
       stmt.execute("CREATE SCHEMA " + schema);
     }
     dataSource.setCurrentSchema(schema);
 
-    // Controlled frozen authorization clock (2030-01-01) ensures synthetic tokens never expire
-    // during the test, while real physical latency is measured using System.nanoTime().
+    String postgresVersion = "unknown";
+    try (Connection conn = dataSource.getConnection(); Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery("SELECT version()")) {
+      if (rs.next()) {
+        postgresVersion = rs.getString(1);
+      }
+    } catch (Exception ignored) {}
+
     Instant frozenInstant = Instant.parse("2030-01-01T00:00:00Z");
     Clock clock = Clock.fixed(frozenInstant, ZoneOffset.UTC);
 
-    // Memberships: separate requester (alice) and reviewer (bob)
     List<ApprovalMemberships.Entry> membershipsList = List.of(
         new ApprovalMemberships.Entry(
             ISSUER + "#alice", CLIENT_ID, TENANT, true, Set.of(ApprovalMemberships.Role.REQUESTER)),
         new ApprovalMemberships.Entry(
             ISSUER + "#bob", CLIENT_ID, TENANT, true, Set.of(ApprovalMemberships.Role.REVIEWER)));
     ApprovalMemberships memberships = new ApprovalMemberships(membershipsList);
-
-    // Provider configuration and token verifier
-    Set<ConnectorScope> requesterScopes = Set.of(
-        ConnectorScope.of("approvals.read"),
-        ConnectorScope.of("approvals.request"),
-        ConnectorScope.of("approvals.execute"));
-    Set<ConnectorScope> reviewerScopes = Set.of(
-        ConnectorScope.of("approvals.read"),
-        ConnectorScope.of("approvals.decide"));
 
     Set<ConnectorScope> allScopes = Set.of(
         ConnectorScope.of("approvals.read"),
@@ -431,11 +702,9 @@ public final class ApprovalLatencyMeasurements {
         },
         clock);
 
-    // Pre-mint tokens outside measurement loops
     String requesterToken = mintToken("alice", "approvals.read approvals.request approvals.execute", rsaKeyPair, clock);
     String reviewerToken = mintToken("bob", "approvals.read approvals.decide", rsaKeyPair, clock);
 
-    // Stores and server setup
     PostgresDurableEnforcementState enforcementState =
         new PostgresDurableEnforcementState(dataSource, clock, () -> UUID.randomUUID().toString());
     ExecutionPermitAuthority permitAuthority = new ExecutionPermitAuthority(
@@ -449,19 +718,8 @@ public final class ApprovalLatencyMeasurements {
     StatefulTargetSimulator simulator = new StatefulTargetSimulator();
     JsonNode policy = SimulatorApprovalMain.policy();
 
-    SimulatorApprovalServer server = SimulatorApprovalServer.start(
-        new InetSocketAddress("127.0.0.1", 0),
-        verifier,
-        memberships,
-        enforcementState,
-        policy,
-        permitAuthority,
-        simulator,
-        clock);
-
-    HttpClient client = HttpClient.newBuilder()
-        .connectTimeout(Duration.ofSeconds(5))
-        .build();
+    SimulatorApprovalServer server = null;
+    HttpClient client = null;
 
     List<SweepMetrics> sweepResults = new ArrayList<>();
     List<String> failures = new ArrayList<>();
@@ -470,26 +728,37 @@ public final class ApprovalLatencyMeasurements {
     boolean replayRejected = false;
     int replayRuleDelta = -1;
 
-    AtomicInteger portGenerator = new AtomicInteger(1000);
+    AtomicInteger portGenerator = new AtomicInteger(MIN_PORT);
 
     try {
-      // 1. Initial MCP protocol handshake qualification
+      server = SimulatorApprovalServer.start(
+          new InetSocketAddress("127.0.0.1", 0),
+          verifier,
+          memberships,
+          enforcementState,
+          policy,
+          permitAuthority,
+          simulator,
+          clock);
+
+      client = HttpClient.newBuilder()
+          .connectTimeout(Duration.ofSeconds(5))
+          .build();
+
       performMcpHandshake(server.port(), requesterToken, client);
 
-      int baselineRules = countRules(simulator);
-
-      // 2. Concurrency sweeps
       for (int i = 0; i < concurrencyLevels.length; i++) {
         int concurrency = concurrencyLevels[i];
         int warmup = warmupCounts[i];
         int measured = measuredCounts[i];
 
         int sweepStartRules = countRules(simulator);
+        int sweepStartPermits = queryCount(dataSource, "SELECT count(*) FROM tp_consumed_execution_permits WHERE tenant_id = 'simulated-alpha'");
+        int sweepStartAttempts = queryCount(dataSource, "SELECT count(*) FROM tp_execution_attempts WHERE tenant_id = 'simulated-alpha'");
         long sweepStartNanos = System.nanoTime();
 
         Map<String, PhaseMetrics> phaseMetricsMap = new LinkedHashMap<>();
 
-        // Generate distinct approval items
         List<ApprovalItem> warmupItems = new ArrayList<>();
         for (int w = 0; w < warmup; w++) {
           warmupItems.add(new ApprovalItem(portGenerator.incrementAndGet()));
@@ -500,17 +769,18 @@ public final class ApprovalLatencyMeasurements {
         }
 
         // --- Phase 1: mcp_request ---
+        final SimulatorApprovalServer currentServer = server;
+        final HttpClient currentClient = client;
+
         PhaseMetrics reqMetrics = runPhase(
             "mcp_request",
             concurrency,
             warmupItems,
             measuredItems,
-            (item) -> executeMcpRequest(server.port(), requesterToken, item, client),
+            (item) -> executeMcpRequest(currentServer.port(), requesterToken, item, currentClient),
             failures);
         phaseMetricsMap.put("mcp_request", reqMetrics);
-        if (countRules(simulator) != sweepStartRules) {
-          failures.add("Phase mcp_request mutated target simulator state unexpectedly.");
-        }
+        assertZeroStateDeltas("mcp_request", simulator, dataSource, sweepStartRules, sweepStartPermits, sweepStartAttempts, failures);
 
         // --- Phase 2: mcp_status ---
         PhaseMetrics statusMetrics = runPhase(
@@ -518,12 +788,10 @@ public final class ApprovalLatencyMeasurements {
             concurrency,
             warmupItems,
             measuredItems,
-            (item) -> executeMcpStatus(server.port(), requesterToken, item, client),
+            (item) -> executeMcpStatus(currentServer.port(), requesterToken, item, currentClient),
             failures);
         phaseMetricsMap.put("mcp_status", statusMetrics);
-        if (countRules(simulator) != sweepStartRules) {
-          failures.add("Phase mcp_status mutated target simulator state unexpectedly.");
-        }
+        assertZeroStateDeltas("mcp_status", simulator, dataSource, sweepStartRules, sweepStartPermits, sweepStartAttempts, failures);
 
         // --- Phase 3: http_review ---
         PhaseMetrics reviewMetrics = runPhase(
@@ -531,12 +799,10 @@ public final class ApprovalLatencyMeasurements {
             concurrency,
             warmupItems,
             measuredItems,
-            (item) -> executeHttpReview(server.port(), reviewerToken, item, client),
+            (item) -> executeHttpReview(currentServer.port(), reviewerToken, item, currentClient),
             failures);
         phaseMetricsMap.put("http_review", reviewMetrics);
-        if (countRules(simulator) != sweepStartRules) {
-          failures.add("Phase http_review mutated target simulator state unexpectedly.");
-        }
+        assertZeroStateDeltas("http_review", simulator, dataSource, sweepStartRules, sweepStartPermits, sweepStartAttempts, failures);
 
         // --- Phase 4: mcp_resume ---
         PhaseMetrics resumeMetrics = runPhase(
@@ -544,7 +810,7 @@ public final class ApprovalLatencyMeasurements {
             concurrency,
             warmupItems,
             measuredItems,
-            (item) -> executeMcpResume(server.port(), requesterToken, item, client),
+            (item) -> executeMcpResume(currentServer.port(), requesterToken, item, currentClient),
             failures);
         phaseMetricsMap.put("mcp_resume", resumeMetrics);
 
@@ -559,24 +825,45 @@ public final class ApprovalLatencyMeasurements {
               concurrency, expectedRuleDelta, observedRuleDelta));
         }
 
-        // Database durable attempt and permit counts
-        int dbPermits = queryCount(dataSource, "SELECT count(*) FROM tp_consumed_execution_permits WHERE tenant_id = 'simulated-alpha'");
-        int dbAttempts = queryCount(dataSource, "SELECT count(*) FROM tp_execution_attempts WHERE tenant_id = 'simulated-alpha'");
+        int currentPermits = queryCount(dataSource, "SELECT count(*) FROM tp_consumed_execution_permits WHERE tenant_id = 'simulated-alpha'");
+        int currentAttempts = queryCount(dataSource, "SELECT count(*) FROM tp_execution_attempts WHERE tenant_id = 'simulated-alpha'");
+        int observedPermitDelta = currentPermits - sweepStartPermits;
+        int observedAttemptDelta = currentAttempts - sweepStartAttempts;
+
+        if (observedPermitDelta != expectedRuleDelta) {
+          failures.add(String.format(
+              "Sweep concurrency=%d expected %d consumed permits delta, but observed %d.",
+              concurrency, expectedRuleDelta, observedPermitDelta));
+        }
+        if (observedAttemptDelta != expectedRuleDelta) {
+          failures.add(String.format(
+              "Sweep concurrency=%d expected %d execution attempts delta, but observed %d.",
+              concurrency, expectedRuleDelta, observedAttemptDelta));
+        }
 
         sweepResults.add(new SweepMetrics(
             concurrency,
             phaseMetricsMap,
             sweepElapsedNanos,
             observedRuleDelta,
-            dbPermits,
-            dbAttempts));
+            currentPermits,
+            currentAttempts));
       }
 
       // 3. Negative control: Unauthenticated call rejection
       int rulesBeforeUnauth = countRules(simulator);
+      int permitsBeforeUnauth = queryCount(dataSource, "SELECT count(*) FROM tp_consumed_execution_permits WHERE tenant_id = 'simulated-alpha'");
+      int attemptsBeforeUnauth = queryCount(dataSource, "SELECT count(*) FROM tp_execution_attempts WHERE tenant_id = 'simulated-alpha'");
+
       unauthRejected = executeUnauthenticatedCheck(server.port(), client);
       if (countRules(simulator) != rulesBeforeUnauth) {
         failures.add("Unauthenticated negative control modified target simulator state.");
+      }
+      if (queryCount(dataSource, "SELECT count(*) FROM tp_consumed_execution_permits WHERE tenant_id = 'simulated-alpha'") != permitsBeforeUnauth) {
+        failures.add("Unauthenticated negative control created consumed permits.");
+      }
+      if (queryCount(dataSource, "SELECT count(*) FROM tp_execution_attempts WHERE tenant_id = 'simulated-alpha'") != attemptsBeforeUnauth) {
+        failures.add("Unauthenticated negative control created execution attempts.");
       }
       if (!unauthRejected) {
         failures.add("Unauthenticated request was not rejected with HTTP 401.");
@@ -589,6 +876,9 @@ public final class ApprovalLatencyMeasurements {
       executeMcpResume(server.port(), requesterToken, replayItem, client);
 
       int rulesBeforeReplay = countRules(simulator);
+      int permitsBeforeReplay = queryCount(dataSource, "SELECT count(*) FROM tp_consumed_execution_permits WHERE tenant_id = 'simulated-alpha'");
+      int attemptsBeforeReplay = queryCount(dataSource, "SELECT count(*) FROM tp_execution_attempts WHERE tenant_id = 'simulated-alpha'");
+
       replayRejected = executeReplayCheck(server.port(), requesterToken, replayItem, client);
       replayRuleDelta = countRules(simulator) - rulesBeforeReplay;
 
@@ -598,35 +888,46 @@ public final class ApprovalLatencyMeasurements {
       if (replayRuleDelta != 0) {
         failures.add("Replay execution added unexpected simulator rules: " + replayRuleDelta);
       }
+      if (queryCount(dataSource, "SELECT count(*) FROM tp_consumed_execution_permits WHERE tenant_id = 'simulated-alpha'") != permitsBeforeReplay) {
+        failures.add("Replay execution added consumed permits.");
+      }
+      if (queryCount(dataSource, "SELECT count(*) FROM tp_execution_attempts WHERE tenant_id = 'simulated-alpha'") != attemptsBeforeReplay) {
+        failures.add("Replay execution created execution attempts.");
+      }
 
       if (!failures.isEmpty()) {
         overallPassed = false;
       }
 
     } catch (Exception e) {
-      failures.add("Execution exception: " + e.getMessage());
+      failures.add("Execution exception: " + classifySafeErrorCode(e));
       overallPassed = false;
     } finally {
-      server.close();
-      client.close();
+      if (server != null) {
+        try {
+          server.close();
+        } catch (Throwable ignored) {}
+      }
+      if (client != null) {
+        try {
+          client.close();
+        } catch (Throwable ignored) {}
+      }
     }
 
-    Map<String, String> provenance = Map.of(
-        "commitSha", commitSha,
-        "dirty", String.valueOf(dirty));
-
-    Map<String, Object> environment = Map.of(
-        "os", System.getProperty("os.name") + " " + System.getProperty("os.version"),
-        "arch", System.getProperty("os.arch"),
-        "availableProcessors", Runtime.getRuntime().availableProcessors(),
-        "javaVersion", System.getProperty("java.version") + " (" + System.getProperty("java.vendor") + ")",
-        "postgresVersion", "postgres:16.4-alpine (Testcontainers)");
+    Map<String, Object> environment = new LinkedHashMap<>();
+    environment.put("os", System.getProperty("os.name") + " " + System.getProperty("os.version"));
+    environment.put("arch", System.getProperty("os.arch"));
+    environment.put("availableProcessors", Runtime.getRuntime().availableProcessors());
+    environment.put("serverWorkerThreads", SERVER_WORKER_THREADS);
+    environment.put("javaVersion", System.getProperty("java.version") + " (" + System.getProperty("java.vendor") + ")");
+    environment.put("postgresVersion", postgresVersion);
 
     return new LatencyQualificationReport(
         "1.0",
         Instant.now().toString(),
         "simulator-authenticated-durable-approval",
-        "static-policy simulator server, fixture-resolved RS256 token verification, PGSimpleDataSource, loopback HTTP",
+        "static-policy simulator server (8 worker threads), fixture-resolved RS256 token verification, unpooled PGSimpleDataSource, loopback HTTP",
         "System.nanoTime() elapsed duration; frozen synthetic authorization clock (2030-01-01)",
         provenance,
         environment,
@@ -640,115 +941,28 @@ public final class ApprovalLatencyMeasurements {
         failures);
   }
 
-  // --- Workflow Phase Execution Helper ---
-
-  @FunctionalInterface
-  interface ItemOperation {
-    void execute(ApprovalItem item) throws Exception;
-  }
-
-  private static PhaseMetrics runPhase(
+  private static void assertZeroStateDeltas(
       String phaseName,
-      int concurrency,
-      List<ApprovalItem> warmupItems,
-      List<ApprovalItem> measuredItems,
-      ItemOperation operation,
-      List<String> failures) {
-
-    // 1. Warm-up operations (exercise exact path, excluded from measured statistics)
-    if (!warmupItems.isEmpty()) {
-      runConcurrent(concurrency, warmupItems, operation, null, null, null);
+      StatefulTargetSimulator simulator,
+      PGSimpleDataSource dataSource,
+      int expectedRules,
+      int expectedPermits,
+      int expectedAttempts,
+      List<String> failures) throws SQLException {
+    if (countRules(simulator) != expectedRules) {
+      failures.add("Phase " + phaseName + " mutated target simulator state unexpectedly.");
     }
-
-    // 2. Measured steady-state operations
-    int measuredCount = measuredItems.size();
-    long[] sampleNanos = new long[measuredCount];
-    AtomicInteger successCounter = new AtomicInteger();
-    AtomicInteger failureCounter = new AtomicInteger();
-    AtomicInteger timeoutCounter = new AtomicInteger();
-
-    long wallStart = System.nanoTime();
-    runConcurrent(concurrency, measuredItems, operation, sampleNanos, successCounter, failureCounter);
-    long wallElapsed = System.nanoTime() - wallStart;
-
-    int successes = successCounter.get();
-    int failed = failureCounter.get();
-    int timeouts = timeoutCounter.get();
-
-    if (failed > 0 || successes != measuredCount) {
-      failures.add(String.format("Phase %s (concurrency=%d) had %d failures out of %d operations.",
-          phaseName, concurrency, failed, measuredCount));
+    if (queryCount(dataSource, "SELECT count(*) FROM tp_consumed_execution_permits WHERE tenant_id = 'simulated-alpha'") != expectedPermits) {
+      failures.add("Phase " + phaseName + " mutated consumed execution permits unexpectedly.");
     }
-
-    Percentiles percentiles = (successes > 0 && sampleNanos.length > 0)
-        ? computePercentiles(sampleNanos)
-        : null;
-
-    return new PhaseMetrics(
-        phaseName,
-        concurrency,
-        warmupItems.size(),
-        measuredCount,
-        successes,
-        failed,
-        timeouts,
-        wallElapsed,
-        percentiles);
-  }
-
-  private static void runConcurrent(
-      int concurrency,
-      List<ApprovalItem> items,
-      ItemOperation operation,
-      long[] sampleNanos,
-      AtomicInteger successCounter,
-      AtomicInteger failureCounter) {
-
-    int size = items.size();
-    if (size == 0) return;
-
-    ExecutorService executor = Executors.newFixedThreadPool(concurrency);
-    try {
-      List<Future<Void>> futures = new ArrayList<>(size);
-      for (int i = 0; i < size; i++) {
-        final int index = i;
-        final ApprovalItem item = items.get(i);
-        futures.add(executor.submit(() -> {
-          long start = System.nanoTime();
-          try {
-            operation.execute(item);
-            long elapsed = System.nanoTime() - start;
-            if (sampleNanos != null) {
-              sampleNanos[index] = elapsed;
-            }
-            if (successCounter != null) {
-              successCounter.incrementAndGet();
-            }
-          } catch (Exception e) {
-            if (failureCounter != null) {
-              failureCounter.incrementAndGet();
-            }
-            throw e;
-          }
-          return null;
-        }));
-      }
-
-      for (Future<Void> future : futures) {
-        future.get(30, TimeUnit.SECONDS);
-      }
-    } catch (Exception e) {
-      if (failureCounter != null) {
-        failureCounter.incrementAndGet();
-      }
-    } finally {
-      executor.shutdownNow();
+    if (queryCount(dataSource, "SELECT count(*) FROM tp_execution_attempts WHERE tenant_id = 'simulated-alpha'") != expectedAttempts) {
+      failures.add("Phase " + phaseName + " mutated execution attempts unexpectedly.");
     }
   }
 
-  // --- Protocol Operations ---
+  // --- Protocol Operations (Safe Diagnostics, No Raw Canary Leakage) ---
 
-  private static void performMcpHandshake(int port, String token, HttpClient client) throws Exception {
+  static void performMcpHandshake(int port, String token, HttpClient client) throws Exception {
     String initBody = """
         {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26",
          "capabilities":{},"clientInfo":{"name":"latency-qualification-harness","version":"1.0.0"}}}
@@ -761,7 +975,7 @@ public final class ApprovalLatencyMeasurements {
         .build();
     HttpResponse<String> initResp = client.send(initReq, HttpResponse.BodyHandlers.ofString());
     if (initResp.statusCode() != 200) {
-      throw new IllegalStateException("MCP initialize failed with HTTP " + initResp.statusCode());
+      throw new IllegalStateException("MCP_INIT_HTTP_STATUS_" + initResp.statusCode());
     }
 
     String notifBody = "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}";
@@ -773,11 +987,11 @@ public final class ApprovalLatencyMeasurements {
         .build();
     HttpResponse<String> notifResp = client.send(notifReq, HttpResponse.BodyHandlers.ofString());
     if (notifResp.statusCode() != 202) {
-      throw new IllegalStateException("MCP notifications/initialized failed with HTTP " + notifResp.statusCode());
+      throw new IllegalStateException("MCP_NOTIF_HTTP_STATUS_" + notifResp.statusCode());
     }
   }
 
-  private static void executeMcpRequest(int port, String token, ApprovalItem item, HttpClient client) throws Exception {
+  static void executeMcpRequest(int port, String token, ApprovalItem item, HttpClient client) throws Exception {
     String payload = String.format("""
         {"jsonrpc":"2.0","id":%d,"method":"tools/call","params":{"name":"tracepermit_request_simulated_change","arguments":{"groupId":"sg-demo","port":%d,"cidr":"192.0.2.0/24"}}}
         """, item.port, item.port);
@@ -791,29 +1005,44 @@ public final class ApprovalLatencyMeasurements {
 
     HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
     if (response.statusCode() != 200) {
-      throw new IllegalStateException("MCP request returned HTTP " + response.statusCode() + ": " + response.body());
+      throw new IllegalStateException("MCP_REQUEST_HTTP_STATUS_" + response.statusCode());
     }
 
-    JsonNode json = JsonSupport.MAPPER.readTree(response.body());
+    JsonNode json;
+    try {
+      json = JsonSupport.MAPPER.readTree(response.body());
+    } catch (Exception e) {
+      throw new IllegalStateException("JSON_PARSE_ERROR");
+    }
+
     if (json.path("result").path("isError").asBoolean(true)) {
-      throw new IllegalStateException("MCP request returned tool error: " + response.body());
+      String code = json.path("result").path("structuredContent").path("errorCode").asText("TOOL_ERROR");
+      throw new IllegalStateException("TOOL_ERROR_" + sanitizeCode(code));
     }
 
     JsonNode content = json.path("result").path("structuredContent");
-    if (!"pending".equals(content.path("status").asText())
-        || !"not_executed".equals(content.path("executionStatus").asText())) {
-      throw new IllegalStateException("Unexpected approval status in request response: " + response.body());
+    if (!"simulated".equals(content.path("mode").asText())) {
+      throw new IllegalStateException("UNEXPECTED_SIMULATOR_MODE");
+    }
+    if (!"pending".equals(content.path("status").asText())) {
+      throw new IllegalStateException("UNEXPECTED_STATUS_" + sanitizeCode(content.path("status").asText()));
+    }
+    if (!"not_executed".equals(content.path("executionStatus").asText())) {
+      throw new IllegalStateException("UNEXPECTED_EXECUTION_STATUS_" + sanitizeCode(content.path("executionStatus").asText()));
     }
 
     item.approvalRequestId = content.path("approvalRequestId").asText();
     item.requestHash = content.path("requestHash").asText();
 
     if (item.approvalRequestId.isBlank() || item.requestHash.isBlank()) {
-      throw new IllegalStateException("Missing approvalRequestId or requestHash in response.");
+      throw new IllegalStateException("MISSING_REQUEST_ID_OR_HASH");
     }
   }
 
-  private static void executeMcpStatus(int port, String token, ApprovalItem item, HttpClient client) throws Exception {
+  static void executeMcpStatus(int port, String token, ApprovalItem item, HttpClient client) throws Exception {
+    if (item.approvalRequestId == null || item.approvalRequestId.isBlank()) {
+      throw new IllegalStateException("CANNOT_QUERY_STATUS_MISSING_ID");
+    }
     String payload = String.format("""
         {"jsonrpc":"2.0","id":%d,"method":"tools/call","params":{"name":"tracepermit_get_approval","arguments":{"approvalRequestId":"%s"}}}
         """, item.port, item.approvalRequestId);
@@ -827,21 +1056,40 @@ public final class ApprovalLatencyMeasurements {
 
     HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
     if (response.statusCode() != 200) {
-      throw new IllegalStateException("MCP status returned HTTP " + response.statusCode() + ": " + response.body());
+      throw new IllegalStateException("MCP_STATUS_HTTP_STATUS_" + response.statusCode());
     }
 
-    JsonNode json = JsonSupport.MAPPER.readTree(response.body());
+    JsonNode json;
+    try {
+      json = JsonSupport.MAPPER.readTree(response.body());
+    } catch (Exception e) {
+      throw new IllegalStateException("JSON_PARSE_ERROR");
+    }
+
     if (json.path("result").path("isError").asBoolean(true)) {
-      throw new IllegalStateException("MCP status returned tool error: " + response.body());
+      String code = json.path("result").path("structuredContent").path("errorCode").asText("TOOL_ERROR");
+      throw new IllegalStateException("TOOL_ERROR_" + sanitizeCode(code));
     }
 
     JsonNode content = json.path("result").path("structuredContent");
+    if (!"simulated".equals(content.path("mode").asText())) {
+      throw new IllegalStateException("UNEXPECTED_SIMULATOR_MODE");
+    }
     if (!"pending".equals(content.path("status").asText())) {
-      throw new IllegalStateException("Expected pending status, but got: " + content.path("status").asText());
+      throw new IllegalStateException("UNEXPECTED_STATUS_" + sanitizeCode(content.path("status").asText()));
+    }
+    if (!item.approvalRequestId.equals(content.path("approvalRequestId").asText())) {
+      throw new IllegalStateException("APPROVAL_REQUEST_ID_MISMATCH");
+    }
+    if (!item.requestHash.equals(content.path("requestHash").asText())) {
+      throw new IllegalStateException("REQUEST_HASH_MISMATCH");
     }
   }
 
-  private static void executeHttpReview(int port, String reviewerToken, ApprovalItem item, HttpClient client) throws Exception {
+  static void executeHttpReview(int port, String reviewerToken, ApprovalItem item, HttpClient client) throws Exception {
+    if (item.approvalRequestId == null || item.approvalRequestId.isBlank() || item.requestHash == null) {
+      throw new IllegalStateException("CANNOT_REVIEW_MISSING_ID_OR_HASH");
+    }
     String payload = String.format("""
         {"requestHash":"%s","decision":"approve"}
         """, item.requestHash);
@@ -856,16 +1104,25 @@ public final class ApprovalLatencyMeasurements {
 
     HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
     if (response.statusCode() != 200) {
-      throw new IllegalStateException("Review decision returned HTTP " + response.statusCode() + ": " + response.body());
+      throw new IllegalStateException("HTTP_REVIEW_STATUS_" + response.statusCode());
     }
 
-    JsonNode json = JsonSupport.MAPPER.readTree(response.body());
+    JsonNode json;
+    try {
+      json = JsonSupport.MAPPER.readTree(response.body());
+    } catch (Exception e) {
+      throw new IllegalStateException("JSON_PARSE_ERROR");
+    }
+
     if (!"approved".equals(json.path("status").asText())) {
-      throw new IllegalStateException("Expected approved status, but got: " + json.path("status").asText());
+      throw new IllegalStateException("UNEXPECTED_STATUS_" + sanitizeCode(json.path("status").asText()));
     }
   }
 
-  private static void executeMcpResume(int port, String token, ApprovalItem item, HttpClient client) throws Exception {
+  static void executeMcpResume(int port, String token, ApprovalItem item, HttpClient client) throws Exception {
+    if (item.approvalRequestId == null || item.approvalRequestId.isBlank() || item.requestHash == null) {
+      throw new IllegalStateException("CANNOT_RESUME_MISSING_ID_OR_HASH");
+    }
     String payload = String.format("""
         {"jsonrpc":"2.0","id":%d,"method":"tools/call","params":{"name":"tracepermit_resume_approval","arguments":{"approvalRequestId":"%s","requestHash":"%s"}}}
         """, item.port, item.approvalRequestId, item.requestHash);
@@ -879,22 +1136,40 @@ public final class ApprovalLatencyMeasurements {
 
     HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
     if (response.statusCode() != 200) {
-      throw new IllegalStateException("MCP resume returned HTTP " + response.statusCode() + ": " + response.body());
+      throw new IllegalStateException("MCP_RESUME_HTTP_STATUS_" + response.statusCode());
     }
 
-    JsonNode json = JsonSupport.MAPPER.readTree(response.body());
+    JsonNode json;
+    try {
+      json = JsonSupport.MAPPER.readTree(response.body());
+    } catch (Exception e) {
+      throw new IllegalStateException("JSON_PARSE_ERROR");
+    }
+
     if (json.path("result").path("isError").asBoolean(true)) {
-      throw new IllegalStateException("MCP resume returned tool error: " + response.body());
+      String code = json.path("result").path("structuredContent").path("errorCode").asText("TOOL_ERROR");
+      throw new IllegalStateException("TOOL_ERROR_" + sanitizeCode(code));
     }
 
     JsonNode content = json.path("result").path("structuredContent");
-    if (!"consumed".equals(content.path("status").asText())
-        || !"succeeded".equals(content.path("executionStatus").asText())) {
-      throw new IllegalStateException("Unexpected resume outcome: " + response.body());
+    if (!"simulated".equals(content.path("mode").asText())) {
+      throw new IllegalStateException("UNEXPECTED_SIMULATOR_MODE");
+    }
+    if (!"consumed".equals(content.path("status").asText())) {
+      throw new IllegalStateException("UNEXPECTED_STATUS_" + sanitizeCode(content.path("status").asText()));
+    }
+    if (!"succeeded".equals(content.path("executionStatus").asText())) {
+      throw new IllegalStateException("UNEXPECTED_EXECUTION_STATUS_" + sanitizeCode(content.path("executionStatus").asText()));
+    }
+    if (!item.approvalRequestId.equals(content.path("approvalRequestId").asText())) {
+      throw new IllegalStateException("APPROVAL_REQUEST_ID_MISMATCH");
+    }
+    if (!item.requestHash.equals(content.path("requestHash").asText())) {
+      throw new IllegalStateException("REQUEST_HASH_MISMATCH");
     }
   }
 
-  private static boolean executeUnauthenticatedCheck(int port, HttpClient client) throws Exception {
+  static boolean executeUnauthenticatedCheck(int port, HttpClient client) throws Exception {
     String payload = """
         {"jsonrpc":"2.0","id":99999,"method":"tools/call","params":{"name":"tracepermit_request_simulated_change","arguments":{"groupId":"sg-demo","port":8080,"cidr":"192.0.2.0/24"}}}
         """;
@@ -908,7 +1183,7 @@ public final class ApprovalLatencyMeasurements {
     return response.statusCode() == 401;
   }
 
-  private static boolean executeReplayCheck(int port, String token, ApprovalItem item, HttpClient client) throws Exception {
+  static boolean executeReplayCheck(int port, String token, ApprovalItem item, HttpClient client) throws Exception {
     String payload = String.format("""
         {"jsonrpc":"2.0","id":99998,"method":"tools/call","params":{"name":"tracepermit_resume_approval","arguments":{"approvalRequestId":"%s","requestHash":"%s"}}}
         """, item.approvalRequestId, item.requestHash);
@@ -923,7 +1198,13 @@ public final class ApprovalLatencyMeasurements {
     HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
     if (response.statusCode() != 200) return false;
 
-    JsonNode json = JsonSupport.MAPPER.readTree(response.body());
+    JsonNode json;
+    try {
+      json = JsonSupport.MAPPER.readTree(response.body());
+    } catch (Exception e) {
+      return false;
+    }
+
     if (!json.path("result").path("isError").asBoolean(false)) return false;
 
     String code = json.path("result").path("structuredContent").path("errorCode").asText();
@@ -936,8 +1217,11 @@ public final class ApprovalLatencyMeasurements {
   }
 
   private static int queryCount(PGSimpleDataSource ds, String sql) throws SQLException {
-    try (Connection conn = ds.getConnection(); Statement stmt = conn.createStatement(); ResultSet rs = stmt.executeQuery(sql)) {
-      return rs.next() ? rs.getInt(1) : 0;
+    try (Connection conn = ds.getConnection(); Statement stmt = conn.createStatement()) {
+      stmt.setQueryTimeout(10);
+      try (ResultSet rs = stmt.executeQuery(sql)) {
+        return rs.next() ? rs.getInt(1) : 0;
+      }
     }
   }
 
@@ -969,28 +1253,59 @@ public final class ApprovalLatencyMeasurements {
     return input + "." + encoder.encodeToString(signer.sign());
   }
 
-  private static String getGitCommit(Path root) {
-    try {
-      Process p = new ProcessBuilder("git", "rev-parse", "HEAD")
-          .directory(root.toFile())
-          .start();
-      if (p.waitFor(3, TimeUnit.SECONDS) && p.exitValue() == 0) {
-        return new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
-      }
-    } catch (Exception ignored) {}
-    return "unknown";
+  static String sanitizeCode(String input) {
+    if (input == null || input.isBlank()) return "UNKNOWN";
+    return input.replaceAll("[^A-Za-z0-9_]", "_");
   }
 
-  private static boolean isGitDirty(Path root) {
+  static String classifySafeErrorCode(Throwable t) {
+    if (t instanceof HttpTimeoutException || t instanceof TimeoutException) {
+      return "TIMEOUT";
+    }
+    String msg = t.getMessage();
+    if (msg != null && (msg.startsWith("MCP_") || msg.startsWith("HTTP_") || msg.startsWith("TOOL_ERROR_")
+        || msg.startsWith("UNEXPECTED_") || msg.startsWith("JSON_") || msg.startsWith("MISSING_"))) {
+      return msg;
+    }
+    return "OPERATION_FAILED_" + t.getClass().getSimpleName();
+  }
+
+  static Map<String, String> getGitProvenance(Path root) {
+    String sha = "unknown";
+    String dirty = "unknown";
+
     try {
-      Process p = new ProcessBuilder("git", "status", "--porcelain")
+      Process pSha = new ProcessBuilder("git", "rev-parse", "HEAD")
           .directory(root.toFile())
+          .redirectErrorStream(true)
           .start();
-      if (p.waitFor(3, TimeUnit.SECONDS) && p.exitValue() == 0) {
-        String out = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
-        return !out.isEmpty();
+      if (pSha.waitFor(3, TimeUnit.SECONDS) && pSha.exitValue() == 0) {
+        try (InputStream is = pSha.getInputStream()) {
+          byte[] buf = is.readNBytes(128);
+          String out = new String(buf, StandardCharsets.UTF_8).trim();
+          if (!out.isBlank()) sha = out;
+        }
+      } else {
+        pSha.destroyForcibly();
       }
     } catch (Exception ignored) {}
-    return false;
+
+    try {
+      Process pDirty = new ProcessBuilder("git", "status", "--porcelain")
+          .directory(root.toFile())
+          .redirectErrorStream(true)
+          .start();
+      if (pDirty.waitFor(3, TimeUnit.SECONDS) && pDirty.exitValue() == 0) {
+        try (InputStream is = pDirty.getInputStream()) {
+          byte[] buf = is.readNBytes(4096);
+          String out = new String(buf, StandardCharsets.UTF_8).trim();
+          dirty = String.valueOf(!out.isEmpty());
+        }
+      } else {
+        pDirty.destroyForcibly();
+      }
+    } catch (Exception ignored) {}
+
+    return Map.of("commitSha", sha, "dirty", dirty);
   }
 }
