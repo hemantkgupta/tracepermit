@@ -85,6 +85,9 @@ final class PostgresDatabaseLifecycleTest {
       "ALTER TABLE public.tp_enforcement_schema_guard DROP CONSTRAINT tp_enforcement_schema_guard_contract_version_check; UPDATE public.tp_enforcement_schema_guard SET contract_version = 999",
       "DROP TABLE public.tp_approval_action_snapshots",
       "ALTER TABLE public.tp_approval_policy_bindings DISABLE TRIGGER tp_approval_policy_binding_immutable",
+      "DROP TABLE public.tp_recovery_quarantine CASCADE",
+      "ALTER TABLE public.tp_recovery_quarantine DISABLE TRIGGER tp_recovery_quarantine_guard; DELETE FROM public.tp_recovery_quarantine",
+      "ALTER TABLE public.tp_consumed_execution_permits DISABLE TRIGGER tp_00_recovery_permit_guard",
       "UPDATE public.flyway_schema_history SET checksum = checksum + 1 WHERE version = '1'",
       "DELETE FROM public.flyway_schema_history WHERE version = '8'",
       "UPDATE public.flyway_schema_history SET version = '99' WHERE version = '8'",
@@ -191,9 +194,10 @@ final class PostgresDatabaseLifecycleTest {
     assertThat(tables()).isZero();
   }
 
-  @Test void actualV7InstallationIsNotSilentlyUpgradedByStrictOpenOrInit() throws Exception {
+  @ParameterizedTest @ValueSource(strings = {"7", "8"})
+  void olderInstallationIsNotSilentlyUpgradedByStrictOpenOrInit(String version) throws Exception {
     Flyway.configure().dataSource(source).locations(PostgresDurableEnforcementState.MIGRATION_LOCATION)
-        .target("7").load().migrate();
+        .target(version).load().migrate();
     String before = history();
     assertThatThrownBy(() -> PostgresDurableEnforcementState.openExisting(source, Clock.systemUTC(), () -> "id"))
         .hasMessage("DATABASE_SCHEMA_NOT_READY");
@@ -202,7 +206,7 @@ final class PostgresDatabaseLifecycleTest {
     assertThat(history()).isEqualTo(before);
     try (var c = source.getConnection(); var s = c.createStatement(); var r = s.executeQuery(
         "SELECT contract_version FROM public.tp_enforcement_schema_guard")) {
-      r.next(); assertThat(r.getInt(1)).isEqualTo(7);
+      r.next(); assertThat(r.getInt(1)).isEqualTo(Integer.parseInt(version));
     }
   }
 

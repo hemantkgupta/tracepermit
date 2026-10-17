@@ -388,6 +388,21 @@ The separately configured leased worker queries only already queued unknowns;
 it is not automatically scheduled by the approval launcher. Production target
 lookup, abandoned-execution recovery and restore fencing remain future work.
 
+Explicit [operator quarantine](../architecture/0051-operator-declared-recovery-quarantine.md)
+adds a separate one-way containment flow: authority transactions first share-lock
+the recovery row and commit their claim; declaration update-locks the same row
+and commits quarantined state. Later claims/reviews fail closed across replicas.
+Prior admitted claims may still dispatch/complete after declaration, and existing
+completion/evidence/lookup transactions are not gated. This does not detect a
+restored old ready row or define safe effectful resume.
+
+Owner-only [recovery inspection](../architecture/0052-owner-only-recovery-inspection.md)
+follows a separate read-only path: strict existing-schema validation, then a
+public-schema repeatable-read transaction checks ownership/RLS and reads the
+quarantine row plus aggregate stored statuses/queue count. The transaction ends
+before any report is emitted. It takes no authority row lock and does not mutate,
+refresh expiry, look up a target, release authority or declare safe resume.
+
 ```mermaid
 sequenceDiagram
   autonumber

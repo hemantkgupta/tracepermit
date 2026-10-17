@@ -11,6 +11,8 @@ import io.tracepermit.identity.BrowserIdTokenVerifier;
 import io.tracepermit.persistence.postgres.PostgresDurableEnforcementState;
 import io.tracepermit.persistence.postgres.PostgresDatabaseLifecycle;
 import io.tracepermit.persistence.postgres.PostgresPermitConsumptionStore;
+import io.tracepermit.persistence.postgres.PostgresRecoveryQuarantine;
+import io.tracepermit.persistence.postgres.PostgresRecoveryInspection;
 import io.tracepermit.security.ExecutionPermitAuthority;
 import io.tracepermit.simulator.StatefulTargetSimulator;
 import java.io.PrintStream;
@@ -48,7 +50,7 @@ public final class SimulatorApprovalMain {
   static int execute(String[] args, Map<String, String> environment, PrintStream out,
       PrintStream err, Runner runner) {
     try {
-      if (args.length != 1 || !Set.of("--check", "--run", "--init-db").contains(args[0])) {
+      if (args.length != 1 || !Set.of("--check", "--run", "--init-db", "--quarantine-db", "--recovery-status", "--recovery-inspect").contains(args[0])) {
         throw new IllegalArgumentException();
       }
       String path = environment.get("TRACEPERMIT_APPROVAL_CONFIG");
@@ -59,6 +61,24 @@ public final class SimulatorApprovalMain {
       } else if ("--init-db".equals(args[0])) {
         PostgresDatabaseLifecycle.initializeEmpty(configuration.database());
         out.println("APPROVAL_DATABASE_INITIALIZED: fresh simulator schema only; no listener or target started.");
+      } else if ("--quarantine-db".equals(args[0])) {
+        PostgresRecoveryQuarantine.quarantine(configuration.database(), java.time.Instant.now());
+        out.println("APPROVAL_DATABASE_QUARANTINED: new durable claims/reviews disabled; previously admitted work may finish; no resume command.");
+      } else if ("--recovery-status".equals(args[0])) {
+        var status = PostgresRecoveryQuarantine.status(configuration.database());
+        out.println("APPROVAL_RECOVERY_MODE: " + status.mode() + "; operator-declared state, not rollback detection.");
+      } else if ("--recovery-inspect".equals(args[0])) {
+        var snapshot = PostgresRecoveryInspection.inspect(configuration.database());
+        // Serialize fully before printing: failed reads/serialization never produce partial success output.
+        var report = JsonSupport.MAPPER.createObjectNode().put("schemaVersion", "1.0")
+            .put("transactionStartedAt", snapshot.transactionStartedAt().toString())
+            .put("recoveryMode", snapshot.recovery().mode())
+            .put("reconciliationQueued", snapshot.reconciliationQueued());
+        report.set("executions", JsonSupport.MAPPER.valueToTree(snapshot.executions()));
+        report.set("approvals", JsonSupport.MAPPER.valueToTree(snapshot.approvals()));
+        String json = JsonSupport.MAPPER.writeValueAsString(report);
+        out.println("APPROVAL_RECOVERY_SNAPSHOT: " + json);
+        out.println("INSPECTION_ONLY: stored statuses, not expiry refresh, quiescence, target outcome proof or permission to resume; no target contacted.");
       } else {
         runner.run(configuration);
       }
@@ -85,6 +105,9 @@ public final class SimulatorApprovalMain {
     // Configuration/key/enrollment validation and strict schema checks precede listener creation.
     var state = PostgresDurableEnforcementState.openExisting(configuration.database(), clock,
         () -> UUID.randomUUID().toString());
+    if (!"ready".equals(PostgresRecoveryQuarantine.status(configuration.database()).mode())) {
+      throw new IllegalStateException("DATABASE_RECOVERY_QUARANTINED");
+    }
     var permits = new ExecutionPermitAuthority(ExecutionPermitAuthority.DEFAULT_ISSUER,
         configuration.keyId(), configuration.permitKey(), 30, clock,
         () -> "permit-" + UUID.randomUUID(), PostgresPermitConsumptionStore.openExisting(configuration.database()));

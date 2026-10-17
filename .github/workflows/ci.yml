@@ -12,7 +12,8 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Includes two PostgreSQL passes and source-free provenance/installation probes.
+    timeout-minutes: 15
 
     steps:
       - name: Check out repository

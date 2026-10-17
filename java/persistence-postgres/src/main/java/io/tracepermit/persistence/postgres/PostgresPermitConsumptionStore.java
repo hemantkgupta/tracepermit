@@ -109,6 +109,7 @@ public final class PostgresPermitConsumptionStore implements PermitConsumptionSt
         ON CONFLICT (tenant_id, permit_id) DO NOTHING
         """;
     return inTransaction("Failed to record consumed execution permit", connection -> {
+      PostgresRecoveryQuarantine.requireReady(connection);
       try (PreparedStatement statement = connection.prepareStatement(sql)) {
         statement.setString(1, tenant.value());
         statement.setString(2, permitId);

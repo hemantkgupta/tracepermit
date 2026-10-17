@@ -900,6 +900,14 @@ test("online --run starts, binds loopback port, and terminates cleanly on SIGTER
   const emptyRun = spawnSync(launcher, ["--run"], commandOptions);
   assert.equal(emptyRun.status, 2);
   assert.ok(emptyRun.stderr.includes("APPROVAL_STARTUP_FAILED"));
+  const emptyInspect = spawnSync(
+    launcher,
+    ["--recovery-inspect"],
+    commandOptions,
+  );
+  assert.equal(emptyInspect.status, 2);
+  assert.ok(emptyInspect.stderr.includes("APPROVAL_STARTUP_FAILED"));
+  assert.ok(!emptyInspect.stdout.includes("APPROVAL_RECOVERY_SNAPSHOT"));
   assert.equal(
     execSync(
       `docker exec ${containerId} psql -U tracepermit_approvals -d tracepermit_approvals -Atc "SELECT count(*) FROM pg_tables WHERE schemaname='public'"`,
@@ -913,7 +921,7 @@ test("online --run starts, binds loopback port, and terminates cleanly on SIGTER
   assert.ok(!initialize.stdout.includes("API listening"));
   const duplicateInit = spawnSync(launcher, ["--init-db"], commandOptions);
   assert.equal(duplicateInit.status, 2);
-  for (const result of [emptyRun, initialize, duplicateInit]) {
+  for (const result of [emptyRun, emptyInspect, initialize, duplicateInit]) {
     const output = result.stdout + result.stderr;
     assert.ok(!output.includes(pgPassword));
     assert.ok(!output.includes(configPath));
@@ -992,4 +1000,59 @@ test("online --run starts, binds loopback port, and terminates cleanly on SIGTER
     !childStderr.includes(pgPassword),
     "Password must not appear in stderr",
   );
+
+  // Packaged containment commands require neither a source checkout nor an IdP connection.
+  let expectedRecoveryMode = "ready";
+  for (const argument of [
+    "--recovery-inspect",
+    "--recovery-status",
+    "--quarantine-db",
+    "--quarantine-db",
+    "--recovery-status",
+    "--recovery-inspect",
+    "--run",
+  ]) {
+    const result = spawnSync(launcher, [argument], commandOptions);
+    assert.equal(result.status, argument === "--run" ? 2 : 0, result.stderr);
+    const output = result.stdout + result.stderr;
+    assert.ok(!output.includes("API listening"));
+    assert.ok(!output.includes(pgPassword));
+    assert.ok(!output.includes(configPath));
+    assert.ok(!output.includes("jdbc:"));
+    if (argument === "--quarantine-db") {
+      assert.ok(output.includes("APPROVAL_DATABASE_QUARANTINED"));
+      expectedRecoveryMode = "quarantined";
+    }
+    if (argument === "--run")
+      assert.ok(output.includes("APPROVAL_STARTUP_FAILED"));
+    if (argument === "--recovery-inspect") {
+      const line = result.stdout
+        .split("\n")
+        .find((item) => item.startsWith("APPROVAL_RECOVERY_SNAPSHOT: "));
+      assert.ok(
+        line,
+        "Installed inspection must emit a complete bounded report",
+      );
+      const report = JSON.parse(
+        line.slice("APPROVAL_RECOVERY_SNAPSHOT: ".length),
+      );
+      assert.equal(report.schemaVersion, "1.0");
+      assert.equal(report.recoveryMode, expectedRecoveryMode);
+      assert.deepEqual(report.executions, {
+        executing: 0,
+        succeeded: 0,
+        failed: 0,
+        unknown: 0,
+      });
+      assert.deepEqual(report.approvals, {
+        pending: 0,
+        approved: 0,
+        denied: 0,
+        expired: 0,
+        consumed: 0,
+      });
+      assert.equal(report.reconciliationQueued, 0);
+      assert.ok(output.includes("INSPECTION_ONLY"));
+    }
+  }
 });

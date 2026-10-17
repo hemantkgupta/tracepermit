@@ -28,6 +28,12 @@ SIGTERM shutdown. All identities and credentials in these tests are synthetic.
 
 ## Operator setup (macOS/Linux only)
 
+Current operator schema is V9. Strict run refuses V8/incomplete state without
+migration; there is no in-place upgrade command. One-way owner-declared
+containment and runtime guard privileges are documented in the
+[recovery quarantine runbook](operator-recovery-quarantine.md). Do not reset a
+populated database to make startup pass.
+
 This optional path requires an operator-controlled local PostgreSQL database
 and a compatible external IdP registration. The checked-in
 [`config/simulator-approvals.example.json`](../../config/simulator-approvals.example.json)

@@ -51,6 +51,7 @@ public final class SsrfSafeHttpsJwkSetSource implements OidcJwkSetSource {
   private final Predicate<InetAddress> addressPolicy;
   private final SSLSocketFactory sslSocketFactory;
   private final X509TrustManager trustManager;
+  private final BoundedHostResolver boundedResolver;
 
   public SsrfSafeHttpsJwkSetSource(
       Set<URI> allowedUris, Duration connectTimeout, Duration callTimeout) {
@@ -61,7 +62,8 @@ public final class SsrfSafeHttpsJwkSetSource implements OidcJwkSetSource {
         hostname -> List.of(InetAddress.getAllByName(hostname)),
         SsrfSafeHttpsJwkSetSource::isPublicAddress,
         null,
-        null);
+        null,
+        BoundedHostResolver.defaultResolver());
   }
 
   SsrfSafeHttpsJwkSetSource(
@@ -72,6 +74,26 @@ public final class SsrfSafeHttpsJwkSetSource implements OidcJwkSetSource {
       Predicate<InetAddress> addressPolicy,
       SSLSocketFactory sslSocketFactory,
       X509TrustManager trustManager) {
+    this(
+        allowedUris,
+        connectTimeout,
+        callTimeout,
+        resolver,
+        addressPolicy,
+        sslSocketFactory,
+        trustManager,
+        BoundedHostResolver.defaultResolver());
+  }
+
+  SsrfSafeHttpsJwkSetSource(
+      Set<URI> allowedUris,
+      Duration connectTimeout,
+      Duration callTimeout,
+      HostResolver resolver,
+      Predicate<InetAddress> addressPolicy,
+      SSLSocketFactory sslSocketFactory,
+      X509TrustManager trustManager,
+      BoundedHostResolver boundedResolver) {
     Objects.requireNonNull(allowedUris);
     if (allowedUris.isEmpty()) {
       throw new IllegalArgumentException("At least one JWKS URI must be allowlisted.");
@@ -89,6 +111,7 @@ public final class SsrfSafeHttpsJwkSetSource implements OidcJwkSetSource {
     }
     this.sslSocketFactory = sslSocketFactory;
     this.trustManager = trustManager;
+    this.boundedResolver = Objects.requireNonNull(boundedResolver);
   }
 
   @Override
@@ -107,7 +130,21 @@ public final class SsrfSafeHttpsJwkSetSource implements OidcJwkSetSource {
     URI uri = requireSafeUri(configuredJwksUri);
     if (!allowedUris.contains(uri)) throw new JwksFetchException();
 
-    List<InetAddress> approvedAddresses = resolveAndValidate(uri.getHost());
+    long startNanos = System.nanoTime();
+    long totalBudgetNanos = callTimeout.toNanos();
+
+    List<InetAddress> approvedAddresses = resolveAndValidate(uri.getHost(), totalBudgetNanos);
+
+    long elapsedNanos = System.nanoTime() - startNanos;
+    long remainingNanos = totalBudgetNanos - elapsedNanos;
+    if (remainingNanos <= 0) {
+      throw new JwksFetchException();
+    }
+
+    Duration httpTimeout = Duration.ofNanos(remainingNanos);
+    Duration effectiveConnectTimeout =
+        connectTimeout.compareTo(httpTimeout) < 0 ? connectTimeout : httpTimeout;
+
     Dns pinnedDns =
         hostname -> {
           if (!canonicalHost(hostname).equals(canonicalHost(uri.getHost()))) {
@@ -123,9 +160,9 @@ public final class SsrfSafeHttpsJwkSetSource implements OidcJwkSetSource {
             .followRedirects(false)
             .followSslRedirects(false)
             .retryOnConnectionFailure(false)
-            .connectTimeout(connectTimeout)
-            .readTimeout(callTimeout)
-            .callTimeout(callTimeout);
+            .connectTimeout(effectiveConnectTimeout)
+            .readTimeout(httpTimeout)
+            .callTimeout(httpTimeout);
     if (sslSocketFactory != null) {
       clientBuilder.sslSocketFactory(sslSocketFactory, trustManager);
     }
@@ -155,19 +192,24 @@ public final class SsrfSafeHttpsJwkSetSource implements OidcJwkSetSource {
     }
   }
 
-  private List<InetAddress> resolveAndValidate(String hostname) {
+  private List<InetAddress> resolveAndValidate(String hostname, long totalBudgetNanos) {
+    if (totalBudgetNanos <= 0) {
+      throw new JwksFetchException();
+    }
     try {
-      List<InetAddress> addresses = List.copyOf(resolver.resolve(hostname));
-      if (addresses.isEmpty() || addresses.size() > MAXIMUM_RESOLVED_ADDRESSES) {
+      List<InetAddress> raw =
+          boundedResolver.resolve(resolver, hostname, Duration.ofNanos(totalBudgetNanos));
+      if (raw == null || raw.isEmpty() || raw.size() > MAXIMUM_RESOLVED_ADDRESSES) {
         throw new JwksFetchException();
       }
+      List<InetAddress> addresses = List.copyOf(raw);
       for (InetAddress address : addresses) {
         if (!addressPolicy.test(address)) throw new JwksFetchException();
       }
       return addresses;
     } catch (JwksFetchException exception) {
       throw exception;
-    } catch (UnknownHostException | RuntimeException exception) {
+    } catch (RuntimeException exception) {
       throw new JwksFetchException();
     }
   }

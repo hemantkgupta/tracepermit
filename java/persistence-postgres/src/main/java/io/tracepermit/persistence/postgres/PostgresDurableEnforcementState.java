@@ -632,6 +632,7 @@ public final class PostgresDurableEnforcementState
       ApprovalBinding binding, JsonNode event, ApprovalPolicyBinding policyBinding) {
     Objects.requireNonNull(binding);
     return inTransaction(connection -> {
+      PostgresRecoveryQuarantine.requireReady(connection);
       String sql = """
           INSERT INTO tp_approval_requests
             (tenant_id, approval_request_id, request_hash, action_hash, event_id,
@@ -851,6 +852,7 @@ public final class PostgresDurableEnforcementState
   public ApprovalRequestState decide(ApprovalDecision decision) {
     Objects.requireNonNull(decision);
     return inTransaction(connection -> {
+      PostgresRecoveryQuarantine.requireReady(connection);
       ApprovalRequestState current = requireApproval(
           connection, decision.tenant(), decision.approvalRequestId(), true);
       if (!"pending".equals(current.status())) {
@@ -916,6 +918,7 @@ public final class PostgresDurableEnforcementState
 
   private ApprovalConsumptionResult consumeAndClaim(
       Connection connection, ApprovalExecutionClaim claim) throws SQLException {
+    PostgresRecoveryQuarantine.requireReady(connection);
     ApprovalRequestState approval = requireApproval(
         connection, claim.binding().tenant(), claim.binding().approvalRequestId(), true);
     if ("consumed".equals(approval.status())) {
@@ -1024,6 +1027,7 @@ public final class PostgresDurableEnforcementState
 
   private DurableClaimResult insertClaim(Connection connection, DurableExecutionClaim claim)
       throws SQLException {
+    PostgresRecoveryQuarantine.requireReady(connection);
     AttemptMetadata metadata = insertExecutionRows(connection, claim);
     appendEvidence(
         connection,
@@ -1746,7 +1750,7 @@ public final class PostgresDurableEnforcementState
          PreparedStatement statement = connection.prepareStatement(
              "SELECT contract_version FROM tp_enforcement_schema_guard WHERE singleton = TRUE");
          ResultSet result = statement.executeQuery()) {
-      if (!result.next() || result.getInt(1) != 8 || result.next()) {
+      if (!result.next() || result.getInt(1) != 9 || result.next()) {
         throw new IllegalStateException("INCOMPATIBLE_DURABLE_STATE_SCHEMA");
       }
     } catch (SQLException exception) {

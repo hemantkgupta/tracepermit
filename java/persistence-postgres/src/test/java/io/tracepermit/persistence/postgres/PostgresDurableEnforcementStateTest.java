@@ -583,7 +583,7 @@ final class PostgresDurableEnforcementStateTest {
         incompatible, PostgresDurableEnforcementState.MIGRATION_LOCATION);
     try (Connection connection = incompatible.getConnection(); Statement statement = connection.createStatement()) {
       statement.execute("ALTER TABLE tp_enforcement_schema_guard DROP CONSTRAINT tp_enforcement_schema_guard_contract_version_check");
-      statement.execute("UPDATE tp_enforcement_schema_guard SET contract_version = 9");
+      statement.execute("UPDATE tp_enforcement_schema_guard SET contract_version = 999");
     }
     assertThatThrownBy(() -> new PostgresDurableEnforcementState(
         incompatible, Clock.fixed(NOW, ZoneOffset.UTC), PostgresDurableEnforcementStateTest::nextId))

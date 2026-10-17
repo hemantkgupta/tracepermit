@@ -176,7 +176,7 @@ With the private config pointing to a dedicated empty local database, initialize
 ```
 
 Success emits `APPROVAL_DATABASE_INITIALIZED` and exits without a listener,
-IdP call or target effect. It installs packaged V1–V8 with an initialization
+IdP call or target effect. It installs packaged V1–V9 with an initialization
 role. Existing/partial state is refused; cooperating concurrent initializers
 fail fast. Never use this command after a restore or for an upgrade. Migration
 failure can leave partial state; no automatic repair, clean or retry is provided.
@@ -184,7 +184,9 @@ failure can leave partial state; no automatic repair, clean or retry is provided
 Normal run may use a separate private config with a non-owner runtime role:
 application DML and metadata/history reads, not migration rights. Role/grant
 provisioning remains operator-owned. Keep initialization credentials out of the
-runtime config. Exact checks and limits are in
+runtime config. Runtime row locks also require SELECT and UPDATE on
+`public.tp_recovery_quarantine`; its trigger still rejects non-owner quarantine
+transitions. Exact checks and limits are in
 [ADR 0045](../architecture/0045-explicit-database-initialization.md).
 
 ## Running the application (`--run`)
@@ -198,14 +200,15 @@ Start the approval service:
 During startup:
 
 1. Validates operator configuration and credentials.
-2. Validates existing packaged PostgreSQL V1–V8 migration history/checksums,
+2. Validates existing packaged PostgreSQL V1–V9 migration history/checksums,
    guard, required tables and enabled invariant triggers. Empty/partial,
    incompatible or pending-upgrade state fails without migration or repair.
-3. Binds the HTTP listener strictly to `http://127.0.0.1:<port>`.
+3. Refuses an already quarantined recovery row, then binds the HTTP listener
+   strictly to `http://127.0.0.1:<port>`.
 4. Outputs: `TracePermit simulator approval API listening on http://127.0.0.1:<port>`.
 
 The default launcher still uses its fixed static simulator policy. Installing
-schema V8 does not select an active policy or enable generation-bound approvals;
+schema V9 does not select an active policy or enable generation-bound approvals;
 that composition is an opt-in Java factory described in
 [ADR 0042](../architecture/0042-durable-policy-generation-binding.md).
 
@@ -214,6 +217,18 @@ can revive consumed approvals. Keep agents/effectful services disconnected after
 restore or restore failure; no external recovery fence or safe-resume command
 is implemented. There is no in-place schema-upgrade command; never reset or
 rewrite a populated database to make this version start.
+
+Owner-only `--recovery-inspect` prints a read-only, consistent aggregate snapshot
+without identifiers, mutation or target lookup. It is not a safe-resume verdict;
+see [recovery inspection](operator-recovery-inspection.md).
+
+`--recovery-status` and owner-only `--quarantine-db` provide explicit one-way
+containment without IdP/listener/target startup. They block new database authority,
+not already admitted effects or internal permit minting. They do not detect a
+restored old ready row and have no resume command. See the
+[quarantine runbook](operator-recovery-quarantine.md). Existing V8 installations
+are refused without implicit upgrade; keep them offline pending a separate
+upgrade procedure, rather than initializing over retained state.
 
 ### Clean process termination
 

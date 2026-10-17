@@ -538,14 +538,14 @@ final class PostgresPolicyBoundApprovalTest {
           """, aHash));
     }
 
-    // Now migrate to V8
+    // Now migrate to the current package, including the V8 policy binding and V9 recovery guard.
     PostgresDurableEnforcementState.migrate(upgrade, PostgresDurableEnforcementState.MIGRATION_LOCATION);
 
     // Verify schema guard is 8 and V7 data is completely preserved
     try (Connection connection = upgrade.getConnection(); Statement statement = connection.createStatement()) {
       try (var rs = statement.executeQuery("SELECT contract_version FROM tp_enforcement_schema_guard")) {
         assertThat(rs.next()).isTrue();
-        assertThat(rs.getInt(1)).isEqualTo(8);
+        assertThat(rs.getInt(1)).isEqualTo(9);
       }
       try (var rs = statement.executeQuery("SELECT count(*) FROM tp_policy_versions WHERE workspace_id = 'ws-v7'")) {
         assertThat(rs.next()).isTrue();
