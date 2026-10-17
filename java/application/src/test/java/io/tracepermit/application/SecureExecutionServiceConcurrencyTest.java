@@ -22,6 +22,7 @@ import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
@@ -31,13 +32,14 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
 /**
- * Concurrency guarantees of the un-striped enforcement path: the sequence window stays
+ * Concurrency guarantees of the striped enforcement path: the sequence window stays
  * atomic per principal, target invocation stays idempotent per event, the evidence hash
  * chain stays valid under concurrent appends, and distinct principals no longer
- * serialize on one process-wide monitor.
+ * serialize on the service instance's old execute monitor.
  */
 final class SecureExecutionServiceConcurrencyTest {
   private static final Path ROOT = Path.of(System.getProperty("tracepermit.repositoryRoot"));
@@ -142,7 +144,7 @@ final class SecureExecutionServiceConcurrencyTest {
             ActionSanitizer.NONE,
             InMemoryActionSequenceStore.oneMinute());
     List<Call> calls = new ArrayList<>();
-    try (ExecutorService pool = Executors.newVirtualThreadPerTaskExecutor()) {
+    try (BoundedExecutor pool = boundedExecutor(16)) {
       List<Future<Call>> futures = new ArrayList<>();
       for (int principal = 0; principal < 8; principal++) {
         String subjectId = "user:person-" + principal + "@example.com";
@@ -187,7 +189,7 @@ final class SecureExecutionServiceConcurrencyTest {
             ActionSanitizer.NONE,
             ActionSequenceStore.DISABLED);
 
-    try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
+    try (BoundedExecutor pool = boundedExecutor(2)) {
       Future<ExecutionResult> left =
           pool.submit(() -> service.execute(event(200, 20, first)));
       Future<ExecutionResult> right =
@@ -261,7 +263,7 @@ final class SecureExecutionServiceConcurrencyTest {
     ObjectNode read = syntheticEvent(902, true);
     ObjectNode subsequentSend = syntheticEvent(903, false);
 
-    try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
+    try (BoundedExecutor pool = boundedExecutor(2)) {
       Future<ExecutionResult> sendFuture = pool.submit(() -> service.execute(send));
       assertThat(sendCaptured.await(5, TimeUnit.SECONDS)).isTrue();
 
@@ -399,10 +401,12 @@ final class SecureExecutionServiceConcurrencyTest {
     ObjectNode event1 = syntheticEvent(920, true);
     ObjectNode event2 = syntheticEvent(921, true);
 
-    try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
+    AtomicReference<Thread> firstThread = new AtomicReference<>();
+    try (BoundedExecutor pool = boundedExecutor(2)) {
       Future<?> first =
           pool.submit(
               () -> {
+                firstThread.set(Thread.currentThread());
                 assertThatThrownBy(() -> service.execute(event1))
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("SEQUENCE_STATE_UNAVAILABLE");
@@ -412,7 +416,12 @@ final class SecureExecutionServiceConcurrencyTest {
 
       // Disable fault and submit event for the SAME principal from a DIFFERENT thread:
       shouldFail.set(false);
-      Future<ExecutionResult> second = pool.submit(() -> service.execute(event2));
+      Future<ExecutionResult> second =
+          pool.submit(
+              () -> {
+                assertThat(Thread.currentThread()).isNotSameAs(firstThread.get());
+                return service.execute(event2);
+              });
       ExecutionResult result = second.get(5, TimeUnit.SECONDS);
       assertThat(result.outcome()).isEqualTo("succeeded");
       assertThat(targetCalls).hasValue(1);
@@ -451,10 +460,12 @@ final class SecureExecutionServiceConcurrencyTest {
     ObjectNode event1 = syntheticEvent(922, true);
     ObjectNode event2 = syntheticEvent(923, true);
 
-    try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
+    AtomicReference<Thread> firstThread = new AtomicReference<>();
+    try (BoundedExecutor pool = boundedExecutor(2)) {
       Future<?> first =
           pool.submit(
               () -> {
+                firstThread.set(Thread.currentThread());
                 assertThatThrownBy(() -> service.execute(event1))
                     .isInstanceOf(IllegalStateException.class)
                     .hasMessageContaining("SEQUENCE_STATE_UNAVAILABLE");
@@ -463,7 +474,12 @@ final class SecureExecutionServiceConcurrencyTest {
       assertThat(targetCalls).hasValue(0);
 
       shouldFail.set(false);
-      Future<ExecutionResult> second = pool.submit(() -> service.execute(event2));
+      Future<ExecutionResult> second =
+          pool.submit(
+              () -> {
+                assertThat(Thread.currentThread()).isNotSameAs(firstThread.get());
+                return service.execute(event2);
+              });
       ExecutionResult result = second.get(5, TimeUnit.SECONDS);
       assertThat(result.outcome()).isEqualTo("succeeded");
       assertThat(targetCalls).hasValue(1);
@@ -497,15 +513,26 @@ final class SecureExecutionServiceConcurrencyTest {
     ObjectNode sanitizeEvent1 = event(924, 500);
     ObjectNode normalEvent2 = event(925, 20);
 
-    try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
-      Future<ExecutionResult> first = pool.submit(() -> service.execute(sanitizeEvent1));
+    AtomicReference<Thread> firstThread = new AtomicReference<>();
+    try (BoundedExecutor pool = boundedExecutor(2)) {
+      Future<ExecutionResult> first =
+          pool.submit(
+              () -> {
+                firstThread.set(Thread.currentThread());
+                return service.execute(sanitizeEvent1);
+              });
       ExecutionResult result1 = first.get(5, TimeUnit.SECONDS);
       assertThat(result1.outcome()).isEqualTo("sanitize");
       assertThat(targetCalls).hasValue(0);
 
       // Submit normal event for same principal from different thread:
       shouldFail.set(false);
-      Future<ExecutionResult> second = pool.submit(() -> service.execute(normalEvent2));
+      Future<ExecutionResult> second =
+          pool.submit(
+              () -> {
+                assertThat(Thread.currentThread()).isNotSameAs(firstThread.get());
+                return service.execute(normalEvent2);
+              });
       ExecutionResult result2 = second.get(5, TimeUnit.SECONDS);
       assertThat(result2.outcome()).isEqualTo("succeeded");
       assertThat(targetCalls).hasValue(1);
@@ -656,7 +683,7 @@ final class SecureExecutionServiceConcurrencyTest {
       int threads, int count, java.util.function.IntFunction<ExecutionResult> action)
       throws Exception {
     List<Call> calls = new ArrayList<>();
-    try (ExecutorService pool = Executors.newFixedThreadPool(threads)) {
+    try (BoundedExecutor pool = boundedExecutor(threads)) {
       List<Future<Call>> futures = new ArrayList<>();
       for (int index = 0; index < count; index++) {
         int current = index;
@@ -665,6 +692,36 @@ final class SecureExecutionServiceConcurrencyTest {
       for (Future<Call> future : futures) calls.add(future.get(60, TimeUnit.SECONDS));
     }
     return calls;
+  }
+
+  private static BoundedExecutor boundedExecutor(int threads) {
+    return new BoundedExecutor(
+        Executors.newFixedThreadPool(
+            threads, Thread.ofPlatform().daemon().name("tracepermit-concurrency-test-", 0).factory()));
+  }
+
+  /** A broken, uninterruptible stripe must fail the test, not hang ExecutorService.close(). */
+  private record BoundedExecutor(ExecutorService delegate) implements AutoCloseable {
+    <T> Future<T> submit(Callable<T> task) {
+      return delegate.submit(task);
+    }
+
+    Future<?> submit(Runnable task) {
+      return delegate.submit(task);
+    }
+
+    @Override
+    public void close() {
+      delegate.shutdownNow();
+      try {
+        assertThat(delegate.awaitTermination(2, TimeUnit.SECONDS))
+            .as("Owned concurrency workers must terminate within the cleanup deadline")
+            .isTrue();
+      } catch (InterruptedException failure) {
+        Thread.currentThread().interrupt();
+        throw new AssertionError("Interrupted while stopping owned concurrency workers", failure);
+      }
+    }
   }
 
   private static String distinctStripeSubject(String first) {

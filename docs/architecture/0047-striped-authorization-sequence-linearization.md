@@ -5,7 +5,7 @@
 
 ## Decision
 
-Replace the process-wide `synchronized execute(...)` monitor in `SecureExecutionService`
+Replace the instance-wide `synchronized execute(...)` monitor in `SecureExecutionService`
 with per-principal `ReentrantLock` striping (`StripedMonitors`, default 64 stripes,
 power-of-two bounded). Striping is keyed strictly by principal identity
 (`organizationId + "\u0000" + subject.id`), exactly matching
@@ -18,11 +18,13 @@ The trusted authorization timestamp (`clock.instant()`) is captured strictly
 **inside** the stripe lock window, after acquiring the principal stripe and before
 querying sequence history (`contextFor`), capturing the active policy snapshot,
 evaluating policy, performing reviewed sanitization/re-evaluation, and recording
-the authorized proposal. This linearizes the observation timestamp with the
-principal's recorded sequence history: a read committed before a send authorization
-acquires its stripe is guaranteed to have a timestamp earlier than or equal to the
-send's authorization timestamp, preventing future-observation exclusion and
-preserving sequence signals (`SYNTHETIC_PII_READ_THEN_EXTERNAL_SEND`).
+the authorized proposal. Clock sampling now follows the same per-instance
+authorization order as sequence observation and recording, removing the race where
+a caller sampled time before waiting for its stripe. With a non-decreasing trusted
+clock, a read recorded before a send authorization acquires its stripe cannot look
+like a future observation solely because the send sampled time before lock admission.
+The sequence signal (`SYNTHETIC_PII_READ_THEN_EXTERNAL_SEND`) is then preserved within
+the configured history window.
 
 A single active policy version snapshot (`policySupplier.get()`) is held throughout
 both evaluations if reviewed sanitization occurs. Exact-action binding, single-use
@@ -57,6 +59,12 @@ The lock ordering is:
   bound or per-tenant fairness guarantee.
 - Fixed lock ordering covers service-owned authorization steps; it is not a proof
   of universal deadlock freedom across arbitrary external callbacks.
+- A lock does not make a wall clock monotonic. Trusted-clock rollback detection or
+  fail-closed handling is not added here; existing future-observation validation
+  remains unchanged. The bounded tests use controlled, non-decreasing clocks.
+- Stripes belong to one `SecureExecutionService` instance. Multiple instances
+  sharing history do not acquire a shared authorization lock; this is not a
+  multi-instance or distributed sequence transaction.
 - Principal-history records in `ActionSequenceStore` track authorized proposals,
   not confirmed target execution effects. Target execution occurs after stripe
   release.
@@ -64,7 +72,7 @@ The lock ordering is:
   automatically accelerate `HumanApprovalService` or the durable browser/MCP
   approval composition.
 - Target-overlap tests prove that distinct principals no longer serialize on a
-  global process monitor; they do not establish p95/throughput claims (e.g. 500 QPS),
+  whole-execute instance monitor; they do not establish p95/throughput claims (e.g. 500 QPS),
   distributed multi-node safety, or production readiness.
 
 ## Verification
@@ -79,6 +87,11 @@ The lock ordering is:
     fails closed with zero target effects, and subsequent actions for the SAME
     principal from a DIFFERENT thread succeed.
   - Sanitizer failure lock release and recovery call.
+  - Fault recovery explicitly checks that the second call runs on a different
+    thread. Owned test executors interrupt on cleanup and wait at most two seconds;
+    daemon test workers cannot pin the test JVM if a deliberately leaked,
+    uninterruptible stripe prevents termination. Such cleanup fails the test rather
+    than silently succeeding or waiting indefinitely.
   - Cross-tool read and send actions for the same principal share the same stripe lock.
   - Hash collisions over-serialize safely without splitting principal windows.
   - Concurrent rapid-read gate, racing identical events, evidence hash-chain validity,
@@ -91,3 +104,9 @@ The lock ordering is:
     `not_executed`, verifying zero enforcer calls on rejection.
   - Capacity release on `TargetExecutionException` and unexpected `RuntimeException`.
   - Constructor bound validation (bounds 1 to 1,024).
+
+Independent review sensitivity controls temporarily restore the stale pre-lock
+clock placement and omit stripe release in an owned checkout. The timestamp tests
+must reject the first control, and the lock-release test must fail nonzero within
+its request and cleanup deadlines for the second. Controls are restored before
+qualification and are never committed as runtime behavior.

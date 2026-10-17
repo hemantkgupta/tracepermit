@@ -9,7 +9,7 @@ Status values: **Implemented**, **Partial**, **Target**, or **Proposed**.
 
 Requirements: FR-005/006/009; SEC-002/005/006/009/010; REL-001/004/009; OPS-002.
 
-Java `SecureExecutionService` replaces its process-wide monitor with per-principal
+Java `SecureExecutionService` replaces its instance-wide execute monitor with per-principal
 `ReentrantLock` striping (`StripedMonitors`, default 64 stripes), keyed strictly
 by `organizationId + "\u0000" + subject.id` to match the sequence store's conflict
 domain. Trusted timestamp capture (`clock.instant()`) is placed strictly _inside_ the
@@ -25,12 +25,16 @@ and test-only baseline-allow policies, serialized send-before-read ordering, ser
 lock release under `contextFor`, `record`, and sanitizer faults from distinct threads,
 cross-tool principal lock alignment, safe hash collision over-serialization, racing
 idempotency, distinct-principal target overlap, capacity release on exceptions, and
-constructor bounds. See [ADR 0047](../architecture/0047-striped-authorization-sequence-linearization.md)
+constructor bounds. Fault-recovery tests explicitly assert distinct worker threads
+and use bounded executor cleanup that fails on non-termination. See
+[ADR 0047](../architecture/0047-striped-authorization-sequence-linearization.md)
 and [interface contracts](08-interface-contracts.md).
 
 This is bounded simulator-path concurrency and admission control, not process-wide
 ingress rate limiting, per-tenant fair queuing, an end-to-end throughput SLO,
-or production certification. No whole-ID requirement is upgraded to production-qualified.
+or production certification. Clock rollback and multi-instance shared-history
+serialization are not qualified by this slice. No whole-ID requirement is upgraded
+to production-qualified.
 
 ## Authenticated approval-history collection
 
