@@ -100,7 +100,9 @@ and model-driven rehearsal are separate from protocol tests.
   explicitly initializes an empty database, and normal run never migrates or
   repairs state. `--recovery-status` and owner-only `--quarantine-db` add
   [one-way declared containment](docs/runbooks/operator-recovery-quarantine.md),
-  not automatic rollback detection or effectful resume. It is not enabled by the demo
+  not automatic rollback detection or effectful resume. Owner-only `--recovery-inspect` provides a
+  [read-only aggregate snapshot](docs/runbooks/operator-recovery-inspection.md)
+  without target lookup, authority change or a safe-resume verdict. This operator profile is not enabled by the demo
   launchers. Optional browser configuration adds same-origin OIDC sign-in and
   a role-scoped React inbox; tokens stay in Java session memory. Try the
   test-classpath-only synthetic profile with `pnpm demo:approvals:browser`.
