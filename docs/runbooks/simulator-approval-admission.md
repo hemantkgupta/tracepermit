@@ -104,10 +104,10 @@ probes, corrected ordering and bounds documentation):
   0 skipped, 0 failures, 0 errors.
 - Full battery (`pnpm check`, which runs `gradlew -p java checkAll` across all
   modules plus the console build, on the reconciled head): `BUILD SUCCESSFUL`
-  — the `adapters-http` module totals 236 tests, 0 skipped, 0 failures,
-  0 errors, including the pre-existing `ApprovalLatencyMeasurementsTest`
-  qualification (concurrency up to 20 over the default capacity) and the full
-  server/browser/MCP suites.
+  — the `adapters-http` module totals 232 tests across 18 suites, 0 skipped,
+  0 failures, 0 errors, including the pre-existing
+  `ApprovalLatencyMeasurementsTest` qualification (concurrency up to 20 over
+  the default capacity) and the full server/browser/MCP suites.
 - `pnpm format:check`, `pnpm docs:links`, `pnpm docs:flows:check`, and
   `git diff --check` all clean.
 
