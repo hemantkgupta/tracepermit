@@ -5,6 +5,26 @@
 
 Status values: **Implemented**, **Partial**, **Target**, or **Proposed**.
 
+## Bounded post-dispatch completion uncertainty
+
+Requirements: FR-010/015; SEC-006/010/019; REL-001/002/004/005/008/009; OPS-004.
+
+Both durable execution services share `DurableOutcomeRecorder`: after a completion
+exception, one additional same-tenant/attempt `unknown` operation may atomically
+record uncertainty, evidence/outbox and a lookup-only queue entry. Existing
+PostgreSQL executing-only transitions reject overwriting committed succeeded,
+failed or unknown outcomes. The original call still reports
+`DURABLE_STATE_UNAVAILABLE_AFTER_DISPATCH`; no target retry or new authority is
+created. `DurableOutcomeRecorderTest`, existing service regressions and real
+`PostgresCompletionFailureRecoveryTest` cover rollback versus lost commit
+acknowledgement, permanent outage, approval consumption, exact counts, replay,
+evidence and lookup-only resolution. See [ADR 0048](../architecture/0048-bounded-durable-completion-uncertainty.md).
+
+This repairs the recoverable completion-write gap, not process-crash recovery,
+abandoned-executing sweeping, database rollback fencing, automatic worker
+scheduling, pool/ingress bounds or a wall-clock SLO. Broad requirements remain
+partial where those gates apply.
+
 ## Striped authorization concurrency, trusted clock placement, and admission bounds
 
 Requirements: FR-005/006/009; SEC-002/005/006/009/010; REL-001/004/009; OPS-002.

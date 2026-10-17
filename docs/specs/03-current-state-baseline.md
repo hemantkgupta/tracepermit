@@ -162,6 +162,20 @@ numeric narrowing; 26 delivered boundary tests and five independent regressions
 cover that fix. Malformed raw arguments still require trusted-adapter validation.
 No broad requirement or production claim is upgraded by these qualifications.
 
+## Post-dispatch completion uncertainty
+
+Direct durable execution and authenticated approval execution now make one
+additional same-attempt unknown recording if outcome completion throws. If that
+write commits, its evidence/outbox and lookup queue are atomic; a previously
+committed succeeded/failed/unknown outcome cannot be overwritten. The original
+call remains uncertain and never retries the target. Real PostgreSQL fault tests
+distinguish rollback from lost commit acknowledgement in both services. See
+[the runbook](../runbooks/durable-completion-uncertainty.md).
+
+A persistent outage or process crash may still leave executing state. There is
+no new automatic sweeper, installed worker, recovery quarantine or rollback fence;
+the extra write count is not a new request-latency guarantee.
+
 ## Database restore boundary
 
 Same-version simulator tests preserve captured consumed approval/permit,
