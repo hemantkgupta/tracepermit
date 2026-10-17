@@ -270,6 +270,11 @@
       "code": "SECURITY_DEPENDENCY_UNAVAILABLE",
       "httpStatus": 503,
       "executionStatus": "not_executed"
+    },
+    {
+      "code": "ENFORCEMENT_CAPACITY_EXCEEDED",
+      "httpStatus": 200,
+      "executionStatus": "not_executed"
     }
   ]
 }

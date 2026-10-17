@@ -26,6 +26,7 @@ import java.util.HexFormat;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.Semaphore;
 import java.util.function.Supplier;
 import java.util.regex.Pattern;
 
@@ -44,6 +45,7 @@ public final class EnforcingMcpDispatcher implements RemoteMcpDispatcher {
   private static final Set<String> LOG_GROUPS = Set.of("/app/prod", "/app/staging");
   private static final Set<String> REGIONS = Set.of("us-east-1", "us-west-2");
   private static final Pattern INSTANCE_ID = Pattern.compile("^i-simulated-[a-z0-9-]{1,32}$");
+  static final int DEFAULT_ENFORCEMENT_CAPACITY = 64;
 
   private final HandshakeOnlyMcpDispatcher foundation = new HandshakeOnlyMcpDispatcher();
   private final TenantActionEnforcer enforcer;
@@ -53,6 +55,7 @@ public final class EnforcingMcpDispatcher implements RemoteMcpDispatcher {
   private final McpOutcomeObserver outcomeObserver;
   private final boolean hostedClientOAuthMetadata;
   private final McpToolRegistry toolRegistry;
+  private final Semaphore enforcementCapacity;
 
   public EnforcingMcpDispatcher(
       ActionEnforcer enforcer,
@@ -154,6 +157,33 @@ public final class EnforcingMcpDispatcher implements RemoteMcpDispatcher {
       McpOutcomeObserver outcomeObserver,
       boolean hostedClientOAuthMetadata,
       McpToolRegistry toolRegistry) {
+    this(
+        enforcer,
+        clock,
+        createEventId,
+        createTraceId,
+        outcomeObserver,
+        hostedClientOAuthMetadata,
+        toolRegistry,
+        DEFAULT_ENFORCEMENT_CAPACITY);
+  }
+
+  /**
+   * Full construction with an explicit bound on concurrently executing enforcement
+   * attempts. The bound is admission control, not a throughput target or per-tenant
+   * fairness guarantee: tryAcquire is non-blocking admission, and saturated capacity
+   * fails closed immediately without queueing. Admitted calls can still wait on
+   * downstream principal stripes, sequence stores, execution ledgers, or target locks.
+   */
+  public EnforcingMcpDispatcher(
+      TenantActionEnforcer enforcer,
+      Clock clock,
+      Supplier<String> createEventId,
+      Supplier<String> createTraceId,
+      McpOutcomeObserver outcomeObserver,
+      boolean hostedClientOAuthMetadata,
+      McpToolRegistry toolRegistry,
+      int enforcementConcurrency) {
     this.enforcer = Objects.requireNonNull(enforcer);
     this.clock = Objects.requireNonNull(clock);
     this.createEventId = Objects.requireNonNull(createEventId);
@@ -161,6 +191,10 @@ public final class EnforcingMcpDispatcher implements RemoteMcpDispatcher {
     this.outcomeObserver = Objects.requireNonNull(outcomeObserver);
     this.hostedClientOAuthMetadata = hostedClientOAuthMetadata;
     this.toolRegistry = Objects.requireNonNull(toolRegistry).snapshot();
+    if (enforcementConcurrency < 1 || enforcementConcurrency > 1_024) {
+      throw new IllegalArgumentException("Enforcement concurrency is outside its safe bound.");
+    }
+    this.enforcementCapacity = new Semaphore(enforcementConcurrency);
   }
 
   public McpToolRegistry toolRegistry() {
@@ -285,6 +319,22 @@ public final class EnforcingMcpDispatcher implements RemoteMcpDispatcher {
           id, -32603, "INVALID_ACTION", "The remote action could not be normalized safely.");
     }
 
+    if (!enforcementCapacity.tryAcquire()) {
+      return failedToolResult(
+          id,
+          "ENFORCEMENT_CAPACITY_EXCEEDED",
+          "The action was not executed; enforcement capacity is saturated.",
+          "not_executed");
+    }
+    try {
+      return enforce(id, connector, event);
+    } finally {
+      enforcementCapacity.release();
+    }
+  }
+
+  private RemoteMcpResponse enforce(
+      JsonNode id, AuthenticatedConnector connector, JsonNode event) {
     try {
       TrustedTenantContext tenant =
           new TrustedTenantContext(new TenantPartition(connector.organizationId()));
