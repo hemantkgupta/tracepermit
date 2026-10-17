@@ -11,16 +11,16 @@ tests; the [scenario index](../demo-scenarios/README.md) has independent present
 
 ## Current proof levels
 
-| Flow             | Existing evidence                                                                                                                                                | Next manual gate                                                                                 |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| 1–2: read/block  | Deterministic adapter/executor tests; prior CLI and hosted-client simulator qualification                                                                        | Refresh the chosen client proof on the final demo revision                                       |
-| 3: approval      | Native protocol proof plus Codex 0.162.1/`gpt-5.6-sol` model-selected request/resume, browser review, replay, expiry and explicit-denial rejection on 2026-10-15 | Named local approval cases complete; native source-attested connector is a separate gate         |
-| 4: sanitization  | Signed-workload fixture/application tests; dated automated Gate C refresh                                                                                        | Optional operator narration; no new model-driven proof implied                                   |
-| 5: sequence deny | Synthetic bulk-read/external-send fixture/tests; dated automated Gate C refresh                                                                                  | Optional operator narration of baseline and sequence-specific denies                             |
-| 6: endpoint      | Named native Codex 0.162.1/`gpt-5.6-sol` model read/block correlated with Java events; separate verifier/connector tests                                         | Retain exact observed process-fact evidence and distinguish remaining source-negative rehearsals |
-| 7: hosted OAuth  | One dated Auth0 + unmodified ChatGPT + private-tunnel composition                                                                                                | Reconnect/rehearse only that configured profile; collect fresh evidence if used                  |
-| 8: delegation    | Signed narrow-chain fixture plus four amplification rejects; dated automated Gate C refresh                                                                      | Optional operator narration; fixture signers are not real sub-agents                             |
-| 9: uncertainty   | Approval lost-completion/restart test plus separate unknown-queue worker tests                                                                                   | Test-guided explanation; no live automatic recovery daemon is qualified                          |
+| Flow             | Existing evidence                                                                                                                                                | Next manual gate                                                                           |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| 1–2: read/block  | Deterministic adapter/executor tests; prior CLI and hosted-client simulator qualification                                                                        | Refresh the chosen client proof on the final demo revision                                 |
+| 3: approval      | Native protocol proof plus Codex 0.162.1/`gpt-5.6-sol` model-selected request/resume, browser review, replay, expiry and explicit-denial rejection on 2026-10-15 | Named local approval cases complete; native source-attested connector is a separate gate   |
+| 4: sanitization  | Signed-workload fixture/application tests; dated automated Gate C refresh                                                                                        | Optional operator narration; no new model-driven proof implied                             |
+| 5: sequence deny | Synthetic bulk-read/external-send fixture/tests; dated automated Gate C refresh                                                                                  | Optional operator narration of baseline and sequence-specific denies                       |
+| 6: endpoint      | Named native read/block; a separate 2026-10-16 bounded read retains actual native process facts and one matching new server event                                | Remaining native source-negative rehearsals and independently measured invocation evidence |
+| 7: hosted OAuth  | One dated Auth0 + unmodified ChatGPT + private-tunnel composition                                                                                                | Reconnect/rehearse only that configured profile; collect fresh evidence if used            |
+| 8: delegation    | Signed narrow-chain fixture plus four amplification rejects; dated automated Gate C refresh                                                                      | Optional operator narration; fixture signers are not real sub-agents                       |
+| 9: uncertainty   | Approval lost-completion/restart test plus separate unknown-queue worker tests                                                                                   | Test-guided explanation; no live automatic recovery daemon is qualified                    |
 
 Historical records: [hosted/semantic qualification](../demo-scenarios/QUALIFICATION-EVIDENCE-2026-10-11.md)
 and [native Codex approval qualification](../demo-scenarios/evidence/codex-durable-approval-2026-10-15.md).
@@ -80,17 +80,26 @@ correlated with `succeeded` and `not_executed` action-feed events. An earlier
 explicit Java forwarding, resolved native executable and a fresh synthetic token.
 Its isolated launcher tests are not additional model-selection evidence.
 
-**Gate B remains partial:** no full executable-hash/start-time transcript or
-independent live dispatch counter was retained for these model calls.
+The earlier pair retained no full process-fact transcript. The separate
+[2026-10-16 positive capture record](../demo-scenarios/evidence/native-endpoint-observation-2026-10-16.md)
+now retains actual executable hash/start time/terminal facts for one native
+bounded read at merged PR #23 revision `84b559d`. The MCP result and one new
+CLI event agree on `allow / BOUNDED_LOG_READ`, `executed / succeeded`, simulated.
+Its clean pinned worktree keeps concurrent policy development outside the proof.
+
+**Gate B remains partial:** native source-proof negatives and independent live
+invocation-count evidence were not added by that positive read. The public event
+projection exposes no request/executable hash; cross-source correlation uses
+the single call and recorded timing, not an independent server hash match.
 
 The opt-in [process-observation rehearsal](native-endpoint-observation-rehearsal.md)
 now supplies a private Java capture path and a four-case HTTP rejection/counter
 test. Capture is disabled by default and records stability-before-forwarding,
-not verifier acceptance. No new native/model rehearsal is claimed by adding it;
-the historical record and the remaining gate stay partial.
+not verifier acceptance. The preparation code/tests alone are not native proof;
+the dated positive record above is a separately observed model/client call.
 
-Capture actual parent executable/start-time/hash facts and verifier outcomes,
-then exercise missing, changed-request, wrong-credential and replayed proof
+Keep the retained positive facts and separately exercise missing,
+changed-request, wrong-credential and replayed proof
 rejections. A harness parent is not proof of native-client identity. No production
 device enrollment, protected key custody or host-wide egress claim follows from
 this test.
