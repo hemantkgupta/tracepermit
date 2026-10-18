@@ -13,6 +13,11 @@ simulators.
 
 ## Run today
 
+For a second laptop, start with the [fresh MacBook checklist](/guide/fresh-macbook-evaluation).
+Path A is a source-based synthetic browser evaluation; Path B uses the packaged
+operator application and requires separate provider/database configuration. They
+are not interchangeable qualification profiles.
+
 Follow the [local POC quickstart](/guide/getting-started). The default
 composition uses ephemeral in-process development keys and state. A separate
 opt-in PostgreSQL-backed profile demonstrates selected durable enforcement
@@ -27,6 +32,43 @@ pnpm site:build
 
 The generated static files are under `site/.vitepress/dist/`. Hosting those
 files on `tracepermit.org` does not expose or deploy the Java gateway.
+
+## Buildable source-free approval application
+
+The separate archive bundles Java libraries and the built React approval inbox.
+The runtime host does not need Node, pnpm, Gradle or a source checkout, but still
+needs Java 21, dedicated local PostgreSQL, private keys and operator-owned OIDC
+configuration. A build target is not a promise of a published downloadable release.
+Follow the [operator installation runbook](https://github.com/hemantkgupta/tracepermit/blob/main/docs/runbooks/simulator-approval-distribution.md).
+
+| Command              | What it establishes                                               | What it does not establish                                         |
+| -------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `--check`            | Offline configuration, key-pair and asset validity                | Database/IdP readiness or successful login                         |
+| `--init-db`          | Explicit first installation into a fresh empty dedicated schema   | Upgrade, repair or restore safety                                  |
+| `--run`              | Strict existing-state checks and numeric-loopback service startup | Public TLS deployment or universal provider compatibility          |
+| `--recovery-inspect` | Owner-only consistent aggregate stored-state snapshot             | Quiescence, verified target outcomes or safe resume                |
+| `--quarantine-db`    | Owner-declared one-way containment of new durable authority       | Cancellation of committed claims or automatic old-backup detection |
+
+See the [startup sequence](/guide/core-flows#flow-11-check-initialize-and-start-a-local-package)
+and [inspection/quarantine sequence](/guide/core-flows#flow-12-inspect-and-declare-recovery-quarantine).
+There is no quarantine-clear/resume command. Keep effectful services stopped
+independently during recovery; already-committed claims can still finish.
+
+## Bounded local failure controls
+
+The separate approval listener bounds active and pending executor tasks and
+closes boundedly; overflow is a transport refusal, not a promised JSON 503.
+Identity key refresh/DNS work has finite local resources and refuses expired or
+unavailable trust. A completion-write error after dispatch can trigger one bounded
+unknown-outcome recording attempt, never a target retry. These controls have
+targeted automated tests; they are not TCP/byte quotas, distributed abuse state,
+forced dependency cancellation, a graceful drain or a production SLO.
+
+See [what works today](/guide/working-today) and the public
+[admission](https://github.com/hemantkgupta/tracepermit/blob/main/docs/runbooks/simulator-approval-admission.md),
+[identity refresh](https://github.com/hemantkgupta/tracepermit/blob/main/docs/runbooks/jwks-refresh-isolation.md)
+and [recovery](https://github.com/hemantkgupta/tracepermit/blob/main/docs/runbooks/operator-recovery-quarantine.md)
+runbooks for their exact boundaries.
 
 ## Target production composition (not shipped)
 
