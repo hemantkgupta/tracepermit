@@ -260,6 +260,12 @@ Before any real AWS or Jira credential is introduced:
 9. Threat model and abuse tests are reviewed for the exact adapter.
 10. A non-production target and rollback/kill switch are validated first.
 
+[ADR 0056](../architecture/0056-enterprise-credentials-and-egress-boundary.md)
+is a **proposed**, unqualified decomposition of credential custody and egress
+gates (SEC-007/008; OPS-005). It distinguishes provider credentials from
+TracePermit permits, requires deployment-specific bypass probes, and does not
+promote simulator or connector checks into proof of host-wide containment.
+
 ## 8. Security testing expectations
 
 The optional browser approval profile adds login-CSRF/code-injection, token
