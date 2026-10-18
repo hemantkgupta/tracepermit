@@ -5,20 +5,27 @@ description: Independent parent-process and device verification for CLI agents.
 
 # Endpoint Source Attestation
 
-Most API gateways and proxies authenticate requests solely based on an HTTP header (such as a Bearer token or an `X-User-ID` header).
+For prerequisites, current capabilities and the two-terminal Codex setup, start
+with [Endpoint connector for Codex](/guide/endpoint-connector). This page explains
+the source-proof mechanism; it is not a remote-backend installation guide.
 
-However, in an agentic environment, an attacker running malicious code inside a container or script can easily forge HTTP headers or reuse leaked tokens.
-
-TracePermit introduces **Independent Endpoint Source Attestation**.
+A verified bearer credential identifies an authenticated request context; it
+does not by itself identify which local executable proposed the request.
+Caller-supplied labels such as `X-User-ID` cannot fill that gap without a
+trusted verification path. TracePermit adds **request-bound endpoint source
+attestation**, verified separately by the gateway at development assurance.
 
 ---
 
 ## How It Works
 
-Before any Model Context Protocol (`tools/call`) frame leaves a developer's workstation or CI runner, the **Java Endpoint Connector** independently probes the local OS runtime:
+For requests routed through its configured stdio server, the **Java Endpoint
+Connector** probes the local OS runtime before forwarding to the numeric-loopback
+gateway. It does not intercept every request leaving a workstation or CI runner.
+The named native-client qualification is Codex on macOS, not Cursor or generic CI:
 
 ```
-[ Developer Terminal / Cursor ]
+[ Native Codex CLI on macOS ]
                │ (Invokes MCP tool via stdio)
                ▼
 ┌──────────────────────────────────────────────┐
@@ -49,7 +56,9 @@ measured assurance level:
 
 - **The Observed Executable:** Name, path, and fingerprint of the observed
   process. A hash alone does not prove vendor signing or genuine app identity.
-- **Environment Assurance:** Whether the command was executed in an interactive developer terminal or an unattended automated loop.
+- **Terminal Evidence:** Measured terminal attachment. Absence of a terminal
+  leaves trigger mode unknown; it does not prove a scheduled job. Attachment
+  does not prove that a human chose or approved the action.
 - **Device Identity:** A configured development device/key trust tuple. The
   POC does not include managed hardware-backed enrollment.
 
