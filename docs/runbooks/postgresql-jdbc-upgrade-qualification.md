@@ -162,7 +162,7 @@ Initial qualification was executed on **2026-10-17** against base `7ce8afe9df0b1
 
 ### Reconciled Current-Main Qualification Run (2026-10-18)
 
-Following the merge of PR #47 (bounded simulator approval admission) into `origin/main` at commit `366d0c643c33a9d8f79a19760328ce39312f8d8d`, the branch was freshly reconciled by merging `origin/main` normally.
+Following the merge of PR #47 (bounded simulator approval admission) and PR #50 (bounded local replay stores) into `origin/main` at commit `cb77a264a66a1a4c9ffbc452e6462744dc92ad73`, the branch was cleanly reconciled by merging `origin/main` normally.
 
 Forced test reruns were executed on **2026-10-18** against real disposable PostgreSQL 16.4 container fixtures (`postgres:16.4-alpine`):
 
@@ -172,35 +172,35 @@ Command: `scripts/run-java-postgres-tests.sh --rerun`
 
 | Test Suite Class                                       | Tests Run | Failures | Errors | Skipped | Test Execution Time |
 | :----------------------------------------------------- | :-------: | :------: | :----: | :-----: | :-----------------: |
-| `PostgresApprovalHistoryTest`                          |     1     |    0     |   0    |    0    |        2.63s        |
-| `PostgresBackupRestoreQualificationTest`               |     6     |    0     |   0    |    0    |        8.35s        |
-| `PostgresCompletionFailureRecoveryTest`                |    14     |    0     |   0    |    0    |        4.44s        |
-| `PostgresDatabaseLifecycleTest`                        |    31     |    0     |   0    |    0    |        9.41s        |
-| `PostgresDurableEnforcementStateTest`                  |    25     |    0     |   0    |    0    |        8.71s        |
-| `PostgresPermitConsumptionBoundaryTest`                |    12     |    0     |   0    |    0    |        2.01s        |
-| `PostgresPermitConsumptionStoreTest`                   |    10     |    0     |   0    |    0    |        2.06s        |
-| `PostgresPolicyBoundApprovalTest`                      |     8     |    0     |   0    |    0    |        2.86s        |
-| `PostgresPolicyBoundRestoreQualificationTest`          |     5     |    0     |   0    |    0    |        9.91s        |
-| `PostgresPolicyGenerationBoundaryTest`                 |     8     |    0     |   0    |    0    |        3.84s        |
-| `PostgresPolicyLifecycleBoundaryTest`                  |    16     |    0     |   0    |    0    |        4.94s        |
-| `PostgresPolicyLifecycleStoreTest`                     |    12     |    0     |   0    |    0    |        2.81s        |
-| `PostgresRecoveryInspectionTest`                       |    15     |    0     |   0    |    0    |        9.48s        |
-| `PostgresRecoveryQuarantineTest`                       |    24     |    0     |   0    |    0    |       20.20s        |
-| **Subtotal `:persistence-postgres` (Real PostgreSQL)** |  **187**  |  **0**   | **0**  |  **0**  |     **~1m 32s**     |
+| `PostgresApprovalHistoryTest`                          |     1     |    0     |   0    |    0    |        1.97s        |
+| `PostgresBackupRestoreQualificationTest`               |     6     |    0     |   0    |    0    |        7.03s        |
+| `PostgresCompletionFailureRecoveryTest`                |    14     |    0     |   0    |    0    |        5.60s        |
+| `PostgresDatabaseLifecycleTest`                        |    31     |    0     |   0    |    0    |        9.47s        |
+| `PostgresDurableEnforcementStateTest`                  |    25     |    0     |   0    |    0    |       11.99s        |
+| `PostgresPermitConsumptionBoundaryTest`                |    12     |    0     |   0    |    0    |        2.53s        |
+| `PostgresPermitConsumptionStoreTest`                   |    10     |    0     |   0    |    0    |        2.30s        |
+| `PostgresPolicyBoundApprovalTest`                      |     8     |    0     |   0    |    0    |        3.07s        |
+| `PostgresPolicyBoundRestoreQualificationTest`          |     5     |    0     |   0    |    0    |       14.79s        |
+| `PostgresPolicyGenerationBoundaryTest`                 |     8     |    0     |   0    |    0    |        3.63s        |
+| `PostgresPolicyLifecycleBoundaryTest`                  |    16     |    0     |   0    |    0    |        4.69s        |
+| `PostgresPolicyLifecycleStoreTest`                     |    12     |    0     |   0    |    0    |        2.85s        |
+| `PostgresRecoveryInspectionTest`                       |    15     |    0     |   0    |    0    |       14.13s        |
+| `PostgresRecoveryQuarantineTest`                       |    24     |    0     |   0    |    0    |       21.40s        |
+| **Subtotal `:persistence-postgres` (Real PostgreSQL)** |  **187**  |  **0**   | **0**  |  **0**  |     **~1m 45s**     |
 
 #### 2. Approval HTTP Adapter PostgreSQL-Backed Suites (`:adapters-http`)
 
-Command: `scripts/run-java-approval-api-tests.sh`
+Command: `scripts/run-java-approval-api-tests.sh --rerun`
 
 | Test Suite Class                                | Tests Run | Failures | Errors | Skipped | Test Execution Time | Focus Area                                                                               |
 | :---------------------------------------------- | :-------: | :------: | :----: | :-----: | :-----------------: | :--------------------------------------------------------------------------------------- |
-| `SimulatorApprovalAdmissionTest`                |    10     |    0     |   0    |    0    |       21.51s        | Bounded admission, saturation rejection, and zero database leakage on rejection (PR #47) |
-| `SimulatorApprovalBootstrapTest`                |     8     |    0     |   0    |    0    |       26.48s        | Startup/shutdown lifecycle & PostgreSQL schema verification                              |
-| `SimulatorApprovalBrowserTest`                  |    26     |    0     |   0    |    0    |       18.24s        | Browser HTTP endpoints & approval persistence against PG                                 |
-| `SimulatorApprovalHistoryTest`                  |     3     |    0     |   0    |    0    |        5.76s        | Approval history queries & pagination against PG                                         |
-| `SimulatorApprovalRedactionBoundaryTest`        |     6     |    0     |   0    |    0    |        6.30s        | Decision response redactions against PG approval state                                   |
-| `SimulatorApprovalServerTest`                   |    31     |    0     |   0    |    0    |       14.93s        | Full HTTP approval server endpoints backed by PG                                         |
-| **Subtotal `:adapters-http` (Real PostgreSQL)** |  **84**   |  **0**   | **0**  |  **0**  |     **~1m 33s**     |                                                                                          |
+| `SimulatorApprovalAdmissionTest`                |    10     |    0     |   0    |    0    |       23.58s        | Bounded admission, saturation rejection, and zero database leakage on rejection (PR #47) |
+| `SimulatorApprovalBootstrapTest`                |     8     |    0     |   0    |    0    |       25.97s        | Startup/shutdown lifecycle & PostgreSQL schema verification                              |
+| `SimulatorApprovalBrowserTest`                  |    26     |    0     |   0    |    0    |       21.68s        | Browser HTTP endpoints & approval persistence against PG                                 |
+| `SimulatorApprovalHistoryTest`                  |     3     |    0     |   0    |    0    |        7.06s        | Approval history queries & pagination against PG                                         |
+| `SimulatorApprovalRedactionBoundaryTest`        |     6     |    0     |   0    |    0    |        6.40s        | Decision response redactions against PG approval state                                   |
+| `SimulatorApprovalServerTest`                   |    31     |    0     |   0    |    0    |       20.10s        | Full HTTP approval server endpoints backed by PG                                         |
+| **Subtotal `:adapters-http` (Real PostgreSQL)** |  **84**   |  **0**   | **0**  |  **0**  |     **~1m 45s**     |                                                                                          |
 
 **Total Real PostgreSQL Integration Tests (Reconciled Main)**: **271 distinct test cases** (187 persistence + 84 approval adapter), **0 failures**, **0 errors**, **0 skipped**.
 
@@ -229,7 +229,7 @@ Executed via local tooling and automated CI:
 
 - `pnpm check`: Passed (4 console Vitest test files / 41 tests passed; portable Java 21 environment confirmed; `gradlew check` passed across all Java subprojects).
 - `pnpm format:check`: Passed (Prettier formatting clean).
-- `pnpm docs:links`: Passed (523 Markdown links verified; all local targets exist).
+- `pnpm docs:links`: Passed (544 Markdown links verified; all local targets exist).
 - `pnpm docs:flows:check`: Passed (8 diagram tests passed; documentation guides synchronized).
 - `git diff --check`: Passed (no trailing whitespace or conflict markers).
 
