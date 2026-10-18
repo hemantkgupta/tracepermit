@@ -5,7 +5,10 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Locale;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.FutureTask;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 public final class MacOsDevelopmentProcessObserver implements ProcessObserver {
   private static final int MAX_TTY_OUTPUT = 256;
@@ -35,27 +38,46 @@ public final class MacOsDevelopmentProcessObserver implements ProcessObserver {
   }
 
   static boolean hasTty(long processId) {
-    Process process = null;
     try {
-      process = terminalProbeCommand(processId).start();
-      byte[] output;
+      return terminalResult(terminalProbeCommand(processId).start(), Duration.ofSeconds(2));
+    } catch (IOException exception) {
+      throw unavailable(exception);
+    }
+  }
+
+  static boolean terminalResult(Process process, Duration timeout) {
+    long started = System.nanoTime();
+    FutureTask<byte[]> outputRead = new FutureTask<>(() -> {
       try (InputStream input = process.getInputStream()) {
-        output = input.readNBytes(MAX_TTY_OUTPUT + 1);
+        return input.readNBytes(MAX_TTY_OUTPUT + 1);
       }
+    });
+    Thread reader = Thread.ofVirtual().name("tracepermit-terminal-probe").start(outputRead);
+    try {
+      byte[] output = outputRead.get(remaining(started, timeout), TimeUnit.NANOSECONDS);
       if (output.length > MAX_TTY_OUTPUT
-          || !process.waitFor(Duration.ofSeconds(2).toMillis(), TimeUnit.MILLISECONDS)
+          || !process.waitFor(remaining(started, timeout), TimeUnit.NANOSECONDS)
           || process.exitValue() != 0) {
         throw unavailable(null);
       }
+      remaining(started, timeout);
       return ttyOutputIsInteractive(new String(output, StandardCharsets.UTF_8));
-    } catch (IOException exception) {
+    } catch (ExecutionException | TimeoutException exception) {
       throw unavailable(exception);
     } catch (InterruptedException exception) {
       Thread.currentThread().interrupt();
       throw unavailable(exception);
     } finally {
-      if (process != null && process.isAlive()) process.destroyForcibly();
+      if (process.isAlive()) process.destroyForcibly();
+      outputRead.cancel(true);
+      reader.interrupt();
     }
+  }
+
+  private static long remaining(long started, Duration timeout) throws TimeoutException {
+    long remaining = timeout.toNanos() - (System.nanoTime() - started);
+    if (remaining <= 0) throw new TimeoutException();
+    return remaining;
   }
 
   static ProcessBuilder terminalProbeCommand(long processId) {
