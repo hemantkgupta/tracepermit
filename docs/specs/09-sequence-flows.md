@@ -431,6 +431,20 @@ sequenceDiagram
   E-->>R1: result
 ```
 
+### Process-local capacity refusal
+
+The in-memory source/workload replay and permit-consumption stores serialize
+bounded expiry reclamation, duplicate/capacity checks and insertion. At full
+retained capacity without reclaimable space, a fresh claim is refused via the
+existing replay code, before returning verified identity or a consumed permit.
+No live record is replaced. A duplicate whose expired record remains behind
+the per-call budget is also refused until its own record is reclaimed; fresh
+keys can use reclaimed slots earlier. Defaults are 65,536 retained entries and
+64 removals. This is process-local state, not the PostgreSQL transaction shown
+above or a distributed/restart guarantee. The focused integration tests use a
+verification/consumption-then-test-callback harness, not an actual application
+dispatch route. See [ADR 0054](../architecture/0054-bounded-local-replay-stores.md).
+
 ## 7. Crash and reconciliation
 
 The durable Java simulator services implement claims, attempts, transitions,
