@@ -162,7 +162,7 @@ Initial qualification was executed on **2026-10-17** against base `7ce8afe9df0b1
 
 ### Reconciled Current-Main Qualification Run (2026-10-18)
 
-Following the merge of PR #47 (bounded simulator approval admission) and PR #50 (bounded local replay stores) into `origin/main` at commit `cb77a264a66a1a4c9ffbc452e6462744dc92ad73`, the branch was cleanly reconciled by merging `origin/main` normally.
+Following the merge of PR #47 (bounded simulator approval admission) and PR #50 (bounded local replay stores) into `origin/main` at commit `cb77a2686d894e29b7c7265303250ad08a0996ec`, the branch was cleanly reconciled by merging `origin/main` normally.
 
 Forced test reruns were executed on **2026-10-18** against real disposable PostgreSQL 16.4 container fixtures (`postgres:16.4-alpine`):
 
@@ -264,7 +264,7 @@ Executed via local tooling and automated CI:
 
 ## 5. Recommendation and Bounded Readiness Statement
 
-In the tested simulator composition—comprising disposable PostgreSQL 16.4 Testcontainers and the fixed-loopback approval launcher—no failures, errors, or behavioral regressions were observed across 261 real PostgreSQL integration tests. The upgrade from `42.7.5` to `42.7.14` incorporates critical upstream security fixes (including parameter padding data leak mitigation CVE-2026-107315 and SCRAM iteration DoS mitigation CVE-2026-42198).
+In the reconciled-main qualification described above—comprising disposable PostgreSQL 16.4 Testcontainers and the fixed-loopback approval launcher—no failures, errors, or behavioral regressions were observed across 271 real PostgreSQL integration tests (187 persistence + 84 approval adapter). The earlier 261-test result is historical evidence from 2026-10-17, not the current-run total. The upgrade from `42.7.5` to `42.7.14` incorporates critical upstream security fixes (including parameter padding data leak mitigation CVE-2026-107315 and SCRAM iteration DoS mitigation CVE-2026-42198).
 
 However, unpatched upstream advisory [GHSA-hcjv-f5jh-r55v](https://github.com/pgjdbc/pgjdbc/security/advisories/GHSA-hcjv-f5jh-r55v) affects pgJDBC `<= 42.7.14` for attacker-influenced TLS certificate paths; while mitigated in TracePermit's simulator launcher by loopback SSL-disabled settings, remote TLS deployments remain **UNQUALIFIED**.
 
