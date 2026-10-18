@@ -9,7 +9,7 @@ aside: false
 The TracePermit endpoint connector is a **Java 21 MCP stdio application** that
 Codex starts on your workstation. It observes the calling process, signs a
 request-bound source proof, and forwards the request to the TracePermit backend.
-The backend—not the connector or model—makes the policy decision before any
+The backend makes the policy decision before any
 simulated effect.
 
 [Requirements](#is-java-the-only-requirement) · [Setup](#1-prepare-the-mac) ·
