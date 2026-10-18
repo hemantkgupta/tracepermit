@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import io.tracepermit.adapters.remote.EnforcingMcpDispatcher;
@@ -30,6 +31,7 @@ import io.tracepermit.security.ExecutionPermitAuthority;
 import io.tracepermit.simulator.StatefulTargetSimulator;
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.net.URI;
 import java.nio.ByteBuffer;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
@@ -38,7 +40,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -79,7 +81,21 @@ public final class SimulatorApprovalServer implements AutoCloseable {
       throw new IllegalArgumentException("The approval foundation must bind to IPv4 loopback.");
     }
     return new SimulatorApprovalServer(address, verifier, memberships, state, policy, permits,
-        simulator, clock, browser);
+        simulator, clock, browser, ApprovalAdmissionExecutors.DEFAULT_ACTIVE_LANES,
+        ApprovalAdmissionExecutors.DEFAULT_PENDING_BOUND);
+  }
+
+  static SimulatorApprovalServer start(
+      InetSocketAddress address, OidcAccessTokenVerifier verifier, ApprovalMemberships memberships,
+      PostgresDurableEnforcementState state, JsonNode policy, ExecutionPermitAuthority permits,
+      StatefulTargetSimulator simulator, Clock clock, int activeLanes, int pendingBound)
+      throws IOException {
+    if (address.getAddress() == null || !"127.0.0.1".equals(address.getAddress().getHostAddress())) {
+      throw new IllegalArgumentException("The approval foundation must bind to IPv4 loopback.");
+    }
+    ApprovalAdmissionExecutors.validate(activeLanes, pendingBound);
+    return new SimulatorApprovalServer(address, verifier, memberships, state, policy, permits,
+        simulator, clock, null, activeLanes, pendingBound);
   }
 
   public static SimulatorApprovalServer start(
@@ -103,13 +119,15 @@ public final class SimulatorApprovalServer implements AutoCloseable {
       throw new IllegalArgumentException("The approval foundation must bind to IPv4 loopback.");
     }
     return new SimulatorApprovalServer(address, verifier, memberships, state, policyStore, workspaceId,
-        policyId, permits, simulator, clock, browser);
+        policyId, permits, simulator, clock, browser, ApprovalAdmissionExecutors.DEFAULT_ACTIVE_LANES,
+        ApprovalAdmissionExecutors.DEFAULT_PENDING_BOUND);
   }
 
   private SimulatorApprovalServer(
       InetSocketAddress address, OidcAccessTokenVerifier verifier, ApprovalMemberships memberships,
       PostgresDurableEnforcementState state, JsonNode policy, ExecutionPermitAuthority permits,
-      StatefulTargetSimulator simulator, Clock clock, ApprovalBrowserAdapter browser) throws IOException {
+      StatefulTargetSimulator simulator, Clock clock, ApprovalBrowserAdapter browser,
+      int activeLanes, int pendingBound) throws IOException {
     this.browser = browser;
     this.verifier = java.util.Objects.requireNonNull(verifier);
     this.memberships = java.util.Objects.requireNonNull(memberships);
@@ -119,8 +137,8 @@ public final class SimulatorApprovalServer implements AutoCloseable {
         simulator, () -> SecurityReadiness.allReady(clock.instant()), clock,
         () -> UUID.randomUUID().toString(), "urn:tracepermit:approval-api:simulator", "simulator", 300);
     this.server = HttpServer.create(address, 32);
-    // Bounded parallelism; this local foundation is not a production abuse-control layer.
-    this.workers = Executors.newFixedThreadPool(8);
+    // Bounded admission; this local foundation is not a public abuse-control layer.
+    this.workers = ApprovalAdmissionExecutors.newDispatchPool(activeLanes, pendingBound);
     server.setExecutor(workers);
     server.createContext("/", this::handle);
     server.start();
@@ -130,7 +148,7 @@ public final class SimulatorApprovalServer implements AutoCloseable {
       InetSocketAddress address, OidcAccessTokenVerifier verifier, ApprovalMemberships memberships,
       PostgresDurableEnforcementState state, PolicyLifecycleStore policyStore, String workspaceId,
       String policyId, ExecutionPermitAuthority permits, StatefulTargetSimulator simulator, Clock clock,
-      ApprovalBrowserAdapter browser) throws IOException {
+      ApprovalBrowserAdapter browser, int activeLanes, int pendingBound) throws IOException {
     this.browser = browser;
     this.verifier = java.util.Objects.requireNonNull(verifier);
     this.memberships = java.util.Objects.requireNonNull(memberships);
@@ -140,8 +158,8 @@ public final class SimulatorApprovalServer implements AutoCloseable {
         permits, state, state, simulator, () -> SecurityReadiness.allReady(clock.instant()), clock,
         () -> UUID.randomUUID().toString(), "urn:tracepermit:approval-api:simulator", "simulator", 300);
     this.server = HttpServer.create(address, 32);
-    // Bounded parallelism; this local foundation is not a production abuse-control layer.
-    this.workers = Executors.newFixedThreadPool(8);
+    // Bounded admission; this local foundation is not a public abuse-control layer.
+    this.workers = ApprovalAdmissionExecutors.newDispatchPool(activeLanes, pendingBound);
     server.setExecutor(workers);
     server.createContext("/", this::handle);
     server.start();
@@ -151,7 +169,16 @@ public final class SimulatorApprovalServer implements AutoCloseable {
 
   @Override public void close() {
     if (closed.compareAndSet(false, true)) {
-      server.stop(0); workers.close();
+      server.stop(0);
+      workers.shutdown();
+      try {
+        if (!workers.awaitTermination(ApprovalAdmissionExecutors.SHUTDOWN_JOIN_SECONDS, TimeUnit.SECONDS)) {
+          workers.shutdownNow();
+        }
+      } catch (InterruptedException interrupted) {
+        workers.shutdownNow();
+        Thread.currentThread().interrupt();
+      }
       if (browser != null) browser.clear();
     }
   }
@@ -165,106 +192,11 @@ public final class SimulatorApprovalServer implements AutoCloseable {
       }
       var uri = exchange.getRequestURI();
       if (uri.isAbsolute() || uri.getRawPath().contains("%")) throw failure(400, "INVALID_REQUEST");
-      if (browser != null && browser.handle(exchange, port())) return;
-      String path = uri.getRawPath();
-      boolean browserRequest = browser != null && (ApprovalBrowserAdapter.API.equals(path)
-          || path.startsWith(ApprovalBrowserAdapter.API + "/"));
-      AuthenticatedConnector connector;
-      if (browserRequest) {
-        connector = browser.authenticate(exchange, port());
-        path = ROOT + path.substring(ApprovalBrowserAdapter.API.length());
-      } else {
-        if (headers.containsKey("Origin") || headers.containsKey("Cookie")) {
-          throw failure(403, "BROWSER_SESSION_NOT_SUPPORTED");
-        }
-        if (headers.getOrDefault("Authorization", java.util.List.of()).size() != 1) {
-          throw failure(401, "INVALID_ACCESS_TOKEN");
-        }
-        connector = verifier.authenticate(headers.getFirst("Authorization"));
-      }
-      // A cnf claim is not proof of possession; this bearer-only local adapter cannot verify it.
-      if (connector.senderConstraint().isPresent()) throw failure(401, "SENDER_PROOF_NOT_SUPPORTED");
-      ApprovalMemberships.Entry member = memberships.resolve(connector);
-      if (uri.getRawQuery() != null
-          && !(ROOT.equals(path) && "GET".equals(exchange.getRequestMethod()))) {
-        throw failure(400, "INVALID_REQUEST");
-      }
-      String method = exchange.getRequestMethod();
-      if ("/mcp".equals(path)) {
-        if (!"POST".equals(method)) throw failure(405, "METHOD_NOT_ALLOWED");
-        if (headers.containsKey("tracepermit-source-attestation")) {
-          throw failure(403, "SOURCE_PROOF_NOT_SUPPORTED");
-        }
-        String version = headers.getFirst("MCP-Protocol-Version");
-        if (headers.getOrDefault("MCP-Protocol-Version", java.util.List.of()).size() > 1
-            || (version != null && !ApprovalMcpAdapter.PROTOCOLS.contains(version))) {
-          throw failure(400, "UNSUPPORTED_MCP_VERSION");
-        }
-        var response = new ApprovalMcpAdapter((name, arguments) -> switch (name) {
-          case ApprovalMcpAdapter.REQUEST -> request(connector, member, arguments, true);
-          case ApprovalMcpAdapter.STATUS -> {
-            require(connector, member, ApprovalMemberships.Role.REQUESTER, "approvals.read");
-            yield projection(owned(member, arguments.path("approvalRequestId").asText()), member);
-          }
-          case ApprovalMcpAdapter.RESUME -> execute(connector, member,
-              arguments.path("approvalRequestId").asText(), arguments, true);
-          default -> throw failure(400, "TOOL_NOT_FOUND");
-        }, mcpTools(connector, member)).dispatch(readBody(exchange));
-        if (response.body() == null) exchange.sendResponseHeaders(response.status(), -1);
-        else send(exchange, response.status(), response.body());
-      } else if (ROOT.equals(path)) {
-        if ("POST".equals(method)) {
-          require(connector, member, ApprovalMemberships.Role.REQUESTER, "approvals.request");
-          JsonNode arguments = body(exchange, Set.of("groupId", "port", "cidr"));
-          send(exchange, 201, request(connector, member, arguments, false));
-        } else if ("GET".equals(method)) {
-          requireRead(connector, member);
-          ObjectNode page = JsonSupport.MAPPER.createObjectNode().put("mode", "simulated");
-          var items = page.putArray("items");
-          String owner = member.roles().equals(Set.of(ApprovalMemberships.Role.REQUESTER))
-              ? member.principalId() : null;
-          var parameters = ApprovalHistoryParameters.parse(uri.getRawQuery(), member.tenant().value(), member.principalId(), owner);
-          var history = state.approvalHistory(member.tenant(), owner, parameters.query());
-          for (var approval : history.items()) {
-            items.add(projection(approval, member));
-          }
-          page.put("pageSize", parameters.query().limit());
-          if (history.hasMore()) page.put("nextCursor", parameters.nextCursor(history.items().getLast()));
-          else page.putNull("nextCursor");
-          send(exchange, 200, page);
-        } else throw failure(405, "METHOD_NOT_ALLOWED");
-      } else if (path.startsWith(ROOT + "/")) {
-        String[] parts = path.substring(ROOT.length() + 1).split("/", -1);
-        if (parts.length > 2 || !parts[0].matches("[a-f0-9-]{36}")) {
-          throw failure(404, "APPROVAL_NOT_FOUND");
-        }
-        if ("GET".equals(method) && parts.length == 1) {
-          requireRead(connector, member);
-          send(exchange, 200, projection(visible(member, parts[0]), member));
-        } else if ("POST".equals(method) && parts.length == 2
-            && "decision".equals(parts[1])) {
-          require(connector, member, ApprovalMemberships.Role.REVIEWER, "approvals.decide");
-          ApprovalRequestState approval = visible(member, parts[0]);
-          JsonNode decision = body(exchange, Set.of("decision", "requestHash"));
-          checkHash(decision, approval);
-          if (!decision.path("decision").isTextual()
-              || !Set.of("approve", "deny").contains(decision.path("decision").asText())) {
-            throw failure(400, "INVALID_REQUEST");
-          }
-          var reviewer = new TrustedReviewerContext(member.tenant(), member.principalId(), "human",
-              true, Set.of(HumanApprovalService.REVIEWER_ROLE),
-              Set.of(HumanApprovalService.REVIEWER_SCOPE), connector.authenticationProfile(),
-              connector.credentialFingerprint().value());
-          var reviewed = approvals.review(reviewer, parts[0], decision.path("decision").asText(),
-              "CHANGE_REVIEWED");
-          send(exchange, 200, projection(reviewed, member));
-        } else if ("POST".equals(method) && parts.length == 2
-            && "execute".equals(parts[1])) {
-          require(connector, member, ApprovalMemberships.Role.REQUESTER, "approvals.execute");
-          send(exchange, 200, execute(connector, member, parts[0],
-              body(exchange, Set.of("requestHash")), false));
-        } else throw failure(405, "METHOD_NOT_ALLOWED");
-      } else throw failure(404, "NOT_FOUND");
+      if (closed.get()) throw failure(503, "SERVER_SHUTDOWN");
+      // Admission happened before this handler runs: the bounded dispatch pool only starts
+      // a lane for an exchange it took from its bounded queue, so authentication, body
+      // parsing, database work, and dispatch all happen inside the accepted capacity.
+      dispatch(exchange, headers, uri);
     } catch (ApprovalBrowserAdapter.BrowserFailure failure) {
       error(exchange, failure.status, failure.code);
     } catch (HttpFailure failure) {
@@ -289,6 +221,109 @@ public final class SimulatorApprovalServer implements AutoCloseable {
     } catch (RuntimeException failure) {
       error(exchange, 503, "SECURITY_STATE_UNAVAILABLE");
     } finally { exchange.close(); }
+  }
+
+  private void dispatch(HttpExchange exchange, Headers headers, URI uri) throws IOException {
+    if (browser != null && browser.handle(exchange, port())) return;
+    String path = uri.getRawPath();
+    boolean browserRequest = browser != null && (ApprovalBrowserAdapter.API.equals(path)
+        || path.startsWith(ApprovalBrowserAdapter.API + "/"));
+    AuthenticatedConnector connector;
+    if (browserRequest) {
+      connector = browser.authenticate(exchange, port());
+      path = ROOT + path.substring(ApprovalBrowserAdapter.API.length());
+    } else {
+      if (headers.containsKey("Origin") || headers.containsKey("Cookie")) {
+        throw failure(403, "BROWSER_SESSION_NOT_SUPPORTED");
+      }
+      if (headers.getOrDefault("Authorization", java.util.List.of()).size() != 1) {
+        throw failure(401, "INVALID_ACCESS_TOKEN");
+      }
+      connector = verifier.authenticate(headers.getFirst("Authorization"));
+    }
+    // A cnf claim is not proof of possession; this bearer-only local adapter cannot verify it.
+    if (connector.senderConstraint().isPresent()) throw failure(401, "SENDER_PROOF_NOT_SUPPORTED");
+    ApprovalMemberships.Entry member = memberships.resolve(connector);
+    if (uri.getRawQuery() != null
+        && !(ROOT.equals(path) && "GET".equals(exchange.getRequestMethod()))) {
+      throw failure(400, "INVALID_REQUEST");
+    }
+    String method = exchange.getRequestMethod();
+    if ("/mcp".equals(path)) {
+      if (!"POST".equals(method)) throw failure(405, "METHOD_NOT_ALLOWED");
+      if (headers.containsKey("tracepermit-source-attestation")) {
+        throw failure(403, "SOURCE_PROOF_NOT_SUPPORTED");
+      }
+      String version = headers.getFirst("MCP-Protocol-Version");
+      if (headers.getOrDefault("MCP-Protocol-Version", java.util.List.of()).size() > 1
+          || (version != null && !ApprovalMcpAdapter.PROTOCOLS.contains(version))) {
+        throw failure(400, "UNSUPPORTED_MCP_VERSION");
+      }
+      var response = new ApprovalMcpAdapter((name, arguments) -> switch (name) {
+        case ApprovalMcpAdapter.REQUEST -> request(connector, member, arguments, true);
+        case ApprovalMcpAdapter.STATUS -> {
+          require(connector, member, ApprovalMemberships.Role.REQUESTER, "approvals.read");
+          yield projection(owned(member, arguments.path("approvalRequestId").asText()), member);
+        }
+        case ApprovalMcpAdapter.RESUME -> execute(connector, member,
+            arguments.path("approvalRequestId").asText(), arguments, true);
+        default -> throw failure(400, "TOOL_NOT_FOUND");
+      }, mcpTools(connector, member)).dispatch(readBody(exchange));
+      if (response.body() == null) exchange.sendResponseHeaders(response.status(), -1);
+      else send(exchange, response.status(), response.body());
+    } else if (ROOT.equals(path)) {
+      if ("POST".equals(method)) {
+        require(connector, member, ApprovalMemberships.Role.REQUESTER, "approvals.request");
+        JsonNode arguments = body(exchange, Set.of("groupId", "port", "cidr"));
+        send(exchange, 201, request(connector, member, arguments, false));
+      } else if ("GET".equals(method)) {
+        requireRead(connector, member);
+        ObjectNode page = JsonSupport.MAPPER.createObjectNode().put("mode", "simulated");
+        var items = page.putArray("items");
+        String owner = member.roles().equals(Set.of(ApprovalMemberships.Role.REQUESTER))
+            ? member.principalId() : null;
+        var parameters = ApprovalHistoryParameters.parse(uri.getRawQuery(), member.tenant().value(), member.principalId(), owner);
+        var history = state.approvalHistory(member.tenant(), owner, parameters.query());
+        for (var approval : history.items()) {
+          items.add(projection(approval, member));
+        }
+        page.put("pageSize", parameters.query().limit());
+        if (history.hasMore()) page.put("nextCursor", parameters.nextCursor(history.items().getLast()));
+        else page.putNull("nextCursor");
+        send(exchange, 200, page);
+      } else throw failure(405, "METHOD_NOT_ALLOWED");
+    } else if (path.startsWith(ROOT + "/")) {
+      String[] parts = path.substring(ROOT.length() + 1).split("/", -1);
+      if (parts.length > 2 || !parts[0].matches("[a-f0-9-]{36}")) {
+        throw failure(404, "APPROVAL_NOT_FOUND");
+      }
+      if ("GET".equals(method) && parts.length == 1) {
+        requireRead(connector, member);
+        send(exchange, 200, projection(visible(member, parts[0]), member));
+      } else if ("POST".equals(method) && parts.length == 2
+          && "decision".equals(parts[1])) {
+        require(connector, member, ApprovalMemberships.Role.REVIEWER, "approvals.decide");
+        ApprovalRequestState approval = visible(member, parts[0]);
+        JsonNode decision = body(exchange, Set.of("decision", "requestHash"));
+        checkHash(decision, approval);
+        if (!decision.path("decision").isTextual()
+            || !Set.of("approve", "deny").contains(decision.path("decision").asText())) {
+          throw failure(400, "INVALID_REQUEST");
+        }
+        var reviewer = new TrustedReviewerContext(member.tenant(), member.principalId(), "human",
+            true, Set.of(HumanApprovalService.REVIEWER_ROLE),
+            Set.of(HumanApprovalService.REVIEWER_SCOPE), connector.authenticationProfile(),
+            connector.credentialFingerprint().value());
+        var reviewed = approvals.review(reviewer, parts[0], decision.path("decision").asText(),
+            "CHANGE_REVIEWED");
+        send(exchange, 200, projection(reviewed, member));
+      } else if ("POST".equals(method) && parts.length == 2
+          && "execute".equals(parts[1])) {
+        require(connector, member, ApprovalMemberships.Role.REQUESTER, "approvals.execute");
+        send(exchange, 200, execute(connector, member, parts[0],
+            body(exchange, Set.of("requestHash")), false));
+      } else throw failure(405, "METHOD_NOT_ALLOWED");
+    } else throw failure(404, "NOT_FOUND");
   }
 
   // Both ingress adapters converge here before any approval/permit/execution operation.
