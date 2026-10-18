@@ -208,6 +208,26 @@ Startup is not successful recovery proof. No automatic quarantine/recovery
 epoch, external witness or validated effectful resume procedure is implemented.
 See [ADR 0044](../architecture/0044-database-restore-safety-limits.md).
 
+## Bounded process-local replay and consumption
+
+The default source-attestation, workload-identity and execution-permit stores
+each retain at most 65,536 entries, with up to 64 expired-record removals per
+valid unexpired consume. One monitor makes duplicate/capacity/insertion atomic;
+live records are never evicted to admit work. Expired duplicate records still
+behind the cleanup budget are conservatively refused until reclaimed. An idle
+store retains bounded expired entries; credential lifetime is not a cleanup
+deadline. The existing boolean/refusal codes do not distinguish saturation from
+replay. Compound source/workload keys are collision-safe; legacy permit IDs
+remain globally consumed across tenant-aware overloads.
+
+The three focused store suites and real verifier/authority callback harnesses
+qualify these local bounds and single-use behavior. They do not measure target
+dispatch, add a wall-clock/fairness guarantee, survive restart, share state
+across replicas, fence restores or establish revocation by cleanup. Production
+store code is separate from the unchanged durable PostgreSQL coordinator. See
+[ADR 0054](../architecture/0054-bounded-local-replay-stores.md) and the
+[qualification runbook](../runbooks/bounded-local-replay-stores.md).
+
 ## Controls not yet established
 
 The repository is a security-control POC, **not** a deployable enterprise
