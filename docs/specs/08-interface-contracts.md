@@ -33,6 +33,18 @@ launcher starts these routes. See the
 [API runbook](../runbooks/authenticated-approval-api-foundation.md) and
 [ADR 0034](../architecture/0034-authenticated-loopback-approval-api.md).
 
+Admission is shared by the separate listener's bearer, browser and MCP routes,
+not a new authorization decision. The executor defaults to eight active lanes
+and sixteen pending tasks; capacities are constructor-only, validated within
+1..64 and 1..1024. Overflow is a JDK transport refusal before handler entry:
+clients must not expect a JSON 503, retry contract or rate-limit headers.
+An exchange that reaches a handler during close can receive the existing
+`503 SERVER_SHUTDOWN`; new connections are otherwise refused. Host/URI/closed
+checks run after admission. Task limits do not bound accepted TCP connections
+or buffered bytes, and close is bounded rather than a drain or target-outcome
+guarantee. No public abuse-control contract is added. See
+[ADR 0050](../architecture/0050-bounded-simulator-approval-admission.md).
+
 The collection GET now accepts exact `status`, `toolName`, `approvalRequestId`,
 bounded `limit` and unsigned `cursor` parameters. Responses add `pageSize`,
 nullable `nextCursor` and per-item `createdAt`. Every page re-derives tenant/owner

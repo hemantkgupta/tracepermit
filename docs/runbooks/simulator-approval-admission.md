@@ -64,7 +64,7 @@ is deterministic.
 | #   | Test                                                                    | Boundary                                                                                                                                                                                                                                                                                                                                                          | Role                                                     |
 | --- | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
 | 1   | `saturatedAdmissionQueuesBoundedAndRejectsOverflowWithoutExpensiveWork` | Capacity 2 with both lanes parked in key resolution: of 5 further exchanges exactly 2 queue and exactly 3 are transport-rejected, all with zero key resolutions, zero database attempts, zero simulator rules; opening the gate serves parked then queued                                                                                                         | Negative (saturation) + positive (queued/parked service) |
-| 2   | `saturatedApprovedExecuteDoesNoWorkUntilCapacityFrees`                  | An already approved execute offered at full observed capacity (1 active lane + 1 queued exchange) is transport-rejected with zero key resolutions, zero database attempts, zero simulator rules; after release the execute dispatches exactly once and a replay is denied 409 with no second dispatch                                                             | Negative (saturation) + positive (execute/replay)        |
+| 2   | `saturatedApprovedExecuteDoesNoWorkUntilCapacityFrees`                  | An already approved execute offered at full observed capacity (1 active lane + 1 queued exchange) is transport-rejected with zero key resolutions, zero database attempts, zero simulator rules; after release the execute succeeds with one distinct rule and replay returns 409 with unchanged simulator state                                                  | Negative (saturation) + positive (execute/replay)        |
 | 3   | `dispatchPoolHoldsExactLaneAndQueueBounds`                              | Direct helper qualification: valid bounds accepted, out-of-range rejected, exactly `activeLanes` threads run, exactly `pendingBound` queued, next offer throws, lanes daemon and named; release and shutdown happen in a finally, so a failed assertion cannot strand parked tasks                                                                                | Positive + negative (bounds)                             |
 | 4   | `everyFailurePathReturnsTheLaneToService`                               | Each of 401, 400, 403, 404, 405, 413, and a 503 database outage is followed by a fresh 201 — the lane returned to service each time; a malformed request consumes its lane until the bounded 400 returns it                                                                                                                                                       | Negative (per-path) + positive control after each        |
 | 5   | `repeatedCyclesDoNotLeakAdmissionSlots`                                 | 25 create/review cycles with periodic denials leave history complete and no leaked lanes                                                                                                                                                                                                                                                                          | Positive (no-leak under repetition)                      |
@@ -78,8 +78,14 @@ All fixtures are the module's existing deterministic synthetic identity,
 PostgreSQL (Testcontainers, PostgreSQL 16.4), and simulator fixtures. Parking
 uses a latch keyed on a synthetic verification-key id — no sleeps, no
 throughput assertions, and no dispatch claims based on response text: the
-zero-activity proofs come from a counting key resolver, a counting datasource,
-and the simulator rule counter.
+zero-activity checks combine a counting key resolver, a counting datasource,
+and unchanged simulator state. Rule cardinality is not a dispatch counter:
+the simulator deduplicates identical rules, so one stored rule cannot alone
+prove exactly-once invocation. Invocation-count assertions in
+`HumanApprovalServiceTest` are separate application-level evidence, not an
+HTTP admission-path call count. Both blocked-close probes cover setup inside
+their release `finally` and check that owned close tasks and released handlers
+terminate within finite waits, including on assertion failure.
 
 ---
 
@@ -112,6 +118,25 @@ probes, corrected ordering and bounds documentation):
   `git diff --check` all clean.
 
 ### Sensitivity control (guard-removal demonstrations)
+
+#### Test/documentation cleanup verification — 2026-10-18
+
+- Forced focused run: all 10 admission and 31 existing server tests passed,
+  with zero failures, errors or skips.
+- Temporarily restoring the old unbounded `workers.close()` made both close
+  probes fail with their own `TimeoutException` deadlines. The build exited
+  in 31 seconds, without an external watchdog; the correct source was restored
+  exactly before further checks. No broken control was committed.
+- Post-restoration `pnpm check` passed, including 41 React tests and Java
+  coverage gates. The affected HTTP module ran again (232 cases in 18 suites);
+  aggregate Java result files contain 855 cases in 99 suites, zero failures,
+  errors or skips. The Java gate took 2m 2s with 4 tasks executed and 47
+  up-to-date; this is not a claim that every Java case was freshly rerun.
+- Formatting, 511 local Markdown link targets, flow synchronization and diff
+  hygiene passed. Runtime enforcement is unchanged; the helper's only source
+  edit clarifies its Javadoc.
+
+#### Earlier admission and shutdown controls — 2026-10-17
 
 Recorded 2026-10-17 from disposable probe runs against the working tree
 (each probe edits `SimulatorApprovalServer.java`, runs the focused test, and
@@ -168,8 +193,10 @@ the focused run above was repeated green.
    defaults; there is no operator-facing capacity knob, metrics endpoint, or
    rate-limit header in this change.
 6. **Simulator-only data.** All fixtures are synthetic (`example.invalid`
-   issuers, simulated tenants, containerized PostgreSQL). No bearer tokens,
-   private keys, or real enterprise identifiers are involved.
+   issuers, simulated tenants, containerized PostgreSQL). Tests generate synthetic
+   bearer tokens and ephemeral signing keys as private fixtures; they are not
+   shared as evidence or committed. No production credentials or real enterprise
+   identifiers are used.
 
 ---
 

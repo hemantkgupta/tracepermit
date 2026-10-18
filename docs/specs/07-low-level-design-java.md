@@ -28,7 +28,7 @@ No database migration or real target is introduced. See
 | `execution`            | Attempts, idempotency, unknown outcomes, evidence chain                                                                            |
 | `application`          | Fail-closed orchestration and trusted reviewer workflow                                                                            |
 | `simulator`            | Bounded, stateful AWS/Jira fakes; no real target SDK                                                                               |
-| `adapters-http`        | Combined loopback MCP backend and read-only projections                                                                            |
+| `adapters-http`        | Loopback MCP, read-only projections, and separate authenticated approval/browser adapter                                           |
 | `adapters-remote`      | Authenticated MCP edge and SSRF-safe JWKS HTTPS                                                                                    |
 | `endpoint-connector`   | MCP stdio origin observation and loopback forwarding                                                                               |
 | `persistence-postgres` | Durable claims, approvals, policy revisions/lifecycle, evidence, outbox, reconciliation                                            |
@@ -60,6 +60,25 @@ claims. Interruption, timeout, saturation and source failure cannot grant
 identity. Instance-local pools are shared finite capacity, not per-provider
 reservations or a distributed ingress limit; OS calls may outlive a waiter.
 See [ADR 0049](../architecture/0049-bounded-jwks-refresh-isolation.md).
+
+## Approval listener admission ownership
+
+`ApprovalAdmissionExecutors` supplies `SimulatorApprovalServer` with a fixed
+daemon pool and bounded task queue, using rejection rather than an unbounded
+fallback executor. Defaults are eight active lanes plus sixteen pending tasks;
+constructor bounds are 1..64 and 1..1024 respectively. Executor admission comes
+before all handler statements, including Host/URI/closed checks. Only an admitted
+handler can authenticate, parse a protected body, use PostgreSQL or dispatch.
+Queueing runs no handler code but retains the connection and received buffers;
+the bound counts tasks per server, not sockets or bytes.
+
+Close stops the listener, calls worker shutdown, awaits at most two seconds and
+then interrupts remaining workers. Daemon workers can outlive close if a
+dependency ignores interruption; the caller-owned datasource is not closed.
+This is not a drain, target-outcome guarantee or forced JDBC/OS cancellation.
+No public pre/post-attribution abuse-control or fairness/SLO claim follows.
+Exact approval binding and atomic durable execution claims are unchanged. See
+[ADR 0050](../architecture/0050-bounded-simulator-approval-admission.md).
 
 ## Policy lifecycle and durable persistence foundation
 

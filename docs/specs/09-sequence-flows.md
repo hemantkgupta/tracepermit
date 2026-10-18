@@ -311,8 +311,9 @@ call.
 ## 4. Human approval flow
 
 This flow is implemented through the Java application and PostgreSQL simulator
-profile. The reviewer adapter is supplied by tests/application composition;
-there is no remote mutation endpoint.
+profile. The composing adapter supplies trusted reviewer context; the optional
+loopback bearer/browser approval API authenticates reviewers for this same
+workflow. There is no public approval administration endpoint.
 
 ```mermaid
 sequenceDiagram
@@ -351,6 +352,32 @@ sequenceDiagram
     G-->>A: result
   end
 ```
+
+### Separate approval listener: bounded admission before handler work
+
+This applies to the loopback approval API/browser/MCP composition, not the
+default or hosted MCP listeners. The executor allows eight active plus sixteen
+pending tasks by default. Host/URI/closed checks themselves consume an admitted
+lane; malformed input is not capacity-free.
+
+```mermaid
+flowchart TD
+  L["Loopback listener: connections and bytes not admission-bounded"] --> Q{"Executor lane or bounded queue slot?"}
+  Q -->|"overflow"| R["Transport refusal: no JSON response promised"]
+  Q -->|"queued"| W["Wait with connection and buffers; no handler work"]
+  Q -->|"lane free"| H["Handler: Host / URI / closed checks"]
+  W -->|"lane available"| H
+  H -->|"valid and open"| A["Authenticate, parse protected body, approval/claim path"]
+  H -->|"malformed or closing"| F["Bounded error; no target dispatch"]
+  A --> D["Return lane on completion or failure"]
+  F --> D
+```
+
+Close stops the listener, shuts down workers, waits up to two seconds, then
+interrupts remaining lanes. A handler that ignores interruption can remain as
+a daemon worker. Queued work need not run and admitted target outcomes can
+remain uncertain; close is not a drain or forced dependency cancellation.
+See [ADR 0050](../architecture/0050-bounded-simulator-approval-admission.md).
 
 ## 5. Scheduled workload with delegation
 

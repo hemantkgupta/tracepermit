@@ -34,6 +34,34 @@ are instance-local (default DNS is shared across sources); provider fairness,
 process-wide cardinality, forced OS-call cancellation and a universal hard
 wall-clock SLO are not established. No whole-requirement status is promoted.
 
+## Bounded simulator approval listener admission
+
+Requirements: FR-003/007/009; SEC-002/003/017; REL-001/004/009; OPS-001/005.
+
+`ApprovalAdmissionExecutors` and `SimulatorApprovalServer` bound one loopback
+listener's executor to eight active lanes plus sixteen pending tasks by default.
+Admission precedes every handler statement; overflow refuses the transport
+without a guaranteed JSON error. Constructor validation, lane reuse after
+failures, approved-execute saturation, repeated cycles, close races and default
+approval/replay regression are covered by `SimulatorApprovalAdmissionTest` and
+`SimulatorApprovalServerTest`. Two close probes use daemon tasks, finite waits
+and release-finally coverage including setup; released-handler and owned-task
+termination are checked. The interruption-ignoring resolver establishes that
+bounded close does not depend on cooperative cancellation. See
+[ADR 0050](../architecture/0050-bounded-simulator-approval-admission.md) and the
+[runbook](../runbooks/simulator-approval-admission.md).
+
+Counting key-resolution/database probes plus unchanged simulator state qualify
+no expensive handler work during overflow. Simulator rule cardinality is not
+an invocation count because identical rules deduplicate; application-level
+invocation-counter tests are separate evidence. Approval, permit consumption
+and execution-claim semantics are unchanged. Bounds are per-server task counts,
+not TCP/byte limits; close is not a drain, forced cancellation or target-outcome
+guarantee. SEC-017 public pre/post-attribution abuse controls and OPS-005 remote
+readiness are not satisfied. OPS-001 gains no metrics surface; fairness,
+distributed capacity and a wall-clock SLO remain unqualified. No whole-ID status
+is promoted.
+
 ## Owner-only read-only recovery inspection
 
 Requirements: FR-015; SEC-003/012/019; REL-002/005/008; OPS-002/004.

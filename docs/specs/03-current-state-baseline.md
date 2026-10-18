@@ -76,12 +76,27 @@ native/model qualification is implied.
 
 ### Authenticated approval API foundation
 
+The separate approval listener bounds executor tasks before any handler work:
+eight active lanes and sixteen pending tasks by default. Constructor-only
+capacity validation permits 1..64 active and 1..1024 pending tasks; launchers
+use defaults. Overflow refuses the connection before authentication, protected
+body parsing, database work or simulator dispatch, without a guaranteed JSON
+503 response. Queued exchanges still retain connections and buffered bytes.
+Host/URI/closed checks run inside admitted lanes; malformed requests therefore
+consume capacity until handled. Close stops the listener, waits up to two
+seconds for workers, then interrupts them; blocked daemon workers can linger.
+This is local task-count control, not TCP/byte bounds, a drain, forced target/
+JDBC cancellation, public abuse protection or production readiness. Approval,
+permit and replay semantics are unchanged. See
+[ADR 0050](../architecture/0050-bounded-simulator-approval-admission.md) and the
+[admission runbook](../runbooks/simulator-approval-admission.md).
+
 The authenticated approval collection supports exact metadata filters and
 bounded keyset pagination, retaining current enrollment/scope/tenant/owner
 checks and response redaction. Cursors are unsigned positions, not authority;
 reads do not change approval/effect state. This is not a complete action-history,
 retention or export feature. The React inbox has exact filters, explicit older
-pages and a250-row cap, with response validation, abort/generation guards and
+pages and a 250-row cap, with response validation, abort/generation guards and
 read-error/logout invalidation. Mutation controls require fresh current authority.
 Actual synthetic browser review/request/execute and client fault tests qualify
 this local profile only; no external provider compatibility is implied. See the
