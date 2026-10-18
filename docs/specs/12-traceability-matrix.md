@@ -5,6 +5,17 @@
 
 Status values: **Implemented**, **Partial**, **Target**, or **Proposed**.
 
+## Public introduction visuals
+
+FR-005/007/008/009, SEC-005/006/014, REL-002/005 and OPS-002/004 are explained,
+not newly implemented, by the [public introduction](../../site/guide/what-is-tracepermit.md).
+Its request-flow and core-pillars SVGs distinguish block, sanitize, pending
+approval, explicit resume, permit verification/claim and simulator dispatch.
+Equivalent semantic HTML lists preserve readable mobile and assistive access.
+`scripts/intro-visuals.test.mjs` checks the static assets, text/branch boundaries,
+profile limits and responsive wiring; rendered browser QA is separate evidence.
+No runtime, trust boundary, assurance level or requirement status changes.
+
 ## Bounded process-local replay and consumption
 
 Requirements: SEC-002/003/004/006/009/014; REL-001/004/009; OPS-004.
