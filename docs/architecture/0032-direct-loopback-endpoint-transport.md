@@ -41,3 +41,10 @@ not backend authentication. Resolving the native client's final symlink and
 forwarding selected Java 21 avoid setup failures without weakening the Java
 observer. The launcher retains a measurable shell ancestor and never asserts
 terminal/human facts. See the [bounded native proof](../demo-scenarios/evidence/codex-native-endpoint-2026-10-15.md).
+
+## Response-completion deadline (2026-10-18)
+
+[ADR 0057](0057-endpoint-io-deadlines.md) bounds complete response-body receipt,
+not only receipt of HTTP headers, while retaining the route and byte limits
+above. Timeout cancels the exchange without automatic tool retry; it does not
+prove that a previously sent action had no effect.
