@@ -55,7 +55,8 @@ Existing controls do not, by themselves, provide the complete action context use
 ├─────────────────────────────────────────────────────────────────────────────┤
 │ 5. Safe Simulation & Reconciliation                                         │
 │    Stateful AWS/Jira simulators test side-effect behavior before any real   │
-│    credentials are introduced. Ambiguous outcomes enter reconciliation.     │
+│    credentials are introduced. Persisted unknown outcomes support separate   │
+│    lookup-only reconciliation; no automatic real-target retry is implied.   │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -90,6 +91,10 @@ need controlled target credentials and anti-bypass egress:
 
 ## Next Steps
 
+- **[What works today](/guide/working-today):** Choose a qualified simulator
+  profile and understand its limits.
+- **[Fresh MacBook evaluation](/guide/fresh-macbook-evaluation):** Follow the
+  clean-machine source walkthrough or the separate operator-package path.
 - **[Local POC quickstart](/guide/getting-started):** Build and run the Java
   gateway, React console, and simulator scenarios from source.
 - **[The Security Invariant](/guide/security-invariants):** Deep dive into the formal trust guarantees.
