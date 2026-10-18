@@ -179,6 +179,24 @@ distinguish protocol tests from actual client/model and reviewer observations.
 
 See the [rehearsal plan](../runbooks/flow-rehearsal-plan.md) for remaining manual gates.
 
+## Endpoint connector I/O completion budgets
+
+Requirements: FR-016/017; SEC-003/011/014; REL-001/002/005/009; OPS-004.
+
+`LoopbackHttpGatewayTransport` now waits for a bounded subscriber's complete
+body under one monotonic exchange budget, cancels on timeout/interruption and
+preserves existing public error codes. `LoopbackGatewayDeadlineTest` records
+one owned-loopback request and connection closure for stalled headers/body,
+partial error/redirect responses and interruption. Subscriber tests cover byte
+caps, EOF, cancellation and subscription lifecycle. `TerminalProbeDeadlineTest`
+covers bounded output/exit waiting, failure and cleanup through declared
+synthetic process adapters; the fixed macOS command/client PID is unchanged.
+Existing source-proof and simulator E2E gates remain required. No live model,
+Linux/Windows, protected-key or archive qualification is added. A timeout after
+send is not proof of no target effect and does not trigger tool retry. See
+[ADR 0057](../architecture/0057-endpoint-io-deadlines.md). Broad statuses below
+are unchanged.
+
 ## Named native endpoint rehearsal
 
 The [public connector guide](../../site/guide/endpoint-connector.md) documents

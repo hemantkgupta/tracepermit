@@ -110,9 +110,15 @@ final class LoopbackHttpGatewayTransportTest {
           .isInstanceOf(IllegalArgumentException.class)
           .hasMessageContaining("loopback");
     }
-    assertThatThrownBy(() -> new LoopbackHttpGatewayTransport(
-        URI.create("http://127.0.0.1:8080/mcp"), Duration.ZERO, Duration.ofSeconds(1)))
-        .isInstanceOf(IllegalArgumentException.class);
+    for (Duration invalid : List.of(Duration.ZERO, Duration.ofNanos(1),
+        Duration.ofSeconds(-1), Duration.ofSeconds(31))) {
+      assertThatThrownBy(() -> new LoopbackHttpGatewayTransport(
+          URI.create("http://127.0.0.1:8080/mcp"), invalid, Duration.ofSeconds(1)))
+          .isInstanceOf(IllegalArgumentException.class);
+      assertThatThrownBy(() -> new LoopbackHttpGatewayTransport(
+          URI.create("http://127.0.0.1:8080/mcp"), Duration.ofSeconds(1), invalid))
+          .isInstanceOf(IllegalArgumentException.class);
+    }
 
     int unavailablePort;
     try (ServerSocket socket = new ServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))) {
