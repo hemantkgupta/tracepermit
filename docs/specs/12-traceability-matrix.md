@@ -155,6 +155,15 @@ See the [rehearsal plan](../runbooks/flow-rehearsal-plan.md) for remaining manua
 
 ## Named native endpoint rehearsal
 
+The [public connector guide](../../site/guide/endpoint-connector.md) documents
+the Java application versus source/launcher prerequisites, same-checkout local
+backend connection, Codex setup, allow/block prompts and safe reconnect rules.
+This is documentation support for SEC-003/011/014 and OPS-002/004, not new
+runtime qualification or promotion of the existing requirement statuses.
+The guide regression checks keep commands, configuration names and expected
+outcomes aligned with the launcher and recorded evidence. Remote transport and
+an independently qualified connector installer remain outside this profile.
+
 The [2026-10-15 native Codex evidence](../demo-scenarios/evidence/codex-native-endpoint-2026-10-15.md)
 adds one CLI 0.162.1/`gpt-5.6-sol` macOS model-selected simulator read/block pair,
 correlated with Java action-feed events at runtime revision `50937a7`.

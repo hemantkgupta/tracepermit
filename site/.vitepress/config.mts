@@ -44,6 +44,7 @@ export default defineConfig({
       { text: "Core Flows", link: "/guide/core-flows" },
       { text: "Local Demo", link: "/guide/getting-started" },
       { text: "Architecture", link: "/guide/architecture" },
+      { text: "Connector", link: "/guide/endpoint-connector" },
       { text: "GitHub", link: "https://github.com/hemantkgupta/tracepermit" },
     ],
 
@@ -53,6 +54,7 @@ export default defineConfig({
         items: [
           { text: "What is TracePermit?", link: "/guide/what-is-tracepermit" },
           { text: "Local POC Quickstart", link: "/guide/getting-started" },
+          { text: "Connector for Codex", link: "/guide/endpoint-connector" },
           {
             text: "The Security Invariant",
             link: "/guide/security-invariants",
