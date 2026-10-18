@@ -540,6 +540,28 @@ execution state and evidence in their established atomic transaction; do not
 pre-consume through this adapter. See
 [ADR 0041](../architecture/0041-postgres-durable-permit-consumption.md).
 
+### Bounded process-local replay ports
+
+The no-arg `InMemorySourceAttestationReplayStore`,
+`InMemoryWorkloadIdentityReplayStore` and `InMemoryPermitConsumptionStore` use
+65,536 retained-entry slots and a 64-removal expiry budget per valid unexpired
+offer. Positive constructor overrides support smaller local profiles/tests;
+non-positive values are rejected. The boolean SPI and caller wiring are unchanged.
+An expired offer is refused without inserting authority state. A duplicate
+neither extends expiry nor adds index metadata. Saturation returns `false`
+without evicting live records, so the existing `SOURCE_ATTESTATION_REPLAYED`,
+`WORKLOAD_CREDENTIAL_REPLAYED` and `EXECUTION_PERMIT_REPLAYED` refusals can also
+mean local capacity refusal, not only a previously seen ID.
+
+Expired records still behind the budget can conservatively refuse reuse; a
+genuinely new key can use reclaimed space before the whole backlog drains.
+Cleanup requires subsequent valid unexpired offers, not a timer. Source keys
+are issuer/token, workload keys tenant/issuer/token, and permit IDs remain global
+across legacy overloads. These per-instance ports trust the supplied time and
+do not provide byte quotas, bounded lock waits, restart/durable recovery,
+distributed replay state, revocation or public saturation metrics. See
+[ADR 0054](../architecture/0054-bounded-local-replay-stores.md).
+
 ## 6. Audit evidence contract
 
 The current internal evidence record contains:

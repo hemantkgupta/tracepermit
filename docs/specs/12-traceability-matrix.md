@@ -5,6 +5,32 @@
 
 Status values: **Implemented**, **Partial**, **Target**, or **Proposed**.
 
+## Bounded process-local replay and consumption
+
+Requirements: SEC-002/003/004/006/009/014; REL-001/004/009; OPS-004.
+
+The three `InMemory*ReplayStore` / `InMemoryPermitConsumptionStore` implementations
+preserve their boolean ports and no-arg callers while adding 65,536-entry default
+caps, 64-removal expiry budgets, atomic duplicate/capacity/insertion checks,
+no live eviction and one expiry-index entry per retained key. Compound source
+and workload keys preserve issuer and tenant namespaces; legacy permit IDs remain
+global across overloads. `InMemorySourceAttestationReplayStoreTest`,
+`InMemoryWorkloadIdentityReplayStoreTest` and `InMemoryPermitConsumptionStoreTest`
+cover saturation, live replay retention, expiry/equality, no refresh, budgets,
+expired duplicates behind the budget, bounded metadata and task contention.
+Race waits and checked teardown are bounded. `BoundedReplayVerifierIntegrationTest`
+and `ExecutionPermitAuthorityBoundedStoreTest` exercise actual verification or
+consumption followed by a gated test callback, with healthy post-expiry controls.
+
+This is bounded per-instance entry/removal state, not a target-dispatch count,
+wall-clock/byte/fairness bound, distributed or durable replay, restore fencing,
+revocation, or a public saturation metric. Existing replay codes also represent
+capacity refusal. Idle entries can remain retained after expiry; an expired
+duplicate can be refused until reclaimed. The durable coordinator and broad
+requirement statuses are unchanged. See
+[ADR 0054](../architecture/0054-bounded-local-replay-stores.md) and the
+[runbook](../runbooks/bounded-local-replay-stores.md).
+
 ## Owner-only read-only recovery inspection
 
 Requirements: FR-015; SEC-003/012/019; REL-002/005/008; OPS-002/004.
