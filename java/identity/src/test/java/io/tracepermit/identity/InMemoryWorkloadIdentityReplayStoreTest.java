@@ -133,12 +133,12 @@ final class InMemoryWorkloadIdentityReplayStoreTest {
     for (int index = 0; index < 32; index++) {
       claims.add(
           () -> {
-            start.await();
+            if (!start.await(10, TimeUnit.SECONDS)) throw new AssertionError("Start gate timed out");
             return store.consume(TENANT, ISSUER, "token-shared", T.plusSeconds(300), T);
           });
     }
 
-    ExecutorService executor = Executors.newFixedThreadPool(8);
+    ExecutorService executor = Executors.newFixedThreadPool(8, Thread.ofPlatform().daemon().factory());
     try {
       List<java.util.concurrent.Future<Boolean>> futures = new ArrayList<>();
       for (Callable<Boolean> claim : claims) {
@@ -146,8 +146,9 @@ final class InMemoryWorkloadIdentityReplayStoreTest {
       }
       start.countDown();
       int winners = 0;
+      long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
       for (java.util.concurrent.Future<Boolean> future : futures) {
-        if (future.get(10, TimeUnit.SECONDS)) {
+        if (future.get(Math.max(1, deadline - System.nanoTime()), TimeUnit.NANOSECONDS)) {
           winners++;
         }
       }
@@ -157,13 +158,8 @@ final class InMemoryWorkloadIdentityReplayStoreTest {
     } finally {
       start.countDown();
       executor.shutdownNow();
-      try {
-        if (!executor.awaitTermination(10, TimeUnit.SECONDS)) {
-          executor.shutdownNow();
-        }
-      } catch (InterruptedException interrupted) {
-        Thread.currentThread().interrupt();
-      }
+      assertThat(executor.awaitTermination(3, TimeUnit.SECONDS))
+          .as("all owned claim workers terminated").isTrue();
     }
   }
 
@@ -176,12 +172,12 @@ final class InMemoryWorkloadIdentityReplayStoreTest {
       String token = "token-" + index;
       claims.add(
           () -> {
-            start.await();
+            if (!start.await(10, TimeUnit.SECONDS)) throw new AssertionError("Start gate timed out");
             return store.consume(TENANT, ISSUER, token, T.plusSeconds(300), T);
           });
     }
 
-    ExecutorService executor = Executors.newFixedThreadPool(8);
+    ExecutorService executor = Executors.newFixedThreadPool(8, Thread.ofPlatform().daemon().factory());
     try {
       List<java.util.concurrent.Future<Boolean>> futures = new ArrayList<>();
       for (Callable<Boolean> claim : claims) {
@@ -189,8 +185,9 @@ final class InMemoryWorkloadIdentityReplayStoreTest {
       }
       start.countDown();
       int winners = 0;
+      long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
       for (java.util.concurrent.Future<Boolean> future : futures) {
-        if (future.get(10, TimeUnit.SECONDS)) {
+        if (future.get(Math.max(1, deadline - System.nanoTime()), TimeUnit.NANOSECONDS)) {
           winners++;
         }
       }
@@ -200,13 +197,8 @@ final class InMemoryWorkloadIdentityReplayStoreTest {
     } finally {
       start.countDown();
       executor.shutdownNow();
-      try {
-        if (!executor.awaitTermination(10, TimeUnit.SECONDS)) {
-          executor.shutdownNow();
-        }
-      } catch (InterruptedException interrupted) {
-        Thread.currentThread().interrupt();
-      }
+      assertThat(executor.awaitTermination(3, TimeUnit.SECONDS))
+          .as("all owned claim workers terminated").isTrue();
     }
   }
 
@@ -225,5 +217,22 @@ final class InMemoryWorkloadIdentityReplayStoreTest {
         .isInstanceOf(IllegalArgumentException.class);
     assertThatThrownBy(() -> new InMemoryWorkloadIdentityReplayStore(4, 0))
         .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
+  void expiredDuplicateBehindCleanupBudgetWaitsButFreshKeyCanEnter() {
+    var store = new InMemoryWorkloadIdentityReplayStore(3, 1);
+    for (int i = 1; i <= 3; i++) {
+      assertThat(store.consume(TENANT, ISSUER, "old-" + i, T.plusSeconds(i), T)).isTrue();
+    }
+    Instant later = T.plusSeconds(10);
+    assertThat(store.consume(TENANT, ISSUER, "old-3", T.plusSeconds(90), later)).isFalse();
+    assertThat(store.reclamationRemovals()).isEqualTo(1);
+    assertThat(store.consume(TENANT, ISSUER, "fresh", T.plusSeconds(90), later)).isTrue();
+    assertThat(store.consume(TENANT, ISSUER, "old-3", T.plusSeconds(90), later)).isTrue();
+    assertThat(store.consume(TENANT, ISSUER, "old-3", T.plusSeconds(120), later)).isFalse();
+    assertThat(store.reclamationRemovals()).isEqualTo(3);
+    assertThat(store.liveEntries()).isEqualTo(2);
+    assertThat(store.expiryIndexEntries()).isEqualTo(2);
   }
 }

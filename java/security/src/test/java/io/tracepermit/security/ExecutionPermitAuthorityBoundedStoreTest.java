@@ -23,9 +23,9 @@ import org.junit.jupiter.api.Test;
  * {@link ExecutionPermitAuthority}.
  *
  * <p>Scope is deliberately narrow: when the bounded store is saturated, a freshly issued,
- * validly signed permit is refused with the replay refusal code and no target effect
- * follows — the test-local counter only proves the effect follows successful consumption.
- * Permit-ID cardinality is not an invocation counter, and the legacy global permit-ID
+ * validly signed permit is refused with the replay refusal code and the following test
+ * callback is not invoked. This test-only consumption/callback harness is not the application
+ * dispatcher or a target adapter. The legacy global permit-ID
  * namespace is preserved: tenant- and action-aware overloads do not open cross-tenant
  * reuse.
  */
@@ -34,7 +34,7 @@ final class ExecutionPermitAuthorityBoundedStoreTest {
   private static final Instant BASE = Instant.parse("2026-10-08T10:15:31Z");
 
   @Test
-  void saturatedStoreRefusesFreshValidPermitWithoutTargetEffect() throws Exception {
+  void saturatedStoreRefusesFreshValidPermitBeforeTestCallback() throws Exception {
     Fixture fixture = new Fixture(() -> "permit-fresh", 1, 1);
     AtomicInteger targetEffects = new AtomicInteger();
 
@@ -42,10 +42,10 @@ final class ExecutionPermitAuthorityBoundedStoreTest {
 
     String permit = fixture.authority().issue(fixture.event(), fixture.evaluation(), fixture.audience());
     assertThatThrownBy(
-            () ->
-                fixture
-                    .authority()
-                    .verifyAndConsume(permit, fixture.event(), fixture.audience()))
+            () -> {
+              fixture.authority().verifyAndConsume(permit, fixture.event(), fixture.audience());
+              targetEffects.incrementAndGet();
+            })
         .isInstanceOf(ExecutionPermitException.class)
         .extracting(error -> ((ExecutionPermitException) error).code())
         .isEqualTo("EXECUTION_PERMIT_REPLAYED");
@@ -54,7 +54,7 @@ final class ExecutionPermitAuthorityBoundedStoreTest {
     assertThat(fixture.store().saturatedRefusals()).isEqualTo(1);
 
     // Positive control: after genuine expiry and bounded reclamation, consumption
-    // succeeds again and only then does the target effect follow.
+    // succeeds again and only then does the test callback run.
     fixture.clock().advance(Duration.ofSeconds(120));
     String renewed = fixture.authority().issue(fixture.event(), fixture.evaluation(), fixture.audience());
     JsonNode consumed = fixture.authority().verifyAndConsume(renewed, fixture.event(), fixture.audience());

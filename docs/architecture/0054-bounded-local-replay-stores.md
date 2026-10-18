@@ -54,9 +54,11 @@ A `consume` call holds one monitor across the whole decision:
    concurrent claims of one key produce exactly one winner, and distinct keys
    cannot push the live set past the cap.
 
-Reclamation runs _before_ the duplicate check: an entry whose recorded expiry
-has passed is reclaimable, so a re-submission at `now >= expiry` is a new
-generation, not a replay.
+Reclamation runs _before_ the duplicate check. An expired entry is eligible for
+removal, but may remain behind other expired entries when the cleanup budget is
+exhausted. Reuse of that key is conservatively refused until its own old record
+is reclaimed; only then can a new generation enter. A genuinely new key may use
+space reclaimed during the call without waiting for the whole backlog to drain.
 
 ### Heap-to-map invariant
 
@@ -93,13 +95,15 @@ behavior change.
 ### Cleanup is in-call, bounded, and honest about recovery
 
 No scheduler, background cleaner, or request-created thread exists. Cleanup
-work happens inside the calling consume, bounded by the budget. While a
-bounded cleanup backlog remains, the store may keep answering `false` (full)
-for fresh keys until successive calls drain the expired entries — a temporary
-full/false is safer than a full sweep or a live eviction. Backlogs are
-naturally time-limited: real credentials expire within 60 seconds
-(attestations, permits) to 300 seconds (workload credentials), after which
-each consume reclaims up to `cleanupBudget` entries and capacity returns.
+work happens inside the calling consume, bounded by the removal budget, not a
+wall-clock deadline. Real credential lifetimes (up to 60 seconds for source
+attestations/permits, 300 for workload credentials) determine when entries become
+eligible for reclamation; they do not schedule cleanup or bound retention time.
+Expired entries can remain during idle periods. A valid, unexpired offer reclaims
+up to the budget; an already-expired offer returns before reclamation. An expired
+duplicate still behind the budget is refused, whereas a new key can enter once
+at least one slot has been reclaimed. A full set with no reclaimable entries
+continues to refuse fresh claims. None of these paths evicts a live record.
 This is recovery semantics for a local bound, **not** a revocation policy:
 expiry cleanup is not an independently anchored revocation decision.
 
@@ -130,8 +134,8 @@ flowchart TD
 Focused suites (all deterministic; fake time, latches, and finite future
 deadlines; no sleeps):
 
-- `InMemorySourceAttestationReplayStoreTest` (11 tests) and
-  `InMemoryWorkloadIdentityReplayStoreTest` (9 tests): tiny-cap fill then
+- `InMemorySourceAttestationReplayStoreTest` (12 tests) and
+  `InMemoryWorkloadIdentityReplayStoreTest` (10 tests): tiny-cap fill then
   refusal with **every still-live original entry remaining rejected afterwards**
   (an LRU implementation fails this control); already-expired offers consuming
   no capacity; duplicates with later expiry neither refreshing the claim nor
@@ -139,31 +143,37 @@ deadlines; no sleeps):
   `now` only; budget-exact reclamation (exactly `cleanupBudget` removals per
   call, observed through the reclamation counter); 400-iteration
   duplicate/expired churn keeping primary and expiry metadata bounded with
-  heap size equal to map size at every step; 32-thread same-key races with
-  exactly one winner; 32 distinct keys against a cap of 4 producing exactly 4
+  heap size equal to map size at every step; 32 submitted same-key claims on
+  an eight-worker pool with exactly one winner; 32 distinct keys against a cap of 4 producing exactly 4
   winners; namespace separation and delimiter-collision probes; invalid
   arguments rejected before state changes; and a positive control where a
-  healthy fresh request succeeds after genuine expiry reclamation.
-- `InMemoryPermitConsumptionStoreTest` (28 tests including the two pre-existing
-  concurrency/semantics tests, kept passing unchanged): adds the same
+  healthy fresh request succeeds after genuine expiry reclamation. Each suite
+  also pins refusal of an expired duplicate behind the cleanup budget alongside
+  acceptance of a genuinely fresh key while other expired entries remain.
+- `InMemoryPermitConsumptionStoreTest` (29 tests including 20 repetitions of the
+  pre-existing same-key race, with deadlines/cleanup hardened): adds the same
   tiny-cap, LRU-control, no-refresh, budget-exact, churn-bounded, and
   no-overshoot coverage, plus the **global legacy namespace** qualification —
   after a permit ID is consumed, the tenant-aware and action-aware overloads
-  refuse the same ID from another tenant.
+  refuse the same ID from another tenant. Its 32 submitted claims use a
+  sixteen-worker pool. All race tests release the start gate in `finally`, use
+  a shared ten-second Future deadline and bounded checked shutdown; daemon
+  workers cannot keep the test process alive if an uninterruptible regression
+  fails the shutdown assertion. The daemon setting does not excuse a leak.
 - `BoundedReplayVerifierIntegrationTest` (2 tests): integrates the tiny-cap
   stores into the real `SourceAttestationVerifier` and
   `ScheduledWorkloadVerifier` — a fresh, validly signed credential is refused
-  with the replay refusal code while saturated, a test-local target counter
-  stays at zero (dispatch follows successful verification only), and after
-  genuine expiry plus bounded reclamation verification succeeds again and the
-  counter advances exactly then. Scope is honest: store cardinality is not an
-  invocation counter, and this proof does not extend to distributed abuse
-  protection.
+  with the replay refusal code while saturated. A test callback placed directly
+  after verification is not reached on refusal, and runs in the healthy control
+  after genuine expiry/reclamation. This harness does not run the application
+  dispatcher, HTTP/MCP route or any target adapter; its callback count is not a
+  production dispatch count or distributed abuse qualification.
 - `ExecutionPermitAuthorityBoundedStoreTest` (2 tests): the real
   `ExecutionPermitAuthority` refuses a freshly issued valid permit with
-  `EXECUTION_PERMIT_REPLAYED` while its bounded store is saturated (no target
-  effect), preserves the global permit-ID namespace across overloads, and
-  succeeds again after genuine expiry.
+  `EXECUTION_PERMIT_REPLAYED` while its bounded store is saturated, preserves
+  the global permit-ID namespace across overloads, and succeeds again after
+  genuine expiry. The same test-only consumption-then-callback boundary applies;
+  no end-to-end dispatch claim is made.
 
 Sensitivity probes (disposable edits, byte-for-byte restored, never
 committed): bypassing the capacity guard makes the tiny-cap control tests fail
@@ -191,10 +201,10 @@ refusal with an eviction of the oldest live entry makes them fail as well
   counters can distinguish them in-process for tests, but no public metric is
   added ([OPS-004](../specs/02-system-requirements.md) coverage is via this
   runbook, not a monitoring surface).
-- **Temporary full/false under backlog.** Immediately after a burst expires,
-  capacity recovers over several calls, at most `cleanupBudget` reclamation
-  removals per call. Callers see refusal, not partial success; no fairness or
-  wait-time guarantee is made.
+- **Conservative expired-key refusal.** A duplicate whose expired record remains
+  behind the cleanup budget is refused until that record is reclaimed. New keys
+  can use reclaimed space before the whole backlog drains. Idle retention and
+  lock wait have no cleanup-completion or fairness deadline.
 - **Cited requirements, not fully claimed.** This change strengthens
   [SEC-002](../specs/02-system-requirements.md) fail-closed behavior,
   [SEC-004](../specs/02-system-requirements.md) and
@@ -205,7 +215,7 @@ refusal with an eviction of the oldest live entry makes them fail as well
   [REL-004](../specs/02-system-requirements.md), and
   [REL-009](../specs/02-system-requirements.md) for the in-memory stores. It
   does not claim public distributed abuse protection, tenant isolation for the
-  legacy global permit namespace, or any durable-storage property; the shared
-  traceability matrix is updated separately.
+  legacy global permit namespace, or any durable-storage property. See the scoped
+  [traceability entry](../specs/12-traceability-matrix.md#bounded-process-local-replay-and-consumption).
 
 See the [operator runbook](../runbooks/bounded-local-replay-stores.md).

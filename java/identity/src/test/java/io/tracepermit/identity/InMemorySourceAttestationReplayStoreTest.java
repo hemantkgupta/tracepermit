@@ -124,6 +124,25 @@ final class InMemorySourceAttestationReplayStoreTest {
   }
 
   @Test
+  void expiredDuplicateBehindCleanupBudgetWaitsButFreshKeyCanEnter() {
+    var store = new InMemorySourceAttestationReplayStore(3, 1);
+    for (int i = 1; i <= 3; i++) {
+      assertThat(store.consume(ISSUER, "old-" + i, T.plusSeconds(i), T)).isTrue();
+    }
+    Instant later = T.plusSeconds(10);
+    // Only old-1 is reclaimed; the offered old-3 is still retained and refused.
+    assertThat(store.consume(ISSUER, "old-3", T.plusSeconds(90), later)).isFalse();
+    assertThat(store.reclamationRemovals()).isEqualTo(1);
+    // A genuinely new key can use the reclaimed space before the backlog is empty.
+    assertThat(store.consume(ISSUER, "fresh", T.plusSeconds(90), later)).isTrue();
+    assertThat(store.consume(ISSUER, "old-3", T.plusSeconds(90), later)).isTrue();
+    assertThat(store.consume(ISSUER, "old-3", T.plusSeconds(120), later)).isFalse();
+    assertThat(store.reclamationRemovals()).isEqualTo(3);
+    assertThat(store.liveEntries()).isEqualTo(2);
+    assertThat(store.expiryIndexEntries()).isEqualTo(2);
+  }
+
+  @Test
   void sameKeyConcurrencyProducesExactlyOneWinner() throws Exception {
     InMemorySourceAttestationReplayStore store = new InMemorySourceAttestationReplayStore();
     CountDownLatch start = new CountDownLatch(1);
@@ -131,12 +150,12 @@ final class InMemorySourceAttestationReplayStoreTest {
     for (int index = 0; index < 32; index++) {
       claims.add(
           () -> {
-            start.await();
+            if (!start.await(10, TimeUnit.SECONDS)) throw new AssertionError("Start gate timed out");
             return store.consume(ISSUER, "token-shared", T.plusSeconds(60), T);
           });
     }
 
-    ExecutorService executor = Executors.newFixedThreadPool(8);
+    ExecutorService executor = Executors.newFixedThreadPool(8, Thread.ofPlatform().daemon().factory());
     try {
       List<java.util.concurrent.Future<Boolean>> futures = new ArrayList<>();
       for (Callable<Boolean> claim : claims) {
@@ -144,8 +163,9 @@ final class InMemorySourceAttestationReplayStoreTest {
       }
       start.countDown();
       int winners = 0;
+      long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
       for (java.util.concurrent.Future<Boolean> future : futures) {
-        if (future.get(10, TimeUnit.SECONDS)) {
+        if (future.get(Math.max(1, deadline - System.nanoTime()), TimeUnit.NANOSECONDS)) {
           winners++;
         }
       }
@@ -155,13 +175,8 @@ final class InMemorySourceAttestationReplayStoreTest {
     } finally {
       start.countDown();
       executor.shutdownNow();
-      try {
-        if (!executor.awaitTermination(10, TimeUnit.SECONDS)) {
-          executor.shutdownNow();
-        }
-      } catch (InterruptedException interrupted) {
-        Thread.currentThread().interrupt();
-      }
+      assertThat(executor.awaitTermination(3, TimeUnit.SECONDS))
+          .as("all owned claim workers terminated").isTrue();
     }
   }
 
@@ -174,12 +189,12 @@ final class InMemorySourceAttestationReplayStoreTest {
       String token = "token-" + index;
       claims.add(
           () -> {
-            start.await();
+            if (!start.await(10, TimeUnit.SECONDS)) throw new AssertionError("Start gate timed out");
             return store.consume(ISSUER, token, T.plusSeconds(60), T);
           });
     }
 
-    ExecutorService executor = Executors.newFixedThreadPool(8);
+    ExecutorService executor = Executors.newFixedThreadPool(8, Thread.ofPlatform().daemon().factory());
     try {
       List<java.util.concurrent.Future<Boolean>> futures = new ArrayList<>();
       for (Callable<Boolean> claim : claims) {
@@ -187,8 +202,9 @@ final class InMemorySourceAttestationReplayStoreTest {
       }
       start.countDown();
       int winners = 0;
+      long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
       for (java.util.concurrent.Future<Boolean> future : futures) {
-        if (future.get(10, TimeUnit.SECONDS)) {
+        if (future.get(Math.max(1, deadline - System.nanoTime()), TimeUnit.NANOSECONDS)) {
           winners++;
         }
       }
@@ -198,13 +214,8 @@ final class InMemorySourceAttestationReplayStoreTest {
     } finally {
       start.countDown();
       executor.shutdownNow();
-      try {
-        if (!executor.awaitTermination(10, TimeUnit.SECONDS)) {
-          executor.shutdownNow();
-        }
-      } catch (InterruptedException interrupted) {
-        Thread.currentThread().interrupt();
-      }
+      assertThat(executor.awaitTermination(3, TimeUnit.SECONDS))
+          .as("all owned claim workers terminated").isTrue();
     }
   }
 

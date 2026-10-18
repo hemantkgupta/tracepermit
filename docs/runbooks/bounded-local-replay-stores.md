@@ -29,9 +29,10 @@ atomic: concurrent claims of one key produce exactly one winner. See
    (an LRU implementation fails this control). Saturation is not separately
    classified: callers surface their existing replay refusal codes.
 3. **Atomic single use under contention.** Duplicate check, capacity check,
-   and insert happen under one monitor: 32-thread same-key races produce
+   and insert happen under one monitor: 32 submitted same-key claims produce
    exactly one winner, and 32 distinct keys against a cap of 4 produce
-   exactly 4 winners.
+   exactly 4 winners. Identity suites use eight workers; permit suites use
+   sixteen. These are task counts, not 32 simultaneously executing threads.
 4. **Duplicates do not refresh.** A duplicate with a later requested expiry
    neither extends the recorded expiry nor grows any metadata.
 5. **Bounded, budget-exact cleanup.** Each consume reclaims at most
@@ -39,10 +40,11 @@ atomic: concurrent claims of one key produce exactly one winner. See
    inclusive) from an expiry-ordered heap — never a full-map scan. The heap
    size always equals the live size (one heap entry per live entry), so
    repeated duplicate/expired churn keeps both primary and expiry metadata
-   bounded. Reclamation runs before the duplicate check, so a key whose
-   expiry has passed is re-claimable as a new generation.
+   bounded. Reclamation runs before the duplicate check. An expired duplicate
+   still behind the removal budget is refused until its old record is actually
+   reclaimed. New keys can use reclaimed space before the entire backlog drains.
 6. **Already-expired input consumes no capacity.** Offers with expiry at or
-   before `now` are refused before any state is touched. (Real callers
+   before `now` are counted and refused without changing authority entries. (Real callers
    already pre-reject expired credentials before the store.)
 7. **Namespaces preserved.** Source replay keys are issuer + token ID;
    workload replay keys are tenant + issuer + token ID (collision-safe
@@ -51,10 +53,10 @@ atomic: concurrent claims of one key produce exactly one winner. See
    a permit ID consumed under any tenant, so cross-tenant reuse stays closed.
 8. **In-call cleanup only.** No scheduler, background cleaner, or
    request-created thread exists. Recovery from a cleanup backlog is spread
-   across successive consumes (at most `cleanupBudget` removals each) — a
-   temporary full/false while a backlog drains is safer than a full sweep or
-   a live eviction, and real credential lifetimes (≤60 s attestations and
-   permits, ≤300 s workload credentials) time-limit any backlog.
+   across valid unexpired offers (at most `cleanupBudget` removals each).
+   Credential lifetimes determine cleanup eligibility, not retention time:
+   expired entries can remain during idle periods, and expired offers return
+   before reclamation. No cleanup-completion deadline or live eviction is added.
 
 Defaults are conservative for a single-process simulator; the qualification
 suites exercise tiny capacities (1–8) and budgets (1–4) for determinism.
@@ -63,26 +65,28 @@ suites exercise tiny capacities (1–8) and budgets (1–4) for determinism.
 
 ## Positive / negative matrix
 
-| #   | Test                                                                                                                                                                                         | Boundary                                                                                                                                                                                                                         | Role                                                   |
-| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
-| 1   | `tinyCapFillsThenRefusesAndEveryLiveOriginalStaysRejected` (all three store suites)                                                                                                          | Tiny cap fills, next fresh consume refused with `saturatedRefusals` counted, and every still-live original entry remains rejected — no LRU eviction                                                                              | Negative (saturation) + positive (no-eviction control) |
-| 2   | `alreadyExpiredSubmissionIsRefusedWithoutConsumingCapacity`                                                                                                                                  | Expired offers counted and refused; live and expiry index stay empty; a live insert still succeeds                                                                                                                               | Negative (expired) + positive control                  |
-| 3   | `duplicateWithLaterExpiryDoesNotRefreshOriginalClaim` / `duplicateWithLaterExpiryAlreadyExpiredOfferAndEqualityBoundary`                                                                     | Duplicate refusal never refreshes the recorded expiry or grows metadata; original expiry stays authoritative; T+29 live, T+30 (equality) reclaimable and re-claimable                                                            | Negative (refresh) + boundary                          |
-| 4   | `boundedReclamationRecoversWithBoundedPerCallWork` (all three suites)                                                                                                                        | After a full store expires, each consume reclaims exactly the budget (reclamation counter deltas of exactly 2), capacity returns over successive calls, heap equals map                                                          | Positive (budget-exact recovery)                       |
-| 5   | `repeatedChurnKeepsPrimaryAndExpiryMetadataBounded`                                                                                                                                          | 400 duplicate/expired churn iterations: live entries within cap and heap size equal to live size at every step; expired-submission counter exact                                                                                 | Positive (bounded under churn)                         |
-| 6   | `sameKeyConcurrencyProducesExactlyOneWinner`                                                                                                                                                 | 32 threads racing one key: exactly one `true`, one live entry, one heap entry                                                                                                                                                    | Negative (double-consume)                              |
-| 7   | `distinctKeyConcurrencyNeverOvershootsTheCap`                                                                                                                                                | 32 distinct keys against cap 4: exactly 4 winners, no overshoot                                                                                                                                                                  | Negative (overshoot)                                   |
-| 8   | `namespaceIsCollisionSafeIssuerPlusToken` / `tenantNamespaceSeparatesIdenticalIssuerAndToken` / `compoundKeyCannotCollideThroughDelimiterConcatenation`                                      | Issuer/tenant/issuer+token separation; NUL-concatenation probes cannot fuse distinct identities                                                                                                                                  | Negative (collision)                                   |
-| 9   | `tenantOverloadsKeepOneGlobalPermitIdNamespace` (permit suite)                                                                                                                               | After a global consume of a permit ID, the tenant-aware 4-arg and 5-arg overloads (another tenant, with/without action hash) all refuse the same ID                                                                              | Negative (cross-tenant reuse)                          |
-| 10  | `invalidArgumentsAreRejectedBeforeAnyStateChanges` / `invalidArgumentsAndCapacitiesAreRejectedBeforeAnyStateChanges`                                                                         | Null keys/expiry/now and non-positive capacities/budgets rejected; no state allocated                                                                                                                                            | Negative (construction/validation)                     |
-| 11  | `expiryEqualityBoundaryReclaimsAtOrBeforeNowOnly` / `healthyFreshRequestSucceedsAfterGenuineExpiryReclamation`                                                                               | Equality boundary semantics; positive control after genuine expiry                                                                                                                                                               | Positive controls                                      |
-| 12  | `saturatedSourceAttestationStoreRefusesFreshValidAttestationWithoutDispatch` and `saturatedWorkloadStoreRefusesFreshValidCredentialWithoutDispatch` (`BoundedReplayVerifierIntegrationTest`) | Real verifiers with tiny-cap stores: fresh validly signed credentials refused with the replay refusal codes; test-local target counter stays 0; after genuine expiry verification succeeds and the counter advances exactly then | Negative (integration saturation) + positive control   |
-| 13  | `saturatedStoreRefusesFreshValidPermitWithoutTargetEffect` and `globalPermitNamespaceClosesCrossTenantOverloadReuse` (`ExecutionPermitAuthorityBoundedStoreTest`)                            | Real authority: fresh issued permit refused `EXECUTION_PERMIT_REPLAYED` while saturated with no target effect; overload reuse refused; positive control after expiry                                                             | Negative (integration saturation) + positive control   |
+| #   | Test                                                                                                                                                      | Boundary                                                                                                                                                                | Role                                                        |
+| --- | --------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| 1   | `tinyCapFillsThenRefusesAndEveryLiveOriginalStaysRejected` (all three store suites)                                                                       | Tiny cap fills, next fresh consume refused with `saturatedRefusals` counted, and every still-live original entry remains rejected — no LRU eviction                     | Negative (saturation) + positive (no-eviction control)      |
+| 2   | `alreadyExpiredSubmissionIsRefusedWithoutConsumingCapacity`                                                                                               | Expired offers counted and refused; live and expiry index stay empty; a live insert still succeeds                                                                      | Negative (expired) + positive control                       |
+| 3   | `duplicateWithLaterExpiryDoesNotRefreshOriginalClaim` / `duplicateWithLaterExpiryAlreadyExpiredOfferAndEqualityBoundary`                                  | Duplicate refusal never refreshes the recorded expiry or grows metadata; original expiry stays authoritative; T+29 live, T+30 (equality) reclaimable and re-claimable   | Negative (refresh) + boundary                               |
+| 4   | `boundedReclamationRecoversWithBoundedPerCallWork` (all three suites)                                                                                     | After a full store expires, each consume reclaims exactly the budget (reclamation counter deltas of exactly 2), capacity returns over successive calls, heap equals map | Positive (budget-exact recovery)                            |
+| 5   | `repeatedChurnKeepsPrimaryAndExpiryMetadataBounded`                                                                                                       | 400 duplicate/expired churn iterations: live entries within cap and heap size equal to live size at every step; expired-submission counter exact                        | Positive (bounded under churn)                              |
+| 6   | `sameKeyConcurrencyProducesExactlyOneWinner`                                                                                                              | 32 submitted claims on eight identity workers (sixteen permit workers), exactly one winner                                                                              | Negative (double-consume)                                   |
+| 7   | `distinctKeyConcurrencyNeverOvershootsTheCap`                                                                                                             | 32 distinct keys against cap 4: exactly 4 winners, no overshoot                                                                                                         | Negative (overshoot)                                        |
+| 8   | `namespaceIsCollisionSafeIssuerPlusToken` / `tenantNamespaceSeparatesIdenticalIssuerAndToken` / `compoundKeyCannotCollideThroughDelimiterConcatenation`   | Issuer/tenant/issuer+token separation; NUL-concatenation probes cannot fuse distinct identities                                                                         | Negative (collision)                                        |
+| 9   | `tenantOverloadsKeepOneGlobalPermitIdNamespace` (permit suite)                                                                                            | After a global consume of a permit ID, the tenant-aware 4-arg and 5-arg overloads (another tenant, with/without action hash) all refuse the same ID                     | Negative (cross-tenant reuse)                               |
+| 10  | `invalidArgumentsAreRejectedBeforeAnyStateChanges` / `invalidArgumentsAndCapacitiesAreRejectedBeforeAnyStateChanges`                                      | Null keys/expiry/now and non-positive capacities/budgets rejected; no state allocated                                                                                   | Negative (construction/validation)                          |
+| 11  | `expiryEqualityBoundaryReclaimsAtOrBeforeNowOnly` / `healthyFreshRequestSucceedsAfterGenuineExpiryReclamation`                                            | Equality boundary semantics; positive control after genuine expiry                                                                                                      | Positive controls                                           |
+| 12  | `saturatedSourceAttestationStoreRefusesFreshValidAttestationBeforeTestCallback` and `saturatedWorkloadStoreRefusesFreshValidCredentialBeforeTestCallback` | Real verifiers refuse valid signed inputs under saturation; the immediately following test callback is not reached; healthy post-expiry control reaches it              | Negative (verification/callback harness) + positive control |
+| 13  | `saturatedStoreRefusesFreshValidPermitBeforeTestCallback` and `globalPermitNamespaceClosesCrossTenantOverloadReuse`                                       | Real permit authority refuses saturated/consumed claims; the test-only callback follows successful consumption in the healthy control                                   | Negative (consumption/callback harness) + positive control  |
+| 14  | `expiredDuplicateBehindCleanupBudgetWaitsButFreshKeyCanEnter` (all three stores)                                                                          | Expired duplicate is refused while its old record is behind the removal budget; fresh key can use reclaimed space; renewed generation remains single-use                | Conservative refusal + positive fresh control               |
 
-Integration scope is deliberately honest: the target counter is test-local and
-proves only that dispatch follows successful verification/consumption; store
-cardinality is not an invocation counter, and nothing here qualifies
-distributed abuse protection.
+The integration harness invokes the real verifier/authority followed by a
+test-only callback. The counter is attached to that path, but the harness does
+not execute the application dispatcher, HTTP/MCP route or any target adapter.
+Neither this callback count nor store cardinality is a production dispatch
+measurement, and no distributed abuse protection is qualified here.
 
 ---
 
@@ -101,11 +105,11 @@ store suites themselves need no Docker).
 
 ### Observed results
 
-2026-10-18, focused runs on this branch:
+2026-10-18, integrator-focused runs after the tests/docs follow-up:
 
-- `InMemorySourceAttestationReplayStoreTest` 11/11, 0 skipped, 0 failures.
-- `InMemoryWorkloadIdentityReplayStoreTest` 9/9, 0 skipped, 0 failures.
-- `InMemoryPermitConsumptionStoreTest` 28/28 (including the 20 pre-existing
+- `InMemorySourceAttestationReplayStoreTest` 12/12, 0 skipped, 0 failures.
+- `InMemoryWorkloadIdentityReplayStoreTest` 10/10, 0 skipped, 0 failures.
+- `InMemoryPermitConsumptionStoreTest` 29/29 (including the 20 pre-existing
   repeated same-key concurrency instances), 0 skipped, 0 failures.
 - `BoundedReplayVerifierIntegrationTest` 2/2;
   `ExecutionPermitAuthorityBoundedStoreTest` 2/2, 0 skipped, 0 failures.
@@ -114,10 +118,25 @@ store suites themselves need no Docker).
   exactly the budget per call; live-entry and expiry-index bounds held at
   every one of 400 churn iterations; exact winner counts (1 of 32 same-key,
   4 of 32 distinct-key at cap 4).
-- Full battery on this branch (`pnpm check`): BUILD SUCCESSFUL in 2m 35s,
+- Producer full battery at `51a97eb` (`pnpm check`): BUILD SUCCESSFUL in 2m 35s,
   51 tasks (45 executed) — the Docker-dependent persistence and HTTP adapter
   suites ran rather than silently skipping — followed by
   `pnpm format:check` clean.
+
+Each store has a permanent control where an expired duplicate remains behind
+the one-removal budget and is refused, while a genuinely new key enters using
+reclaimed space. The old key can enter only after its own record is removed.
+Race tests now bound start-gate waits, share a ten-second Future deadline,
+release the gate in `finally`, interrupt owned workers and assert termination
+within three seconds. Workers are daemon threads so an uninterruptible regression
+cannot keep the process alive after the failed cleanup assertion; a leak still
+fails the test. There is no unbounded `ExecutorService.close()` or `Future.get()`.
+
+The integrator separately ran a deterministic reference-model oracle (120,000
+decisions across the three stores and budgets 1/3), 30 expiry/reinsert races
+with 64 released virtual-thread contenders, and each no-arg default at 65,536
+entries with exactly 64 reclamation removals. These were temporary independent
+probes, not added permanent suites or production target dispatch measurements.
 
 ### Sensitivity control (guard-removal demonstrations)
 
@@ -163,8 +182,10 @@ focused suites were repeated green.
    public metric is introduced. The package-private counters exist for
    same-module tests only and expose no identifiers.
 4. **No fairness or latency guarantees.** Recovery from a cleanup backlog
-   takes several consumes (at most the budget per call); no wait-time, QPS,
-   or fairness claim is made.
+   takes successive valid unexpired offers (at most the budget per call).
+   Reused expired keys can remain conservatively refused behind that budget;
+   fresh keys may use already reclaimed space. No retention deadline, wait-time,
+   QPS, or fairness claim is made.
 5. **No transport or logging surface.** The stores add no HTTP behavior, no
    metrics, and no log output of tokens, signatures, private claims, or
    identifiers.
@@ -176,9 +197,8 @@ focused suites were repeated green.
 
 ## Requirement coverage and limits
 
-The [shared traceability matrix](../specs/12-traceability-matrix.md) is the
-central integration point for this evidence and is updated separately; this
-runbook cites the affected IDs without broadening their wording.
+The [scoped traceability entry](../specs/12-traceability-matrix.md#bounded-process-local-replay-and-consumption)
+integrates this evidence without promoting broad requirement statuses.
 
 | Requirement | Added evidence                                                                                                                                                    | Qualification boundary                                                  |
 | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |

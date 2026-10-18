@@ -7,6 +7,7 @@ import java.time.Instant;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -21,19 +22,26 @@ final class InMemoryPermitConsumptionStoreTest {
     CountDownLatch start = new CountDownLatch(1);
     var claims = IntStream.range(0, 32)
         .mapToObj(index -> (Callable<Boolean>) () -> {
-          start.await();
+          if (!start.await(10, TimeUnit.SECONDS)) throw new AssertionError("Start gate timed out");
           return store.consume("permit-shared", NOW.plusSeconds(30), NOW);
         })
         .toList();
 
-    try (var executor = Executors.newFixedThreadPool(16)) {
+    var executor = Executors.newFixedThreadPool(16, Thread.ofPlatform().daemon().factory());
+    try {
       var futures = claims.stream().map(executor::submit).toList();
       start.countDown();
       int winners = 0;
+      long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
       for (var future : futures) {
-        if (future.get()) winners++;
+        if (future.get(Math.max(1, deadline - System.nanoTime()), TimeUnit.NANOSECONDS)) winners++;
       }
       assertThat(winners).isEqualTo(1);
+    } finally {
+      start.countDown();
+      executor.shutdownNow();
+      assertThat(executor.awaitTermination(3, TimeUnit.SECONDS))
+          .as("all owned claim workers terminated").isTrue();
     }
   }
 
@@ -140,21 +148,28 @@ final class InMemoryPermitConsumptionStoreTest {
     CountDownLatch start = new CountDownLatch(1);
     var claims = IntStream.range(0, 32)
         .mapToObj(index -> (Callable<Boolean>) () -> {
-          start.await();
+          if (!start.await(10, TimeUnit.SECONDS)) throw new AssertionError("Start gate timed out");
           return store.consume("permit-" + index, NOW.plusSeconds(60), NOW);
         })
         .toList();
 
-    try (var executor = Executors.newFixedThreadPool(16)) {
+    var executor = Executors.newFixedThreadPool(16, Thread.ofPlatform().daemon().factory());
+    try {
       var futures = claims.stream().map(executor::submit).toList();
       start.countDown();
       int winners = 0;
+      long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
       for (var future : futures) {
-        if (future.get(10, java.util.concurrent.TimeUnit.SECONDS)) winners++;
+        if (future.get(Math.max(1, deadline - System.nanoTime()), TimeUnit.NANOSECONDS)) winners++;
       }
       assertThat(winners).isEqualTo(4);
       assertThat(store.liveEntries()).isEqualTo(4);
       assertThat(store.expiryIndexEntries()).isEqualTo(4);
+    } finally {
+      start.countDown();
+      executor.shutdownNow();
+      assertThat(executor.awaitTermination(3, TimeUnit.SECONDS))
+          .as("all owned claim workers terminated").isTrue();
     }
   }
 
@@ -173,5 +188,22 @@ final class InMemoryPermitConsumptionStoreTest {
         .isInstanceOf(IllegalArgumentException.class);
     assertThatThrownBy(() -> new InMemoryPermitConsumptionStore(4, 0))
         .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
+  void expiredDuplicateBehindCleanupBudgetWaitsButFreshKeyCanEnter() {
+    var store = new InMemoryPermitConsumptionStore(3, 1);
+    for (int i = 1; i <= 3; i++) {
+      assertThat(store.consume("old-" + i, NOW.plusSeconds(i), NOW)).isTrue();
+    }
+    Instant later = NOW.plusSeconds(10);
+    assertThat(store.consume("old-3", NOW.plusSeconds(90), later)).isFalse();
+    assertThat(store.reclamationRemovals()).isEqualTo(1);
+    assertThat(store.consume("fresh", NOW.plusSeconds(90), later)).isTrue();
+    assertThat(store.consume("old-3", NOW.plusSeconds(90), later)).isTrue();
+    assertThat(store.consume("old-3", NOW.plusSeconds(120), later)).isFalse();
+    assertThat(store.reclamationRemovals()).isEqualTo(3);
+    assertThat(store.liveEntries()).isEqualTo(2);
+    assertThat(store.expiryIndexEntries()).isEqualTo(2);
   }
 }

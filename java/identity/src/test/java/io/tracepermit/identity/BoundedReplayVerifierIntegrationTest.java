@@ -25,10 +25,10 @@ import org.junit.jupiter.api.Test;
  * Integration proof for the bounded process-local replay stores inside the real verifiers.
  *
  * <p>Scope is deliberately narrow: when a bounded store is saturated, a fresh, validly
- * signed credential is refused with the replay refusal code and no dispatch follows. The
- * test-local target counter only proves that dispatch follows successful verification —
- * store cardinality is not an invocation counter, and this proof does not extend to public
- * distributed abuse protection.
+ * signed credential is refused with the replay refusal code. A callback placed immediately
+ * after verification is not reached on refusal and is reached on the positive control.
+ * This is a test-only verification/callback harness, not the application dispatcher or a
+ * target adapter; it does not qualify production dispatch or distributed abuse protection.
  */
 final class BoundedReplayVerifierIntegrationTest {
   private static final Instant BASE = Instant.parse("2030-01-01T00:00:30Z");
@@ -47,7 +47,7 @@ final class BoundedReplayVerifierIntegrationTest {
   private static final String RUN_ID = "run:2030-01-01";
 
   @Test
-  void saturatedSourceAttestationStoreRefusesFreshValidAttestationWithoutDispatch() {
+  void saturatedSourceAttestationStoreRefusesFreshValidAttestationBeforeTestCallback() {
     KeyPair keyPair = ed25519();
     MutableClock clock = new MutableClock(BASE);
     InMemorySourceAttestationReplayStore store = new InMemorySourceAttestationReplayStore(1, 1);
@@ -61,11 +61,14 @@ final class BoundedReplayVerifierIntegrationTest {
             store.consume(ISSUER, UUID.randomUUID().toString(), BASE.plusSeconds(60), BASE))
         .isTrue();
 
-    // A fresh, validly signed attestation is refused with the replay refusal code and
-    // no dispatch follows.
+    // The test callback is in the same path, after real verification, not a detached count.
     String saturated =
         signer.sign(claims(request(), UUID.randomUUID().toString(), BASE.minusSeconds(15)));
-    assertThatThrownBy(() -> verifier.verify(saturated, request(), FINGERPRINT))
+    assertThatThrownBy(
+            () -> {
+              verifier.verify(saturated, request(), FINGERPRINT);
+              targetCalls.incrementAndGet();
+            })
         .isInstanceOf(SourceAttestationException.class)
         .extracting(error -> ((SourceAttestationException) error).code())
         .isEqualTo("SOURCE_ATTESTATION_REPLAYED");
@@ -74,7 +77,7 @@ final class BoundedReplayVerifierIntegrationTest {
     assertThat(store.saturatedRefusals()).isEqualTo(1);
 
     // Positive control: after genuine expiry and bounded reclamation, verification
-    // succeeds again and only then does dispatch follow.
+    // succeeds again and only then does the test callback run.
     clock.advance(Duration.ofSeconds(120));
     Instant now = clock.instant();
     String renewed = signer.sign(claims(request(), UUID.randomUUID().toString(), now.minusSeconds(15)));
@@ -86,7 +89,7 @@ final class BoundedReplayVerifierIntegrationTest {
   }
 
   @Test
-  void saturatedWorkloadStoreRefusesFreshValidCredentialWithoutDispatch() {
+  void saturatedWorkloadStoreRefusesFreshValidCredentialBeforeTestCallback() {
     KeyPair keyPair = ed25519();
     MutableClock clock = new MutableClock(BASE);
     InMemoryWorkloadIdentityReplayStore store = new InMemoryWorkloadIdentityReplayStore(1, 1);
@@ -117,7 +120,10 @@ final class BoundedReplayVerifierIntegrationTest {
             workloadClaims(action(), UUID.randomUUID().toString(), BASE.minusSeconds(15)),
             "tracepermit-workload-identity+jws");
     assertThatThrownBy(
-            () -> verifier.verify(saturated, List.of(), action(), context(clock.instant())))
+            () -> {
+              verifier.verify(saturated, List.of(), action(), context(clock.instant()));
+              targetCalls.incrementAndGet();
+            })
         .isInstanceOf(WorkloadCredentialException.class)
         .extracting(error -> ((WorkloadCredentialException) error).code())
         .isEqualTo("WORKLOAD_CREDENTIAL_REPLAYED");
