@@ -265,6 +265,10 @@ is a **proposed**, unqualified decomposition of credential custody and egress
 gates (SEC-007/008; OPS-005). It distinguishes provider credentials from
 TracePermit permits, requires deployment-specific bypass probes, and does not
 promote simulator or connector checks into proof of host-wide containment.
+Its [source anchors](../architecture/0056-enterprise-credentials-and-egress-boundary.md#current-source-anchors-not-enterprise-acceptance)
+identify the implemented controls and their residual limits; the
+[delivery gates](../architecture/0056-enterprise-credentials-and-egress-boundary.md#delivery-sequence-and-decision-gates)
+do not authorize a remote route or a real-target deployment.
 
 ## 8. Security testing expectations
 

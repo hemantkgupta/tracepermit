@@ -469,7 +469,12 @@ credential lifetime, defines operator-owned egress/credential responsibilities,
 and lists future adapter-specific bypass, outage and uncertain-outcome probes.
 Related controls are FR-001/008/009/012, SEC-003/006/010/012/013/014/019 and
 REL-002/005/008. No new target, broker, network policy or production checkpoint
-is enabled; all requirement statuses below remain unchanged.
+is enabled; all requirement statuses below remain unchanged. The
+[current source anchors](../architecture/0056-enterprise-credentials-and-egress-boundary.md#current-source-anchors-not-enterprise-acceptance)
+identify existing implementations and regressions without claiming a new run.
+The [delivery gates](../architecture/0056-enterprise-credentials-and-egress-boundary.md#delivery-sequence-and-decision-gates)
+keep local artifact acceptance, future remote simulator qualification and any
+future real-target release separate.
 
 ## Functional requirements
 

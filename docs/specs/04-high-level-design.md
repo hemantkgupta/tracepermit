@@ -193,6 +193,9 @@ egress enforcement requires platform controls beyond an ordinary user process.
 proposes the future split between request-bound execution authority, provider
 credential custody and operator-enforced egress. It does not add a real-target
 adapter or production deployment, and does not qualify SEC-007/008 or OPS-005.
+Its [delivery gates](../architecture/0056-enterprise-credentials-and-egress-boundary.md#delivery-sequence-and-decision-gates)
+separate same-laptop evaluation from a future remote simulator pilot and a
+separately reviewed non-production real-target pilot.
 
 ### 7.1 POC-qualified ingress stories
 
