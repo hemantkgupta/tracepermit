@@ -8,7 +8,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.tracepermit.contracts.JsonSupport;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -17,6 +16,11 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 public final class LoopbackHttpGatewayTransport implements GatewayTransport {
   public static final String SOURCE_HEADER = "tracepermit-source-attestation";
@@ -76,17 +80,18 @@ public final class LoopbackHttpGatewayTransport implements GatewayTransport {
         .header(SOURCE_HEADER, compactSourceAttestation)
         .POST(HttpRequest.BodyPublishers.ofByteArray(body))
         .build();
+    BoundedGatewayBodySubscriber subscriber = new BoundedGatewayBodySubscriber(MAX_RESPONSE_BYTES);
+    CompletableFuture<HttpResponse<byte[]>> exchange = null;
+    long started = System.nanoTime();
+    boolean completed = false;
     try {
-      HttpResponse<InputStream> response = client.send(
-          httpRequest, HttpResponse.BodyHandlers.ofInputStream());
-      byte[] responseBytes;
-      try (InputStream input = response.body()) {
-        responseBytes = input.readNBytes(MAX_RESPONSE_BYTES + 1);
-      }
-      if (responseBytes.length > MAX_RESPONSE_BYTES) {
-        throw new ConnectorException(
-            "GATEWAY_RESPONSE_TOO_LARGE", "The gateway response is too large.");
-      }
+      exchange = client.sendAsync(httpRequest, ignored -> subscriber);
+      long remaining = requestTimeout.toNanos() - (System.nanoTime() - started);
+      if (remaining <= 0) throw new TimeoutException();
+      HttpResponse<byte[]> response = exchange.get(remaining, TimeUnit.NANOSECONDS);
+      if (System.nanoTime() - started >= requestTimeout.toNanos()) throw new TimeoutException();
+      completed = true;
+      byte[] responseBytes = response.body();
       if (response.statusCode() < 200 || response.statusCode() >= 300) {
         throw gatewayRejected(responseBytes);
       }
@@ -94,11 +99,19 @@ public final class LoopbackHttpGatewayTransport implements GatewayTransport {
       return Optional.of(parseResponse(responseBytes));
     } catch (ConnectorException exception) {
       throw exception;
-    } catch (IOException exception) {
+    } catch (ExecutionException exception) {
+      if (exception.getCause() instanceof ConnectorException failure) throw failure;
+      throw unavailable(exception.getCause());
+    } catch (TimeoutException | CancellationException exception) {
       throw unavailable(exception);
     } catch (InterruptedException exception) {
       Thread.currentThread().interrupt();
       throw unavailable(exception);
+    } finally {
+      if (!completed) {
+        subscriber.cancel();
+        if (exchange != null) exchange.cancel(true);
+      }
     }
   }
 
@@ -159,7 +172,7 @@ public final class LoopbackHttpGatewayTransport implements GatewayTransport {
 
   private static Duration positiveTimeout(Duration value) {
     Objects.requireNonNull(value);
-    if (value.isZero() || value.isNegative() || value.compareTo(Duration.ofSeconds(30)) > 0) {
+    if (value.compareTo(Duration.ofMillis(1)) < 0 || value.compareTo(Duration.ofSeconds(30)) > 0) {
       throw new IllegalArgumentException("Gateway timeout must be between 1 ms and 30 seconds.");
     }
     return value;

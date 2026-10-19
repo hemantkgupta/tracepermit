@@ -140,8 +140,8 @@ synthetic identity fixtures as the existing server suite) asserts:
 - An already approved execute offered at full observed capacity (one active
   lane plus one queued exchange) is rejected at the transport with zero key
   resolutions, zero database attempts, and zero simulator rules; once capacity
-  frees, the approved execute dispatches exactly once and a replay is denied
-  (409) with no second dispatch.
+  frees, the approved execute succeeds and leaves one distinct simulator rule;
+  a replay is denied (409) and leaves that state unchanged.
 - The dispatch pool accepts exactly `activeLanes` running tasks and
   `pendingBound` queued tasks and throws on the next offer; lanes are daemon
   and named.
@@ -153,8 +153,9 @@ synthetic identity fixtures as the existing server suite) asserts:
   resolution and with a resolver that genuinely ignores interruption until the
   test releases it; the parked lane unwinds after release (its client observes
   connection teardown, not a fabricated status), a second close is a no-op,
-  and parked handlers are always released in a finally so even a failed
-  assertion cleans up boundedly.
+  and parked handlers are released in a finally covering setup assertions too.
+  Cleanup checks close-task termination and bounded handler joins rather than
+  silently ignoring a timed-out cleanup.
 - Eight submissions racing a close all complete within the bound and the
   closed foundation refuses new connections.
 - Default capacity preserves the normal create → review → execute → replay
@@ -168,6 +169,15 @@ unbounded fixed pool and the bounded-close join for `ExecutorService.close()`
 to show the overflow and close tests fail without them — the close probe now
 fails promptly through the test's own finite deadline, with the finally block
 still releasing the parked handler, and no external alarm.
+
+Proof limit: the stateful simulator deduplicates identical security-group rules.
+Its rule cardinality is not a target-invocation counter and cannot alone prove
+exactly-once dispatch or absence of duplicate calls. The saturation tests combine
+unchanged simulator state with counting key-resolution and database-access
+probes. Application-level invocation-count assertions remain separate evidence
+in `HumanApprovalServiceTest` (for example,
+`approvedExactRequestExecutesAndDenialNeverDoes`); they are not a measured HTTP
+admission-path call count.
 
 ## Limits
 

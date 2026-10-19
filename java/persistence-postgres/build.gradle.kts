@@ -5,7 +5,7 @@ dependencies {
   implementation(project(":contracts"))
   implementation("org.flywaydb:flyway-core:11.8.2")
   implementation("org.flywaydb:flyway-database-postgresql:11.8.2")
-  api("org.postgresql:postgresql:42.7.5")
+  api("org.postgresql:postgresql:42.7.14")
 
   testImplementation(project(":application"))
   testImplementation(project(":identity"))
@@ -15,7 +15,7 @@ dependencies {
   testImplementation(project(":simulator"))
   testImplementation(platform("org.testcontainers:testcontainers-bom:1.21.4"))
   testImplementation("org.testcontainers:postgresql")
-  testImplementation("org.postgresql:postgresql:42.7.5")
+  testImplementation("org.postgresql:postgresql:42.7.14")
   testRuntimeOnly("org.slf4j:slf4j-nop:1.7.36")
 }
 

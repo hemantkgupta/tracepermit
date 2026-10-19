@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="1000" viewBox="0 0 880 1000" role="img" aria-labelledby="title desc">
+  <title id="title">Five TracePermit control pillars and their proof-of-concept limits</title>
+  <desc id="desc">Complete mediation is limited to supported simulator paths. Canonical action hashing binds exact structured requests. Short-lived signed permits require verification and one-use claim before dispatch, with profile-specific durability. Development endpoint evidence is not managed attestation. Lookup-only reconciliation is a separately tested durable foundation, not an automatic recovery service or exactly-once external execution.</desc>
+  <defs>
+    <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <path d="M24 0H0V24" fill="none" stroke="#94a3b8" stroke-opacity="0.06"/>
+    </pattern>
+  </defs>
+  <rect width="880" height="1000" rx="16" fill="#090d16"/>
+  <rect width="880" height="1000" rx="16" fill="url(#grid)"/>
+  <g font-family="Arial, Helvetica, sans-serif" fill="#f8fafc">
+    <circle cx="36" cy="37" r="5" fill="#38bdf8"/>
+    <circle cx="54" cy="37" r="5" fill="#c084fc"/>
+    <circle cx="72" cy="37" r="5" fill="#34d399"/>
+    <text x="96" y="44" font-size="19" letter-spacing="1.2" fill="#cbd5e1">TRACEPERMIT / CORE PILLARS</text>
+    <text x="36" y="87" font-size="29" font-weight="700">Control the action. Preserve the evidence.</text>
+    <text x="36" y="117" font-size="19" fill="#cbd5e1">Java backend · simulator-only POC · explicit assurance limits</text>
+
+    <rect x="36" y="146" width="808" height="144" rx="12" fill="#0f172a" stroke="#38bdf8"/>
+    <circle cx="71" cy="184" r="18" fill="#12334b"/>
+    <text x="71" y="191" font-size="20" text-anchor="middle" fill="#7dd3fc">1</text>
+    <text x="106" y="192" font-size="25" font-weight="700">Complete mediation</text>
+    <text x="60" y="235" font-size="20" fill="#cbd5e1">Every simulated effect crosses a supported enforcement path.</text>
+    <text x="60" y="266" font-size="19" fill="#cbd5e1">Not interception of arbitrary tools or whole-host credential bypass.</text>
+
+    <rect x="36" y="308" width="808" height="144" rx="12" fill="#15172d" stroke="#c084fc"/>
+    <circle cx="71" cy="346" r="18" fill="#34234a"/>
+    <text x="71" y="353" font-size="20" text-anchor="middle" fill="#e9d5ff">2</text>
+    <text x="106" y="354" font-size="25" font-weight="700">Canonical action and deterministic hash</text>
+    <text x="60" y="397" font-size="20" fill="#cbd5e1">Versioned ActionEnvelope → canonical JSON → SHA-256.</text>
+    <text x="60" y="428" font-size="19" fill="#cbd5e1">Exact structured request binding, not trust in model assurances.</text>
+
+    <rect x="36" y="470" width="808" height="144" rx="12" fill="#102b27" stroke="#6ee7b7"/>
+    <circle cx="71" cy="508" r="18" fill="#174b3b"/>
+    <text x="71" y="515" font-size="20" text-anchor="middle" fill="#a7f3d0">3</text>
+    <text x="106" y="516" font-size="25" font-weight="700">Request-bound execution permit</text>
+    <text x="60" y="559" font-size="20" fill="#cbd5e1">Short-lived signed authority; verify and claim before dispatch.</text>
+    <text x="60" y="590" font-size="19" fill="#cbd5e1">Pending is not execution. One-use durability depends on the profile.</text>
+
+    <rect x="36" y="632" width="808" height="144" rx="12" fill="#292316" stroke="#fcd34d"/>
+    <circle cx="71" cy="670" r="18" fill="#4a3916"/>
+    <text x="71" y="677" font-size="20" text-anchor="middle" fill="#fde68a">4</text>
+    <text x="106" y="678" font-size="25" font-weight="700">Development endpoint source evidence</text>
+    <text x="60" y="721" font-size="20" fill="#cbd5e1">Observed process / terminal facts; request-bound Ed25519 proof.</text>
+    <text x="60" y="752" font-size="19" fill="#cbd5e1">Not managed-device attestation or proof of human approval.</text>
+
+    <rect x="36" y="794" width="808" height="144" rx="12" fill="#291721" stroke="#fda4af"/>
+    <circle cx="71" cy="832" r="18" fill="#4a2333"/>
+    <text x="71" y="839" font-size="20" text-anchor="middle" fill="#fecdd3">5</text>
+    <text x="106" y="840" font-size="25" font-weight="700">Safe simulation and honest outcomes</text>
+    <text x="60" y="883" font-size="20" fill="#cbd5e1">Unknown is not success. Durable lookup-only recovery is separate.</text>
+    <text x="60" y="914" font-size="19" fill="#cbd5e1">No automatic browser-launcher worker or exactly-once external effect.</text>
+    <text x="36" y="975" font-size="18" fill="#cbd5e1">tracepermit.org · Agentic Visibility &amp; Control (AVC)</text>
+  </g>
+</svg>

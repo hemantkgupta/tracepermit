@@ -5,6 +5,86 @@
 
 Status values: **Implemented**, **Partial**, **Target**, or **Proposed**.
 
+## Bounded OIDC/JWKS refresh isolation
+
+Requirements: SEC-002/003/004/015/017; REL-001/009; OPS-001/005.
+
+`CachingOidcJwkResolver`, `JwksRefreshCoordinator`, `OidcAccessTokenVerifier`,
+`BoundedHostResolver` and `SsrfSafeHttpsJwkSetSource` qualify a bounded local
+identity-dependency slice. Fresh keys avoid unrelated provider I/O; same-pair
+refreshes coalesce; finite workers/queues, monotonic wait/transport budgets,
+caller-specific freshness, late-result discard and ordered success/failure
+cooldowns preserve fail-closed behavior. Access-token claims use trusted time
+re-sampled after key resolution/signature verification. Existing destination,
+pinning, TLS, key/JSON, size and bounded-error controls remain in force.
+
+`CachingOidcJwkResolverTest`, `OidcAccessTokenVerifierTest` and
+`SsrfSafeHttpsJwkSetSourceTest` cover warm/independent-provider progress,
+coalescing, late/expired results, timeout/interruption, cooldown storms,
+old-interrupted-worker/new-success ordering, full active capacity before
+queueing, saturation/recovery, combined DNS/HTTP delay, token expiry during
+resolution and retained SSRF/TLS/key negatives. See
+[ADR 0049](../architecture/0049-bounded-jwks-refresh-isolation.md) and the
+[runbook](../runbooks/jwks-refresh-isolation.md).
+
+SEC-017 receives resource-exhaustion defense, not completed pre/post-auth
+distributed abuse control. OPS-001/005 remain partial: no new metrics,
+production bootstrap/readiness or live IdP qualification. Pools and cooldowns
+are instance-local (default DNS is shared across sources); provider fairness,
+process-wide cardinality, forced OS-call cancellation and a universal hard
+wall-clock SLO are not established. No whole-requirement status is promoted.
+
+## Bounded simulator approval listener admission
+
+Requirements: FR-003/007/009; SEC-002/003/017; REL-001/004/009; OPS-001/005.
+
+`ApprovalAdmissionExecutors` and `SimulatorApprovalServer` bound one loopback
+listener's executor to eight active lanes plus sixteen pending tasks by default.
+Admission precedes every handler statement; overflow refuses the transport
+without a guaranteed JSON error. Constructor validation, lane reuse after
+failures, approved-execute saturation, repeated cycles, close races and default
+approval/replay regression are covered by `SimulatorApprovalAdmissionTest` and
+`SimulatorApprovalServerTest`. Two close probes use daemon tasks, finite waits
+and release-finally coverage including setup; released-handler and owned-task
+termination are checked. The interruption-ignoring resolver establishes that
+bounded close does not depend on cooperative cancellation. See
+[ADR 0050](../architecture/0050-bounded-simulator-approval-admission.md) and the
+[runbook](../runbooks/simulator-approval-admission.md).
+
+Counting key-resolution/database probes plus unchanged simulator state qualify
+no expensive handler work during overflow. Simulator rule cardinality is not
+an invocation count because identical rules deduplicate; application-level
+invocation-counter tests are separate evidence. Approval, permit consumption
+and execution-claim semantics are unchanged. Bounds are per-server task counts,
+not TCP/byte limits; close is not a drain, forced cancellation or target-outcome
+guarantee. SEC-017 public pre/post-attribution abuse controls and OPS-005 remote
+readiness are not satisfied. OPS-001 gains no metrics surface; fairness,
+distributed capacity and a wall-clock SLO remain unqualified. No whole-ID status
+is promoted.
+
+## JWKS regression publication ordering
+
+SEC-002/003/015/017, REL-001/009 and OPS-001/005 retain their existing status.
+`CachingOidcJwkResolverTest` now waits for actual in-flight publication before
+inspecting an interrupted operation, with a second deterministic
+worker-before-publication case. The original 400 ms operation deadline,
+late-result refusal and obsolete-cooldown guard remain unchanged. Bounded
+cleanup, exact supplier counts and interrupt-status checks strengthen test
+evidence; they add no runtime authorization behavior. See
+[ADR 0049](../architecture/0049-bounded-jwks-refresh-isolation.md) and its
+[fixture explanation](../runbooks/jwks-refresh-isolation.md#concurrency-regression-fixture-ordering).
+
+## Public introduction visuals
+
+FR-005/007/008/009, SEC-005/006/014, REL-002/005 and OPS-002/004 are explained,
+not newly implemented, by the [public introduction](../../site/guide/what-is-tracepermit.md).
+Its request-flow and core-pillars SVGs distinguish block, sanitize, pending
+approval, explicit resume, permit verification/claim and simulator dispatch.
+Equivalent semantic HTML lists preserve readable mobile and assistive access.
+`scripts/intro-visuals.test.mjs` checks the static assets, text/branch boundaries,
+profile limits and responsive wiring; rendered browser QA is separate evidence.
+No runtime, trust boundary, assurance level or requirement status changes.
+
 ## Bounded process-local replay and consumption
 
 Requirements: SEC-002/003/004/006/009/014; REL-001/004/009; OPS-004.
@@ -178,6 +258,24 @@ distinguish protocol tests from actual client/model and reviewer observations.
 | 9: uncertainty           | REL-002/005/008; SEC-019                 | Failure/restart and lookup worker separately tested; no automatic sweeper/worker in browser launcher      |
 
 See the [rehearsal plan](../runbooks/flow-rehearsal-plan.md) for remaining manual gates.
+
+## Endpoint connector I/O completion budgets
+
+Requirements: FR-016/017; SEC-003/011/014; REL-001/002/005/009; OPS-004.
+
+`LoopbackHttpGatewayTransport` now waits for a bounded subscriber's complete
+body under one monotonic exchange budget, cancels on timeout/interruption and
+preserves existing public error codes. `LoopbackGatewayDeadlineTest` records
+one owned-loopback request and connection closure for stalled headers/body,
+partial error/redirect responses and interruption. Subscriber tests cover byte
+caps, EOF, cancellation and subscription lifecycle. `TerminalProbeDeadlineTest`
+covers bounded output/exit waiting, failure and cleanup through declared
+synthetic process adapters; the fixed macOS command/client PID is unchanged.
+Existing source-proof and simulator E2E gates remain required. No live model,
+Linux/Windows, protected-key or archive qualification is added. A timeout after
+send is not proof of no target effect and does not trigger tool retry. See
+[ADR 0057](../architecture/0057-endpoint-io-deadlines.md). Broad statuses below
+are unchanged.
 
 ## Named native endpoint rehearsal
 
@@ -443,6 +541,14 @@ is enabled; all requirement statuses below remain unchanged.
 | PERF-002 | Warmed 1,000-sample local authorization/permit/simulator p50/p95 harness                              | Implemented local POC objective; production load pending |
 | PERF-003 | No scale/load validation                                                                              | Proposed objective                                       |
 | PERF-004 | Synchronous execution plus durable pending approval; no remote async workflow                         | Partial design                                           |
+
+The simulator latency harness retains nonzero failure/timeout/cancellation and
+exact state-delta gates while adding bounded, fixed-category operation and
+test-container log diagnostics. `LatencyFailureDiagnosticsTest` qualifies safe
+projection, category cardinality and failure accounting (SEC-003; REL-001/005;
+OPS-003). It does not establish PERF-003 scale validation, a latency SLO, an
+authoritative database-error count or successful qualification of a failed run.
+See the [latency runbook](../runbooks/simulator-approval-latency-qualification.md#reading-a-failed-qualification).
 
 ## Data and privacy requirements
 
