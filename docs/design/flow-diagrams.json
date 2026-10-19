@@ -605,8 +605,20 @@
         [
           "E",
           "D",
-          "Attempt separate completion write, a fault can leave consumed/executing",
+          "Attempt separate completion write after simulator dispatch",
           "call"
+        ],
+        [
+          "E",
+          "D",
+          "On completion failure, make one bounded UNKNOWN recording attempt without retrying the effect",
+          "call"
+        ],
+        [
+          "",
+          "",
+          "Keep committed terminal outcomes. Persistent database failure can still leave the attempt executing.",
+          "note"
         ],
         [
           "E",
@@ -654,6 +666,222 @@
           "",
           "",
           "No automatic executing-to-unknown sweep or worker is wired into the browser approval launcher, real-target lookup remains future work.",
+          "note"
+        ]
+      ]
+    },
+    {
+      "id": "flow-10-browser-history",
+      "title": "Flow 10: sign in, then inspect role-scoped approval history",
+      "participants": [
+        ["B", "Browser"],
+        ["J", "Java session API"],
+        ["I", "Configured IdP"],
+        ["D", "PostgreSQL"]
+      ],
+      "steps": [
+        [
+          "B",
+          "J",
+          "Start sign-in on the numeric-loopback approval origin",
+          "call"
+        ],
+        [
+          "J",
+          "B",
+          "Redirect with browser-bound state, nonce and S256 PKCE",
+          "return"
+        ],
+        [
+          "B",
+          "I",
+          "Complete sign-in with the configured identity provider",
+          "call"
+        ],
+        [
+          "I",
+          "J",
+          "Browser returns the authorization code and issuer",
+          "return"
+        ],
+        [
+          "J",
+          "I",
+          "After checking state, exchange code and verify signed access and ID tokens",
+          "call"
+        ],
+        [
+          "J",
+          "B",
+          "Set an opaque session cookie, reusable provider tokens stay server-side",
+          "return"
+        ],
+        [
+          "B",
+          "J",
+          "Request exact metadata filters and a bounded page using the current session",
+          "call"
+        ],
+        [
+          "J",
+          "D",
+          "Recheck token, membership, role, scopes and tenant/owner before querying",
+          "call"
+        ],
+        [
+          "J",
+          "B",
+          "Return safe-rendered history and cursor, reading grants no execution authority",
+          "return"
+        ],
+        [
+          "",
+          "",
+          "Synthetic browser profile is qualified. This is not a new live external-IdP or public browser qualification.",
+          "note"
+        ]
+      ]
+    },
+    {
+      "id": "flow-11-package-startup",
+      "title": "Flow 11: offline check, explicit initialization, strict startup",
+      "participants": [
+        ["O", "Local operator"],
+        ["C", "Java launcher"],
+        ["D", "Local PostgreSQL"],
+        ["R", "Loopback runtime"]
+      ],
+      "steps": [
+        [
+          "O",
+          "C",
+          "Run --check with private configuration, key files and bundled assets",
+          "call"
+        ],
+        [
+          "C",
+          "O",
+          "Report offline validity only, no database, IdP traffic or listener",
+          "return"
+        ],
+        [
+          "O",
+          "C",
+          "For first installation only, explicitly run --init-db",
+          "call"
+        ],
+        [
+          "C",
+          "D",
+          "Hold the initialization lock and install only into a fresh empty dedicated schema",
+          "call"
+        ],
+        [
+          "O",
+          "C",
+          "Run --run using the same operator-owned configuration",
+          "call"
+        ],
+        [
+          "C",
+          "D",
+          "Validate existing schema and recovery state, never implicitly migrate or repair",
+          "call"
+        ],
+        [
+          "C",
+          "R",
+          "Bind 127.0.0.1 and compose authenticated API, optional inbox and approval MCP",
+          "call"
+        ],
+        [
+          "",
+          "",
+          "Normal runtime needs operator OIDC and PostgreSQL. The synthetic source demo is a different test composition.",
+          "note"
+        ],
+        [
+          "",
+          "",
+          "An archive manifest identifies a clean source build, not signed provenance or production readiness.",
+          "note"
+        ]
+      ]
+    },
+    {
+      "id": "flow-12-recovery-quarantine",
+      "title": "Flow 12: inspect stored state and explicitly quarantine new authority",
+      "participants": [
+        ["O", "Local operator"],
+        ["C", "Owner-only CLI"],
+        ["D", "PostgreSQL guard"],
+        ["R", "Running service"]
+      ],
+      "steps": [
+        [
+          "",
+          "",
+          "First stop agents and effectful services independently. Quarantine cannot cancel already committed claims.",
+          "note"
+        ],
+        [
+          "O",
+          "C",
+          "Run --recovery-inspect with separate owner configuration",
+          "call"
+        ],
+        [
+          "C",
+          "D",
+          "Read aggregate stored-state counts in one read-only snapshot",
+          "call"
+        ],
+        [
+          "C",
+          "O",
+          "Return bounded counts, not target outcome proof or permission to resume",
+          "return"
+        ],
+        [
+          "O",
+          "C",
+          "Explicitly run --quarantine-db against the intended simulator database",
+          "call"
+        ],
+        [
+          "C",
+          "D",
+          "Serialize and commit the one-way recovery guard transition",
+          "call"
+        ],
+        [
+          "R",
+          "D",
+          "Attempt a new authority claim or approval review after quarantine",
+          "call"
+        ],
+        [
+          "D",
+          "R",
+          "Refuse new authority writes, previous claim completion remains possible",
+          "return"
+        ],
+        [
+          "O",
+          "C",
+          "Attempt --run against an already quarantined database",
+          "call"
+        ],
+        [
+          "C",
+          "O",
+          "Refuse startup, no resume or quarantine-clear command is provided",
+          "return"
+        ],
+        [
+          "",
+          "",
+          "An older restored ready row is not detected automatically. This is declared containment, not a restore fence.",
           "note"
         ]
       ]

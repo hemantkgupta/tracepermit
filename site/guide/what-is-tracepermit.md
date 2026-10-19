@@ -79,6 +79,10 @@ For profile-specific wiring and limits, see the
 
 ## Next Steps
 
+- **[What works today](/guide/working-today):** Choose a qualified simulator
+  profile and understand its limits.
+- **[Fresh MacBook evaluation](/guide/fresh-macbook-evaluation):** Follow the
+  clean-machine source walkthrough or the separate operator-package path.
 - **[Local POC quickstart](/guide/getting-started):** Build and run the Java
   gateway, React console, and simulator scenarios from source.
 - **[The Security Invariant](/guide/security-invariants):** Deep dive into the formal trust guarantees.

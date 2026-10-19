@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="932" viewBox="0 0 1000 932" role="img" aria-labelledby="flow-12-recovery-quarantine-title flow-12-recovery-quarantine-desc">
+<title id="flow-12-recovery-quarantine-title">Flow 12: inspect stored state and explicitly quarantine new authority</title>
+<desc id="flow-12-recovery-quarantine-desc">First stop agents and effectful services independently. Quarantine cannot cancel already committed claims.. Run --recovery-inspect with separate owner configuration. Read aggregate stored-state counts in one read-only snapshot. Return bounded counts, not target outcome proof or permission to resume. Explicitly run --quarantine-db against the intended simulator database. Serialize and commit the one-way recovery guard transition. Attempt a new authority claim or approval review after quarantine. Refuse new authority writes, previous claim completion remains possible. Attempt --run against an already quarantined database. Refuse startup, no resume or quarantine-clear command is provided. An older restored ready row is not detected automatically. This is declared containment, not a restore fence.</desc>
+<!-- Generated from docs/design/flow-diagrams.json. Do not edit this SVG directly. -->
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1 L9 5 L1 9" fill="none" stroke="#087b87" stroke-width="1.7"/></marker></defs>
+<style>text{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#17243b}.label{font-size:16px}.heading{font-size:15px;font-weight:650}.step{font-size:13px;font-weight:700;fill:white}.life{stroke:#cbd5e1;stroke-dasharray:5 5}.arrow{stroke:#087b87;stroke-width:1.8;fill:none;marker-end:url(#arrow)}</style>
+<rect x="1" y="1" width="998" height="930" rx="12" fill="white" stroke="#dbe3ed"/>
+<text x="28" y="34" font-size="19" font-weight="700">Flow 12: inspect stored state and explicitly quarantine new authority</text>
+<line x1="122" y1="109" x2="122" y2="908" class="life"/>
+<rect x="38" y="54" width="168" height="55" rx="8" fill="#eff8fa" stroke="#b6d9de"/>
+<text x="122" y="77" text-anchor="middle" class="heading">Local operator</text>
+<line x1="374" y1="109" x2="374" y2="908" class="life"/>
+<rect x="290" y="54" width="168" height="55" rx="8" fill="#eff8fa" stroke="#b6d9de"/>
+<text x="374" y="77" text-anchor="middle" class="heading">Owner-only CLI</text>
+<line x1="626" y1="109" x2="626" y2="908" class="life"/>
+<rect x="542" y="54" width="168" height="55" rx="8" fill="#eff8fa" stroke="#b6d9de"/>
+<text x="626" y="77" text-anchor="middle" class="heading">PostgreSQL guard</text>
+<line x1="878" y1="109" x2="878" y2="908" class="life"/>
+<rect x="794" y="54" width="168" height="55" rx="8" fill="#eff8fa" stroke="#b6d9de"/>
+<text x="878" y="77" text-anchor="middle" class="heading">Running service</text>
+<rect x="55" y="127" width="920" height="73" rx="8" fill="#f1f5f9" stroke="#dbe3ed"/>
+<text x="68" y="146" class="label">First stop agents and effectful services independently. Quarantine cannot cancel already committed</text>
+<text x="68" y="166" class="label">claims.</text>
+<circle cx="28" cy="228" r="12" fill="#087b87"/>
+<text x="28" y="233" text-anchor="middle" class="step">1</text>
+<text x="68" y="234" class="label">Run --recovery-inspect with separate owner configuration</text>
+<path d="M122 248 H374" class="arrow"/>
+<circle cx="28" cy="296" r="12" fill="#087b87"/>
+<text x="28" y="301" text-anchor="middle" class="step">2</text>
+<text x="68" y="302" class="label">Read aggregate stored-state counts in one read-only snapshot</text>
+<path d="M374 316 H626" class="arrow"/>
+<circle cx="28" cy="364" r="12" fill="#087b87"/>
+<text x="28" y="369" text-anchor="middle" class="step">3</text>
+<text x="68" y="370" class="label">Return bounded counts, not target outcome proof or permission to resume</text>
+<path d="M374 384 H122" class="arrow" stroke-dasharray="6 4"/>
+<circle cx="28" cy="432" r="12" fill="#087b87"/>
+<text x="28" y="437" text-anchor="middle" class="step">4</text>
+<text x="68" y="438" class="label">Explicitly run --quarantine-db against the intended simulator database</text>
+<path d="M122 452 H374" class="arrow"/>
+<circle cx="28" cy="500" r="12" fill="#087b87"/>
+<text x="28" y="505" text-anchor="middle" class="step">5</text>
+<text x="68" y="506" class="label">Serialize and commit the one-way recovery guard transition</text>
+<path d="M374 520 H626" class="arrow"/>
+<circle cx="28" cy="568" r="12" fill="#087b87"/>
+<text x="28" y="573" text-anchor="middle" class="step">6</text>
+<text x="68" y="574" class="label">Attempt a new authority claim or approval review after quarantine</text>
+<path d="M878 588 H626" class="arrow"/>
+<circle cx="28" cy="636" r="12" fill="#087b87"/>
+<text x="28" y="641" text-anchor="middle" class="step">7</text>
+<text x="68" y="642" class="label">Refuse new authority writes, previous claim completion remains possible</text>
+<path d="M626 656 H878" class="arrow" stroke-dasharray="6 4"/>
+<circle cx="28" cy="704" r="12" fill="#087b87"/>
+<text x="28" y="709" text-anchor="middle" class="step">8</text>
+<text x="68" y="710" class="label">Attempt --run against an already quarantined database</text>
+<path d="M122 724 H374" class="arrow"/>
+<circle cx="28" cy="772" r="12" fill="#087b87"/>
+<text x="28" y="777" text-anchor="middle" class="step">9</text>
+<text x="68" y="778" class="label">Refuse startup, no resume or quarantine-clear command is provided</text>
+<path d="M374 792 H122" class="arrow" stroke-dasharray="6 4"/>
+<rect x="55" y="827" width="920" height="73" rx="8" fill="#f1f5f9" stroke="#dbe3ed"/>
+<text x="68" y="846" class="label">An older restored ready row is not detected automatically. This is declared containment, not a restore</text>
+<text x="68" y="866" class="label">fence.</text>
+</svg>

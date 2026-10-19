@@ -28,7 +28,7 @@ export function validateCatalog(catalog) {
   for (const diagram of catalog.diagrams) {
     if (
       !diagram ||
-      !/^(central-invariant|flow-[1-9]-[a-z-]+)$/.test(diagram.id) ||
+      !/^(central-invariant|flow-[1-9][0-9]*-[a-z-]+)$/.test(diagram.id) ||
       ids.has(diagram.id)
     )
       throw new Error("Invalid or duplicate flow ID.");

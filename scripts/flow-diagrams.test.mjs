@@ -20,15 +20,37 @@ const catalog = JSON.parse(
   ),
 );
 
-test("catalog covers the overview and nine stable action flows", () => {
+test("catalog covers the overview and twelve stable action/operator flows", () => {
   assert.equal(validateCatalog(catalog), catalog);
-  assert.equal(catalog.diagrams.length, 10);
+  assert.equal(catalog.diagrams.length, 13);
   assert.equal(catalog.diagrams[0].id, "central-invariant");
   catalog.diagrams
     .slice(1)
     .forEach((diagram, index) =>
       assert.ok(diagram.id.startsWith(`flow-${index + 1}-`)),
     );
+});
+
+test("multi-digit flow IDs are supported without accepting zero or leading zeroes", () => {
+  for (const id of [
+    "flow-10-browser-history",
+    "flow-11-package-startup",
+    "flow-12-recovery-quarantine",
+  ]) {
+    const copy = structuredClone(catalog);
+    copy.diagrams = [{ ...copy.diagrams[0], id }];
+    assert.equal(validateCatalog(copy), copy);
+  }
+  for (const id of [
+    "flow-0-invalid",
+    "flow-01-invalid",
+    "flow--1-invalid",
+    "flow-1-../invalid",
+  ]) {
+    const copy = structuredClone(catalog);
+    copy.diagrams[0].id = id;
+    assert.throws(() => validateCatalog(copy), /flow ID/);
+  }
 });
 
 test("invalid references, duplicates, multiline labels and unsupported kinds fail closed", () => {
@@ -121,7 +143,7 @@ test("SVG escapes text, wraps labels, and supports self and return arrows", () =
 
 test("generated artifacts cover both guides and every public SVG", async () => {
   const files = await generatedFiles();
-  assert.equal(files.size, 12);
+  assert.equal(files.size, 15);
   for (const filename of ["docs/flows-guide.md", "site/guide/core-flows.md"]) {
     const guide = files.get(filename);
     for (const diagram of catalog.diagrams)
@@ -195,4 +217,70 @@ test("documented control tokens match the current policy and approval adapter", 
     "tracepermit_resume_approval",
   ])
     assert.ok(adapter.includes(name));
+});
+
+test("operator diagrams use commands supported by the actual local launcher", async () => {
+  const main = await readFile(
+    path.join(
+      repositoryRoot,
+      "java/adapters-http/src/main/java/io/tracepermit/adapters/http/SimulatorApprovalMain.java",
+    ),
+    "utf8",
+  );
+  for (const id of ["flow-11-package-startup", "flow-12-recovery-quarantine"]) {
+    const diagram = catalog.diagrams.find((item) => item.id === id);
+    assert.ok(diagram);
+    for (const command of mermaid(diagram).match(/--[a-z-]+/g) ?? []) {
+      assert.ok(
+        main.includes(`"${command}"`),
+        `Unsupported documented command ${command}`,
+      );
+    }
+  }
+});
+
+test("fresh Mac page includes one canonical checklist with supported scripts and fixture roles", async () => {
+  const page = await readFile(
+    path.join(repositoryRoot, "site/guide/fresh-macbook-evaluation.md"),
+    "utf8",
+  );
+  const guide = await readFile(
+    path.join(repositoryRoot, "docs/runbooks/fresh-macbook-evaluation.md"),
+    "utf8",
+  );
+  const manifest = JSON.parse(
+    await readFile(path.join(repositoryRoot, "package.json"), "utf8"),
+  );
+  const fixture = await readFile(
+    path.join(
+      repositoryRoot,
+      "java/adapters-http/src/test/java/io/tracepermit/adapters/http/SimulatorApprovalBrowserQualificationMain.java",
+    ),
+    "utf8",
+  );
+  assert.ok(
+    page.includes(
+      "<!--@include: ../../docs/runbooks/fresh-macbook-evaluation.md-->",
+    ),
+  );
+  for (const script of [
+    "check",
+    "format:check",
+    "demo:approvals:browser",
+    "build:distribution",
+  ]) {
+    assert.ok(manifest.scripts[script]);
+    assert.ok(guide.includes(`pnpm ${script}`));
+  }
+  for (const role of [
+    "alice=requester",
+    "bob=reviewer",
+    "carol=viewer",
+    "dave=requester+reviewer",
+  ]) {
+    assert.ok(fixture.includes(role));
+    assert.ok(guide.includes(role));
+  }
+  assert.ok(guide.includes("source-based fresh-machine evaluation"));
+  assert.ok(guide.includes("not** a completed qualification"));
 });
