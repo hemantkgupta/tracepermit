@@ -1,11 +1,44 @@
-import { defineConfig } from "vitepress";
+import { defineConfig, type HeadConfig } from "vitepress";
+
+const description =
+  "Request-bound approvals for coding agents: authenticated requests, independent review and explicit simulator execution.";
 
 export default defineConfig({
   title: "TracePermit",
-  description:
-    "Request-bound approvals for coding agents: authenticated requests, independent review and explicit simulator execution.",
+  description,
   cleanUrls: true,
   lastUpdated: true,
+  sitemap: {
+    hostname: "https://tracepermit.org",
+    transformItems: (items) => items.filter((item) => item.url !== "404"),
+  },
+
+  // Serialized page data keeps metadata correct during client-side navigation.
+  // transformHead alone only affects the initial server-rendered document.
+  transformPageData(pageData) {
+    if (pageData.relativePath === "404.md") return;
+    const path = pageData.relativePath
+      .replace(/(^|\/)index\.md$/, "$1")
+      .replace(/\.md$/, "");
+    const canonical = new URL(path, "https://tracepermit.org/").href;
+    const title =
+      pageData.relativePath === "index.md"
+        ? "TracePermit | Request-bound approvals for coding agents"
+        : `${pageData.title} | TracePermit`;
+    const head: HeadConfig[] = [
+      ["link", { rel: "canonical", href: canonical }],
+      ["meta", { property: "og:url", content: canonical }],
+      ["meta", { property: "og:title", content: title }],
+      [
+        "meta",
+        {
+          property: "og:description",
+          content: pageData.description || description,
+        },
+      ],
+    ];
+    pageData.frontmatter.head = [...(pageData.frontmatter.head || []), ...head];
+  },
 
   vite: {
     resolve: {
@@ -21,18 +54,21 @@ export default defineConfig({
     [
       "meta",
       {
-        property: "og:title",
-        content: "TracePermit | Request-bound approvals for coding agents",
+        property: "og:image",
+        content: "https://tracepermit.org/images/tracepermit-social.png",
       },
     ],
     [
       "meta",
       {
-        property: "og:description",
+        property: "og:image:alt",
         content:
-          "Explore a simulator-only approval workflow with independent review, single-use authority and durable evidence.",
+          "TracePermit: request, independent review and explicit resume. Simulator-only evaluation preview.",
       },
     ],
+    ["meta", { property: "og:image:width", content: "1200" }],
+    ["meta", { property: "og:image:height", content: "630" }],
+    ["meta", { name: "twitter:card", content: "summary_large_image" }],
   ],
 
   themeConfig: {
@@ -45,6 +81,7 @@ export default defineConfig({
         items: [
           { text: "What is TracePermit?", link: "/guide/what-is-tracepermit" },
           { text: "What Works Today", link: "/guide/working-today" },
+          { text: "Verification & Compatibility", link: "/guide/verification" },
           { text: "Core Flows", link: "/guide/core-flows" },
           { text: "Architecture", link: "/guide/architecture" },
         ],
@@ -58,6 +95,10 @@ export default defineConfig({
           },
           { text: "Local POC Quickstart", link: "/guide/getting-started" },
           { text: "Connector for Codex", link: "/guide/endpoint-connector" },
+          {
+            text: "Request a simulator demo",
+            link: "mailto:hemant@tracepermit.org?subject=TracePermit%20simulator%20demo",
+          },
         ],
       },
       { text: "GitHub", link: "https://github.com/hemantkgupta/tracepermit" },
@@ -68,6 +109,7 @@ export default defineConfig({
         text: "Overview",
         items: [
           { text: "What Works Today", link: "/guide/working-today" },
+          { text: "Verification & Compatibility", link: "/guide/verification" },
           { text: "What is TracePermit?", link: "/guide/what-is-tracepermit" },
           {
             text: "Fresh MacBook Evaluation",
@@ -122,7 +164,7 @@ export default defineConfig({
 
     footer: {
       message:
-        "Java/React simulator POC. Source licensed under the Apache License 2.0.",
+        'Java/React simulator preview. Apache License 2.0. <a href="mailto:hemant@tracepermit.org">Contact: hemant@tracepermit.org</a>.',
       copyright: "Copyright © 2026 TracePermit Contributors",
     },
 

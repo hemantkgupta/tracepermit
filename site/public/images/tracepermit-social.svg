@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630" role="img" aria-labelledby="title desc">
+  <title id="title">TracePermit — request-bound approvals for coding agents</title>
+  <desc id="desc">Request, independent review and explicit resume. Pending and approved requests are not execution. Simulator-only evaluation preview.</desc>
+  <rect width="1200" height="630" fill="#f5f8ff"/>
+  <rect x="30" y="30" width="1140" height="570" rx="24" fill="#fff" stroke="#dce5f6" stroke-width="2"/>
+  <g transform="translate(65 64) scale(2.1)" fill="none" stroke="#2563eb" stroke-width="1.8" stroke-linejoin="round">
+    <path d="M12 2 3 6v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V6Z" fill="#eaf1ff"/>
+    <path d="m9 12 2 2 4-4" stroke-linecap="round"/>
+  </g>
+  <g font-family="Inter, Arial, sans-serif" fill="#152442">
+    <text x="126" y="106" font-size="34" font-weight="700">TracePermit</text>
+    <text x="1080" y="100" text-anchor="end" font-size="21" fill="#52627d">tracepermit.org</text>
+    <text x="70" y="200" font-size="52" font-weight="750">One exact request.</text>
+    <text x="70" y="264" font-size="52" font-weight="750" fill="#2563eb">One explicit decision.</text>
+    <text x="72" y="310" font-size="25" fill="#52627d">Request-bound approvals for coding agents</text>
+    <g stroke="#dce5f6" stroke-width="2" fill="#f8faff">
+      <rect x="70" y="356" width="310" height="126" rx="16"/>
+      <rect x="445" y="356" width="310" height="126" rx="16"/>
+      <rect x="820" y="356" width="310" height="126" rx="16"/>
+    </g>
+    <g font-size="24" font-weight="650">
+      <text x="92" y="398">1 · Request</text>
+      <text x="467" y="398">2 · Independent review</text>
+      <text x="842" y="398">3 · Explicit resume</text>
+    </g>
+    <g font-size="19" fill="#52627d">
+      <text x="92" y="433">Pending</text>
+      <text x="92" y="459">Not executed</text>
+      <text x="467" y="433">Approved</text>
+      <text x="467" y="459">Still not executed</text>
+      <text x="842" y="433">Claim authority</text>
+      <text x="842" y="459">Invoke simulator</text>
+    </g>
+    <g fill="none" stroke="#2563eb" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M397 419h30m-8-8 8 8-8 8"/>
+      <path d="M772 419h30m-8-8 8 8-8 8"/>
+    </g>
+    <rect x="70" y="524" width="510" height="42" rx="21" fill="#eaf1ff"/>
+    <text x="325" y="551" text-anchor="middle" font-size="17" font-weight="700" fill="#1d4ed8">SIMULATOR-ONLY EVALUATION PREVIEW</text>
+    <text x="1128" y="551" text-anchor="end" font-size="19" fill="#52627d">Java backend · React approval inbox</text>
+  </g>
+</svg>

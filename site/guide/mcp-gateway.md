@@ -1,20 +1,26 @@
 ---
 title: Model Context Protocol (MCP) Gateway
-description: How TracePermit secures Anthropic's Model Context Protocol.
+description: How TracePermit adds action-level policy and request-bound authority to its supported MCP profiles.
 ---
 
 # Model Context Protocol (MCP) Gateway
 
-Anthropic's **Model Context Protocol (MCP)** standardizes how language models connect to external tools, data sources, and servers. However, raw MCP servers have no built-in authorization, audit logging, or side-effect prevention.
+**Model Context Protocol (MCP)** standardizes how AI applications connect to tools
+and data. MCP defines an [optional authorization framework for HTTP transports](https://modelcontextprotocol.io/specification/2025-06-18/basic/authorization);
+stdio integrations typically obtain credentials from their environment. It would
+be incorrect to say that MCP has no authorization mechanism.
 
 TracePermit's Java gateway mediates the registered tools in its POC MCP
-profiles. It does not transparently proxy arbitrary external MCP servers.
+profiles. It adds trusted action normalization, deterministic policy and
+request-bound approval/permit checks before simulated effects. It does not
+replace MCP OAuth, downstream IAM or the operating system's security boundary,
+and does not transparently proxy arbitrary external MCP servers.
 
 ---
 
 ## Supported MCP Transports
 
-TracePermit provides native mediation across both standard MCP communication transports:
+The supported profiles use these transports:
 
 1. **Streamable HTTP (`POST /mcp`):**
    - The local runnable profile binds to loopback; a separate remote-edge
@@ -30,31 +36,42 @@ TracePermit provides native mediation across both standard MCP communication tra
 
 ---
 
-## MCP Lifecycle Mediation
+## The supported request path
 
-TracePermit strictly mediates every phase of the MCP protocol lifecycle:
+The local profiles implement a bounded initialize/initialized, tools/list and
+tools/call surface. A registered catalog is not execution authority. The exact
+call still crosses identity, scope and action-policy checks:
 
 ```
-AI Client                     TracePermit Gateway                     Target Server
-   │                                   │                                     │
-   ├─── 1. initialize ────────────────►│ (Scope verification)                │
-   │◄── 2. capabilities ───────────────┤ (Filtered tool definitions)         │
-   │                                   │                                     │
-   ├─── 3. tools/list ────────────────►│                                     │
-   │◄── 4. scope-filtered catalog ─────┤ (Registered tools only)             │
-   │                                   │                                     │
-   ├─── 5. tools/call (destructive) ──►│ ───► Policy Engine                  │
-   │                                   │      • Evaluates arguments          │
-   │                                   │      • Result: BLOCK                │
-   │◄── 6. JSON-RPC Error (Denied) ────┤                                     │
-   │                                   │ (Target is never invoked!)          │
+Client                 TracePermit profile                  Simulator
+  |                           |                                 |
+  |-- initialize/tools/list ->| verified identity + registered  |
+  |<-- bounded catalog -------| profile-specific tool surface    |
+  |                           |                                 |
+  |-- tools/call ------------>| normalize exact action           |
+  |                           | evaluate scope + policy          |
+  |                           |                                 |
+  |<-- block / pending -------| no dispatch                      |
+  |                           |                                 |
+  |                           | allow, or separately approved    |
+  |                           | and explicitly resumed request   |
+  |                           |-- authority checks then invoke ->|
+  |<-- recorded result -------|<-- simulated outcome ------------|
 ```
+
+Policy denials can be structured tool results, not necessarily JSON-RPC
+transport errors. Approval tools and the native endpoint catalog are separate
+profiles; not every tool exposes the durable approval workflow. Resources,
+prompts and full conformance to every MCP revision are not claimed. See the
+[verification and compatibility index](/guide/verification) for recognized
+version identifiers and named client rehearsals.
 
 ---
 
 ## Defending Against MCP-Specific Vulnerabilities
 
-TracePermit provides structural defenses against the primary attack vectors in the MCP ecosystem:
+These controls constrain the registered simulator workflows; they are not a
+claim to detect every prompt injection or secure arbitrary external tools:
 
 ### 1. Tool Poisoning & Malicious Descriptions
 
@@ -72,4 +89,10 @@ TracePermit provides structural defenses against the primary attack vectors in t
 ### 3. Tool Rug-Pulls
 
 - _The Threat:_ A tool definition changes dynamically mid-session after initial user approval.
-- _The Defense:_ TracePermit computes canonical action hashes on the exact runtime arguments for every single invocation. Approvals are strictly bound to that single hash.
+- _The Defense:_ The gateway uses a frozen registry snapshot with captured tool
+  metadata and schemas. Durable approvals bind the exact canonical action and
+  its authority context; a changed action cannot reuse that approval.
+- _The Limit:_ An action hash does **not attest arbitrary remote tool
+  implementation code**. Registered handlers remain part of the trusted
+  computing base; TracePermit is not an implementation-integrity guarantee for
+  third-party MCP servers.
