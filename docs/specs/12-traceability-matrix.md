@@ -424,6 +424,19 @@ startup and declared containment. These are documentation/traceability additions
 not proof of a new laptop, external IdP, published release or production readiness;
 requirement statuses remain unchanged.
 
+The [public verification index](../../site/guide/verification.md) adds dated,
+revision-pinned client evidence, named compatibility boundaries and two retained
+screenshots of the same synthetic approval/replay case. It supports OPS-002/004
+documentation discoverability, not new enforcement or client qualification.
+`scripts/site-verification.test.mjs` checks built canonical/share metadata,
+sitemap, evidence-source links and protocol identifier consistency;
+`scripts/site-verification-browser.test.mjs` checks responsive evidence disclosure,
+image loading, navigation/search and the approved public contact link. The
+[MCP guide](../../site/guide/mcp-gateway.md) distinguishes optional protocol
+authorization from action policy and limits action hashes to their actual scope.
+No requirement status, runtime trust boundary, release status or external-IdP /
+fresh-machine qualification is changed by this documentation slice.
+
 ## Durable policy-generation binding for simulator approvals
 
 | Requirements                                          | Implementation and verification                                                                                                                                                                                                                                                 | Boundary                                                                                                                                                                                                                                                                                                                |
