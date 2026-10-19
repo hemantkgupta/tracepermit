@@ -223,6 +223,18 @@ This is not full action search, customer retention/export,
 constant-cost paging, an SLO or production tenant isolation certification. No
 schema/authority/permit behavior changes, and no whole-ID status is upgraded.
 
+FR-007; SEC-004/005; REL-002 receive additional **UI-only** expiry guidance:
+`ApprovalInbox` shares one local clock across live rows, invalidates expired
+confirmations and rechecks current selection/ID/hash/eligibility before POST.
+`approval-confirmation.test.ts` covers exact boundaries, current status/session,
+role/scope, stale snapshots and invalid inputs. The mounted browser suite advances
+only client time for pending/approved confirmations and paused-timer clicks
+(with a labelled client-only session-expiry override to isolate approval expiry),
+asserting no POST/read and unchanged server state. Existing real review, explicit
+execution and replay cases remain controls. No new server enforcement, claim
+semantics, requirement completion, clock SLO or external-provider qualification
+is implied. See [ADR 0036](../architecture/0036-local-browser-approval-boundary.md).
+
 ## Explicit operator database initialization
 
 Requirements: SEC-002/003/006/012; REL-001/005; OPS-001/002/004.

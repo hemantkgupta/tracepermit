@@ -39,6 +39,15 @@ Signing in a second tab replaces the host cookie for all tabs on that origin.
 Use sequential sign-out/sign-in or separate browser profiles for concurrent roles.
 Pending approvals expire after five minutes; do not approve an old recording run.
 
+The inbox updates loaded pending/approved expiry labels without pressing Refresh.
+When a lifetime elapses, review/execute controls and an open confirmation become
+unavailable. Stored `pending` or `approved` status remains visible with an expired
+label, not silently replaced by a new durable status. A click between UI clock
+ticks also rechecks eligibility before POST. No expiry timer sends a decision,
+executes a target or automatically reloads a request. Local clock checks are
+advisory, may be delayed in background tabs, and do not replace Java checks;
+focus/visibility changes resample time. Refresh explicitly to inspect server state.
+
 ## Operator-owned IdP configuration
 
 The existing [approval API setup](authenticated-approval-api-foundation.md)

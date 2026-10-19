@@ -44,6 +44,8 @@ export interface ApprovalQuery {
   cursor?: string;
 }
 
+export type ApprovalDecision = "approve" | "deny" | "execute";
+
 export class ApprovalApiError extends Error {
   constructor(public readonly status: number) {
     super(
@@ -208,31 +210,65 @@ export function canRequest(session: ApprovalSession) {
   );
 }
 
-export function canReview(session: ApprovalSession, approval: Approval) {
+export function canReview(
+  session: ApprovalSession,
+  approval: Approval,
+  now = Date.now(),
+) {
   return (
     session.human &&
     session.roles.includes("REVIEWER") &&
     session.scopes.includes("approvals.decide") &&
     session.principalId !== approval.requesterId &&
     approval.status === "pending" &&
-    !isExpired(approval)
+    !isExpired(approval, now)
   );
 }
 
-export function canExecute(session: ApprovalSession, approval: Approval) {
+export function canExecute(
+  session: ApprovalSession,
+  approval: Approval,
+  now = Date.now(),
+) {
   return (
     session.roles.includes("REQUESTER") &&
     session.scopes.includes("approvals.execute") &&
     session.principalId === approval.requesterId &&
     approval.status === "approved" &&
     approval.executionStatus === "not_executed" &&
-    !isExpired(approval)
+    !isExpired(approval, now)
   );
 }
 
-export function isExpired(approval: Approval) {
+export function isExpired(approval: Approval, now = Date.now()) {
   const expiry = Date.parse(approval.expiresAt);
-  return approval.expired || !Number.isFinite(expiry) || expiry <= Date.now();
+  return (
+    approval.expired ||
+    !Number.isFinite(expiry) ||
+    !Number.isFinite(now) ||
+    expiry <= now
+  );
+}
+
+// A client-side usability guard, never a substitute for Java authorization.
+export function canConfirmApproval(
+  session: ApprovalSession | null,
+  current: Approval | undefined,
+  snapshot: Approval,
+  decision: ApprovalDecision,
+  now = Date.now(),
+) {
+  return Boolean(
+    session &&
+    current &&
+    ["approve", "deny", "execute"].includes(decision) &&
+    Date.parse(session.expiresAt) > now &&
+    current.approvalRequestId === snapshot.approvalRequestId &&
+    current.requestHash === snapshot.requestHash &&
+    (decision === "execute"
+      ? canExecute(session, current, now)
+      : canReview(session, current, now)),
+  );
 }
 
 export function submitApproval(
@@ -245,7 +281,7 @@ export function submitApproval(
 export function decideApproval(
   session: ApprovalSession,
   approval: Approval,
-  decision: "approve" | "deny" | "execute",
+  decision: ApprovalDecision,
 ) {
   return mutate<unknown>(
     `${root}/${encodeURIComponent(approval.approvalRequestId)}/${decision === "execute" ? "execute" : "decision"}`,
