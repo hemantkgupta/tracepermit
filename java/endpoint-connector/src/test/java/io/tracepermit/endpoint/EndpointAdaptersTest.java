@@ -251,6 +251,180 @@ final class EndpointAdaptersTest {
     assertThat(validErr.size()).isZero();
   }
 
+  @Test
+  void executeSupportsHelpAndUsageFlags() {
+    for (String flag : java.util.List.of("--help", "-h")) {
+      ByteArrayOutputStream out = new ByteArrayOutputStream();
+      ByteArrayOutputStream err = new ByteArrayOutputStream();
+      int exit = EndpointConnectorMain.execute(
+          new String[] {flag},
+          Map.of(),
+          new ByteArrayInputStream(new byte[0]),
+          out,
+          new PrintStream(err, true, StandardCharsets.UTF_8));
+      assertThat(exit).isZero();
+      assertThat(out.toString(StandardCharsets.UTF_8))
+          .contains("Usage: tracepermit-endpoint-connector")
+          .contains("--check")
+          .contains("--run");
+      assertThat(err.size()).isZero();
+    }
+  }
+
+  @Test
+  void executeOfflineCheckValidatesConfigurationWithoutCreatingFiles() throws Exception {
+    KeyPair keys = ed25519();
+    Path keyPath = writePrivateKey(keys, "check-key.pk8");
+    Path obsDir = temporaryDirectory.toRealPath().resolve("obs-check");
+    Files.createDirectory(obsDir, java.nio.file.attribute.PosixFilePermissions.asFileAttribute(
+        java.nio.file.attribute.PosixFilePermissions.fromString("rwx------")));
+
+    Map<String, String> validEnv = Map.of(
+        "TRACEPERMIT_ENDPOINT_ISSUER", "tracepermit-endpoint:device-check",
+        "TRACEPERMIT_ENDPOINT_KEY_ID", "endpoint-key-check",
+        "TRACEPERMIT_ENDPOINT_DEVICE_ID", "device-check",
+        "TRACEPERMIT_ENDPOINT_PRIVATE_KEY_PKCS8_PATH", keyPath.toString(),
+        "TRACEPERMIT_GATEWAY_URL", "http://127.0.0.1:8080/mcp",
+        "TRACEPERMIT_CONNECTOR_BEARER_TOKEN", "valid-test-bearer-token",
+        "TRACEPERMIT_ENDPOINT_OBSERVATION_DIRECTORY", obsDir.toString());
+
+    ByteArrayOutputStream out = new ByteArrayOutputStream();
+    ByteArrayOutputStream err = new ByteArrayOutputStream();
+    int exit = EndpointConnectorMain.execute(
+        new String[] {"--check"},
+        validEnv,
+        new ByteArrayInputStream(new byte[0]),
+        out,
+        new PrintStream(err, true, StandardCharsets.UTF_8));
+
+    assertThat(exit).isZero();
+    assertThat(out.toString(StandardCharsets.UTF_8))
+        .contains("ENDPOINT_CONFIGURATION_VALID: offline only; no gateway, IdP, observer or client checked.");
+    assertThat(err.size()).isZero();
+
+    // Verify zero files created in observation directory during offline check
+    try (var stream = Files.list(obsDir)) {
+      assertThat(stream.toList()).isEmpty();
+    }
+  }
+
+  @Test
+  void executeOfflineCheckRejectsInvalidAndUnsafeConfigurationsWithoutLeakingSecrets() throws Exception {
+    KeyPair keys = ed25519();
+    Path validKey = writePrivateKey(keys, "check-valid-key.pk8");
+    String sentinelToken = "sentinel-super-secret-token-12345";
+
+    // 1. Missing required env var
+    assertCheckFails(
+        Map.of("TRACEPERMIT_CONNECTOR_BEARER_TOKEN", sentinelToken),
+        sentinelToken);
+
+    // 2. Non-loopback gateway URL
+    assertCheckFails(
+        Map.of(
+            "TRACEPERMIT_ENDPOINT_ISSUER", "tracepermit-endpoint:device-check",
+            "TRACEPERMIT_ENDPOINT_KEY_ID", "endpoint-key-check",
+            "TRACEPERMIT_ENDPOINT_DEVICE_ID", "device-check",
+            "TRACEPERMIT_ENDPOINT_PRIVATE_KEY_PKCS8_PATH", validKey.toString(),
+            "TRACEPERMIT_GATEWAY_URL", "http://example.com/mcp",
+            "TRACEPERMIT_CONNECTOR_BEARER_TOKEN", sentinelToken),
+        sentinelToken);
+
+    // 3. HTTPS gateway URL
+    assertCheckFails(
+        Map.of(
+            "TRACEPERMIT_ENDPOINT_ISSUER", "tracepermit-endpoint:device-check",
+            "TRACEPERMIT_ENDPOINT_KEY_ID", "endpoint-key-check",
+            "TRACEPERMIT_ENDPOINT_DEVICE_ID", "device-check",
+            "TRACEPERMIT_ENDPOINT_PRIVATE_KEY_PKCS8_PATH", validKey.toString(),
+            "TRACEPERMIT_GATEWAY_URL", "https://127.0.0.1:8080/mcp",
+            "TRACEPERMIT_CONNECTOR_BEARER_TOKEN", sentinelToken),
+        sentinelToken);
+
+    // 4. Non-/mcp gateway path
+    assertCheckFails(
+        Map.of(
+            "TRACEPERMIT_ENDPOINT_ISSUER", "tracepermit-endpoint:device-check",
+            "TRACEPERMIT_ENDPOINT_KEY_ID", "endpoint-key-check",
+            "TRACEPERMIT_ENDPOINT_DEVICE_ID", "device-check",
+            "TRACEPERMIT_ENDPOINT_PRIVATE_KEY_PKCS8_PATH", validKey.toString(),
+            "TRACEPERMIT_GATEWAY_URL", "http://127.0.0.1:8080/api",
+            "TRACEPERMIT_CONNECTOR_BEARER_TOKEN", sentinelToken),
+        sentinelToken);
+
+    // 5. Insecure key permissions
+    Path insecureKey = temporaryDirectory.resolve("insecure-check.pk8");
+    Files.write(insecureKey, keys.getPrivate().getEncoded());
+    Files.setPosixFilePermissions(insecureKey, Set.of(
+        PosixFilePermission.OWNER_READ, PosixFilePermission.GROUP_READ));
+    assertCheckFails(
+        Map.of(
+            "TRACEPERMIT_ENDPOINT_ISSUER", "tracepermit-endpoint:device-check",
+            "TRACEPERMIT_ENDPOINT_KEY_ID", "endpoint-key-check",
+            "TRACEPERMIT_ENDPOINT_DEVICE_ID", "device-check",
+            "TRACEPERMIT_ENDPOINT_PRIVATE_KEY_PKCS8_PATH", insecureKey.toString(),
+            "TRACEPERMIT_GATEWAY_URL", "http://127.0.0.1:8080/mcp",
+            "TRACEPERMIT_CONNECTOR_BEARER_TOKEN", sentinelToken),
+        sentinelToken);
+
+    // 6. Symlink key
+    Path symlinkKey = temporaryDirectory.resolve("symlink-check.pk8");
+    Files.createSymbolicLink(symlinkKey, validKey);
+    assertCheckFails(
+        Map.of(
+            "TRACEPERMIT_ENDPOINT_ISSUER", "tracepermit-endpoint:device-check",
+            "TRACEPERMIT_ENDPOINT_KEY_ID", "endpoint-key-check",
+            "TRACEPERMIT_ENDPOINT_DEVICE_ID", "device-check",
+            "TRACEPERMIT_ENDPOINT_PRIVATE_KEY_PKCS8_PATH", symlinkKey.toString(),
+            "TRACEPERMIT_GATEWAY_URL", "http://127.0.0.1:8080/mcp",
+            "TRACEPERMIT_CONNECTOR_BEARER_TOKEN", sentinelToken),
+        sentinelToken);
+
+    // 7. Insecure observation directory (relative path)
+    assertCheckFails(
+        Map.of(
+            "TRACEPERMIT_ENDPOINT_ISSUER", "tracepermit-endpoint:device-check",
+            "TRACEPERMIT_ENDPOINT_KEY_ID", "endpoint-key-check",
+            "TRACEPERMIT_ENDPOINT_DEVICE_ID", "device-check",
+            "TRACEPERMIT_ENDPOINT_PRIVATE_KEY_PKCS8_PATH", validKey.toString(),
+            "TRACEPERMIT_GATEWAY_URL", "http://127.0.0.1:8080/mcp",
+            "TRACEPERMIT_CONNECTOR_BEARER_TOKEN", sentinelToken,
+            "TRACEPERMIT_ENDPOINT_OBSERVATION_DIRECTORY", "relative/path"),
+        sentinelToken);
+  }
+
+  @Test
+  void executeRejectsUnknownArgumentsWithCodeTwo() {
+    ByteArrayOutputStream out = new ByteArrayOutputStream();
+    ByteArrayOutputStream err = new ByteArrayOutputStream();
+    int exit = EndpointConnectorMain.execute(
+        new String[] {"--unknown-flag"},
+        Map.of(),
+        new ByteArrayInputStream(new byte[0]),
+        out,
+        new PrintStream(err, true, StandardCharsets.UTF_8));
+    assertThat(exit).isEqualTo(2);
+    assertThat(out.size()).isZero();
+    assertThat(err.toString(StandardCharsets.UTF_8))
+        .isEqualTo("TracePermit endpoint connector: CONFIGURATION_INVALID\n");
+  }
+
+  private static void assertCheckFails(Map<String, String> env, String sentinel) {
+    ByteArrayOutputStream out = new ByteArrayOutputStream();
+    ByteArrayOutputStream err = new ByteArrayOutputStream();
+    int exit = EndpointConnectorMain.execute(
+        new String[] {"--check"},
+        env,
+        new ByteArrayInputStream(new byte[0]),
+        out,
+        new PrintStream(err, true, StandardCharsets.UTF_8));
+    assertThat(exit).isEqualTo(2);
+    assertThat(out.size()).isZero();
+    String errStr = err.toString(StandardCharsets.UTF_8);
+    assertThat(errStr).contains("CONFIGURATION_INVALID");
+    assertThat(errStr).doesNotContain(sentinel);
+  }
+
   private Path writePrivateKey(KeyPair keys, String name) throws Exception {
     Path path = temporaryDirectory.resolve(name);
     Files.write(path, keys.getPrivate().getEncoded());

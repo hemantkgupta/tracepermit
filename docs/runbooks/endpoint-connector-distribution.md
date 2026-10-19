@@ -1,0 +1,175 @@
+# Endpoint connector distribution runbook
+
+This runbook guides operators and evaluators using the packaged, source-free TracePermit
+endpoint connector application (`tracepermit-endpoint-connector`).
+This archive bundles the compiled Java connector and its thin host-native launcher without
+requiring Node.js, pnpm, Gradle, or a source code checkout on the host workstation.
+
+> [!IMPORTANT]
+> This distribution is a **simulator-only qualification foundation**, not a production
+> release or remote cloud deployment. Its gateway transport binds exclusively to numeric
+> IPv4 loopback (`http://127.0.0.1:<explicit-port>/mcp`), `NO_PROXY`, and no redirects.
+
+## Host prerequisites
+
+- **Operating system:** macOS (ARM64/x86_64) or Linux (x86_64/ARM64).
+- **Runtime:** Java 21 (OpenJDK / Eclipse Temurin recommended) on `PATH` or `JAVA_HOME`.
+- **Standard utilities:** POSIX standard shell utilities (`bash`, `cat`, `sed`, `shasum`, `tar`).
+- **Tools not required:** Node.js, pnpm, Gradle, and git are **not** required to run or offline-validate this bundle.
+
+## Archive verification and extraction
+
+Verify archive integrity before extracting:
+
+```bash
+shasum -a 256 -c tracepermit-endpoint-connector-0.1.0.tar.gz.sha256
+```
+
+> [!NOTE]
+> SHA-256 checksums verify transmission and storage integrity. They do not constitute
+> an independent cryptographic release signature or third-party provenance attestation.
+
+Extract the archive into your chosen installation directory (paths containing spaces are fully supported):
+
+```bash
+tar -xzf tracepermit-endpoint-connector-0.1.0.tar.gz
+cd tracepermit-endpoint-connector-0.1.0
+shasum -a 256 -c SHA256SUMS
+```
+
+Inspect `manifest.json`: schema `1.1` records `sourceCommit`, `sourceCommitTimestamp` (the commit
+time, not the packaging time), `sourceTree: "clean"`, required Java 21, and an exact runtime JAR
+inventory.
+
+The extracted archive layout:
+
+```text
+tracepermit-endpoint-connector-0.1.0/
+├── bin/
+│   └── tracepermit-endpoint-connector
+├── lib/
+│   └── *.jar
+├── docs/
+│   ├── setup-runbook.md
+│   ├── LICENSE
+│   └── NOTICE
+├── manifest.json
+└── SHA256SUMS
+```
+
+## Launcher interface
+
+The launcher script at `bin/tracepermit-endpoint-connector` provides a thin, host-native interface:
+
+| Command / Flag | Purpose                                                           | Exit code                   |
+| -------------- | ----------------------------------------------------------------- | --------------------------- |
+| `--help`, `-h` | Prints usage and environment variable documentation to `stdout`   | `0`                         |
+| `--check`      | Performs strictly offline configuration validation                | `0` (valid) / `2` (invalid) |
+| `--run`        | Starts the stdio Model Context Protocol (MCP) connector (default) | Process exit                |
+
+Unrecognized flags or conflicting arguments exit with status `2` and emit safe, redacted diagnostics
+to `stderr`:
+
+```text
+TracePermit endpoint connector: CONFIGURATION_INVALID
+```
+
+### Ambient JVM diagnostic-option sanitization
+
+The launcher explicitly unsets ambient JVM diagnostic variables (`JAVA_TOOL_OPTIONS`, `_JAVA_OPTIONS`,
+`JDK_JAVA_OPTIONS`) before invoking Java. This prevents secret sentinels present in ambient environment
+variables from being echoed into process diagnostic streams or logs.
+
+### Process parentage
+
+The launcher replaces itself with the Java runtime using `exec java -cp "$CLASSPATH" io.tracepermit.endpoint.EndpointConnectorMain "$@"`.
+This guarantees that the spawning client process (such as native Codex) is the direct parent of the
+Java connector process, with no intermediate shell or Node.js forwarding process.
+
+## Environment configuration
+
+The connector requires all configuration and credentials to be provided via environment variables.
+Never pass bearer tokens or private key contents on the command line.
+
+| Environment variable                          | Required | Description                                                                                         |
+| --------------------------------------------- | -------- | --------------------------------------------------------------------------------------------------- |
+| `TRACEPERMIT_GATEWAY_URL`                     | Yes      | Numeric loopback HTTP endpoint (`http://127.0.0.1:<port>/mcp`). Remote URLs and HTTPS are rejected. |
+| `TRACEPERMIT_ENDPOINT_ISSUER`                 | Yes      | Endpoint identity issuer (e.g. `tracepermit-endpoint:demo-local`).                                  |
+| `TRACEPERMIT_ENDPOINT_KEY_ID`                 | Yes      | Key identifier matching the enrolled public key.                                                    |
+| `TRACEPERMIT_ENDPOINT_DEVICE_ID`              | Yes      | Device identifier matching the endpoint key.                                                        |
+| `TRACEPERMIT_ENDPOINT_PRIVATE_KEY_PKCS8_PATH` | Yes      | Path to an owner-readable (`0600` or `0400`) Ed25519 PKCS#8 private key. Symlinks are rejected.     |
+| `TRACEPERMIT_CONNECTOR_BEARER_TOKEN`          | Yes      | Short-lived connector Bearer credential for gateway authentication.                                 |
+| `TRACEPERMIT_ENDPOINT_OBSERVATION_DIRECTORY`  | Optional | Absolute path to an owner-only directory (`0700`) for opt-in process observation capture.           |
+
+## Offline configuration validation (`--check`)
+
+Before starting the connector under a client, validate the host environment offline:
+
+```bash
+./bin/tracepermit-endpoint-connector --check
+```
+
+When configuration is valid, the command prints:
+
+```text
+ENDPOINT_CONFIGURATION_VALID: offline only; no gateway, IdP, observer or client checked.
+```
+
+### Offline validation boundaries
+
+The `--check` command performs purely local validation:
+
+- Verifies Java major version is 21 or newer.
+- Verifies private key file existence, non-symlink status, POSIX permissions (`0600`/`0400`), and Ed25519 PKCS#8 format.
+- Verifies `TRACEPERMIT_GATEWAY_URL` is an explicit loopback HTTP `/mcp` URL.
+- Verifies token format and SHA-256 fingerprintability.
+- Verifies observation directory path and permissions without creating files.
+
+> [!WARNING]
+> Offline validation makes **zero** network calls and creates **zero** files. It cannot prove
+> token validity with an IdP, gateway readiness, public-key enrollment on the server, human presence,
+> or policy acceptance.
+
+## Security boundaries
+
+1. **Public-key enrollment versus private-key custody:** The simulator gateway must be pre-configured
+   with the endpoint's public key (`TRACEPERMIT_ENDPOINT_PUBLIC_KEY_SPKI_BASE64`). Client requests
+   cannot enroll keys. The private key remains exclusively in endpoint custody on the workstation.
+2. **Credential injection:** Bearer tokens must be injected via `TRACEPERMIT_CONNECTOR_BEARER_TOKEN`.
+   Never embed secrets in configuration files or launcher arguments.
+3. **No client modification:** The distribution does not modify `~/.codex` or any global client configuration.
+4. **Convenience launcher vs. distribution runtime:** The repository script `scripts/run-codex-endpoint-demo.sh`
+   is a Node-based developer convenience wrapper that automatically issues tokens and starts the demo.
+   In contrast, this distribution runtime is fully independent of Node.js and requires external credential
+   and gateway coordination.
+
+## Native Codex client configuration
+
+To configure the installed endpoint connector in native Codex, specify the absolute path to the
+installed launcher in your project or session configuration:
+
+```toml
+[mcp_servers.tracepermit_endpoint]
+command = "/absolute/path/to/tracepermit-endpoint-connector-0.1.0/bin/tracepermit-endpoint-connector"
+args = ["--run"]
+env_vars = [
+  "JAVA_HOME",
+  "TRACEPERMIT_GATEWAY_URL",
+  "TRACEPERMIT_ENDPOINT_ISSUER",
+  "TRACEPERMIT_ENDPOINT_KEY_ID",
+  "TRACEPERMIT_ENDPOINT_DEVICE_ID",
+  "TRACEPERMIT_ENDPOINT_PRIVATE_KEY_PKCS8_PATH",
+  "TRACEPERMIT_CONNECTOR_BEARER_TOKEN",
+  "TRACEPERMIT_ENDPOINT_OBSERVATION_DIRECTORY"
+]
+required = true
+startup_timeout_sec = 30
+default_tools_approval_mode = "prompt"
+```
+
+Start the local gateway before initiating the Codex session. To cleanly disconnect, terminate
+the client or close the stdio stream.
+
+## Related documentation
+
+- [ADR 0055: Source-free endpoint connector distribution](../architecture/0055-source-free-endpoint-connector-distribution.md)

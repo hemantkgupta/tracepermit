@@ -69,6 +69,11 @@ jobs:
           pnpm build:distribution
           pnpm test:distribution
 
+      - name: Verify source-free endpoint connector distribution
+        run: |
+          pnpm build:endpoint-distribution
+          pnpm test:endpoint-distribution
+
       - name: Check formatting
         run: pnpm format:check
 

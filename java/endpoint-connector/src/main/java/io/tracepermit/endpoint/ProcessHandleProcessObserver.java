@@ -72,7 +72,12 @@ public class ProcessHandleProcessObserver implements ProcessObserver {
         () -> unavailable("The process executable is unavailable."));
     Instant startedAt = info.startInstant().orElseThrow(
         () -> unavailable("The process start time is unavailable."));
-    Path path = Path.of(command).toAbsolutePath().normalize();
+    Path path;
+    try {
+      path = Path.of(command).toAbsolutePath().normalize().toRealPath();
+    } catch (IOException exception) {
+      throw unavailable("The process executable cannot be resolved.", exception);
+    }
     String name = path.getFileName() == null ? "" : path.getFileName().toString();
     if (name.isBlank() || name.length() > 128) {
       throw unavailable("The process executable name is invalid.");
