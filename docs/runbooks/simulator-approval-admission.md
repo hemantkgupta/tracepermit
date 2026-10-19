@@ -136,6 +136,24 @@ probes, corrected ordering and bounds documentation):
   hygiene passed. Runtime enforcement is unchanged; the helper's only source
   edit clarifies its Javadoc.
 
+#### Current-main integration — 2026-10-19
+
+The normal reconciliation with main
+`77212678fc18ff3a67d4e17ae3356698f474e686` retains the merged JDBC upgrade,
+endpoint I/O deadlines, and JWKS fixture-publication repair. The traceability
+conflict was resolved by preserving both the admission/identity specification
+sections and main's newer evidence sections. Executable Java is unchanged;
+the admission helper differs from main only in Javadoc.
+
+The focused command above was rerun with `--rerun-tasks --no-build-cache`
+against real Docker PostgreSQL: 10 admission and 31 server cases passed,
+with zero failures, errors, or skips. All 24 Gradle tasks executed; the build
+took 56 seconds. This qualifies the retained HTTP admission/API tests on the
+reconciled runtime, not a fresh execution of every Java test, a native-model
+rehearsal, or an installed endpoint artifact. The earlier deliberate
+guard-removal controls remain dated historical evidence; they were not
+repeated or relabeled as new probes for this integration.
+
 #### Earlier admission and shutdown controls — 2026-10-17
 
 Recorded 2026-10-17 from disposable probe runs against the working tree
