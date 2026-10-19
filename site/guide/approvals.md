@@ -32,8 +32,8 @@ The default POC does **not** expose a public approval API, editable console
 control, or Slack/Teams notification workflow. A separate loopback-only Java
 API foundation verifies access tokens plus operator-owned reviewer membership
 and persists exact action snapshots with pending approvals. Its automated
-qualification uses a synthetic IdP and safe simulator, not a live browser
-login. A separate `pnpm dev:approvals` entry point accepts explicit private
+qualification uses a synthetic IdP and safe simulator, including rendered browser
+sign-in, not live external-provider compatibility. A separate `pnpm dev:approvals` entry point accepts explicit private
 operator configuration; `--check` validates files and trust configuration
 offline, not IdP or database readiness. It is not started by existing demo launchers. See the
 [API qualification runbook](https://github.com/hemantkgupta/tracepermit/blob/main/docs/runbooks/authenticated-approval-api-foundation.md).
@@ -56,6 +56,19 @@ local profile, not arbitrary prompt/client compatibility, endpoint source
 attestation or hosted OAuth.
 See [Flow 3](core-flows.md#flow-3-human-review-then-explicit-resume) and the
 [Codex runbook](https://github.com/hemantkgupta/tracepermit/blob/main/docs/runbooks/codex-durable-approvals.md).
+
+## Inspect history without granting authority
+
+The inbox supports exact status/tool/request-ID filters and explicit older pages.
+Each read rechecks current token, enrollment, role, scopes and tenant/owner context.
+The cursor is an unsigned page position, never authorization; React bounds retained
+rows, validates responses and renders untrusted action data as text. This is not a
+complete audit export, retention system or policy-admin console.
+
+See [Flow 10](core-flows.md#flow-10-browser-sign-in-and-role-scoped-history) and
+the [history API contract](https://github.com/hemantkgupta/tracepermit/blob/main/docs/runbooks/approval-history-api.md).
+For a step-by-step second-machine test, use the
+[fresh Mac walkthrough](/guide/fresh-macbook-evaluation).
 
 [Scenario 3](https://github.com/hemantkgupta/tracepermit/blob/main/docs/demo-scenarios/03-request-bound-human-approval.md)
 and [Scenario 8](https://github.com/hemantkgupta/tracepermit/blob/main/docs/demo-scenarios/08-production-deletion-request-bound-approval.md)

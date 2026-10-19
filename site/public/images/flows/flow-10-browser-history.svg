@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="844" viewBox="0 0 1000 844" role="img" aria-labelledby="flow-10-browser-history-title flow-10-browser-history-desc">
+<title id="flow-10-browser-history-title">Flow 10: sign in, then inspect role-scoped approval history</title>
+<desc id="flow-10-browser-history-desc">Start sign-in on the numeric-loopback approval origin. Redirect with browser-bound state, nonce and S256 PKCE. Complete sign-in with the configured identity provider. Browser returns the authorization code and issuer. After checking state, exchange code and verify signed access and ID tokens. Set an opaque session cookie, reusable provider tokens stay server-side. Request exact metadata filters and a bounded page using the current session. Recheck token, membership, role, scopes and tenant/owner before querying. Return safe-rendered history and cursor, reading grants no execution authority. Synthetic browser profile is qualified. This is not a new live external-IdP or public browser qualification.</desc>
+<!-- Generated from docs/design/flow-diagrams.json. Do not edit this SVG directly. -->
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M1 1 L9 5 L1 9" fill="none" stroke="#087b87" stroke-width="1.7"/></marker></defs>
+<style>text{font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#17243b}.label{font-size:16px}.heading{font-size:15px;font-weight:650}.step{font-size:13px;font-weight:700;fill:white}.life{stroke:#cbd5e1;stroke-dasharray:5 5}.arrow{stroke:#087b87;stroke-width:1.8;fill:none;marker-end:url(#arrow)}</style>
+<rect x="1" y="1" width="998" height="842" rx="12" fill="white" stroke="#dbe3ed"/>
+<text x="28" y="34" font-size="19" font-weight="700">Flow 10: sign in, then inspect role-scoped approval history</text>
+<line x1="122" y1="109" x2="122" y2="820" class="life"/>
+<rect x="38" y="54" width="168" height="55" rx="8" fill="#eff8fa" stroke="#b6d9de"/>
+<text x="122" y="77" text-anchor="middle" class="heading">Browser</text>
+<line x1="374" y1="109" x2="374" y2="820" class="life"/>
+<rect x="290" y="54" width="168" height="55" rx="8" fill="#eff8fa" stroke="#b6d9de"/>
+<text x="374" y="77" text-anchor="middle" class="heading">Java session API</text>
+<line x1="626" y1="109" x2="626" y2="820" class="life"/>
+<rect x="542" y="54" width="168" height="55" rx="8" fill="#eff8fa" stroke="#b6d9de"/>
+<text x="626" y="77" text-anchor="middle" class="heading">Configured IdP</text>
+<line x1="878" y1="109" x2="878" y2="820" class="life"/>
+<rect x="794" y="54" width="168" height="55" rx="8" fill="#eff8fa" stroke="#b6d9de"/>
+<text x="878" y="77" text-anchor="middle" class="heading">PostgreSQL</text>
+<circle cx="28" cy="140" r="12" fill="#087b87"/>
+<text x="28" y="145" text-anchor="middle" class="step">1</text>
+<text x="68" y="146" class="label">Start sign-in on the numeric-loopback approval origin</text>
+<path d="M122 160 H374" class="arrow"/>
+<circle cx="28" cy="208" r="12" fill="#087b87"/>
+<text x="28" y="213" text-anchor="middle" class="step">2</text>
+<text x="68" y="214" class="label">Redirect with browser-bound state, nonce and S256 PKCE</text>
+<path d="M374 228 H122" class="arrow" stroke-dasharray="6 4"/>
+<circle cx="28" cy="276" r="12" fill="#087b87"/>
+<text x="28" y="281" text-anchor="middle" class="step">3</text>
+<text x="68" y="282" class="label">Complete sign-in with the configured identity provider</text>
+<path d="M122 296 H626" class="arrow"/>
+<circle cx="28" cy="344" r="12" fill="#087b87"/>
+<text x="28" y="349" text-anchor="middle" class="step">4</text>
+<text x="68" y="350" class="label">Browser returns the authorization code and issuer</text>
+<path d="M626 364 H374" class="arrow" stroke-dasharray="6 4"/>
+<circle cx="28" cy="412" r="12" fill="#087b87"/>
+<text x="28" y="417" text-anchor="middle" class="step">5</text>
+<text x="68" y="418" class="label">After checking state, exchange code and verify signed access and ID tokens</text>
+<path d="M374 432 H626" class="arrow"/>
+<circle cx="28" cy="480" r="12" fill="#087b87"/>
+<text x="28" y="485" text-anchor="middle" class="step">6</text>
+<text x="68" y="486" class="label">Set an opaque session cookie, reusable provider tokens stay server-side</text>
+<path d="M374 500 H122" class="arrow" stroke-dasharray="6 4"/>
+<circle cx="28" cy="548" r="12" fill="#087b87"/>
+<text x="28" y="553" text-anchor="middle" class="step">7</text>
+<text x="68" y="554" class="label">Request exact metadata filters and a bounded page using the current session</text>
+<path d="M122 568 H374" class="arrow"/>
+<circle cx="28" cy="616" r="12" fill="#087b87"/>
+<text x="28" y="621" text-anchor="middle" class="step">8</text>
+<text x="68" y="622" class="label">Recheck token, membership, role, scopes and tenant/owner before querying</text>
+<path d="M374 636 H878" class="arrow"/>
+<circle cx="28" cy="684" r="12" fill="#087b87"/>
+<text x="28" y="689" text-anchor="middle" class="step">9</text>
+<text x="68" y="690" class="label">Return safe-rendered history and cursor, reading grants no execution authority</text>
+<path d="M374 704 H122" class="arrow" stroke-dasharray="6 4"/>
+<rect x="55" y="739" width="920" height="73" rx="8" fill="#f1f5f9" stroke="#dbe3ed"/>
+<text x="68" y="758" class="label">Synthetic browser profile is qualified. This is not a new live external-IdP or public browser</text>
+<text x="68" y="778" class="label">qualification.</text>
+</svg>

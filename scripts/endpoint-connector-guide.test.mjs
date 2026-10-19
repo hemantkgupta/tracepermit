@@ -136,13 +136,14 @@ test("copyable model prompts preserve the qualified arguments and stop rules", (
 
 test("guide is discoverable and its static diagram has an accessible local-only boundary", () => {
   const config = read("site/.vitepress/config.mts");
-  assert.match(
-    config,
-    /text: "Connector", link: "\/guide\/endpoint-connector"/,
-  );
-  assert.match(
-    config,
-    /text: "Connector for Codex", link: "\/guide\/endpoint-connector"/,
+  // The guide is linked from both the grouped evaluation menu and sidebar.
+  assert.equal(
+    Array.from(
+      config.matchAll(
+        /text:\s*"Connector for Codex",\s*link:\s*"\/guide\/endpoint-connector"/g,
+      ),
+    ).length,
+    2,
   );
   assert.match(guide, /tabindex="0" role="region"/);
   assert.match(guide, /\/images\/endpoint-connector-overview\.svg/);
