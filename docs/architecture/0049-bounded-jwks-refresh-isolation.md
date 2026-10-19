@@ -55,6 +55,16 @@ Additionally, in `SsrfSafeHttpsJwkSetSource`, pre-call DNS resolution and valida
 - **Strict Key Validation**: JWKS payload size is capped at 64 KB; JSON duplicate key detection and trailing token rejection are enforced; private key parameters are forbidden; RSA modulus must be at least 2048 bits; algorithm must be strictly RS256; key usage must be `sig`.
 - **Zero Secret Leakage**: No bearer token, credential, key material, hostname, or upstream raw exception message is included in logs or exception messages.
 
+## Regression fixture publication ordering
+
+The interrupted-old-operation regression distinguishes worker entry from
+publication of its in-flight record. A bounded setup wait and a deliberately
+gated executor exercise worker-before-publication ordering while retaining the
+original operation deadline and stale-cooldown rejection assertions. The
+one-shot-read and removed-generation-guard sensitivity controls must fail.
+This updates test evidence only; runtime behavior and this decision's trust
+boundaries are unchanged. See the [runbook](../runbooks/jwks-refresh-isolation.md).
+
 ## Consequences and Limitations
 
 - **Instance-Local Resource Scopes**: Refresh coalescing, worker pools, and failure cooldowns are bounded per `CachingOidcJwkResolver`, `JwksRefreshCoordinator`, and `BoundedHostResolver` instance (the default DNS host resolver is shared across sources); multi-instance deployments do not share an in-memory refresh lock or distributed cache. Claims apply strictly to the configured local resolver and executor instances.

@@ -57,6 +57,29 @@ The OIDC key resolution path separates cache lookups from network I/O, isolates 
    - Trusted time is sampled before key resolution and re-sampled immediately after key resolution completes.
    - If a bearer token expires while the caller was waiting for key resolution, token claims validation rejects the token with `AuthenticationException("EXPIRED_ACCESS_TOKEN")`.
 
+## Concurrency regression fixture ordering
+
+`CachingOidcJwkResolverTest` exercises an interrupted older refresh completing
+after a newer success. Its worker-entry latch is not a publication barrier:
+`ThreadPoolExecutor.submit` may start the supplier while the enclosing
+`ConcurrentHashMap.compute` has not yet published the in-flight operation.
+Reading the map immediately can therefore return null without a runtime
+authorization or cooldown failure.
+
+The fixture now waits for actual publication under a finite two-second setup
+bound before inspecting and interrupting that operation. A second case gates
+`submit` after worker entry but before publication, proving the old one-shot
+map read fails under a legal ordering. Both cases retain the 400 ms operation
+deadline, interrupted-caller refusal, late-result timeout, newer-success and
+post-late-completion healthy refresh assertions. Counts and interrupt status
+are checked; worker/caller cleanup uses finite termination waits.
+
+This is test scheduling hardening, not a runtime timing relaxation, new IdP
+qualification or authorization change. Sensitivity controls separately remove
+the publication wait and the obsolete-failure guard: the relevant tests must
+fail, then pass with both controls restored. No deliberately weakened source
+belongs in a committed or accepted build.
+
 ## Operator Troubleshooting
 
 ### Symptom: `OIDC_KEY_SET_UNAVAILABLE`
