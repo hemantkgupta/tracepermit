@@ -633,3 +633,16 @@ Every implementation pull request citing a requirement must update the
 corresponding row when status or evidence changes. “Implemented” requires a
 linked enforcement point and a test capable of failing when the behavior is
 removed.
+
+## Proposed pending-request cancellation and upgrade gate
+
+FR-003/007/008/009/010; SEC-001/002/003/005/006/009/012;
+REL-001/002/004/005; DATA-001; OPS-002/004; PORT-001/003 are mapped to the
+[proposed contract](../design/pending-approval-cancellation.md) and
+[ADR 0058](../architecture/0058-pending-approval-cancellation-contract.md).
+**Design only:** pending-to-cancelled owner withdrawal, exact binding, atomic
+transition/evidence, race/error semantics, consumer compatibility and an explicit
+V9-to-next-version operator upgrade prerequisite. All listed regression cases
+are future acceptance gates, not executed cancellation evidence. No route,
+scope, stored status, migration, command, UI capability or requirement status is
+changed by this proposal; current strict startup remains V1–V9.
