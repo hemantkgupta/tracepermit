@@ -243,6 +243,43 @@ test(
       );
 
       await t.test(
+        "connector guide remains reachable from desktop and mobile evaluation menus",
+        async () => {
+          for (const width of [390, 1440]) {
+            await page.setViewportSize({ width, height: 1000 });
+            await page.goto(origin, { waitUntil: "networkidle" });
+            const navigation = page.locator(
+              width < 768 ? ".VPNavScreen" : ".VPNavBarMenu",
+            );
+            if (width < 768) {
+              await page
+                .getByRole("button", { name: "mobile navigation", exact: true })
+                .click();
+            }
+            await navigation
+              .getByRole("button", { name: "Evaluate locally", exact: true })
+              .click();
+            await navigation
+              .getByRole("link", { name: "Connector for Codex", exact: true })
+              .click();
+            await page.waitForURL(`${origin}/guide/endpoint-connector`);
+            await page
+              .locator(".vp-doc h1")
+              .filter({ hasText: "Endpoint connector for Codex" })
+              .waitFor();
+            if (width < 768)
+              await page.locator(".VPNavScreen").waitFor({ state: "hidden" });
+            assert.equal(
+              await page.evaluate(
+                () => document.documentElement.scrollWidth <= innerWidth,
+              ),
+              true,
+            );
+          }
+        },
+      );
+
+      await t.test(
         "corrected intro visuals and new operator flow assets load",
         async () => {
           await page.setViewportSize({ width: 1440, height: 1000 });
@@ -311,7 +348,11 @@ test(
       );
     } finally {
       try {
-        if (browser) await within(browser.close(), 5_000);
+        if (browser) {
+          for (const context of browser.contexts())
+            await within(context.close(), 5_000);
+          await within(browser.close(), 5_000);
+        }
       } finally {
         if (server) {
           const closed = new Promise((resolve, reject) =>
