@@ -40,6 +40,10 @@ model](docs/specs/10-security-threat-model.md) state the exact boundaries.
 
 ## Run locally
 
+For a clean second Mac, follow the [fresh MacBook evaluation](docs/runbooks/fresh-macbook-evaluation.md).
+It separates the synthetic source/browser walkthrough from the source-free
+operator installation, with prerequisites, expected states and safe evidence collection.
+
 Prerequisites: Java 21, Node.js 22 or newer, and Corepack/pnpm 11.25.0.
 Docker is needed only for PostgreSQL-backed scenarios and tests.
 

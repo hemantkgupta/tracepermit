@@ -26,6 +26,38 @@
   max-width: none;
 }
 
+.approval-preview {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin: 24px 0;
+}
+
+.approval-preview > div {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 20px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 12px;
+  background: var(--vp-c-bg-soft);
+}
+
+.approval-preview strong {
+  color: var(--vp-c-text-1);
+}
+
+.approval-preview span {
+  font-size: 14px;
+  color: var(--vp-c-text-2);
+}
+
+@media (max-width: 640px) {
+  .approval-preview {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Diagrams are a visual equivalent of the semantic lists, not the only text. */
 .vp-doc .intro-visual {
   margin: 24px 0 12px;

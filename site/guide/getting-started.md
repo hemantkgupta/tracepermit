@@ -5,6 +5,10 @@ description: Run the supported Java backend, React console, and simulator scenar
 
 # Local POC quickstart
 
+On a second Mac? Use the [fresh MacBook evaluation](/guide/fresh-macbook-evaluation)
+for prerequisite checks and a complete synthetic browser request/review/execute
+walkthrough. See [what works today](/guide/working-today) to choose a profile.
+
 TracePermit currently runs as a **loopback-only, simulator-only proof of
 concept**. There is no published `tracepermit/gateway:latest` image or
 production Compose stack. The website is documentation, not a public gateway.

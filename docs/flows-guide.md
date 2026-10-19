@@ -5,7 +5,7 @@ enforcement data plane evaluates supported tool proposals before a safe simulato
 can execute them. The React console displays evidence; the separately authenticated
 approval inbox lets an authorized reviewer decide an exact pending request.
 
-This guide maps the running implementation to nine flows. The shorter
+This guide maps the running implementation to twelve action and operator flows. The shorter
 [public guide](../site/guide/core-flows.md) uses the same generated diagrams.
 See the [specification baseline](specs/03-current-state-baseline.md) for the full
 implemented/qualified/future distinction.
@@ -62,7 +62,8 @@ These profiles share Java components, but are not one interchangeable deployment
 | Approval browser     | Browser sign-in, server-owned membership, scoped session and CSRF checks                | A distinct authorized reviewer decides; only the original requester resumes |
 
 Read Flows 6 and 7 first for origin attribution; Flows 1–5 explain action control;
-Flows 8 and 9 explain delegated authority and uncertain execution.
+Flows 8 and 9 explain delegated authority and uncertain execution. Flows 10–12
+cover browser history, packaged startup and operator-declared containment.
 
 ## Contracts: what is actually bound
 
@@ -487,8 +488,11 @@ Try `pnpm demo:scenario:delegation:auto`; see [Scenario 11](demo-scenarios/11-su
 ## Flow 9: uncertain outcome, restart and lookup-only recovery
 
 A database completion failure after simulator dispatch is not evidence that the
-effect failed. The approval may remain consumed and its attempt `executing`.
-The server must not invent success, restore the authority or retry the effect.
+effect failed. One additional bounded write can record `unknown`, evidence/outbox
+and lookup-only reconciliation eligibility without overwriting a committed
+terminal result. Persistent outage can still leave a consumed approval and an
+`executing` attempt. The server must not invent success, restore authority or
+retry the effect. See [ADR 0048](architecture/0048-bounded-durable-completion-uncertainty.md).
 
 <!-- diagram:flow-9-unknown-outcome -->
 
@@ -502,7 +506,9 @@ sequenceDiagram
   participant W as Lookup-only worker
   E->>D: Commit approval consumption and executing claim before dispatch
   E->>S: Invoke the approved simulator action
-  E->>D: Attempt separate completion write, a fault can leave consumed/executing
+  E->>D: Attempt separate completion write after simulator dispatch
+  E->>D: On completion failure, make one bounded UNKNOWN recording attempt without retrying the effect
+  Note over C,W: Keep committed terminal outcomes. Persistent database failure can still leave the attempt executing.
   E-->>C: Return safe error, not invented failure or success, inspect durable status
   C->>E: After restart, attempt resume of the same approval
   E-->>C: Reject redispatch because the authority is already consumed
@@ -515,10 +521,11 @@ sequenceDiagram
 
 <!-- /diagram:flow-9-unknown-outcome -->
 
-There are **two separately tested foundations**, not one fully wired daemon:
+These remain separately tested foundations, not one fully wired recovery daemon:
 
-1. The approval failure/restart test proves that consumed authority cannot dispatch
-   again after a lost completion write.
+1. Bounded completion-failure recording can persist `unknown` and a lookup-only
+   candidate. Failure/restart tests retain consumed authority and reject redispatch
+   even when the fallback write is unavailable.
 2. The reconciliation worker leases already-persisted `UNKNOWN` attempts and uses
    a read-only target outcome resolver. Confirmed evidence permits a terminal
    completion; no answer or lookup failure defers the attempt. The worker has no
@@ -538,6 +545,115 @@ Tests: [approval server](../java/adapters-http/src/test/java/io/tracepermit/adap
 See [recovery ADR](architecture/0020-reconcile-by-lookup-never-reexecution.md).
 Run `pnpm test:approval-api --rerun-tasks` with Docker for the approval failure path;
 `pnpm check` includes the worker's unit tests, not a live recovery service.
+
+## Flow 10: browser sign-in and role-scoped approval history
+
+The Java browser adapter keeps reusable tokens server-side. Every history page
+rechecks current enrollment, scopes and tenant/owner authority; a cursor is a
+position, not a permission. The React inbox validates responses, bounds retained
+rows and renders action data as data. Reading history never executes a request.
+
+<!-- diagram:flow-10-browser-history -->
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant B as Browser
+  participant J as Java session API
+  participant I as Configured IdP
+  participant D as PostgreSQL
+  B->>J: Start sign-in on the numeric-loopback approval origin
+  J-->>B: Redirect with browser-bound state, nonce and S256 PKCE
+  B->>I: Complete sign-in with the configured identity provider
+  I-->>J: Browser returns the authorization code and issuer
+  J->>I: After checking state, exchange code and verify signed access and ID tokens
+  J-->>B: Set an opaque session cookie, reusable provider tokens stay server-side
+  B->>J: Request exact metadata filters and a bounded page using the current session
+  J->>D: Recheck token, membership, role, scopes and tenant/owner before querying
+  J-->>B: Return safe-rendered history and cursor, reading grants no execution authority
+  Note over B,D: Synthetic browser profile is qualified. This is not a new live external-IdP or public browser qualification.
+```
+
+<!-- /diagram:flow-10-browser-history -->
+
+Code: [browser adapter](../java/adapters-http/src/main/java/io/tracepermit/adapters/http/ApprovalBrowserAdapter.java)
+and [approval server](../java/adapters-http/src/main/java/io/tracepermit/adapters/http/SimulatorApprovalServer.java).
+Proof: [browser qualification](runbooks/browser-approval-inbox.md) and
+[history API](runbooks/approval-history-api.md), plus rendered-browser CI.
+Use the [fresh Mac evaluation](runbooks/fresh-macbook-evaluation.md) for a synthetic
+request → independent review → explicit execute walkthrough. This is not a fresh
+external-provider qualification or a complete export/retention product.
+
+## Flow 11: packaged check, initialization and strict startup
+
+The buildable source-free archive contains Java runtime dependencies and the
+built inbox. Its host still needs Java 21, local PostgreSQL and approved OIDC
+configuration. Do not confuse its operator profile with the synthetic source demo.
+
+<!-- diagram:flow-11-package-startup -->
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant O as Local operator
+  participant C as Java launcher
+  participant D as Local PostgreSQL
+  participant R as Loopback runtime
+  O->>C: Run --check with private configuration, key files and bundled assets
+  C-->>O: Report offline validity only, no database, IdP traffic or listener
+  O->>C: For first installation only, explicitly run --init-db
+  C->>D: Hold the initialization lock and install only into a fresh empty dedicated schema
+  O->>C: Run --run using the same operator-owned configuration
+  C->>D: Validate existing schema and recovery state, never implicitly migrate or repair
+  C->>R: Bind 127.0.0.1 and compose authenticated API, optional inbox and approval MCP
+  Note over O,R: Normal runtime needs operator OIDC and PostgreSQL. The synthetic source demo is a different test composition.
+  Note over O,R: An archive manifest identifies a clean source build, not signed provenance or production readiness.
+```
+
+<!-- /diagram:flow-11-package-startup -->
+
+The [distribution runbook](runbooks/simulator-approval-distribution.md) is the
+operator installation reference. `--check` is offline, `--init-db` is explicit
+first-install setup, and normal startup refuses incompatible or quarantined state.
+No implicit migration, upgrade, external-IdP compatibility claim or signed release
+is added. See [strict initialization](architecture/0045-explicit-database-initialization.md).
+
+## Flow 12: inspect and quarantine durable simulator authority
+
+The operator first stops agents and effectful services separately. Owner-only
+inspection reports aggregate stored statuses in a consistent read-only snapshot.
+It does not prove quiescence, target outcomes or safe resume.
+
+<!-- diagram:flow-12-recovery-quarantine -->
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant O as Local operator
+  participant C as Owner-only CLI
+  participant D as PostgreSQL guard
+  participant R as Running service
+  Note over O,R: First stop agents and effectful services independently. Quarantine cannot cancel already committed claims.
+  O->>C: Run --recovery-inspect with separate owner configuration
+  C->>D: Read aggregate stored-state counts in one read-only snapshot
+  C-->>O: Return bounded counts, not target outcome proof or permission to resume
+  O->>C: Explicitly run --quarantine-db against the intended simulator database
+  C->>D: Serialize and commit the one-way recovery guard transition
+  R->>D: Attempt a new authority claim or approval review after quarantine
+  D-->>R: Refuse new authority writes, previous claim completion remains possible
+  O->>C: Attempt --run against an already quarantined database
+  C-->>O: Refuse startup, no resume or quarantine-clear command is provided
+  Note over O,R: An older restored ready row is not detected automatically. This is declared containment, not a restore fence.
+```
+
+<!-- /diagram:flow-12-recovery-quarantine -->
+
+[Declared quarantine](runbooks/operator-recovery-quarantine.md) is one-way
+containment of new durable authority, not cancellation of prior claims or automatic
+old-snapshot detection. Already-claimed work can still complete. No clear/resume
+command exists. See [inspection](runbooks/operator-recovery-inspection.md),
+[quarantine ADR](architecture/0051-operator-declared-recovery-quarantine.md) and
+[inspection ADR](architecture/0052-owner-only-recovery-inspection.md).
 
 ## Further control paths
 
@@ -570,7 +686,7 @@ Run `pnpm test:approval-api --rerun-tasks` with Docker for the approval failure 
 
 ## Maintain and rehearse
 
-The source of all ten diagrams is [flow-diagrams.json](design/flow-diagrams.json).
+The source of all thirteen diagrams is [flow-diagrams.json](design/flow-diagrams.json).
 Do not hand-edit generated Mermaid or SVGs. See the
 [diagram maintenance instructions](design/README.md). `pnpm docs:flows:check`
 detects drift in both guides and the public images; it does not replace a semantic
