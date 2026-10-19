@@ -105,6 +105,13 @@ public TLS profile, administrator endpoint or real target is added.
 See [ADR 0036](../architecture/0036-local-browser-approval-boundary.md) and the
 [browser runbook](../runbooks/browser-approval-inbox.md).
 
+React's local expiry guidance does not change this wire contract or server
+authority. One shared UI clock updates loaded pending/approved expiry and removes
+stale confirmation controls; an immediate pre-POST guard rechecks selection,
+ID/hash, current role/scope, session lifetime, status and expiry. No timer issues
+an approval mutation or automatic refresh. Clock skew/background throttling can
+delay the advisory display; Java rechecks every received action independently.
+
 ### Local durable approval MCP (separate composition)
 
 The approval listener additionally accepts authenticated `POST /mcp`, independent

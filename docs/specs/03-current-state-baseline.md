@@ -102,6 +102,12 @@ Actual synthetic browser review/request/execute and client fault tests qualify
 this local profile only; no external provider compatibility is implied. See the
 [history API](../runbooks/approval-history-api.md).
 
+Loaded pending/approved rows have shared local-clock expiry guidance: controls
+and confirmations become unavailable without polling, and the confirmation
+handler rechecks current selection/binding/eligibility before POST. Stored status
+is not rewritten. Clock skew and background throttling remain UI limits; this
+does not change Java time/authorization or the durable claim boundary.
+
 `SimulatorApprovalServer` is a separate, loopback-only Java HTTP factory,
 not part of either current demo launcher. `SimulatorApprovalMain` now supplies
 the optional `pnpm dev:approvals` startup with strict operator-owned JSON,

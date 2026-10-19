@@ -92,6 +92,15 @@ is only guidance. Review and execution are separate explicit confirmations.
 No mutation is automatically retried. Approval expiry, stale policy, changed
 hash, reviewer removal and consumed claims remain enforced by the existing API.
 
+The inbox samples one shared local clock while loaded pending/approved requests
+are still live, and on focus/visible-tab events. Expiry removes review/execute
+controls and invalidates the displayed confirmation without a network refresh or
+mutation. A last-moment click rechecks current selection, ID/hash, role/scope,
+session lifetime, status and approval expiry before POST. Observed local time is
+not moved backwards within the mounted inbox. This is advisory UX only: clock
+skew and background timer throttling are possible, and Java remains the authority.
+Stored status is never rewritten merely because the browser labels it expired.
+
 ## Consequences and limits
 
 - PostgreSQL authority and simulator behavior do not change; no migration is
