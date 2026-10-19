@@ -272,12 +272,27 @@ test(
         });
         if (failed) throw new Error(`BROWSER_SUITE_STOPPED: ${name}`);
       }
-      async function pageFor(account) {
+      async function pageFor(account, approvalClockTest = false) {
         const context = await browser.newContext({
           viewport: { width: 1440, height: 1000 },
         });
         contexts.push(context);
         const page = await context.newPage();
+        if (approvalClockTest) {
+          // Fixture credentials live 290s, approvals 300s. Isolate the approval
+          // timer by extending only the client session projection. Real Java
+          // credentials/roles/DB time stay unchanged, and no mutation is expected.
+          await page.clock.install({ time: new Date() });
+          await page.route("**/browser/session", async (route) => {
+            const response = await route.fetch();
+            if (!response.ok()) return route.fulfill({ response });
+            const session = await response.json();
+            session.expiresAt = await page.evaluate(() =>
+              new Date(Date.now() + 600_000).toISOString(),
+            );
+            await route.fulfill({ response, json: session });
+          });
+        }
         page.setDefaultTimeout(UI_TIMEOUT);
         page.setDefaultNavigationTimeout(UI_TIMEOUT);
         const ownedOrigins = new Set([fixture.origin]);
@@ -1009,6 +1024,256 @@ test(
           await page.context().close();
         },
       );
+      async function expiryConfirmation(decision) {
+        const requester = await pageFor("alice", true);
+        const [item] = await seed(requester, 1, 5543);
+        const reviewer = await pageFor("bob", true);
+        await filterId(reviewer, item.id);
+        if (decision === "execute") {
+          await reviewer
+            .getByRole("button", { name: "Approve exact action", exact: true })
+            .click();
+          await reviewer
+            .getByRole("button", { name: "Confirm approve", exact: true })
+            .click();
+          await reviewer
+            .getByText(
+              "Review decision recorded. Refresh shows durable server state.",
+              { exact: true },
+            )
+            .waitFor();
+        }
+        const page = decision === "execute" ? requester : reviewer;
+        // The clock was installed before navigation and any application timers.
+        await filterId(page, item.id);
+        await page
+          .getByRole("button", {
+            name:
+              decision === "execute"
+                ? "Execute approved simulation"
+                : decision === "deny"
+                  ? "Deny"
+                  : "Approve exact action",
+            exact: true,
+          })
+          .click();
+        await page
+          .getByRole("region", { name: "Confirm exact action", exact: true })
+          .waitFor();
+        const expiresAt = await page.evaluate(async (path) => {
+          const response = await fetch(path);
+          if (!response.ok) return null;
+          return (await response.json()).expiresAt;
+        }, `${approvalsPath}/${item.id}`);
+        assert.ok(Number.isFinite(Date.parse(expiresAt)));
+        return { page, item, expiresAt, requester, reviewer };
+      }
+
+      for (const decision of ["approve", "execute"]) {
+        await step(
+          `approval lifetime expires during open ${decision} confirmation without any network mutation`,
+          async () => {
+            const { page, item, expiresAt, requester, reviewer } =
+              await expiryConfirmation(decision);
+            const counts = { reads: 0, mutations: 0 };
+            const count = (request) => {
+              if (!new URL(request.url()).pathname.startsWith("/browser/"))
+                return;
+              if (request.method() === "GET") counts.reads++;
+              if (request.method() === "POST") counts.mutations++;
+            };
+            page.on("request", count);
+            // Only the browser clock advances: this is client UX qualification,
+            // not a claim that real database time or server authority advanced.
+            const untilExpiry = await page.evaluate(
+              (expiry) => Date.parse(expiry) - Date.now(),
+              expiresAt,
+            );
+            assert.ok(untilExpiry > 0 && untilExpiry < 300_001);
+            await page.clock.fastForward(untilExpiry + 1_001);
+            await page
+              .getByText(
+                `${decision === "execute" ? "approved" : "pending"} (expired)`,
+                { exact: true },
+              )
+              .first()
+              .waitFor();
+            await page.getByText(/Approval lifetime has elapsed/).waitFor();
+            await page
+              .getByRole("region", {
+                name: "Confirm exact action",
+                exact: true,
+              })
+              .waitFor({ state: "hidden" });
+            assert.equal(
+              await page
+                .getByRole("button", {
+                  name: /^(Approve exact action|Deny|Execute approved simulation|Confirm (approve|deny|execute))$/,
+                })
+                .count(),
+              0,
+            );
+            assert.deepEqual(counts, { reads: 0, mutations: 0 });
+            // Observed expiry is not undone by a backwards local clock adjustment.
+            await page.clock.setSystemTime(
+              new Date(Date.parse(expiresAt) - 60_000),
+            );
+            await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+            assert.equal(
+              await page
+                .getByRole("region", {
+                  name: "Confirm exact action",
+                  exact: true,
+                })
+                .count(),
+              0,
+            );
+            if (decision === "execute")
+              await page.setViewportSize({ width: 390, height: 1000 });
+            const detail = page.getByRole("region", {
+              name: "Exact action detail",
+              exact: true,
+            });
+            await detail
+              .getByText(/Approval lifetime has elapsed/)
+              .scrollIntoViewIfNeeded();
+            assert.equal(
+              await page.evaluate(
+                () => document.documentElement.scrollWidth <= innerWidth,
+              ),
+              true,
+            );
+            await screenshot(page, `approval-expired-${decision}`);
+            page.off("request", count);
+            const stored = await page.evaluate(async (path) => {
+              const response = await fetch(path);
+              if (!response.ok) return null;
+              const value = await response.json();
+              return {
+                status: value.status,
+                executionStatus: value.executionStatus,
+              };
+            }, `${approvalsPath}/${item.id}`);
+            assert.deepEqual(stored, {
+              status: decision === "execute" ? "approved" : "pending",
+              executionStatus: "not_executed",
+            });
+            await requester.context().close();
+            await reviewer.context().close();
+          },
+        );
+      }
+
+      for (const decision of ["approve", "deny", "execute"]) {
+        await step(
+          `last-moment ${decision} click after expiry but before a timer tick sends no POST`,
+          async () => {
+            const { page, expiresAt, requester, reviewer } =
+              await expiryConfirmation(decision);
+            await page.clock.pauseAt(
+              await page.evaluate(() =>
+                new Date(Date.now() + 1_000).toISOString(),
+              ),
+            );
+            let posts = 0;
+            const count = (request) => {
+              if (
+                request.method() === "POST" &&
+                new URL(request.url()).pathname.startsWith("/browser/")
+              )
+                posts++;
+            };
+            page.on("request", count);
+            await page.clock.setSystemTime(new Date(Date.parse(expiresAt) + 1));
+            // The stale DOM still has the button: its handler, not a render/tick,
+            // must refuse this attempt before fetch is called.
+            await page
+              .getByRole("button", { name: `Confirm ${decision}`, exact: true })
+              .click();
+            assert.equal(
+              posts,
+              0,
+              "An expired confirmation must not issue a POST.",
+            );
+            await page
+              .getByText(
+                "This confirmation is no longer available. Refresh the request before continuing; nothing was sent or retried.",
+                { exact: true },
+              )
+              .waitFor();
+            assert.equal(posts, 0);
+            assert.equal(
+              await page
+                .getByRole("region", {
+                  name: "Confirm exact action",
+                  exact: true,
+                })
+                .count(),
+              0,
+            );
+            page.off("request", count);
+            await requester.context().close();
+            await reviewer.context().close();
+          },
+        );
+      }
+
+      for (const event of ["focus", "visibilitychange"]) {
+        await step(
+          `${event} resamples approval expiry without an automatic read or POST`,
+          async () => {
+            const { page, expiresAt, requester, reviewer } =
+              await expiryConfirmation("approve");
+            await page.clock.pauseAt(
+              await page.evaluate(() =>
+                new Date(Date.now() + 1_000).toISOString(),
+              ),
+            );
+            const requests = [];
+            const count = (request) => {
+              if (new URL(request.url()).pathname.startsWith("/browser/"))
+                requests.push(request.method());
+            };
+            page.on("request", count);
+            await page.clock.setSystemTime(new Date(Date.parse(expiresAt) + 1));
+            assert.equal(
+              await page
+                .getByRole("region", {
+                  name: "Confirm exact action",
+                  exact: true,
+                })
+                .count(),
+              1,
+            );
+            await page.evaluate((name) => {
+              if (name === "focus") window.dispatchEvent(new Event(name));
+              else {
+                if (document.visibilityState !== "visible")
+                  throw new Error("VISIBLE_EVENT_PRECONDITION");
+                document.dispatchEvent(new Event(name));
+              }
+            }, event);
+            await page
+              .getByText("pending (expired)", { exact: true })
+              .first()
+              .waitFor();
+            assert.equal(
+              await page
+                .getByRole("region", {
+                  name: "Confirm exact action",
+                  exact: true,
+                })
+                .count(),
+              0,
+            );
+            assert.deepEqual(requests, []);
+            page.off("request", count);
+            await requester.context().close();
+            await reviewer.context().close();
+          },
+        );
+      }
+
       await step(
         "page identity meaningful content overlays and console health",
         async () => {

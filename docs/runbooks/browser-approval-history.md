@@ -83,6 +83,14 @@ Every page request (both initial search and continuation) re-reads `/browser/ses
 - **Confirmation Invalidation**: Any active confirmation modal is immediately closed upon filter changes, search submissions, pagination, explicit refresh, error conditions, or session changes.
 - **Creation vs. Expiration Labels**: The UI displays `createdAt` for creation timestamps and `expiresAt` for expiration deadlines. They are never conflated.
 - **Stored Status vs. Derived Expiry**: A request that is past its lifetime retains its stored status (e.g. `pending` or `approved`) with an `expired` badge, preventing past-expiry rows from becoming executable or masquerading as active.
+- **Live Expiry Guidance**: One local one-second clock samples while live
+  pending/approved rows are loaded; focus/visibility events resample it. It
+  removes review/execute controls and invalidates an open confirmation on expiry
+  without issuing reads or mutations. The last-moment confirmation handler also
+  rechecks current selection, ID/hash, role/scope, session lifetime and approval
+  expiry before POST. Local observations never rewrite durable status, grant
+  authority or move the observed clock backwards during the mount. Browser timer
+  throttling and clock skew remain limits; Java independently enforces every call.
 
 ---
 
@@ -161,6 +169,20 @@ The suite covers:
 - Keyset append, deduplication, and 250-row capacity clamping in `approval-history-state.test.ts`.
 - Monotonic generation race guards and out-of-order response rejection.
 - Session logout, 401, 403, and 400 error state transitions.
+- Exact-expiry confirmation boundaries, stale selection/hash/current status,
+  expired session, changed role/scope and invalid time/decision refusal in
+  `approval-confirmation.test.ts`.
+
+The mounted suite additionally advances only the **browser** clock with real
+server-derived approval deadlines. Because synthetic tokens expire in 290 seconds
+and approvals in 300, these cases extend only the client session projection's
+expiry to isolate approval UI behavior; Java credentials, roles and DB time are
+not modified. Pending reviewer and approved requester confirmations
+become unavailable with zero reads/POSTs and unchanged server status. Separate
+paused-timer cases exercise last-moment approve/deny/execute clicks. These are
+client-clock UX tests, not evidence that PostgreSQL/server time advanced or a new
+server-side expiry mechanism was added. The existing positive review/execute and
+replay control still runs against the actual synthetic composition.
 
 ### Interactive Synthetic Browser QA
 

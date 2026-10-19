@@ -70,6 +70,16 @@ the [history API contract](https://github.com/hemantkgupta/tracepermit/blob/main
 For a step-by-step second-machine test, use the
 [fresh Mac walkthrough](/guide/fresh-macbook-evaluation).
 
+## Expiry while reviewing
+
+Loaded pending/approved requests update their local expiry labels without a
+refresh. When an approval lifetime elapses, review/execute controls and an open
+confirmation become unavailable; stored status remains visible rather than being
+rewritten. The confirmation handler also rechecks eligibility immediately before
+POST. No timer approves, executes or retries anything. Browser time is advisory
+and can be skewed or throttled in background tabs; Java remains authoritative.
+Use **Refresh** to inspect current server state before continuing.
+
 [Scenario 3](https://github.com/hemantkgupta/tracepermit/blob/main/docs/demo-scenarios/03-request-bound-human-approval.md)
 and [Scenario 8](https://github.com/hemantkgupta/tracepermit/blob/main/docs/demo-scenarios/08-production-deletion-request-bound-approval.md)
 exercise the approval boundary with safe simulators and disposable state.

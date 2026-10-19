@@ -223,6 +223,18 @@ This is not full action search, customer retention/export,
 constant-cost paging, an SLO or production tenant isolation certification. No
 schema/authority/permit behavior changes, and no whole-ID status is upgraded.
 
+FR-007; SEC-004/005; REL-002 receive additional **UI-only** expiry guidance:
+`ApprovalInbox` shares one local clock across live rows, invalidates expired
+confirmations and rechecks current selection/ID/hash/eligibility before POST.
+`approval-confirmation.test.ts` covers exact boundaries, current status/session,
+role/scope, stale snapshots and invalid inputs. The mounted browser suite advances
+only client time for pending/approved confirmations and paused-timer clicks
+(with a labelled client-only session-expiry override to isolate approval expiry),
+asserting no POST/read and unchanged server state. Existing real review, explicit
+execution and replay cases remain controls. No new server enforcement, claim
+semantics, requirement completion, clock SLO or external-provider qualification
+is implied. See [ADR 0036](../architecture/0036-local-browser-approval-boundary.md).
+
 ## Explicit operator database initialization
 
 Requirements: SEC-002/003/006/012; REL-001/005; OPS-001/002/004.
@@ -424,6 +436,19 @@ startup and declared containment. These are documentation/traceability additions
 not proof of a new laptop, external IdP, published release or production readiness;
 requirement statuses remain unchanged.
 
+The [public verification index](../../site/guide/verification.md) adds dated,
+revision-pinned client evidence, named compatibility boundaries and two retained
+screenshots of the same synthetic approval/replay case. It supports OPS-002/004
+documentation discoverability, not new enforcement or client qualification.
+`scripts/site-verification.test.mjs` checks built canonical/share metadata,
+sitemap, evidence-source links and protocol identifier consistency;
+`scripts/site-verification-browser.test.mjs` checks responsive evidence disclosure,
+image loading, navigation/search and the approved public contact link. The
+[MCP guide](../../site/guide/mcp-gateway.md) distinguishes optional protocol
+authorization from action policy and limits action hashes to their actual scope.
+No requirement status, runtime trust boundary, release status or external-IdP /
+fresh-machine qualification is changed by this documentation slice.
+
 ## Durable policy-generation binding for simulator approvals
 
 | Requirements                                          | Implementation and verification                                                                                                                                                                                                                                                 | Boundary                                                                                                                                                                                                                                                                                                                |
@@ -486,6 +511,22 @@ See [ADR 0044](../architecture/0044-database-restore-safety-limits.md) and the
 
 See [ADR 0055](../architecture/0055-source-free-endpoint-connector-distribution.md) and
 the [distribution runbook](../runbooks/endpoint-connector-distribution.md).
+
+## Proposed real-target credential and egress boundary
+
+[ADR 0056](../architecture/0056-enterprise-credentials-and-egress-boundary.md)
+adds design-review material for SEC-007/008 and OPS-005, not implementation or
+qualification evidence. It separates one-use execution authority from provider
+credential lifetime, defines operator-owned egress/credential responsibilities,
+and lists future adapter-specific bypass, outage and uncertain-outcome probes.
+Related controls are FR-001/008/009/012, SEC-003/006/010/012/013/014/019 and
+REL-002/005/008. No new target, broker, network policy or production checkpoint
+is enabled; all requirement statuses below remain unchanged. The
+[current source anchors](../architecture/0056-enterprise-credentials-and-egress-boundary.md#current-source-anchors-not-enterprise-acceptance)
+identify existing implementations and regressions without claiming a new run.
+The [delivery gates](../architecture/0056-enterprise-credentials-and-egress-boundary.md#delivery-sequence-and-decision-gates)
+keep local artifact acceptance, future remote simulator qualification and any
+future real-target release separate.
 
 ## Functional requirements
 

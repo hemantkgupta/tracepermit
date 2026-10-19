@@ -1,5 +1,6 @@
 ---
 layout: home
+title: Request-bound approvals for coding agents
 
 hero:
   name: "TracePermit"
@@ -52,6 +53,14 @@ Explore [what works today](/guide/working-today), the
 rehearsal and automated browser/PostgreSQL tests are evidence for their stated
 profiles, not a promise of every client, IdP or deployment.
 
+## Inspect the evidence
+
+The [verification and compatibility guide](/guide/verification) separates dated
+client rehearsals from automated tests and future scope. Inspect a retained
+browser outcome and the rejected replay of that **same synthetic request**,
+then choose the [local evaluation path](/guide/fresh-macbook-evaluation).
+Recorded screenshots are historical evidence, not a new run or a production deployment.
+
 ## The enforcement boundary
 
 ![TracePermit Architecture Overview](/images/tracepermit-architecture.svg)
@@ -65,7 +74,10 @@ a production gateway**.
 
 TracePermit projects evaluated actions, hash-linked local evidence, causal lineage, and deterministic policy decisions into a live read-only console. An independently signed external-receipt foundation is separately tested, not configured in the local demo:
 
-![TracePermit Console Preview](/images/tracepermit-console-concept.png)
+![Illustrative read-only evidence-console concept, not an approval-inbox screenshot](/images/tracepermit-console-concept.png)
+
+This illustration is a console concept. The [verification guide](/guide/verification#recorded-approval-and-replay)
+contains actual retained approval-inbox evidence with its date and profile limits.
 
 ## Start with the reproducible local demo
 
@@ -75,3 +87,15 @@ page](/guide/deployment) distinguishes the local POC from a future production
 topology.
 
 TracePermit is released under the [Apache License 2.0](https://github.com/hemantkgupta/tracepermit/blob/main/LICENSE).
+
+## Explore a simulator evaluation
+
+Building a coding-agent workflow that needs an independent human decision before
+a sensitive tool action? [Request a simulator demo](mailto:hemant@tracepermit.org?subject=TracePermit%20simulator%20demo)
+or contact [hemant@tracepermit.org](mailto:hemant@tracepermit.org) with your use case
+and evaluation questions. We are exploring customer-owned design-partner pilots;
+the current demo is local and simulator-only, not a hosted production service.
+
+Use synthetic examples. Do not send passwords, tokens, private keys or customer
+data. For a vulnerability, use the [private security-reporting channel](https://github.com/hemantkgupta/tracepermit/security/advisories/new)
+rather than a public issue. No support or remediation SLA is promised.

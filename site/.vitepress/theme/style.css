@@ -52,6 +52,30 @@
   color: var(--vp-c-text-2);
 }
 
+.vp-doc .retained-evidence {
+  max-width: 100%;
+  max-height: 640px;
+  overflow: auto;
+  margin: 16px 0;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+}
+
+.vp-doc .retained-evidence p {
+  margin: 0;
+}
+
+.vp-doc .retained-evidence img {
+  width: 100%;
+  min-width: 680px;
+  max-width: none;
+}
+
+.vp-doc .retained-evidence:focus-visible {
+  outline: 3px solid var(--vp-c-brand-1);
+  outline-offset: 3px;
+}
+
 @media (max-width: 640px) {
   .approval-preview {
     grid-template-columns: 1fr;

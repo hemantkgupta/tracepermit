@@ -2,6 +2,7 @@ import { ShieldCheck } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import {
   ApprovalApiError,
+  canConfirmApproval,
   canExecute,
   canRequest,
   canReview,
@@ -12,6 +13,7 @@ import {
   signOut,
   submitApproval,
   type Approval,
+  type ApprovalDecision,
   type ApprovalQuery,
   type ApprovalSession,
   type ApprovalStatusFilter,
@@ -35,7 +37,7 @@ import "./approval-history.css";
 
 type Confirmation = {
   approval: Approval;
-  decision: "approve" | "deny" | "execute";
+  decision: ApprovalDecision;
 };
 
 export function ApprovalInbox() {
@@ -47,6 +49,7 @@ export function ApprovalInbox() {
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
   const [port, setPort] = useState("443");
   const [cidr, setCidr] = useState("192.0.2.0/24");
+  const [observedNow, setObservedNow] = useState(Date.now);
 
   // Refs are updated synchronously with transitions, before React renders.
   const stateRef = useRef(state);
@@ -57,6 +60,24 @@ export function ApprovalInbox() {
     (item) => item.approvalRequestId === state.selectedId,
   );
   const authorityReady = historyAuthorityReady(state, session);
+  const hasLiveApproval = Boolean(
+    session &&
+    state.items.some(
+      (item) =>
+        ["pending", "approved"].includes(item.status) &&
+        !isExpired(item, observedNow),
+    ),
+  );
+  const confirmationReady = Boolean(
+    confirmation &&
+    canConfirmApproval(
+      session,
+      selected,
+      confirmation.approval,
+      confirmation.decision,
+      observedNow,
+    ),
+  );
 
   function commit(next: HistoryState) {
     stateRef.current = next;
@@ -189,6 +210,58 @@ export function ApprovalInbox() {
     );
     return () => window.clearTimeout(timer);
   }, [session]);
+
+  useEffect(() => {
+    if (!hasLiveApproval) return;
+    // One local clock for all loaded rows, not one timer per row or a network
+    // refresh. Retain observed expiry if the wall clock subsequently moves back.
+    const sample = () =>
+      setObservedNow((previous) => Math.max(previous, Date.now()));
+    const visible = () => {
+      if (document.visibilityState === "visible") sample();
+    };
+    sample();
+    const timer = window.setInterval(sample, 1_000);
+    window.addEventListener("focus", sample);
+    document.addEventListener("visibilitychange", visible);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", sample);
+      document.removeEventListener("visibilitychange", visible);
+    };
+  }, [hasLiveApproval]);
+
+  function handleConfirm() {
+    if (submitting.current) return;
+    const currentSession = sessionRef.current;
+    const current = stateRef.current.items.find(
+      (item) => item.approvalRequestId === stateRef.current.selectedId,
+    );
+    if (
+      !confirmation ||
+      !historyAuthorityReady(stateRef.current, currentSession) ||
+      !canConfirmApproval(
+        currentSession,
+        current,
+        confirmation.approval,
+        confirmation.decision,
+        Math.max(observedNow, Date.now()),
+      )
+    ) {
+      setConfirmation(null);
+      setNotice(
+        "This confirmation is no longer available. Refresh the request before continuing; nothing was sent or retried.",
+      );
+      return;
+    }
+    // Recheck immediately before POST, including the interval between timer
+    // ticks. The server still independently verifies identity, binding and time.
+    if (!currentSession || !current) return;
+    void perform(
+      () => decideApproval(currentSession, current, confirmation.decision),
+      `${confirmation.decision === "execute" ? "Simulator execution completed" : "Review decision recorded"}. Refresh shows durable server state.`,
+    );
+  }
 
   function handleApplyFilters(event: React.FormEvent) {
     event.preventDefault();
@@ -537,7 +610,7 @@ export function ApprovalInbox() {
               )}
 
               {state.items.map((item) => {
-                const expired = isExpired(item);
+                const expired = isExpired(item, observedNow);
                 const displayStatus =
                   expired && item.status === "pending"
                     ? "pending (expired)"
@@ -630,10 +703,10 @@ export function ApprovalInbox() {
                   <div className="approval-detail-title">
                     <h2>Exact action</h2>
                     <span
-                      className={`approval-status ${selected.status}${isExpired(selected) ? " expired" : ""}`}
+                      className={`approval-status ${selected.status}${isExpired(selected, observedNow) ? " expired" : ""}`}
                     >
                       {selected.status}
-                      {isExpired(selected) &&
+                      {isExpired(selected, observedNow) &&
                       ["pending", "approved"].includes(selected.status)
                         ? " (expired)"
                         : ""}
@@ -667,7 +740,7 @@ export function ApprovalInbox() {
                     <dt>Expiry</dt>
                     <dd>
                       {new Date(selected.expiresAt).toLocaleString()}{" "}
-                      {isExpired(selected) ? "(expired)" : ""}
+                      {isExpired(selected, observedNow) ? "(expired)" : ""}
                     </dd>
                     <dt>Execution</dt>
                     <dd>
@@ -680,6 +753,15 @@ export function ApprovalInbox() {
                       <code>{selected.requestHash}</code>
                     </dd>
                   </dl>
+                  {["pending", "approved"].includes(selected.status) &&
+                    isExpired(selected, observedNow) && (
+                      <p className="approval-muted" role="status">
+                        Approval lifetime has elapsed. The stored status is
+                        unchanged; no review or execution is available. Refresh
+                        to read server state. Local time is advisory; Java
+                        remains authoritative.
+                      </p>
+                    )}
                   <h3>Target and arguments</h3>
                   <pre>
                     {JSON.stringify(
@@ -692,7 +774,7 @@ export function ApprovalInbox() {
                     )}
                   </pre>
                   <div className="approval-toolbar">
-                    {canReview(session, selected) && (
+                    {canReview(session, selected, observedNow) && (
                       <>
                         <button
                           className="approval-primary"
@@ -720,7 +802,7 @@ export function ApprovalInbox() {
                         </button>
                       </>
                     )}
-                    {canExecute(session, selected) && (
+                    {canExecute(session, selected, observedNow) && (
                       <button
                         className="approval-primary"
                         disabled={busy || !authorityReady}
@@ -743,13 +825,19 @@ export function ApprovalInbox() {
                       </p>
                     )}
                   {session.roles.includes("VIEWER") &&
-                    !canReview(session, selected) &&
-                    !canExecute(session, selected) && (
+                    !canReview(session, selected, observedNow) &&
+                    !canExecute(session, selected, observedNow) && (
                       <p className="approval-muted">
                         Read-only access. No authorized mutation is available.
                       </p>
                     )}
-                  {confirmation && authorityReady && (
+                  {confirmation && authorityReady && !confirmationReady && (
+                    <p role="status">
+                      This confirmation is no longer available. Refresh the
+                      request before continuing; nothing was sent or retried.
+                    </p>
+                  )}
+                  {confirmation && authorityReady && confirmationReady && (
                     <section
                       className="approval-confirm"
                       aria-label="Confirm exact action"
@@ -768,17 +856,7 @@ export function ApprovalInbox() {
                         <button
                           className="approval-primary"
                           disabled={busy || !authorityReady}
-                          onClick={() =>
-                            void perform(
-                              () =>
-                                decideApproval(
-                                  session,
-                                  confirmation.approval,
-                                  confirmation.decision,
-                                ),
-                              `${confirmation.decision === "execute" ? "Simulator execution completed" : "Review decision recorded"}. Refresh shows durable server state.`,
-                            )
-                          }
+                          onClick={handleConfirm}
                         >
                           {busy
                             ? "Submitting…"
