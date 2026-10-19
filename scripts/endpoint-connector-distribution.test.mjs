@@ -88,6 +88,120 @@ function sha256OfFile(filePath) {
   return crypto.createHash("sha256").update(content).digest("hex");
 }
 
+export async function gracefulTerminate(
+  proc,
+  name = "child",
+  timeoutMs = 2000,
+) {
+  if (!proc) return;
+  if (proc.exitCode !== null && proc.exitCode !== undefined) return;
+  if (proc.signalCode !== null && proc.signalCode !== undefined) return;
+
+  try {
+    proc.stdin?.end();
+  } catch {}
+  try {
+    proc.kill("SIGTERM");
+  } catch {}
+
+  const exitedOnSigterm = await new Promise((resolve) => {
+    if (proc.exitCode !== null || proc.signalCode !== null) {
+      resolve(true);
+      return;
+    }
+    const onExit = () => {
+      cleanup();
+      resolve(true);
+    };
+    const timer = setTimeout(() => {
+      cleanup();
+      resolve(false);
+    }, timeoutMs);
+    function cleanup() {
+      clearTimeout(timer);
+      proc.removeListener("exit", onExit);
+    }
+    proc.once("exit", onExit);
+  });
+
+  if (!exitedOnSigterm && proc.exitCode === null && proc.signalCode === null) {
+    try {
+      proc.kill("SIGKILL");
+    } catch {}
+    await new Promise((resolve) => {
+      if (proc.exitCode !== null || proc.signalCode !== null) {
+        resolve(true);
+        return;
+      }
+      const onExit = () => {
+        cleanup();
+        resolve(true);
+      };
+      const timer = setTimeout(() => {
+        cleanup();
+        resolve(false);
+      }, timeoutMs);
+      function cleanup() {
+        clearTimeout(timer);
+        proc.removeListener("exit", onExit);
+      }
+      proc.once("exit", onExit);
+    });
+  }
+}
+
+export async function checkPortReleased(port, timeoutMs = 2000) {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    const free = await new Promise((resolve) => {
+      const s = net.createServer();
+      s.once("error", () => resolve(false));
+      s.once("listening", () => {
+        s.close(() => resolve(true));
+      });
+      s.listen(port, "127.0.0.1");
+    });
+    if (free) return true;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return false;
+}
+
+export function runChildAsync(cmd, args, options = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(cmd, args, options);
+    let stdout = "";
+    let stderr = "";
+    const timeoutMs = options.timeout || 15_000;
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      reject(
+        new Error(
+          `Timeout (${timeoutMs}ms) executing: ${cmd} ${args.join(" ")}`,
+        ),
+      );
+    }, timeoutMs);
+    if (child.stdout) {
+      child.stdout.on("data", (d) => {
+        stdout += d;
+      });
+    }
+    if (child.stderr) {
+      child.stderr.on("data", (d) => {
+        stderr += d;
+      });
+    }
+    child.on("error", (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+    child.on("close", (code, signal) => {
+      clearTimeout(timer);
+      resolve({ status: code, signal, stdout, stderr });
+    });
+  });
+}
+
 function findJavaBinDir() {
   if (process.env.JAVA_HOME) {
     const candidate = join(process.env.JAVA_HOME, "bin");
@@ -789,41 +903,6 @@ test("offline --check verifies configuration with zero network calls and zero fi
     return;
   }
 
-  function runChildAsync(cmd, args, options = {}) {
-    return new Promise((resolve, reject) => {
-      const child = spawn(cmd, args, options);
-      let stdout = "";
-      let stderr = "";
-      const timeoutMs = options.timeout || 15_000;
-      const timer = setTimeout(() => {
-        child.kill("SIGKILL");
-        reject(
-          new Error(
-            `Timeout (${timeoutMs}ms) executing: ${cmd} ${args.join(" ")}`,
-          ),
-        );
-      }, timeoutMs);
-      if (child.stdout) {
-        child.stdout.on("data", (d) => {
-          stdout += d;
-        });
-      }
-      if (child.stderr) {
-        child.stderr.on("data", (d) => {
-          stderr += d;
-        });
-      }
-      child.on("error", (err) => {
-        clearTimeout(timer);
-        reject(err);
-      });
-      child.on("close", (code, signal) => {
-        clearTimeout(timer);
-        resolve({ status: code, signal, stdout, stderr });
-      });
-    });
-  }
-
   // 1. Valid offline --check (async execution preserves Node event loop for mockServer)
   const validCheck = await runChildAsync(launcher, ["--check"], {
     cwd: unrelatedCwd,
@@ -854,12 +933,12 @@ test("offline --check verifies configuration with zero network calls and zero fi
     "Offline check must create zero files in observation directory",
   );
 
-  // 2. Failure: missing required variable
-  const missingVar = spawnSync(launcher, ["--check"], {
+  // 2. Failure: missing required variable (async execution preserves event loop)
+  const missingVar = await runChildAsync(launcher, ["--check"], {
     cwd: unrelatedCwd,
     env: { ...validEnv, TRACEPERMIT_CONNECTOR_BEARER_TOKEN: "" },
-    encoding: "utf8",
   });
+  await new Promise((resolve) => setTimeout(resolve, 50));
   assert.equal(missingVar.status, 2);
   assert.ok(
     missingVar.stderr.includes(
@@ -868,11 +947,11 @@ test("offline --check verifies configuration with zero network calls and zero fi
   );
 
   // 3. Failure: non-loopback gateway URL
-  const nonLoopback = spawnSync(launcher, ["--check"], {
+  const nonLoopback = await runChildAsync(launcher, ["--check"], {
     cwd: unrelatedCwd,
     env: { ...validEnv, TRACEPERMIT_GATEWAY_URL: "http://example.com/mcp" },
-    encoding: "utf8",
   });
+  await new Promise((resolve) => setTimeout(resolve, 50));
   assert.equal(nonLoopback.status, 2);
   assert.ok(
     nonLoopback.stderr.includes(
@@ -881,14 +960,14 @@ test("offline --check verifies configuration with zero network calls and zero fi
   );
 
   // 4. Failure: HTTPS gateway URL
-  const httpsUrl = spawnSync(launcher, ["--check"], {
+  const httpsUrl = await runChildAsync(launcher, ["--check"], {
     cwd: unrelatedCwd,
     env: {
       ...validEnv,
       TRACEPERMIT_GATEWAY_URL: `https://127.0.0.1:${mockPort}/mcp`,
     },
-    encoding: "utf8",
   });
+  await new Promise((resolve) => setTimeout(resolve, 50));
   assert.equal(httpsUrl.status, 2);
   assert.ok(
     httpsUrl.stderr.includes(
@@ -897,14 +976,14 @@ test("offline --check verifies configuration with zero network calls and zero fi
   );
 
   // 5. Failure: non-/mcp path
-  const nonMcpPath = spawnSync(launcher, ["--check"], {
+  const nonMcpPath = await runChildAsync(launcher, ["--check"], {
     cwd: unrelatedCwd,
     env: {
       ...validEnv,
       TRACEPERMIT_GATEWAY_URL: `http://127.0.0.1:${mockPort}/api`,
     },
-    encoding: "utf8",
   });
+  await new Promise((resolve) => setTimeout(resolve, 50));
   assert.equal(nonMcpPath.status, 2);
   assert.ok(
     nonMcpPath.stderr.includes(
@@ -915,14 +994,14 @@ test("offline --check verifies configuration with zero network calls and zero fi
   // 6. Failure: symlink key
   const symlinkKey = join(privateDir, "symlink-key.pk8");
   symlinkSync(keyPath, symlinkKey);
-  const symlinkCheck = spawnSync(launcher, ["--check"], {
+  const symlinkCheck = await runChildAsync(launcher, ["--check"], {
     cwd: unrelatedCwd,
     env: {
       ...validEnv,
       TRACEPERMIT_ENDPOINT_PRIVATE_KEY_PKCS8_PATH: symlinkKey,
     },
-    encoding: "utf8",
   });
+  await new Promise((resolve) => setTimeout(resolve, 50));
   assert.equal(symlinkCheck.status, 2);
   assert.ok(
     symlinkCheck.stderr.includes(
@@ -934,14 +1013,14 @@ test("offline --check verifies configuration with zero network calls and zero fi
   const insecureKey = join(privateDir, "insecure-key.pk8");
   writeFileSync(insecureKey, pk8Der);
   chmodSync(insecureKey, 0o666);
-  const insecureCheck = spawnSync(launcher, ["--check"], {
+  const insecureCheck = await runChildAsync(launcher, ["--check"], {
     cwd: unrelatedCwd,
     env: {
       ...validEnv,
       TRACEPERMIT_ENDPOINT_PRIVATE_KEY_PKCS8_PATH: insecureKey,
     },
-    encoding: "utf8",
   });
+  await new Promise((resolve) => setTimeout(resolve, 50));
   assert.equal(insecureCheck.status, 2);
   assert.ok(
     insecureCheck.stderr.includes(
@@ -949,16 +1028,59 @@ test("offline --check verifies configuration with zero network calls and zero fi
     ),
   );
 
-  // PROVE: zero network calls across all tests
+  // PROVE: zero network calls across all 7 monitored test cases
   assert.equal(
     probeNetworkRequests,
     0,
-    "Total network requests during check tests must be zero",
+    "Total network requests during check tests must be zero across all cases",
+  );
+
+  // SENSITIVITY CONTROL:
+  // Prove that a deliberately broken launcher that connects when token is empty
+  // (as tested in private audit) is genuinely detected and causes the zero-network regression to FAIL.
+  const privateBrokenLauncher = join(
+    distDir,
+    "bin/private-broken-launcher-token-connect",
+  );
+  const launcherText = readFileSync(launcher, "utf8");
+  const rogueScript = `
+if [ -z "\${TRACEPERMIT_CONNECTOR_BEARER_TOKEN:-}" ]; then
+  python3 -c "import socket; s = socket.socket(); s.connect(('127.0.0.1', ${mockPort})); s.close()" 2>/dev/null || true
+fi
+`;
+  const brokenLauncherText = launcherText.replace(
+    'exec "$JAVA_BIN"',
+    `${rogueScript}\nexec "$JAVA_BIN"`,
+  );
+  writeFileSync(privateBrokenLauncher, brokenLauncherText);
+  chmodSync(privateBrokenLauncher, 0o755);
+
+  const preBrokenProbeCount = probeNetworkRequests;
+  await runChildAsync(privateBrokenLauncher, ["--check"], {
+    cwd: unrelatedCwd,
+    env: { ...validEnv, TRACEPERMIT_CONNECTOR_BEARER_TOKEN: "" },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const rogueRequests = probeNetworkRequests - preBrokenProbeCount;
+  assert.ok(
+    rogueRequests > 0,
+    "Deliberately broken launcher with empty token MUST trigger network probe detection (> 0)",
+  );
+
+  // Prove that the actual zero-network assertion FAILS on rogueRequests:
+  assert.throws(
+    () =>
+      assert.equal(
+        rogueRequests,
+        0,
+        "Offline check must make zero network calls",
+      ),
+    /Expected values to be strictly equal/,
+    "Zero-network regression check MUST fail when broken launcher makes network calls",
   );
 
   // Deliberate connect-on-check private control:
-  // Prove that a deliberate network connection to mockServer is detected and
-  // does not report zero before the callback runs
+  // Prove that a direct deliberate network connection to mockServer is also detected
   const preProbeCount = probeNetworkRequests;
   await new Promise((resolve, reject) => {
     const probeSocket = net.connect(
@@ -1017,43 +1139,6 @@ test("live stdio client execution against ephemeral local Java simulator gateway
   let gatewayProcess = null;
   let connector = null;
   let expiredConnector = null;
-
-  async function gracefulTerminate(proc, name, timeoutMs = 2000) {
-    if (!proc || proc.exitCode !== null || proc.killed) return;
-    try {
-      proc.stdin?.end();
-    } catch {}
-    try {
-      proc.kill("SIGTERM");
-    } catch {}
-    const exited = await Promise.race([
-      new Promise((resolve) => proc.once("exit", () => resolve(true))),
-      new Promise((resolve) => setTimeout(() => resolve(false), timeoutMs)),
-    ]);
-    if (!exited) {
-      try {
-        proc.kill("SIGKILL");
-      } catch {}
-      await new Promise((resolve) => proc.once("exit", () => resolve(true)));
-    }
-  }
-
-  async function checkPortReleased(port, timeoutMs = 2000) {
-    const started = Date.now();
-    while (Date.now() - started < timeoutMs) {
-      const free = await new Promise((resolve) => {
-        const s = net.createServer();
-        s.once("error", () => resolve(false));
-        s.once("listening", () => {
-          s.close(() => resolve(true));
-        });
-        s.listen(port, "127.0.0.1");
-      });
-      if (free) return true;
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    }
-    return false;
-  }
 
   t.after(async () => {
     await gracefulTerminate(connector, "connector");
@@ -1435,16 +1520,47 @@ test("live stdio client execution against ephemeral local Java simulator gateway
   assert.equal(gatewayExit, 0, "Gateway must exit cleanly with code 0");
 });
 
-test("fixture failure bounds: silent early-exit child and stalled responses fail fast with finite cleanup", async (t) => {
-  // 1. Negative control: silent early-exit child rejects promise immediately rather than hanging
-  const earlyExitChild = spawn(process.execPath, ["-e", "process.exit(2)"], {
+test("fixture failure bounds and graceful termination: silent child, early exit, ignored SIGTERM, stalled response, failed setup", async (t) => {
+  // 1. Test gracefulTerminate on silent child: alive and producing no output, gracefully terminated
+  const silentChild = spawn(
+    process.execPath,
+    ["-e", "console.log('READY'); setInterval(() => {}, 1000)"],
+    {
+      stdio: ["pipe", "pipe", "pipe"],
+    },
+  );
+  await new Promise((resolve) => silentChild.stdout.once("data", resolve));
+  assert.ok(silentChild.pid > 0);
+  assert.equal(silentChild.exitCode, null);
+  assert.equal(silentChild.signalCode, null);
+  await gracefulTerminate(silentChild, "silentChild", 1000);
+  assert.ok(
+    silentChild.exitCode !== null || silentChild.signalCode !== null,
+    "Silent child must be terminated by gracefulTerminate",
+  );
+
+  // 2. Test gracefulTerminate on already-exited child: returns immediately without hanging
+  const earlyExitChild = spawn(process.execPath, ["-e", "process.exit(42)"], {
     stdio: ["pipe", "pipe", "pipe"],
   });
-  t.after(() => {
-    try {
-      earlyExitChild.kill("SIGKILL");
-    } catch {}
-  });
+  await new Promise((resolve) => earlyExitChild.once("exit", resolve));
+  assert.equal(earlyExitChild.exitCode, 42);
+  const earlyStart = Date.now();
+  await gracefulTerminate(earlyExitChild, "earlyExitChild", 2000);
+  assert.ok(
+    Date.now() - earlyStart < 100,
+    "gracefulTerminate on already-exited child must return immediately without waiting for timeout",
+  );
+
+  // Also verify bounded line reader rejects immediately on early-exit child
+  const earlyExitReaderChild = spawn(
+    process.execPath,
+    ["-e", "process.exit(2)"],
+    {
+      stdio: ["pipe", "pipe", "pipe"],
+    },
+  );
+  t.after(() => gracefulTerminate(earlyExitReaderChild));
 
   let lineBuffer = "";
   const boundedRead = new Promise((resolve, reject) => {
@@ -1469,13 +1585,13 @@ test("fixture failure bounds: silent early-exit child and stalled responses fail
     };
     function cleanup() {
       clearTimeout(timer);
-      earlyExitChild.stdout.removeListener("data", onData);
-      earlyExitChild.removeListener("error", onError);
-      earlyExitChild.removeListener("exit", onExit);
+      earlyExitReaderChild.stdout.removeListener("data", onData);
+      earlyExitReaderChild.removeListener("error", onError);
+      earlyExitReaderChild.removeListener("exit", onExit);
     }
-    earlyExitChild.stdout.on("data", onData);
-    earlyExitChild.on("error", onError);
-    earlyExitChild.on("exit", onExit);
+    earlyExitReaderChild.stdout.on("data", onData);
+    earlyExitReaderChild.on("error", onError);
+    earlyExitReaderChild.on("exit", onExit);
   });
 
   await assert.rejects(
@@ -1484,7 +1600,34 @@ test("fixture failure bounds: silent early-exit child and stalled responses fail
     "Early-exit child must reject the line promise immediately rather than hanging until test timeout",
   );
 
-  // 2. Negative control: stalled response rejected within finite deadline
+  // 3. Test gracefulTerminate on ignored SIGTERM: escalates to SIGKILL and observes exit
+  const stubbornChild = spawn(
+    process.execPath,
+    [
+      "-e",
+      "process.on('SIGTERM', () => {}); console.log('READY'); setInterval(() => {}, 1000)",
+    ],
+    { stdio: ["pipe", "pipe", "pipe"] },
+  );
+  await new Promise((resolve) => stubbornChild.stdout.once("data", resolve));
+  assert.ok(stubbornChild.pid > 0);
+  t.after(() => {
+    try {
+      stubbornChild.kill("SIGKILL");
+    } catch {}
+  });
+  await gracefulTerminate(stubbornChild, "stubbornChild", 400);
+  assert.ok(
+    stubbornChild.exitCode !== null || stubbornChild.signalCode !== null,
+    "Stubborn child ignoring SIGTERM must be terminated by escalated SIGKILL",
+  );
+  assert.equal(
+    stubbornChild.signalCode,
+    "SIGKILL",
+    "Stubborn child must have been terminated with SIGKILL",
+  );
+
+  // 4. Stalled counter response: fetch aborts on timeout, sockets destroyed, server closed, port release verified
   const sockets = new Set();
   const stalledServer = createServer((_req, _res) => {
     // Deliberately hold connection open without responding
@@ -1495,21 +1638,56 @@ test("fixture failure bounds: silent early-exit child and stalled responses fail
   });
   await new Promise((resolve) => stalledServer.listen(0, "127.0.0.1", resolve));
   const stalledPort = stalledServer.address().port;
-  t.after(async () => {
-    for (const s of sockets) {
-      try {
-        s.destroy();
-      } catch {}
-    }
-    stalledServer.closeAllConnections?.();
-    await new Promise((resolve) => stalledServer.close(resolve));
-  });
+  assert.ok(stalledPort > 0);
 
   const abortSignal = AbortSignal.timeout(500);
   await assert.rejects(
     fetch(`http://127.0.0.1:${stalledPort}/counters`, { signal: abortSignal }),
     (err) => err.name === "TimeoutError" || err.name === "AbortError",
     "Stalled counter response must abort within finite deadline rather than hang",
+  );
+
+  for (const s of sockets) {
+    try {
+      s.destroy();
+    } catch {}
+  }
+  stalledServer.closeAllConnections?.();
+  await new Promise((resolve) => stalledServer.close(resolve));
+
+  const stalledPortReleased = await checkPortReleased(stalledPort, 2000);
+  assert.ok(
+    stalledPortReleased,
+    `Stalled server port ${stalledPort} must be released after socket cleanup and server close`,
+  );
+
+  // 5. Failed setup with port release: resource acquired during setup is freed and port release verified
+  let failedSetupPort = null;
+  const setupError = await (async () => {
+    let tempServer = null;
+    try {
+      tempServer = createServer();
+      await new Promise((resolve) =>
+        tempServer.listen(0, "127.0.0.1", resolve),
+      );
+      failedSetupPort = tempServer.address().port;
+      assert.ok(failedSetupPort > 0);
+      throw new Error("Simulated setup initialization failure");
+    } catch (err) {
+      if (tempServer) {
+        await new Promise((resolve) => tempServer.close(resolve));
+      }
+      return err;
+    }
+  })();
+  assert.equal(setupError.message, "Simulated setup initialization failure");
+  const failedSetupPortReleased = await checkPortReleased(
+    failedSetupPort,
+    2000,
+  );
+  assert.ok(
+    failedSetupPortReleased,
+    `Port ${failedSetupPort} must be released after failed setup cleanup`,
   );
 });
 

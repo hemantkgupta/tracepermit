@@ -2,6 +2,7 @@ package io.tracepermit.adapters.http;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.fail;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import io.tracepermit.adapters.remote.EnforcingMcpDispatcher;
@@ -55,9 +56,11 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
@@ -326,12 +329,12 @@ final class JavaBackendEndpointConnectorE2eTest {
   }
 
   @Test
-  void installedConnectorEntryFailsClosedAgainstRealBackendWhenNonInteractive() throws Exception {
+  void inProcessEntryPointSmokeAgainstRealBackendFailsClosedWhenNonInteractive() throws Exception {
     KeyPair keys = keyPair();
     RuntimeFixture fixture =
         runtime(keys, Clock.systemUTC(), () -> SecurityReadiness.allReady(Instant.now()));
     try (LoopbackDevelopmentMcpServer server = fixture.server()) {
-      Path privateDir = Files.createTempDirectory("tp-installed-entry-test");
+      Path privateDir = Files.createTempDirectory("tp-inprocess-smoke-test");
       try {
         Path keyPath = privateDir.resolve("endpoint.pk8");
         Files.write(keyPath, keys.getPrivate().getEncoded());
@@ -353,7 +356,10 @@ final class JavaBackendEndpointConnectorE2eTest {
                 "TRACEPERMIT_CONNECTOR_BEARER_TOKEN",
                 token);
 
-        // 1. Offline --check succeeds with exit code 0
+        boolean isMac = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("mac");
+
+        // 1. Offline --check:
+        // macOS host passes with exit 0; non-macOS (Ubuntu CI) rejects with exit 2 and UNSUPPORTED_PLATFORM.
         ByteArrayOutputStream checkOut = new ByteArrayOutputStream();
         ByteArrayOutputStream checkErr = new ByteArrayOutputStream();
         int checkExit =
@@ -363,16 +369,18 @@ final class JavaBackendEndpointConnectorE2eTest {
                 InputStream.nullInputStream(),
                 checkOut,
                 new PrintStream(checkErr, true, StandardCharsets.UTF_8));
-        assertThat(checkExit).isZero();
-        assertThat(checkOut.toString(StandardCharsets.UTF_8))
-            .contains(
-                "ENDPOINT_CONFIGURATION_VALID: offline only; no gateway, IdP, observer or client checked.");
+        if (isMac) {
+          assertThat(checkExit).isZero();
+          assertThat(checkOut.toString(StandardCharsets.UTF_8))
+              .contains(
+                  "ENDPOINT_CONFIGURATION_VALID: offline only; no gateway, IdP, observer or client checked.");
+        } else {
+          assertThat(checkExit).isEqualTo(2);
+          assertThat(checkErr.toString(StandardCharsets.UTF_8))
+              .contains("TracePermit endpoint connector: UNSUPPORTED_PLATFORM");
+        }
 
-        // 2. Installed --run against actual backend:
-        // In this automated test process without an interactive PTY attached,
-        // the real process observer measures terminalAttached = false.
-        // The real LoopbackDevelopmentMcpServer evaluates source attestation and MUST reject fail-closed
-        // with SOURCE_TRIGGER_NOT_INTERACTIVE before any policy permit or executor is touched!
+        // 2. In-process --run against actual backend:
         String frames =
             """
             {"jsonrpc":"2.0","id":"init","method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"installed-client","version":"1.0.0"}}}
@@ -388,22 +396,28 @@ final class JavaBackendEndpointConnectorE2eTest {
                 runOut,
                 new PrintStream(runErr, true, StandardCharsets.UTF_8));
 
-        // StdioMcpServer returns 0 on clean EOF
-        assertThat(runExit).isZero();
-        List<JsonNode> responses = responseLines(runOut);
-        assertThat(responses).isNotEmpty();
+        if (isMac) {
+          // StdioMcpServer returns 0 on clean EOF
+          assertThat(runExit).isZero();
+          List<JsonNode> responses = responseLines(runOut);
+          assertThat(responses).isNotEmpty();
 
-        // In non-interactive automated test execution, the real MacOsDevelopmentProcessObserver
-        // measures terminalAttached = false. Real LoopbackDevelopmentMcpServer evaluates
-        // source attestation and rejects fail-closed with SOURCE_TRIGGER_NOT_INTERACTIVE
-        // before dispatch!
-        JsonNode initResp = find(responses, "init");
-        assertThat(initResp.path("error").path("data").path("tracepermitCode").asText())
-            .isEqualTo("SOURCE_TRIGGER_NOT_INTERACTIVE");
+          // In non-interactive automated test execution, the real MacOsDevelopmentProcessObserver
+          // measures terminalAttached = false. Real LoopbackDevelopmentMcpServer evaluates
+          // source attestation and rejects fail-closed with SOURCE_TRIGGER_NOT_INTERACTIVE
+          // before dispatch!
+          JsonNode initResp = find(responses, "init");
+          assertThat(initResp.path("error").path("data").path("tracepermitCode").asText())
+              .isEqualTo("SOURCE_TRIGGER_NOT_INTERACTIVE");
 
-        JsonNode callResp = find(responses, "1");
-        assertThat(callResp.path("error").path("data").path("tracepermitCode").asText())
-            .isEqualTo("SOURCE_TRIGGER_NOT_INTERACTIVE");
+          JsonNode callResp = find(responses, "1");
+          assertThat(callResp.path("error").path("data").path("tracepermitCode").asText())
+              .isEqualTo("SOURCE_TRIGGER_NOT_INTERACTIVE");
+        } else {
+          assertThat(runExit).isEqualTo(2);
+          assertThat(runErr.toString(StandardCharsets.UTF_8))
+              .contains("TracePermit endpoint connector: UNSUPPORTED_PLATFORM");
+        }
 
         // Actual target executor was NEVER invoked
         assertThat(fixture.targetInvocations()).hasValue(0);
@@ -428,6 +442,301 @@ final class JavaBackendEndpointConnectorE2eTest {
         }
       }
     }
+  }
+
+  @Test
+  void installedArchiveConnectorAgainstRealBackendWithNativePty() throws Exception {
+    boolean isMac = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("mac");
+    KeyPair keys = keyPair();
+    Clock clock = Clock.systemUTC();
+    RuntimeFixture fixture =
+        runtime(keys, clock, () -> SecurityReadiness.allReady(Instant.now()));
+    try (LoopbackDevelopmentMcpServer server = fixture.server()) {
+      Path privateDir = Files.createTempDirectory("tp-installed-archive-test");
+      try {
+        Path keyPath = privateDir.resolve("endpoint.pk8");
+        Files.write(keyPath, keys.getPrivate().getEncoded());
+        Files.setPosixFilePermissions(keyPath, PosixFilePermissions.fromString("rw-------"));
+
+        String token = issueToken(server.port(), "cli-readonly");
+
+        // Locate repository root and find the launcher (from staged distribution or extracted archive)
+        Path repoRoot = Path.of("../..").toAbsolutePath().normalize();
+        Path archivePath =
+            repoRoot.resolve(
+                "java/endpoint-connector/build/distributions/tracepermit-endpoint-connector-0.1.0.tar.gz");
+        Path stagedDir =
+            repoRoot.resolve(
+                "java/endpoint-connector/build/staged-distribution/tracepermit-endpoint-connector-0.1.0");
+
+        Path launcherPath;
+        if (Files.exists(archivePath)) {
+          Path extractDir = privateDir.resolve("extracted");
+          Files.createDirectories(extractDir);
+          Process tarProc =
+              new ProcessBuilder("tar", "-xzf", archivePath.toString(), "-C", extractDir.toString())
+                  .start();
+          int tarExit = tarProc.waitFor();
+          assertThat(tarExit).isZero();
+          launcherPath =
+              extractDir.resolve(
+                  "tracepermit-endpoint-connector-0.1.0/bin/tracepermit-endpoint-connector");
+        } else if (Files.exists(stagedDir)) {
+          launcherPath = stagedDir.resolve("bin/tracepermit-endpoint-connector");
+        } else {
+          launcherPath =
+              repoRoot.resolve(
+                  "java/endpoint-connector/src/main/scripts/tracepermit-endpoint-connector");
+        }
+
+        // On Linux / non-macOS: explicitly exercise platform refusal and platform-neutral checks,
+        // skipping the macOS PTY proof.
+        if (!isMac) {
+          ProcessBuilder pb = new ProcessBuilder(launcherPath.toString(), "--run");
+          pb.environment().put("TRACEPERMIT_GATEWAY_URL", "http://127.0.0.1:" + server.port() + "/mcp");
+          pb.environment().put("TRACEPERMIT_ENDPOINT_ISSUER", ISSUER);
+          pb.environment().put("TRACEPERMIT_ENDPOINT_KEY_ID", KEY_ID);
+          pb.environment().put("TRACEPERMIT_ENDPOINT_DEVICE_ID", DEVICE_ID);
+          pb.environment().put("TRACEPERMIT_ENDPOINT_PRIVATE_KEY_PKCS8_PATH", keyPath.toString());
+          pb.environment().put("TRACEPERMIT_CONNECTOR_BEARER_TOKEN", token);
+          Process linuxProc = pb.start();
+          String linuxErr =
+              new String(linuxProc.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
+          int linuxExit = linuxProc.waitFor();
+          assertThat(linuxExit).isEqualTo(2);
+          assertThat(linuxErr).contains("TracePermit endpoint connector: UNSUPPORTED_PLATFORM");
+          assertThat(fixture.targetInvocations()).hasValue(0);
+
+          // Platform-neutral checks executed on Linux:
+          runPlatformNeutralNegativeChecks(server, keys, fixture, token, clock);
+          return;
+        }
+
+        // On macOS: Run native client attached to a real PTY via /usr/bin/script
+        Path clientScript = privateDir.resolve("pty_client.py");
+        String pythonRunner =
+            """
+            import os, sys, subprocess, json
+
+            launcher = sys.argv[1]
+            gateway_url = sys.argv[2]
+            issuer = sys.argv[3]
+            key_id = sys.argv[4]
+            device_id = sys.argv[5]
+            key_path = sys.argv[6]
+            token = sys.argv[7]
+
+            env = os.environ.copy()
+            env["TRACEPERMIT_GATEWAY_URL"] = gateway_url
+            env["TRACEPERMIT_ENDPOINT_ISSUER"] = issuer
+            env["TRACEPERMIT_ENDPOINT_KEY_ID"] = key_id
+            env["TRACEPERMIT_ENDPOINT_DEVICE_ID"] = device_id
+            env["TRACEPERMIT_ENDPOINT_PRIVATE_KEY_PKCS8_PATH"] = key_path
+            env["TRACEPERMIT_CONNECTOR_BEARER_TOKEN"] = token
+
+            proc = subprocess.Popen(
+                [launcher, "--run"],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                env=env,
+            )
+
+            frames = [
+                {"jsonrpc": "2.0", "id": "init", "method": "initialize", "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "installed-client", "version": "1.0.0"}}},
+                {"jsonrpc": "2.0", "id": "2", "method": "tools/list", "params": {}},
+                {"jsonrpc": "2.0", "id": "3", "method": "tools/call", "params": {"name": "aws.logs.filter_log_events", "arguments": {"logGroupName": "/app/staging", "filterPattern": "WARN", "limit": 2}}},
+                {"jsonrpc": "2.0", "id": "4", "method": "tools/call", "params": {"name": "aws.ec2.terminate_instances", "arguments": {"instanceIds": ["i-simulated-java-e2e"], "region": "us-east-1"}}},
+                {"jsonrpc": "2.0", "id": "5", "method": "tools/call", "params": {"name": "aws.ec2.unknown_operation", "arguments": {}}},
+            ]
+
+            for f in frames:
+                proc.stdin.write(json.dumps(f) + "\\n")
+                proc.stdin.flush()
+                line = proc.stdout.readline()
+                if line:
+                    print(line.strip())
+                    sys.stdout.flush()
+
+            proc.stdin.close()
+            proc.wait(timeout=10)
+            """;
+        Files.writeString(clientScript, pythonRunner);
+
+        ProcessBuilder scriptPb =
+            new ProcessBuilder(
+                "/usr/bin/script",
+                "-q",
+                "/dev/null",
+                "/usr/bin/python3",
+                clientScript.toString(),
+                launcherPath.toString(),
+                "http://127.0.0.1:" + server.port() + "/mcp",
+                ISSUER,
+                KEY_ID,
+                DEVICE_ID,
+                keyPath.toString(),
+                token);
+        scriptPb.directory(privateDir.toFile());
+        Process scriptProc = scriptPb.start();
+
+        ByteArrayOutputStream scriptOut = new ByteArrayOutputStream();
+        ByteArrayOutputStream scriptErr = new ByteArrayOutputStream();
+        Thread outThread =
+            Thread.ofVirtual()
+                .start(
+                    () -> {
+                      try {
+                        scriptProc.getInputStream().transferTo(scriptOut);
+                      } catch (Exception ignored) {
+                      }
+                    });
+        Thread errThread =
+            Thread.ofVirtual()
+                .start(
+                    () -> {
+                      try {
+                        scriptProc.getErrorStream().transferTo(scriptErr);
+                      } catch (Exception ignored) {
+                      }
+                    });
+
+        boolean finished = scriptProc.waitFor(25, TimeUnit.SECONDS);
+        if (!finished) {
+          scriptProc.destroyForcibly();
+          fail("Timeout waiting for installed connector execution in PTY");
+        }
+        outThread.join(2000);
+        errThread.join(2000);
+
+        assertThat(scriptProc.exitValue()).isZero();
+        List<JsonNode> responses = new ArrayList<>();
+        for (String line : scriptOut.toString(StandardCharsets.UTF_8).lines().toList()) {
+          String trimmed = line.trim();
+          if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+            try {
+              responses.add(JsonSupport.MAPPER.readTree(trimmed));
+            } catch (Exception ignored) {
+            }
+          }
+        }
+        assertThat(responses).hasSize(5);
+
+        // 1. initialize succeeds
+        JsonNode initResp = find(responses, "init");
+        assertThat(initResp.path("result").path("serverInfo").path("name").asText())
+            .isEqualTo("TracePermit");
+
+        // 2. tools/list succeeds
+        JsonNode listResp = find(responses, "2");
+        assertThat(listResp.path("result").path("tools")).hasSize(2);
+
+        // 3. read allowed -> executed, target invoked!
+        JsonNode readResp = find(responses, "3");
+        JsonNode readContent = content(readResp);
+        assertThat(readContent.path("evaluation").path("decision").path("outcome").asText())
+            .isEqualTo("allow");
+        assertThat(readContent.path("execution").path("status").asText()).isEqualTo("executed");
+        assertThat(fixture.targetInvocations()).hasValue(1);
+
+        // 4. destructive block -> blocked, target NOT invoked!
+        JsonNode blockResp = find(responses, "4");
+        JsonNode blockContent = content(blockResp);
+        assertThat(blockContent.path("evaluation").path("decision").path("outcome").asText())
+            .isEqualTo("block");
+        assertThat(blockContent.path("execution").path("status").asText()).isEqualTo("denied");
+        assertThat(fixture.targetInvocations()).hasValue(1);
+
+        // 5. unknown tool -> rejected (-32602), target NOT invoked!
+        JsonNode unknownResp = find(responses, "5");
+        assertThat(unknownResp.path("error").path("code").asInt()).isEqualTo(-32602);
+        assertThat(fixture.targetInvocations()).hasValue(1);
+
+        // 6. Platform-neutral negative checks against real backend:
+        runPlatformNeutralNegativeChecks(server, keys, fixture, token, clock);
+
+        // Secrets verification
+        String captured =
+            scriptOut.toString(StandardCharsets.UTF_8) + scriptErr.toString(StandardCharsets.UTF_8);
+        assertThat(captured)
+            .doesNotContain(token)
+            .doesNotContain(Base64.getEncoder().encodeToString(keys.getPrivate().getEncoded()));
+      } finally {
+        try (var stream = Files.walk(privateDir)) {
+          stream
+              .sorted(Comparator.reverseOrder())
+              .forEach(
+                  p -> {
+                    try {
+                      Files.deleteIfExists(p);
+                    } catch (Exception ignored) {
+                    }
+                  });
+        }
+      }
+    }
+  }
+
+  private void runPlatformNeutralNegativeChecks(
+      LoopbackDevelopmentMcpServer server,
+      KeyPair keys,
+      RuntimeFixture fixture,
+      String validToken,
+      Clock clock)
+      throws Exception {
+    int initialInvocations = fixture.targetInvocations().get();
+    URI endpoint = URI.create("http://127.0.0.1:" + server.port() + "/mcp");
+    String request = "{\"jsonrpc\":\"2.0\",\"id\":10,\"method\":\"tools/list\",\"params\":{}}";
+    SourceAttestationFactory factory =
+        new SourceAttestationFactory(
+            keyProvider(keys), clock, () -> UUID.randomUUID().toString(), Duration.ofSeconds(30));
+
+    // 1. Real invalid-signature JWT (401 INVALID_ACCESS_TOKEN)
+    byte[] wrongKey = "w".repeat(32).getBytes(StandardCharsets.UTF_8);
+    DevelopmentTestTokenIssuer wrongIssuer =
+        new DevelopmentTestTokenIssuer(wrongKey, clock, () -> UUID.randomUUID().toString(), 300);
+    String badSigToken = wrongIssuer.issueToken(DevelopmentProfile.CLI_READONLY);
+    String badSigProof =
+        factory.create(JsonSupport.MAPPER.readTree(request), badSigToken, observation(true));
+    HttpResponse<String> badSigResponse = post(endpoint, badSigToken, badSigProof, request);
+    assertThat(badSigResponse.statusCode()).isEqualTo(401);
+    assertThat(badSigResponse.body()).contains("INVALID_ACCESS_TOKEN");
+    assertThat(fixture.targetInvocations()).hasValue(initialInvocations);
+
+    // 2. Real expired JWT (401 EXPIRED_ACCESS_TOKEN)
+    Clock expiredClock = Clock.fixed(clock.instant().minusSeconds(600), ZoneOffset.UTC);
+    DevelopmentTestTokenIssuer pastIssuer =
+        new DevelopmentTestTokenIssuer(
+            "d".repeat(32).getBytes(StandardCharsets.UTF_8),
+            expiredClock,
+            () -> UUID.randomUUID().toString(),
+            300);
+    String expiredToken = pastIssuer.issueToken(DevelopmentProfile.CLI_READONLY);
+    String expiredProof =
+        factory.create(JsonSupport.MAPPER.readTree(request), expiredToken, observation(true));
+    HttpResponse<String> expiredResponse = post(endpoint, expiredToken, expiredProof, request);
+    assertThat(expiredResponse.statusCode()).isEqualTo(401);
+    assertThat(expiredResponse.body()).contains("EXPIRED_ACCESS_TOKEN");
+    assertThat(fixture.targetInvocations()).hasValue(initialInvocations);
+
+    // 3. Exact-parameters / credential mutation (403 INVALID_SOURCE_ATTESTATION)
+    String proof =
+        factory.create(JsonSupport.MAPPER.readTree(request), validToken, observation(true));
+    String mutatedRequest =
+        "{\"jsonrpc\":\"2.0\",\"id\":10,\"method\":\"tools/list\",\"params\":{\"unexpected\":true}}";
+    HttpResponse<String> mutationResponse = post(endpoint, validToken, proof, mutatedRequest);
+    assertThat(mutationResponse.statusCode()).isEqualTo(403);
+    assertThat(mutationResponse.body()).contains("INVALID_SOURCE_ATTESTATION");
+    assertThat(fixture.targetInvocations()).hasValue(initialInvocations);
+
+    // 4. Proof replay (409 SOURCE_ATTESTATION_REPLAYED)
+    HttpResponse<String> firstResponse = post(endpoint, validToken, proof, request);
+    assertThat(firstResponse.statusCode()).isEqualTo(200);
+    HttpResponse<String> replayResponse = post(endpoint, validToken, proof, request);
+    assertThat(replayResponse.statusCode()).isEqualTo(409);
+    assertThat(replayResponse.body()).contains("SOURCE_ATTESTATION_REPLAYED");
+    assertThat(fixture.targetInvocations()).hasValue(initialInvocations);
   }
 
   @Test
