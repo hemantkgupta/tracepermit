@@ -54,6 +54,7 @@ jobs:
           pnpm site:build
           node --test scripts/site-search-compatibility.test.mjs
           node --test scripts/intro-visuals.test.mjs
+          node --test scripts/security-domain-guide.test.mjs
 
       - name: Verify deterministic presenter qualification (Gate C)
         run: |

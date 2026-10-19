@@ -79,6 +79,7 @@ export default defineConfig({
             text: "The Security Invariant",
             link: "/guide/security-invariants",
           },
+          { text: "Security Domain Map", link: "/guide/security-domains" },
         ],
       },
       {
