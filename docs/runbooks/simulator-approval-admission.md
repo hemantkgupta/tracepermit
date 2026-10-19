@@ -154,6 +154,22 @@ rehearsal, or an installed endpoint artifact. The earlier deliberate
 guard-removal controls remain dated historical evidence; they were not
 repeated or relabeled as new probes for this integration.
 
+The full-check CI at the separate onboarding PR's reconciled head failed the
+default latency runner's success assertion, while the same qualification passed
+locally. Its root cause is not established by that difference. The runner test
+now has an accurate success-test name and includes up to 4096 characters of
+its existing safe stderr in the assertion; HTTP-module test failures log full
+exception context so CI retains that diagnostic. All default benchmark sweeps,
+success assertions, request/phase budgets, and production behavior remain
+unchanged. This is diagnostic hardening, not a latency fix, successful rerun of
+the failed CI, or permission to merge with a failing required check.
+
+A temporary test-only control forced a nonzero runner result with an oversized
+synthetic diagnostic. One actual JUnit assertion failure was observed, the
+bounded diagnostic appeared in normal Gradle output, and the tail beyond the
+cap did not. The success test was restored byte-for-byte before requalification.
+An earlier compile-only probe was discarded, not counted as sensitivity proof.
+
 #### Earlier admission and shutdown controls — 2026-10-17
 
 Recorded 2026-10-17 from disposable probe runs against the working tree
