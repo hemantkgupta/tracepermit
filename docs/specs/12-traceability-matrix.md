@@ -338,6 +338,14 @@ See [ADR 0040](../architecture/0040-source-free-simulator-approval-distribution.
 the [distribution runbook](../runbooks/simulator-approval-distribution.md).
 
 The [fresh Mac evaluation checklist](../runbooks/fresh-macbook-evaluation.md)
+and grouped public navigation are checked by
+`scripts/site-onboarding-browser.test.mjs` against the built static site,
+including phone/tablet/desktop breakpoints, keyboard/mobile menu navigation,
+canonical walkthrough content, home workflow links and full-size flow assets.
+This rendered regression runs alongside the approval browser job; it does not
+qualify installation on a second machine or a future connector archive.
+
+The checklist
 documents the separate source/synthetic and installed/operator paths, exact
 commands, expected role/status transitions and credential-safe result collection
 (OPS-002/004). Its [public rendering](../../site/guide/fresh-macbook-evaluation.md)

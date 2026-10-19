@@ -40,12 +40,26 @@ export default defineConfig({
     siteTitle: "TracePermit",
 
     nav: [
-      { text: "What Works Today", link: "/guide/working-today" },
-      { text: "Guide", link: "/guide/what-is-tracepermit" },
-      { text: "Core Flows", link: "/guide/core-flows" },
-      { text: "Local Demo", link: "/guide/getting-started" },
-      { text: "Architecture", link: "/guide/architecture" },
-      { text: "Connector", link: "/guide/endpoint-connector" },
+      {
+        text: "Guide",
+        items: [
+          { text: "What is TracePermit?", link: "/guide/what-is-tracepermit" },
+          { text: "What Works Today", link: "/guide/working-today" },
+          { text: "Core Flows", link: "/guide/core-flows" },
+          { text: "Architecture", link: "/guide/architecture" },
+        ],
+      },
+      {
+        text: "Evaluate locally",
+        items: [
+          {
+            text: "Fresh MacBook Evaluation",
+            link: "/guide/fresh-macbook-evaluation",
+          },
+          { text: "Local POC Quickstart", link: "/guide/getting-started" },
+          { text: "Connector for Codex", link: "/guide/endpoint-connector" },
+        ],
+      },
       { text: "GitHub", link: "https://github.com/hemantkgupta/tracepermit" },
     ],
 
