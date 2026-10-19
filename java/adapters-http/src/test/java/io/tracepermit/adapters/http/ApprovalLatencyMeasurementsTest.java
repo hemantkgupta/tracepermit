@@ -369,21 +369,24 @@ final class ApprovalLatencyMeasurementsTest {
   }
 
   @Test
-  void mainRunnerReportsIntentionalFailureCleanly() {
+  void mainRunnerReportsFullQualificationSuccess() {
     ByteArrayOutputStream out = new ByteArrayOutputStream();
     ByteArrayOutputStream err = new ByteArrayOutputStream();
 
-    // Call runner with invalid argument or closed port
+    // Preserve the full default benchmark as a success gate. It is not an
+    // injected-failure test: the runner currently ignores command-line args.
     int exitCode = SimulatorApprovalLatencyQualificationMain.run(
         new PrintStream(out),
         new PrintStream(err),
-        new String[] {"--invalid-param"});
+        new String[0]);
 
-    // Because postgres:16.4-alpine starts and runs full qualification in run,
-    // if we pass null/stopped container to runQualification it fails.
-    // In SimulatorApprovalLatencyQualificationMain.run, it executes and returns 0 if passing.
-    // Let's test that run executes and returns 0 on a clean run!
-    assertThat(exitCode).isEqualTo(0);
+    // Keep safe runner diagnostics when CI fails; an opaque 1 != 0 otherwise
+    // hides whether a phase, counter, negative control, or fixture failed.
+    String diagnostics = err.toString(StandardCharsets.UTF_8);
+    assertThat(exitCode)
+        .as("full default qualification; bounded stderr: %s",
+            diagnostics.substring(0, Math.min(diagnostics.length(), 4096)))
+        .isZero();
     assertThat(out.toString()).contains("Qualification passed successfully");
   }
 }

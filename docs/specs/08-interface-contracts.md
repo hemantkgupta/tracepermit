@@ -33,6 +33,18 @@ launcher starts these routes. See the
 [API runbook](../runbooks/authenticated-approval-api-foundation.md) and
 [ADR 0034](../architecture/0034-authenticated-loopback-approval-api.md).
 
+Admission is shared by the separate listener's bearer, browser and MCP routes,
+not a new authorization decision. The executor defaults to eight active lanes
+and sixteen pending tasks; capacities are constructor-only, validated within
+1..64 and 1..1024. Overflow is a JDK transport refusal before handler entry:
+clients must not expect a JSON 503, retry contract or rate-limit headers.
+An exchange that reaches a handler during close can receive the existing
+`503 SERVER_SHUTDOWN`; new connections are otherwise refused. Host/URI/closed
+checks run after admission. Task limits do not bound accepted TCP connections
+or buffered bytes, and close is bounded rather than a drain or target-outcome
+guarantee. No public abuse-control contract is added. See
+[ADR 0050](../architecture/0050-bounded-simulator-approval-admission.md).
+
 The collection GET now accepts exact `status`, `toolName`, `approvalRequestId`,
 bounded `limit` and unsigned `cursor` parameters. Responses add `pageSize`,
 nullable `nextCursor` and per-item `createdAt`. Every page re-derives tenant/owner
@@ -294,6 +306,26 @@ audience is either one bounded string or a bounded array of one to four unique
 strings containing the exact configured resource. `iat` and `exp` are required;
 optional `nbf` is validated when present. Malformed or excessive audience sets
 fail closed.
+
+Key resolution preserves the configured issuer/JWKS trust pair. A fresh cached
+key avoids network waits; refreshes coalesce per pair with instance-local
+capacity and monotonic deadlines. Defaults are four refresh workers, sixteen
+pending refreshes and a five-second waiter budget; the default shared DNS
+resolver has eight workers and sixteen pending tasks. DNS elapsed time is
+deducted from the configured HTTP call budget. Capacity exhaustion,
+interruption, timeout, unavailable key material or a coalesced result expired
+at the joining caller's trusted time fail closed with
+`OIDC_KEY_SET_UNAVAILABLE`; no expired-key fallback is authorized. Failure
+cooldowns survive waiter departure, and an older operation cannot reinstall
+cooldown over a newer success. Token claim time is re-sampled after key
+resolution/signature verification; a token that expires during that work
+receives `EXPIRED_ACCESS_TOKEN` rather than identity.
+
+These defaults do not change adapter-specific unavailable projections or expose
+upstream payloads/credentials. They are not a universal HTTP-response deadline:
+thread scheduling and uninterruptible OS DNS can outlive a waiter within finite
+worker capacity. Neither distributed abuse state nor new live-client/IdP
+compatibility is established. See the [refresh runbook](../runbooks/jwks-refresh-isolation.md).
 
 The portable protected-resource metadata contract is RFC 9728-shaped and is
 intended for the configured `/.well-known/oauth-protected-resource` URL:
