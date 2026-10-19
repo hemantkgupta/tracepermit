@@ -123,7 +123,7 @@ flowchart TD
   end
   C --> G["TracePermit: verify identity, normalize, evaluate policy"]
   G -->|"block or pending approval"| N["No target dispatch"]
-  G -->|"allow or exact request approved"| P["Request-bound execution authority"]
+  G -->|"allow or approved exact request explicitly resumed"| P["Request-bound execution authority"]
   P --> E["Trusted executor: verify and commit one-use claim"]
   E --> B["Proposed broker / provider workload identity"]
   B --> X["Provider credentials stay in trusted executor"]
