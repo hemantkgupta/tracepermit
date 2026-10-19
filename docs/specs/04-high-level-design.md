@@ -189,6 +189,14 @@ uses the stdio shim because it observes a real parent agent and a structured
 tool request without modifying the agent binary. Strong production process and
 egress enforcement requires platform controls beyond an ordinary user process.
 
+[ADR 0056](../architecture/0056-enterprise-credentials-and-egress-boundary.md)
+proposes the future split between request-bound execution authority, provider
+credential custody and operator-enforced egress. It does not add a real-target
+adapter or production deployment, and does not qualify SEC-007/008 or OPS-005.
+Its [delivery gates](../architecture/0056-enterprise-credentials-and-egress-boundary.md#delivery-sequence-and-decision-gates)
+separate same-laptop evaluation from a future remote simulator pilot and a
+separately reviewed non-production real-target pilot.
+
 ### 7.1 POC-qualified ingress stories
 
 The guided demonstration moves from strongest observable

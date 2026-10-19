@@ -478,6 +478,22 @@ RPO/RTO qualification. SEC-009 and DATA-001 are context, not new broad claims.
 See [ADR 0044](../architecture/0044-database-restore-safety-limits.md) and the
 [runbook](../runbooks/simulator-backup-restore-qualification.md).
 
+## Proposed real-target credential and egress boundary
+
+[ADR 0056](../architecture/0056-enterprise-credentials-and-egress-boundary.md)
+adds design-review material for SEC-007/008 and OPS-005, not implementation or
+qualification evidence. It separates one-use execution authority from provider
+credential lifetime, defines operator-owned egress/credential responsibilities,
+and lists future adapter-specific bypass, outage and uncertain-outcome probes.
+Related controls are FR-001/008/009/012, SEC-003/006/010/012/013/014/019 and
+REL-002/005/008. No new target, broker, network policy or production checkpoint
+is enabled; all requirement statuses below remain unchanged. The
+[current source anchors](../architecture/0056-enterprise-credentials-and-egress-boundary.md#current-source-anchors-not-enterprise-acceptance)
+identify existing implementations and regressions without claiming a new run.
+The [delivery gates](../architecture/0056-enterprise-credentials-and-egress-boundary.md#delivery-sequence-and-decision-gates)
+keep local artifact acceptance, future remote simulator qualification and any
+future real-target release separate.
+
 ## Functional requirements
 
 | ID     | Design/source evidence                                                                                                                                                                                                                                                                       | Test evidence                                                                                                                                                                                                    | Status                                                                                                                          |
