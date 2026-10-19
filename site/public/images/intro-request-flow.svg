@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="1220" viewBox="0 0 880 1220" role="img" aria-labelledby="title desc">
+  <title id="title">TracePermit: from proposed tool call to simulator execution</title>
+  <desc id="desc">Across supported profiles, Java verifies configured identity and proofs, normalizes the action and evaluates policy. Block does not dispatch. Sanitization requires re-evaluation. Approval remains pending until independent review and explicit requester resume with revalidation. Effective allow permits verification and one-use claim before simulator dispatch. Evidence records decisions and outcomes. Profiles are distinct; real targets are not connected.</desc>
+  <defs>
+    <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <path d="M24 0H0V24" fill="none" stroke="#94a3b8" stroke-opacity="0.06"/>
+    </pattern>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10Z" fill="#94a3b8"/>
+    </marker>
+  </defs>
+  <rect width="880" height="1220" rx="16" fill="#090d16"/>
+  <rect width="880" height="1220" rx="16" fill="url(#grid)"/>
+  <g font-family="Arial, Helvetica, sans-serif" fill="#f8fafc">
+    <circle cx="36" cy="37" r="5" fill="#38bdf8"/>
+    <circle cx="54" cy="37" r="5" fill="#c084fc"/>
+    <circle cx="72" cy="37" r="5" fill="#34d399"/>
+    <text x="96" y="44" font-size="19" letter-spacing="1.2" fill="#cbd5e1">TRACEPERMIT / REQUEST FLOW</text>
+    <text x="36" y="86" font-size="29" font-weight="700">A proposal is not permission.</text>
+    <text x="36" y="116" font-size="19" fill="#cbd5e1">Conceptual overview across distinct, simulator-only profiles.</text>
+
+    <rect x="36" y="145" width="808" height="88" rx="12" fill="#0f172a" stroke="#38bdf8"/>
+    <circle cx="69" cy="179" r="17" fill="#12334b"/>
+    <text x="69" y="186" font-size="20" text-anchor="middle" fill="#7dd3fc">1</text>
+    <text x="100" y="181" font-size="24" font-weight="700">Supported agent / client</text>
+    <text x="100" y="211" font-size="19" fill="#cbd5e1">Proposes a structured tool call; never grants authority.</text>
+    <path d="M440 233V262" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow)"/>
+
+    <rect x="36" y="268" width="808" height="190" rx="12" fill="#15172d" stroke="#c084fc"/>
+    <circle cx="69" cy="304" r="17" fill="#34234a"/>
+    <text x="69" y="311" font-size="20" text-anchor="middle" fill="#e9d5ff">2</text>
+    <text x="100" y="306" font-size="24" font-weight="700">TracePermit Java gateway</text>
+    <text x="100" y="343" font-size="20" fill="#e9d5ff">Verify configured identity and required proofs</text>
+    <text x="100" y="375" font-size="20" fill="#cbd5e1">Normalize canonical action and exact arguments</text>
+    <text x="100" y="407" font-size="20" fill="#cbd5e1">Evaluate target, policy and server-owned sequence</text>
+    <text x="100" y="437" font-size="18" fill="#cbd5e1">Endpoint, hosted OAuth and workload profiles are not interchangeable.</text>
+    <path d="M440 458V492H238V517" fill="none" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow)"/>
+    <path d="M440 492H642V517" fill="none" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow)"/>
+
+    <rect x="36" y="524" width="384" height="125" rx="12" fill="#291721" stroke="#fda4af"/>
+    <text x="60" y="556" font-size="23" font-weight="700" fill="#fda4af">BLOCK</text>
+    <text x="60" y="587" font-size="20">No permit. No dispatch.</text>
+    <text x="60" y="619" font-size="18" fill="#cbd5e1">Decision is recorded, not executed.</text>
+    <rect x="460" y="524" width="384" height="125" rx="12" fill="#292316" stroke="#fcd34d"/>
+    <text x="484" y="556" font-size="23" font-weight="700" fill="#fcd34d">SANITIZE</text>
+    <text x="484" y="587" font-size="20">Narrower derived action.</text>
+    <text x="484" y="619" font-size="18" fill="#cbd5e1">Re-evaluate; no authority yet.</text>
+
+    <path d="M440 492V672" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow)"/>
+    <rect x="36" y="680" width="808" height="140" rx="12" fill="#192334" stroke="#7dd3fc"/>
+    <circle cx="69" cy="715" r="17" fill="#12334b"/>
+    <text x="69" y="722" font-size="20" text-anchor="middle" fill="#7dd3fc">3</text>
+    <text x="100" y="717" font-size="24" font-weight="700">Effective allow or request-bound approval</text>
+    <text x="60" y="753" font-size="20" fill="#cbd5e1">Require approval → pending, not executed.</text>
+    <text x="60" y="783" font-size="19" fill="#cbd5e1">Durable profile: independent review → explicit requester resume</text>
+    <text x="60" y="807" font-size="18" fill="#cbd5e1">Exact binding, expiry and current policy must still pass.</text>
+    <path d="M440 820V855" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow)"/>
+
+    <rect x="36" y="862" width="808" height="127" rx="12" fill="#102b27" stroke="#6ee7b7"/>
+    <circle cx="69" cy="899" r="17" fill="#174b3b"/>
+    <text x="69" y="906" font-size="20" text-anchor="middle" fill="#a7f3d0">4</text>
+    <text x="100" y="901" font-size="24" font-weight="700">Permit → execution boundary → simulator</text>
+    <text x="60" y="939" font-size="20" fill="#cbd5e1">Verify signature, audience, action hash and time; claim one-use authority.</text>
+    <text x="60" y="968" font-size="19" fill="#cbd5e1">Before effect: process-local state, or atomic PostgreSQL durable claim.</text>
+    <path d="M440 989V1024" stroke="#94a3b8" stroke-width="2" marker-end="url(#arrow)"/>
+
+    <rect x="36" y="1031" width="808" height="104" rx="12" fill="#0f172a" stroke="#94a3b8"/>
+    <circle cx="69" cy="1067" r="17" fill="#243348"/>
+    <text x="69" y="1074" font-size="20" text-anchor="middle">5</text>
+    <text x="100" y="1069" font-size="24" font-weight="700">Evidence distinguishes decision from outcome</text>
+    <text x="60" y="1109" font-size="19" fill="#cbd5e1">Recorded across the lifecycle. Unknown is not success or permission to retry.</text>
+    <text x="36" y="1171" font-size="18" fill="#cbd5e1">No real AWS / Jira target. No universal tool interception or managed attestation.</text>
+    <text x="36" y="1200" font-size="17" fill="#cbd5e1">tracepermit.org · Agentic Visibility &amp; Control (AVC) · Java backend</text>
+  </g>
+</svg>

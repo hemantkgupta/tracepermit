@@ -62,6 +62,29 @@ readiness are not satisfied. OPS-001 gains no metrics surface; fairness,
 distributed capacity and a wall-clock SLO remain unqualified. No whole-ID status
 is promoted.
 
+## JWKS regression publication ordering
+
+SEC-002/003/015/017, REL-001/009 and OPS-001/005 retain their existing status.
+`CachingOidcJwkResolverTest` now waits for actual in-flight publication before
+inspecting an interrupted operation, with a second deterministic
+worker-before-publication case. The original 400 ms operation deadline,
+late-result refusal and obsolete-cooldown guard remain unchanged. Bounded
+cleanup, exact supplier counts and interrupt-status checks strengthen test
+evidence; they add no runtime authorization behavior. See
+[ADR 0049](../architecture/0049-bounded-jwks-refresh-isolation.md) and its
+[fixture explanation](../runbooks/jwks-refresh-isolation.md#concurrency-regression-fixture-ordering).
+
+## Public introduction visuals
+
+FR-005/007/008/009, SEC-005/006/014, REL-002/005 and OPS-002/004 are explained,
+not newly implemented, by the [public introduction](../../site/guide/what-is-tracepermit.md).
+Its request-flow and core-pillars SVGs distinguish block, sanitize, pending
+approval, explicit resume, permit verification/claim and simulator dispatch.
+Equivalent semantic HTML lists preserve readable mobile and assistive access.
+`scripts/intro-visuals.test.mjs` checks the static assets, text/branch boundaries,
+profile limits and responsive wiring; rendered browser QA is separate evidence.
+No runtime, trust boundary, assurance level or requirement status changes.
+
 ## Bounded process-local replay and consumption
 
 Requirements: SEC-002/003/004/006/009/014; REL-001/004/009; OPS-004.
@@ -235,6 +258,24 @@ distinguish protocol tests from actual client/model and reviewer observations.
 | 9: uncertainty           | REL-002/005/008; SEC-019                 | Failure/restart and lookup worker separately tested; no automatic sweeper/worker in browser launcher      |
 
 See the [rehearsal plan](../runbooks/flow-rehearsal-plan.md) for remaining manual gates.
+
+## Endpoint connector I/O completion budgets
+
+Requirements: FR-016/017; SEC-003/011/014; REL-001/002/005/009; OPS-004.
+
+`LoopbackHttpGatewayTransport` now waits for a bounded subscriber's complete
+body under one monotonic exchange budget, cancels on timeout/interruption and
+preserves existing public error codes. `LoopbackGatewayDeadlineTest` records
+one owned-loopback request and connection closure for stalled headers/body,
+partial error/redirect responses and interruption. Subscriber tests cover byte
+caps, EOF, cancellation and subscription lifecycle. `TerminalProbeDeadlineTest`
+covers bounded output/exit waiting, failure and cleanup through declared
+synthetic process adapters; the fixed macOS command/client PID is unchanged.
+Existing source-proof and simulator E2E gates remain required. No live model,
+Linux/Windows, protected-key or archive qualification is added. A timeout after
+send is not proof of no target effect and does not trigger tool retry. See
+[ADR 0057](../architecture/0057-endpoint-io-deadlines.md). Broad statuses below
+are unchanged.
 
 ## Named native endpoint rehearsal
 

@@ -53,6 +53,7 @@ jobs:
           npm --prefix site audit --audit-level=low
           pnpm site:build
           node --test scripts/site-search-compatibility.test.mjs
+          node --test scripts/intro-visuals.test.mjs
 
       - name: Verify deterministic presenter qualification (Gate C)
         run: |

@@ -29,6 +29,15 @@ The connector refuses non-loopback gateway URLs, redirects, and arbitrary MCP
 methods. The gateway trusts only a public Ed25519 key configured before
 startup. No request can enroll a key.
 
+The connector bounds complete HTTP response-body receipt under its exchange
+timeout, not only time to headers. A stalled response returns the safe
+`GATEWAY_UNAVAILABLE` error and cancels the exchange; it does not prove that an
+already submitted tool had no effect. Do not automatically repeat a mutation
+after this error. The fixed macOS terminal probe also bounds pipe reading and
+child exit together; neither control invents human presence or provides a
+global deadline for process hashing/signing. See
+[ADR 0057](../architecture/0057-endpoint-io-deadlines.md).
+
 ## Prerequisites and build
 
 - Node.js 22 or newer
