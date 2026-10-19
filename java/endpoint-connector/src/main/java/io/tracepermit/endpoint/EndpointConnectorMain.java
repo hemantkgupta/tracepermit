@@ -32,6 +32,10 @@ public final class EndpointConnectorMain {
       OutputStream output,
       PrintStream diagnostics) {
     if (args == null || args.length == 0) {
+      if (!isMacOs()) {
+        diagnostics.println("TracePermit endpoint connector: UNSUPPORTED_PLATFORM");
+        return 2;
+      }
       return run(environment, input, output, diagnostics);
     }
     if (args.length == 1) {
@@ -116,10 +120,6 @@ public final class EndpointConnectorMain {
       OutputStream output,
       PrintStream diagnostics) {
     try {
-      if (!isMacOs()) {
-        diagnostics.println("TracePermit endpoint connector: UNSUPPORTED_PLATFORM");
-        return 2;
-      }
       String issuer = required(environment, "TRACEPERMIT_ENDPOINT_ISSUER", 256);
       String keyId = required(environment, "TRACEPERMIT_ENDPOINT_KEY_ID", 128);
       String deviceId = required(environment, "TRACEPERMIT_ENDPOINT_DEVICE_ID", 128);
