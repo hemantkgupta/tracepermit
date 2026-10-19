@@ -1075,7 +1075,7 @@ fi
         0,
         "Offline check must make zero network calls",
       ),
-    /Expected values to be strictly equal/,
+    /Offline check must make zero network calls/,
     "Zero-network regression check MUST fail when broken launcher makes network calls",
   );
 
