@@ -421,10 +421,10 @@ final class EndpointAdaptersTest {
   }
 
   @Test
-  void executeRejectsUnsupportedPlatformsWithCodeTwo() throws Exception {
+  void installedProfileRejectsUnsupportedPlatforms() throws Exception {
     for (String unsupportedOs : java.util.List.of("Linux", "Windows 11", "FreeBSD")) {
       withSimulatedOs(unsupportedOs, () -> {
-        // Test --check
+        // Test installed --check rejection
         ByteArrayOutputStream out = new ByteArrayOutputStream();
         ByteArrayOutputStream err = new ByteArrayOutputStream();
         int exit = EndpointConnectorMain.execute(
@@ -438,7 +438,7 @@ final class EndpointAdaptersTest {
         assertThat(err.toString(StandardCharsets.UTF_8))
             .contains("TracePermit endpoint connector: UNSUPPORTED_PLATFORM");
 
-        // Test --run
+        // Test installed --run rejection
         out.reset();
         err.reset();
         exit = EndpointConnectorMain.execute(
@@ -451,20 +451,83 @@ final class EndpointAdaptersTest {
         assertThat(out.size()).isZero();
         assertThat(err.toString(StandardCharsets.UTF_8))
             .contains("TracePermit endpoint connector: UNSUPPORTED_PLATFORM");
+      });
+    }
+  }
 
-        // Test default no-args
-        out.reset();
-        err.reset();
-        exit = EndpointConnectorMain.execute(
+  @Test
+  void installedProfileRoutesOnMacOs() throws Exception {
+    withSimulatedOs("Mac OS X", () -> {
+      // Test installed --check routing to offline check
+      KeyPair keys = ed25519();
+      Path keyPath = writePrivateKey(keys, "installed-check-key.pk8");
+      Map<String, String> validEnv = Map.of(
+          "TRACEPERMIT_ENDPOINT_ISSUER", "tracepermit-endpoint:device-check",
+          "TRACEPERMIT_ENDPOINT_KEY_ID", "endpoint-key-check",
+          "TRACEPERMIT_ENDPOINT_DEVICE_ID", "device-check",
+          "TRACEPERMIT_ENDPOINT_PRIVATE_KEY_PKCS8_PATH", keyPath.toString(),
+          "TRACEPERMIT_GATEWAY_URL", "http://127.0.0.1:8080/mcp",
+          "TRACEPERMIT_CONNECTOR_BEARER_TOKEN", "valid-test-bearer-token");
+      ByteArrayOutputStream out = new ByteArrayOutputStream();
+      ByteArrayOutputStream err = new ByteArrayOutputStream();
+      int exit = EndpointConnectorMain.execute(
+          new String[] {"--check"},
+          validEnv,
+          new ByteArrayInputStream(new byte[0]),
+          out,
+          new PrintStream(err, true, StandardCharsets.UTF_8));
+      assertThat(exit).isZero();
+      assertThat(out.toString(StandardCharsets.UTF_8))
+          .contains("ENDPOINT_CONFIGURATION_VALID: offline only; no gateway, IdP, observer or client checked.");
+      assertThat(err.size()).isZero();
+
+      // Test installed --run routing to run() on macOS (verifying it does not fail with UNSUPPORTED_PLATFORM)
+      out.reset();
+      err.reset();
+      exit = EndpointConnectorMain.execute(
+          new String[] {"--run"},
+          Map.of("TRACEPERMIT_CONNECTOR_BEARER_TOKEN", "sentinel-invalid"),
+          new ByteArrayInputStream(new byte[0]),
+          out,
+          new PrintStream(err, true, StandardCharsets.UTF_8));
+      assertThat(exit).isEqualTo(2);
+      assertThat(err.toString(StandardCharsets.UTF_8))
+          .contains("CONFIGURATION_INVALID")
+          .doesNotContain("UNSUPPORTED_PLATFORM");
+    });
+  }
+
+  @Test
+  void legacySourceEntryPreservesZeroArgumentExecutionAcrossPlatforms() throws Exception {
+    for (String os : java.util.List.of("Linux", "Windows 11", "Mac OS X")) {
+      withSimulatedOs(os, () -> {
+        // Zero-length argument array: legacy source entry behavior
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        int exit = EndpointConnectorMain.execute(
             new String[0],
-            Map.of(),
+            Map.of("TRACEPERMIT_CONNECTOR_BEARER_TOKEN", "sentinel-invalid"),
             new ByteArrayInputStream(new byte[0]),
             out,
             new PrintStream(err, true, StandardCharsets.UTF_8));
         assertThat(exit).isEqualTo(2);
-        assertThat(out.size()).isZero();
         assertThat(err.toString(StandardCharsets.UTF_8))
-            .contains("TracePermit endpoint connector: UNSUPPORTED_PLATFORM");
+            .contains("CONFIGURATION_INVALID")
+            .doesNotContain("UNSUPPORTED_PLATFORM");
+
+        // Null argument array: legacy source entry behavior
+        out.reset();
+        err.reset();
+        exit = EndpointConnectorMain.execute(
+            null,
+            Map.of("TRACEPERMIT_CONNECTOR_BEARER_TOKEN", "sentinel-invalid"),
+            new ByteArrayInputStream(new byte[0]),
+            out,
+            new PrintStream(err, true, StandardCharsets.UTF_8));
+        assertThat(exit).isEqualTo(2);
+        assertThat(err.toString(StandardCharsets.UTF_8))
+            .contains("CONFIGURATION_INVALID")
+            .doesNotContain("UNSUPPORTED_PLATFORM");
       });
     }
   }

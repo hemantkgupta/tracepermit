@@ -598,6 +598,32 @@ test("installed launcher rejects unsupported non-macOS platforms fail-closed wit
   });
   assert.equal(helpRes.status, 0);
   assert.ok(helpRes.stdout.includes("Platform: macOS (ARM64 / x86_64) only"));
+
+  // 5. Preserved legacy source entry behavior: direct EndpointConnectorMain with zero args does not reject with UNSUPPORTED_PLATFORM
+  const javaBin = join(findJavaBinDir(), "java");
+  const classpath = join(distDir, "lib", "*");
+  const legacyRes = spawnSync(
+    javaBin,
+    ["-cp", classpath, "io.tracepermit.endpoint.EndpointConnectorMain"],
+    {
+      cwd: unrelatedCwd,
+      env: {
+        PATH: fakePath,
+        TRACEPERMIT_CONNECTOR_BEARER_TOKEN: "sentinel-invalid",
+      },
+      encoding: "utf8",
+    },
+  );
+  assert.equal(legacyRes.status, 2);
+  assert.ok(
+    legacyRes.stderr.includes(
+      "TracePermit endpoint connector: CONFIGURATION_INVALID",
+    ),
+  );
+  assert.ok(
+    !legacyRes.stderr.includes("UNSUPPORTED_PLATFORM"),
+    "Legacy zero-argument source entry must not be blocked by installed platform check",
+  );
 });
 
 test("offline --check verifies configuration with zero network calls and zero file creations", async (t) => {

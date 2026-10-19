@@ -32,10 +32,6 @@ public final class EndpointConnectorMain {
       OutputStream output,
       PrintStream diagnostics) {
     if (args == null || args.length == 0) {
-      if (!isMacOs()) {
-        diagnostics.println("TracePermit endpoint connector: UNSUPPORTED_PLATFORM");
-        return 2;
-      }
       return run(environment, input, output, diagnostics);
     }
     if (args.length == 1) {
