@@ -41,6 +41,7 @@ fi
 if [ "$MODE" = "--help" ]; then
   cat <<'EOF'
 Usage: tracepermit-endpoint-connector [--help | --check | --run]
+Platform: macOS (ARM64 / x86_64) only; simulator-only qualification bundle.
 
 Commands:
   --help, -h  Display this help message and exit.
@@ -59,6 +60,13 @@ Optional environment variables:
   TRACEPERMIT_ENDPOINT_OBSERVATION_DIRECTORY   Private directory (0700) for optional process observations
 EOF
   exit 0
+fi
+
+# Verify platform: macOS only for this distribution bundle
+OS_NAME="$(uname -s 2>/dev/null || echo "Unknown")"
+if [ "$OS_NAME" != "Darwin" ]; then
+  echo "TracePermit endpoint connector: UNSUPPORTED_PLATFORM" >&2
+  exit 2
 fi
 
 # Locate java executable

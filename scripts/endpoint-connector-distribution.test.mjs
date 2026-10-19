@@ -24,6 +24,24 @@ import { fileURLToPath } from "node:url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+
+if (process.platform === "darwin" && !process.env._TP_ENDPOINT_UNDER_BASH) {
+  const nodeReal = realpathSync(process.execPath);
+  const args = [...process.execArgv, ...process.argv.slice(1)];
+  const child = spawnSync(
+    "/bin/bash",
+    [
+      "-c",
+      `"${nodeReal}" ${args.map((a) => JSON.stringify(a)).join(" ")}; exit $?`,
+    ],
+    {
+      stdio: "inherit",
+      env: { ...process.env, _TP_ENDPOINT_UNDER_BASH: "1" },
+    },
+  );
+  process.exit(child.status ?? 1);
+}
+
 const repoRoot = join(__dirname, "..");
 const distArchive = join(
   repoRoot,
@@ -360,6 +378,7 @@ test("archive layout, strict allowlist, and permissions in path with spaces", (t
   assert.equal(manifest.packageName, "tracepermit-endpoint-connector");
   assert.equal(manifest.packageVersion, "0.1.0");
   assert.equal(manifest.requiredJava, "21");
+  assert.deepEqual(manifest.supportedPlatforms, ["macOS"]);
   assert.equal(
     manifest.entryPoint,
     "io.tracepermit.endpoint.EndpointConnectorMain",
@@ -415,6 +434,7 @@ test("sanitized minimal PATH execution and launcher CLI flags", (t) => {
     });
     assert.equal(res.status, 0);
     assert.ok(res.stdout.includes("Usage: tracepermit-endpoint-connector"));
+    assert.ok(res.stdout.includes("Platform: macOS (ARM64 / x86_64) only"));
     assert.ok(res.stdout.includes("--check"));
     assert.ok(res.stdout.includes("--run"));
     assert.equal(res.stderr, "");
@@ -501,6 +521,85 @@ test("ambient JVM diagnostic options are unset and secret sentinels are not echo
   assert.ok(!failRes.stderr.includes("Picked up JAVA_TOOL_OPTIONS"));
 });
 
+test("installed launcher rejects unsupported non-macOS platforms fail-closed with code 2", (t) => {
+  ensureDistributionBuilt();
+  const extractRoot = mkdtempSync(
+    join(tmpdir(), "tp endpoint unsupported test "),
+  );
+  const unrelatedCwd = mkdtempSync(
+    join(tmpdir(), "tp endpoint unsupported cwd "),
+  );
+  const fakeBinDir = mkdtempSync(join(tmpdir(), "tp endpoint fake uname "));
+  t.after(() => {
+    rmSync(extractRoot, { recursive: true, force: true });
+    rmSync(unrelatedCwd, { recursive: true, force: true });
+    rmSync(fakeBinDir, { recursive: true, force: true });
+  });
+
+  execSync(`tar -xzf "${distArchive}" -C "${extractRoot}"`);
+  const distDir = join(extractRoot, "tracepermit-endpoint-connector-0.1.0");
+  const launcher = join(distDir, "bin/tracepermit-endpoint-connector");
+  const sanitizedPath = createSanitizedPath();
+
+  // Create a fake uname script that returns Linux
+  const fakeUname = join(fakeBinDir, "uname");
+  writeFileSync(fakeUname, '#!/bin/sh\necho "Linux"\n', { mode: 0o755 });
+  chmodSync(fakeUname, 0o755);
+
+  const fakePath = `${fakeBinDir}:${sanitizedPath}`;
+
+  // 1. --check with unsupported platform fails immediately with code 2 and UNSUPPORTED_PLATFORM
+  const checkRes = spawnSync(launcher, ["--check"], {
+    cwd: unrelatedCwd,
+    env: { PATH: fakePath },
+    encoding: "utf8",
+  });
+  assert.equal(checkRes.status, 2);
+  assert.equal(checkRes.stdout, "");
+  assert.ok(
+    checkRes.stderr.includes(
+      "TracePermit endpoint connector: UNSUPPORTED_PLATFORM",
+    ),
+  );
+
+  // 2. --run with unsupported platform fails immediately with code 2 and UNSUPPORTED_PLATFORM
+  const runRes = spawnSync(launcher, ["--run"], {
+    cwd: unrelatedCwd,
+    env: { PATH: fakePath },
+    encoding: "utf8",
+  });
+  assert.equal(runRes.status, 2);
+  assert.equal(runRes.stdout, "");
+  assert.ok(
+    runRes.stderr.includes(
+      "TracePermit endpoint connector: UNSUPPORTED_PLATFORM",
+    ),
+  );
+
+  // 3. default (no args) with unsupported platform fails immediately with code 2 and UNSUPPORTED_PLATFORM
+  const defaultRes = spawnSync(launcher, [], {
+    cwd: unrelatedCwd,
+    env: { PATH: fakePath },
+    encoding: "utf8",
+  });
+  assert.equal(defaultRes.status, 2);
+  assert.equal(defaultRes.stdout, "");
+  assert.ok(
+    defaultRes.stderr.includes(
+      "TracePermit endpoint connector: UNSUPPORTED_PLATFORM",
+    ),
+  );
+
+  // 4. --help on unsupported platform still displays usage honestly with code 0
+  const helpRes = spawnSync(launcher, ["--help"], {
+    cwd: unrelatedCwd,
+    env: { PATH: fakePath },
+    encoding: "utf8",
+  });
+  assert.equal(helpRes.status, 0);
+  assert.ok(helpRes.stdout.includes("Platform: macOS (ARM64 / x86_64) only"));
+});
+
 test("offline --check verifies configuration with zero network calls and zero file creations", async (t) => {
   ensureDistributionBuilt();
   const extractRoot = mkdtempSync(join(tmpdir(), "tp endpoint offline test "));
@@ -552,6 +651,22 @@ test("offline --check verifies configuration with zero network calls and zero fi
     TRACEPERMIT_CONNECTOR_BEARER_TOKEN: "synthetic-offline-token",
     TRACEPERMIT_ENDPOINT_OBSERVATION_DIRECTORY: obsDir,
   };
+
+  if (process.platform !== "darwin") {
+    const nonMacCheck = spawnSync(launcher, ["--check"], {
+      cwd: unrelatedCwd,
+      env: validEnv,
+      encoding: "utf8",
+    });
+    assert.equal(nonMacCheck.status, 2);
+    assert.ok(
+      nonMacCheck.stderr.includes(
+        "TracePermit endpoint connector: UNSUPPORTED_PLATFORM",
+      ),
+    );
+    assert.equal(probeNetworkRequests, 0);
+    return;
+  }
 
   // 1. Valid offline --check
   const validCheck = spawnSync(launcher, ["--check"], {
@@ -685,6 +800,12 @@ test("offline --check verifies configuration with zero network calls and zero fi
 });
 
 test("live stdio client execution against ephemeral local Java simulator gateway", async (t) => {
+  if (process.platform !== "darwin") {
+    t.skip(
+      "macOS-only distribution: live macOS process observation and stdio connector execution is skipped on non-macOS (Linux).",
+    );
+    return;
+  }
   ensureDistributionBuilt();
   const extractRoot = mkdtempSync(join(tmpdir(), "tp endpoint live test "));
   const unrelatedCwd = mkdtempSync(join(tmpdir(), "tp endpoint live cwd "));

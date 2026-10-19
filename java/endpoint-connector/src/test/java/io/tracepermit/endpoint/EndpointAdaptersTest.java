@@ -217,102 +217,112 @@ final class EndpointAdaptersTest {
   @Test
   void mainCompositionUsesNoStdoutForStartupAndSanitizesConfigurationErrors()
       throws Exception {
-    ByteArrayOutputStream invalidOut = new ByteArrayOutputStream();
-    ByteArrayOutputStream invalidErr = new ByteArrayOutputStream();
-    int invalid = EndpointConnectorMain.run(
-        Map.of("TRACEPERMIT_CONNECTOR_BEARER_TOKEN", "sentinel-secret-value"),
-        new ByteArrayInputStream(new byte[0]),
-        invalidOut,
-        new PrintStream(invalidErr, true, StandardCharsets.UTF_8));
-    assertThat(invalid).isEqualTo(2);
-    assertThat(invalidOut.size()).isZero();
-    assertThat(invalidErr.toString(StandardCharsets.UTF_8))
-        .contains("CONFIGURATION_INVALID")
-        .doesNotContain("sentinel-secret-value");
+    withSimulatedOs("Mac OS X", () -> {
+      ByteArrayOutputStream invalidOut = new ByteArrayOutputStream();
+      ByteArrayOutputStream invalidErr = new ByteArrayOutputStream();
+      int invalid = EndpointConnectorMain.run(
+          Map.of("TRACEPERMIT_CONNECTOR_BEARER_TOKEN", "sentinel-secret-value"),
+          new ByteArrayInputStream(new byte[0]),
+          invalidOut,
+          new PrintStream(invalidErr, true, StandardCharsets.UTF_8));
+      assertThat(invalid).isEqualTo(2);
+      assertThat(invalidOut.size()).isZero();
+      assertThat(invalidErr.toString(StandardCharsets.UTF_8))
+          .contains("CONFIGURATION_INVALID")
+          .doesNotContain("sentinel-secret-value");
 
-    KeyPair keys = ed25519();
-    Path keyPath = writePrivateKey(keys, "main-key.pk8");
-    Map<String, String> environment = Map.of(
-        "TRACEPERMIT_ENDPOINT_ISSUER", "tracepermit-endpoint:device-simulated-main",
-        "TRACEPERMIT_ENDPOINT_KEY_ID", "endpoint-key-main",
-        "TRACEPERMIT_ENDPOINT_DEVICE_ID", "device-simulated-main",
-        "TRACEPERMIT_ENDPOINT_PRIVATE_KEY_PKCS8_PATH", keyPath.toString(),
-        "TRACEPERMIT_GATEWAY_URL", "http://127.0.0.1:65534/mcp",
-        "TRACEPERMIT_CONNECTOR_BEARER_TOKEN", "sentinel-main-token");
-    ByteArrayOutputStream validOut = new ByteArrayOutputStream();
-    ByteArrayOutputStream validErr = new ByteArrayOutputStream();
-    int valid = EndpointConnectorMain.run(
-        environment,
-        new ByteArrayInputStream(new byte[0]),
-        validOut,
-        new PrintStream(validErr, true, StandardCharsets.UTF_8));
-    assertThat(valid).isZero();
-    assertThat(validOut.size()).isZero();
-    assertThat(validErr.size()).isZero();
+      KeyPair keys = ed25519();
+      Path keyPath = writePrivateKey(keys, "main-key.pk8");
+      Map<String, String> environment = Map.of(
+          "TRACEPERMIT_ENDPOINT_ISSUER", "tracepermit-endpoint:device-simulated-main",
+          "TRACEPERMIT_ENDPOINT_KEY_ID", "endpoint-key-main",
+          "TRACEPERMIT_ENDPOINT_DEVICE_ID", "device-simulated-main",
+          "TRACEPERMIT_ENDPOINT_PRIVATE_KEY_PKCS8_PATH", keyPath.toString(),
+          "TRACEPERMIT_GATEWAY_URL", "http://127.0.0.1:65534/mcp",
+          "TRACEPERMIT_CONNECTOR_BEARER_TOKEN", "sentinel-main-token");
+      ByteArrayOutputStream validOut = new ByteArrayOutputStream();
+      ByteArrayOutputStream validErr = new ByteArrayOutputStream();
+      int valid = EndpointConnectorMain.run(
+          environment,
+          new ByteArrayInputStream(new byte[0]),
+          validOut,
+          new PrintStream(validErr, true, StandardCharsets.UTF_8));
+      assertThat(valid).isZero();
+      assertThat(validOut.size()).isZero();
+      assertThat(validErr.size()).isZero();
+    });
   }
 
   @Test
-  void executeSupportsHelpAndUsageFlags() {
-    for (String flag : java.util.List.of("--help", "-h")) {
-      ByteArrayOutputStream out = new ByteArrayOutputStream();
-      ByteArrayOutputStream err = new ByteArrayOutputStream();
-      int exit = EndpointConnectorMain.execute(
-          new String[] {flag},
-          Map.of(),
-          new ByteArrayInputStream(new byte[0]),
-          out,
-          new PrintStream(err, true, StandardCharsets.UTF_8));
-      assertThat(exit).isZero();
-      assertThat(out.toString(StandardCharsets.UTF_8))
-          .contains("Usage: tracepermit-endpoint-connector")
-          .contains("--check")
-          .contains("--run");
-      assertThat(err.size()).isZero();
+  void executeSupportsHelpAndUsageFlags() throws Exception {
+    for (String os : java.util.List.of("Mac OS X", "Linux", "Windows 11")) {
+      withSimulatedOs(os, () -> {
+        for (String flag : java.util.List.of("--help", "-h")) {
+          ByteArrayOutputStream out = new ByteArrayOutputStream();
+          ByteArrayOutputStream err = new ByteArrayOutputStream();
+          int exit = EndpointConnectorMain.execute(
+              new String[] {flag},
+              Map.of(),
+              new ByteArrayInputStream(new byte[0]),
+              out,
+              new PrintStream(err, true, StandardCharsets.UTF_8));
+          assertThat(exit).isZero();
+          assertThat(out.toString(StandardCharsets.UTF_8))
+              .contains("Usage: tracepermit-endpoint-connector")
+              .contains("Platform: macOS (ARM64 / x86_64) only")
+              .contains("--check")
+              .contains("--run");
+          assertThat(err.size()).isZero();
+        }
+      });
     }
   }
 
   @Test
   void executeOfflineCheckValidatesConfigurationWithoutCreatingFiles() throws Exception {
-    KeyPair keys = ed25519();
-    Path keyPath = writePrivateKey(keys, "check-key.pk8");
-    Path obsDir = temporaryDirectory.toRealPath().resolve("obs-check");
-    Files.createDirectory(obsDir, java.nio.file.attribute.PosixFilePermissions.asFileAttribute(
-        java.nio.file.attribute.PosixFilePermissions.fromString("rwx------")));
+    withSimulatedOs("Mac OS X", () -> {
+      KeyPair keys = ed25519();
+      Path keyPath = writePrivateKey(keys, "check-key.pk8");
+      Path obsDir = temporaryDirectory.toRealPath().resolve("obs-check");
+      Files.createDirectory(obsDir, java.nio.file.attribute.PosixFilePermissions.asFileAttribute(
+          java.nio.file.attribute.PosixFilePermissions.fromString("rwx------")));
 
-    Map<String, String> validEnv = Map.of(
-        "TRACEPERMIT_ENDPOINT_ISSUER", "tracepermit-endpoint:device-check",
-        "TRACEPERMIT_ENDPOINT_KEY_ID", "endpoint-key-check",
-        "TRACEPERMIT_ENDPOINT_DEVICE_ID", "device-check",
-        "TRACEPERMIT_ENDPOINT_PRIVATE_KEY_PKCS8_PATH", keyPath.toString(),
-        "TRACEPERMIT_GATEWAY_URL", "http://127.0.0.1:8080/mcp",
-        "TRACEPERMIT_CONNECTOR_BEARER_TOKEN", "valid-test-bearer-token",
-        "TRACEPERMIT_ENDPOINT_OBSERVATION_DIRECTORY", obsDir.toString());
+      Map<String, String> validEnv = Map.of(
+          "TRACEPERMIT_ENDPOINT_ISSUER", "tracepermit-endpoint:device-check",
+          "TRACEPERMIT_ENDPOINT_KEY_ID", "endpoint-key-check",
+          "TRACEPERMIT_ENDPOINT_DEVICE_ID", "device-check",
+          "TRACEPERMIT_ENDPOINT_PRIVATE_KEY_PKCS8_PATH", keyPath.toString(),
+          "TRACEPERMIT_GATEWAY_URL", "http://127.0.0.1:8080/mcp",
+          "TRACEPERMIT_CONNECTOR_BEARER_TOKEN", "valid-test-bearer-token",
+          "TRACEPERMIT_ENDPOINT_OBSERVATION_DIRECTORY", obsDir.toString());
 
-    ByteArrayOutputStream out = new ByteArrayOutputStream();
-    ByteArrayOutputStream err = new ByteArrayOutputStream();
-    int exit = EndpointConnectorMain.execute(
-        new String[] {"--check"},
-        validEnv,
-        new ByteArrayInputStream(new byte[0]),
-        out,
-        new PrintStream(err, true, StandardCharsets.UTF_8));
+      ByteArrayOutputStream out = new ByteArrayOutputStream();
+      ByteArrayOutputStream err = new ByteArrayOutputStream();
+      int exit = EndpointConnectorMain.execute(
+          new String[] {"--check"},
+          validEnv,
+          new ByteArrayInputStream(new byte[0]),
+          out,
+          new PrintStream(err, true, StandardCharsets.UTF_8));
 
-    assertThat(exit).isZero();
-    assertThat(out.toString(StandardCharsets.UTF_8))
-        .contains("ENDPOINT_CONFIGURATION_VALID: offline only; no gateway, IdP, observer or client checked.");
-    assertThat(err.size()).isZero();
+      assertThat(exit).isZero();
+      assertThat(out.toString(StandardCharsets.UTF_8))
+          .contains("ENDPOINT_CONFIGURATION_VALID: offline only; no gateway, IdP, observer or client checked.");
+      assertThat(err.size()).isZero();
 
-    // Verify zero files created in observation directory during offline check
-    try (var stream = Files.list(obsDir)) {
-      assertThat(stream.toList()).isEmpty();
-    }
+      // Verify zero files created in observation directory during offline check
+      try (var stream = Files.list(obsDir)) {
+        assertThat(stream.toList()).isEmpty();
+      }
+    });
   }
 
   @Test
   void executeOfflineCheckRejectsInvalidAndUnsafeConfigurationsWithoutLeakingSecrets() throws Exception {
-    KeyPair keys = ed25519();
-    Path validKey = writePrivateKey(keys, "check-valid-key.pk8");
-    String sentinelToken = "sentinel-super-secret-token-12345";
+    withSimulatedOs("Mac OS X", () -> {
+      KeyPair keys = ed25519();
+      Path validKey = writePrivateKey(keys, "check-valid-key.pk8");
+      String sentinelToken = "sentinel-super-secret-token-12345";
 
     // 1. Missing required env var
     assertCheckFails(
@@ -391,6 +401,7 @@ final class EndpointAdaptersTest {
             "TRACEPERMIT_CONNECTOR_BEARER_TOKEN", sentinelToken,
             "TRACEPERMIT_ENDPOINT_OBSERVATION_DIRECTORY", "relative/path"),
         sentinelToken);
+    });
   }
 
   @Test
@@ -407,6 +418,72 @@ final class EndpointAdaptersTest {
     assertThat(out.size()).isZero();
     assertThat(err.toString(StandardCharsets.UTF_8))
         .isEqualTo("TracePermit endpoint connector: CONFIGURATION_INVALID\n");
+  }
+
+  @Test
+  void executeRejectsUnsupportedPlatformsWithCodeTwo() throws Exception {
+    for (String unsupportedOs : java.util.List.of("Linux", "Windows 11", "FreeBSD")) {
+      withSimulatedOs(unsupportedOs, () -> {
+        // Test --check
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ByteArrayOutputStream err = new ByteArrayOutputStream();
+        int exit = EndpointConnectorMain.execute(
+            new String[] {"--check"},
+            Map.of(),
+            new ByteArrayInputStream(new byte[0]),
+            out,
+            new PrintStream(err, true, StandardCharsets.UTF_8));
+        assertThat(exit).isEqualTo(2);
+        assertThat(out.size()).isZero();
+        assertThat(err.toString(StandardCharsets.UTF_8))
+            .contains("TracePermit endpoint connector: UNSUPPORTED_PLATFORM");
+
+        // Test --run
+        out.reset();
+        err.reset();
+        exit = EndpointConnectorMain.execute(
+            new String[] {"--run"},
+            Map.of(),
+            new ByteArrayInputStream(new byte[0]),
+            out,
+            new PrintStream(err, true, StandardCharsets.UTF_8));
+        assertThat(exit).isEqualTo(2);
+        assertThat(out.size()).isZero();
+        assertThat(err.toString(StandardCharsets.UTF_8))
+            .contains("TracePermit endpoint connector: UNSUPPORTED_PLATFORM");
+
+        // Test default no-args
+        out.reset();
+        err.reset();
+        exit = EndpointConnectorMain.execute(
+            new String[0],
+            Map.of(),
+            new ByteArrayInputStream(new byte[0]),
+            out,
+            new PrintStream(err, true, StandardCharsets.UTF_8));
+        assertThat(exit).isEqualTo(2);
+        assertThat(out.size()).isZero();
+        assertThat(err.toString(StandardCharsets.UTF_8))
+            .contains("TracePermit endpoint connector: UNSUPPORTED_PLATFORM");
+      });
+    }
+  }
+
+  @FunctionalInterface
+  private interface ThrowingRunnable {
+    void run() throws Exception;
+  }
+
+  private static void withSimulatedOs(String osName, ThrowingRunnable action) throws Exception {
+    String original = System.getProperty("os.name");
+    try {
+      System.setProperty("os.name", osName);
+      action.run();
+    } finally {
+      if (original != null) {
+        System.setProperty("os.name", original);
+      }
+    }
   }
 
   private static void assertCheckFails(Map<String, String> env, String sentinel) {

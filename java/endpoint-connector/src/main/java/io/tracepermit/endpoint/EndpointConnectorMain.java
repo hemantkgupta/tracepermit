@@ -39,6 +39,7 @@ public final class EndpointConnectorMain {
       if ("--help".equals(flag) || "-h".equals(flag)) {
         PrintStream out = new PrintStream(output, true, StandardCharsets.UTF_8);
         out.println("Usage: tracepermit-endpoint-connector [--help | --check | --run]");
+        out.println("Platform: macOS (ARM64 / x86_64) only; simulator-only qualification bundle.");
         out.println("Commands:");
         out.println("  --help, -h  Display this help message and exit.");
         out.println("  --check     Perform offline configuration validation without network calls.");
@@ -46,9 +47,17 @@ public final class EndpointConnectorMain {
         return 0;
       }
       if ("--check".equals(flag)) {
+        if (!isMacOs()) {
+          diagnostics.println("TracePermit endpoint connector: UNSUPPORTED_PLATFORM");
+          return 2;
+        }
         return check(environment, output, diagnostics);
       }
       if ("--run".equals(flag)) {
+        if (!isMacOs()) {
+          diagnostics.println("TracePermit endpoint connector: UNSUPPORTED_PLATFORM");
+          return 2;
+        }
         return run(environment, input, output, diagnostics);
       }
     }
@@ -61,6 +70,10 @@ public final class EndpointConnectorMain {
       OutputStream output,
       PrintStream diagnostics) {
     try {
+      if (!isMacOs()) {
+        diagnostics.println("TracePermit endpoint connector: UNSUPPORTED_PLATFORM");
+        return 2;
+      }
       if (Runtime.version().feature() < 21) {
         throw new IllegalArgumentException("Java 21 or newer is required.");
       }
@@ -103,6 +116,10 @@ public final class EndpointConnectorMain {
       OutputStream output,
       PrintStream diagnostics) {
     try {
+      if (!isMacOs()) {
+        diagnostics.println("TracePermit endpoint connector: UNSUPPORTED_PLATFORM");
+        return 2;
+      }
       String issuer = required(environment, "TRACEPERMIT_ENDPOINT_ISSUER", 256);
       String keyId = required(environment, "TRACEPERMIT_ENDPOINT_KEY_ID", 128);
       String deviceId = required(environment, "TRACEPERMIT_ENDPOINT_DEVICE_ID", 128);
@@ -173,5 +190,9 @@ public final class EndpointConnectorMain {
       throw new IllegalArgumentException("Required endpoint connector configuration is missing.");
     }
     return value;
+  }
+
+  static boolean isMacOs() {
+    return System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("mac");
   }
 }

@@ -12,9 +12,9 @@ requiring Node.js, pnpm, Gradle, or a source code checkout on the host workstati
 
 ## Host prerequisites
 
-- **Operating system:** macOS (ARM64/x86_64) or Linux (x86_64/ARM64).
+- **Operating system:** macOS (ARM64 / x86_64) only. Linux and Windows are not supported in this initial distribution bundle.
 - **Runtime:** Java 21 (OpenJDK / Eclipse Temurin recommended) on `PATH` or `JAVA_HOME`.
-- **Standard utilities:** POSIX standard shell utilities (`bash`, `cat`, `sed`, `shasum`, `tar`).
+- **Standard utilities:** POSIX standard macOS shell utilities (`bash`, `cat`, `sed`, `shasum`, `tar`).
 - **Tools not required:** Node.js, pnpm, Gradle, and git are **not** required to run or offline-validate this bundle.
 
 ## Archive verification and extraction
@@ -66,6 +66,12 @@ The launcher script at `bin/tracepermit-endpoint-connector` provides a thin, hos
 | `--help`, `-h` | Prints usage and environment variable documentation to `stdout`   | `0`                         |
 | `--check`      | Performs strictly offline configuration validation                | `0` (valid) / `2` (invalid) |
 | `--run`        | Starts the stdio Model Context Protocol (MCP) connector (default) | Process exit                |
+
+On non-macOS platforms (e.g. Linux or Windows), `--check` and `--run` fail-closed with exit code `2` and emit:
+
+```text
+TracePermit endpoint connector: UNSUPPORTED_PLATFORM
+```
 
 Unrecognized flags or conflicting arguments exit with status `2` and emit safe, redacted diagnostics
 to `stderr`:

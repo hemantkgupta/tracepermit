@@ -73,9 +73,7 @@ flowchart TD
 
 `bin/tracepermit-endpoint-connector` provides a thin, host-native interface:
 
-- **CLI commands:** Accepts `--help` / `-h` (exits 0 with usage), `--check` (runs offline configuration
-  validation), and `--run` or no arguments (starts stdio MCP server). Unrecognized arguments are rejected
-  with exit code 2 and safe redacted diagnostic output (`TracePermit endpoint connector: CONFIGURATION_INVALID`).
+- **CLI commands and platform scope:** The initial distribution bundle is strictly macOS-only (`macOS (ARM64 / x86_64)`). Accepts `--help` / `-h` (exits 0 with honest usage notice), `--check` (runs offline configuration validation), and `--run` or no arguments (starts stdio MCP server). On non-macOS platforms (e.g. Linux or Windows), `--check` and `--run` fail-closed immediately with exit code 2 and `TracePermit endpoint connector: UNSUPPORTED_PLATFORM` before observation, signing, or network calls. Unrecognized arguments are rejected with exit code 2 and safe redacted diagnostic output (`TracePermit endpoint connector: CONFIGURATION_INVALID`).
 - **Secret sentinel protection:** Explicitly unsets ambient JVM diagnostic variables (`JAVA_TOOL_OPTIONS`,
   `_JAVA_OPTIONS`, `JDK_JAVA_OPTIONS`) before invoking Java. This guarantees that diagnostic banners containing
   synthetic secret sentinels are not echoed to stdout or stderr.
@@ -112,7 +110,7 @@ fail packaging immediately.
 
 ## Consequences and limits
 
-- The extracted connector runtime requires only Java 21 and standard OS utilities on macOS or Linux;
+- The extracted connector runtime is scoped strictly to macOS (ARM64 / x86_64) and requires only Java 21 and standard macOS POSIX utilities; Linux and Windows are not supported in this bundle;
   Node.js, pnpm, Gradle, and git are not required on the target host.
 - Java itself and the native Codex client are not bundled in the archive.
 - The archive checksum and manifest represent integrity metadata from a trusted local build, not an

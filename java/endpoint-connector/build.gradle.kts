@@ -127,7 +127,7 @@ abstract class StageEndpointConnectorDistribution : DefaultTask() {
       append("  \"sourceCommitTimestamp\": \"${Instant.ofEpochSecond(sourceCommitEpochSeconds.get())}\",\n")
       append("  \"sourceTree\": \"clean\",\n")
       append("  \"requiredJava\": \"21\",\n")
-      append("  \"supportedPlatforms\": [\n    \"macOS\",\n    \"Linux\"\n  ],\n")
+      append("  \"supportedPlatforms\": [\n    \"macOS\"\n  ],\n")
       append("  \"entryPoint\": \"io.tracepermit.endpoint.EndpointConnectorMain\",\n")
       append("  \"launcher\": \"bin/tracepermit-endpoint-connector\",\n")
       append("  \"integrityNotice\": \"Artifact checksums verify transmission and storage integrity. They do not constitute an independent cryptographic code signature or third-party provenance attestation.\",\n")
