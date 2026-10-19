@@ -18,6 +18,12 @@
 
 ### Authenticated simulator approval API foundation
 
+Pending-request cancellation and an explicit predecessor-schema upgrade are
+proposed in [ADR 0058](../architecture/0058-pending-approval-cancellation-contract.md)
+and its [design contract](../design/pending-approval-cancellation.md). Their
+routes, scope, status and command are **not implemented**; the current API and
+strict V1–V9 startup behavior below are unchanged.
+
 A separately composed `SimulatorApprovalServer` exposes pending/read/review/
 execute routes under `/api/v1/approvals`. It binds only to IPv4 loopback,
 verifies the existing RS256 access-token profile, and combines per-call scopes

@@ -24,3 +24,8 @@ For a security-boundary change, read the affected specification and
 the traceability matrix, and add positive and negative tests. The
 [simulator scenarios](../demo-scenarios/README.md) show qualified POC paths.
 No demo path may contact a real destructive target.
+
+Proposed product work is separate from the current implementation index. The
+[pending-request cancellation contract](../design/pending-approval-cancellation.md)
+and [ADR 0058](../architecture/0058-pending-approval-cancellation-contract.md)
+define withdrawal and upgrade gates only; they add no runnable API or command.

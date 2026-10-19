@@ -34,3 +34,10 @@ page on desktop and mobile after layout or catalog changes.
 
 The existing PNG is a separate overview illustration, not a generated sequence
 or authoritative replacement for the maintained flow catalog.
+
+## Proposed product contracts
+
+- [Pending approval cancellation](pending-approval-cancellation.md): owner-only,
+  pending-to-cancelled withdrawal, race/evidence semantics and the prerequisite
+  explicit database upgrade. **Design only; no cancellation route, migration,
+  operator command or UI control is implemented by this proposal.**
