@@ -32,7 +32,17 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Ephemeral local Java simulator gateway with exact counters for qualification.
+ * Ephemeral mock protocol gateway for testing installed connector transport and
+ * source-attestation wire framing (protocol smoke test).
+ *
+ * <p>NOTE: This is a protocol smoke server for transport and wire-framing verification.
+ * It uses a real {@link SourceAttestationVerifier} for signature/replay checks, but its
+ * allow/block decisions and counters are mock protocol responses, NOT actual
+ * policy/permit/executor backend evidence. Real backend enforcement is qualified
+ * in {@code io.tracepermit.adapters.http.JavaBackendEndpointConnectorE2eTest} against
+ * {@code LoopbackDevelopmentMcpServer}, {@code PolicyEvaluator}, {@code SecureExecutionService},
+ * and {@code StatefulTargetSimulator}.
+ *
  * Binds exclusively to numeric IPv4 loopback (127.0.0.1).
  */
 public final class EphemeralSimulatorGatewayMain {
@@ -40,7 +50,7 @@ public final class EphemeralSimulatorGatewayMain {
   private final ExecutorService executor;
   private final SourceAttestationVerifier verifier;
 
-  // Exact qualification counters
+  // Protocol smoke qualification counters (mock wire responses, not backend executor permits)
   private final AtomicInteger requestsReceived = new AtomicInteger();
   private final AtomicInteger initializeCount = new AtomicInteger();
   private final AtomicInteger toolsListCount = new AtomicInteger();

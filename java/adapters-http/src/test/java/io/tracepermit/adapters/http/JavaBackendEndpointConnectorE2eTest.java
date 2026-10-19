@@ -9,6 +9,7 @@ import io.tracepermit.application.SecureExecutionService;
 import io.tracepermit.application.SecurityReadiness;
 import io.tracepermit.contracts.JsonSupport;
 import io.tracepermit.endpoint.EndpointConnector;
+import io.tracepermit.endpoint.EndpointConnectorMain;
 import io.tracepermit.endpoint.EndpointKeyProvider;
 import io.tracepermit.endpoint.LoopbackHttpGatewayTransport;
 import io.tracepermit.endpoint.ProcessObservation;
@@ -17,6 +18,7 @@ import io.tracepermit.endpoint.SourceAttestationFactory;
 import io.tracepermit.endpoint.StdioMcpServer;
 import io.tracepermit.execution.InMemoryEvidenceLedger;
 import io.tracepermit.execution.InMemoryExecutionLedger;
+import io.tracepermit.identity.DevelopmentProfile;
 import io.tracepermit.identity.DevelopmentTestTokenIssuer;
 import io.tracepermit.identity.DevelopmentTokenVerifier;
 import io.tracepermit.identity.EndpointKeyRegistry;
@@ -29,6 +31,7 @@ import io.tracepermit.security.InMemoryPermitConsumptionStore;
 import io.tracepermit.simulator.StatefulTargetSimulator;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 import java.io.PrintStream;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -37,7 +40,9 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.security.GeneralSecurityException;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
@@ -48,6 +53,7 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -261,6 +267,166 @@ final class JavaBackendEndpointConnectorE2eTest {
       assertThat(replay.body()).contains("SOURCE_ATTESTATION_REPLAYED");
       assertThat(fixture.targetInvocations()).hasValue(1);
       assertThat(fixture.evidence().readAll()).hasSize(evidenceAfterRead);
+    }
+  }
+
+  @Test
+  void realInvalidSignatureAndExpiredJwtAndNonInteractiveSourceFailClosed() throws Exception {
+    KeyPair keys = keyPair();
+    RuntimeFixture fixture = runtime(keys, () -> SecurityReadiness.allReady(NOW));
+    try (LoopbackDevelopmentMcpServer server = fixture.server()) {
+      URI endpoint = URI.create("http://127.0.0.1:" + server.port() + "/mcp");
+      String request = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\",\"params\":{}}";
+      SourceAttestationFactory factory =
+          new SourceAttestationFactory(
+              keyProvider(keys),
+              CLOCK,
+              () -> UUID.randomUUID().toString(),
+              Duration.ofSeconds(30));
+
+      // 1. Real invalid-signature JWT (signed by an untrusted developmental key)
+      byte[] wrongKey = "w".repeat(32).getBytes(StandardCharsets.UTF_8);
+      DevelopmentTestTokenIssuer wrongIssuer =
+          new DevelopmentTestTokenIssuer(
+              wrongKey, CLOCK, () -> UUID.randomUUID().toString(), 300);
+      String badSigToken = wrongIssuer.issueToken(DevelopmentProfile.CLI_READONLY);
+      String badSigProof =
+          factory.create(JsonSupport.MAPPER.readTree(request), badSigToken, observation(true));
+      HttpResponse<String> badSigResponse = post(endpoint, badSigToken, badSigProof, request);
+      assertThat(badSigResponse.statusCode()).isEqualTo(401);
+      assertThat(badSigResponse.body()).contains("INVALID_ACCESS_TOKEN");
+      assertThat(fixture.targetInvocations()).hasValue(0);
+
+      // 2. Real expired JWT (issued at a past timestamp beyond 300s lifetime)
+      Clock expiredClock = Clock.fixed(NOW.minusSeconds(600), ZoneOffset.UTC);
+      DevelopmentTestTokenIssuer pastIssuer =
+          new DevelopmentTestTokenIssuer(
+              "d".repeat(32).getBytes(StandardCharsets.UTF_8),
+              expiredClock,
+              () -> UUID.randomUUID().toString(),
+              300);
+      String expiredToken = pastIssuer.issueToken(DevelopmentProfile.CLI_READONLY);
+      String expiredProof =
+          factory.create(JsonSupport.MAPPER.readTree(request), expiredToken, observation(true));
+      HttpResponse<String> expiredResponse = post(endpoint, expiredToken, expiredProof, request);
+      assertThat(expiredResponse.statusCode()).isEqualTo(401);
+      assertThat(expiredResponse.body()).contains("EXPIRED_ACCESS_TOKEN");
+      assertThat(fixture.targetInvocations()).hasValue(0);
+
+      // 3. Real non-interactive source trigger fails closed before dispatch
+      String validToken = issueToken(server.port(), "cli-readonly");
+      String nonInteractiveProof =
+          factory.create(JsonSupport.MAPPER.readTree(request), validToken, observation(false));
+      HttpResponse<String> nonInteractiveResponse =
+          post(endpoint, validToken, nonInteractiveProof, request);
+      assertThat(nonInteractiveResponse.statusCode()).isEqualTo(403);
+      assertThat(nonInteractiveResponse.body()).contains("SOURCE_TRIGGER_NOT_INTERACTIVE");
+      assertThat(fixture.targetInvocations()).hasValue(0);
+    }
+  }
+
+  @Test
+  void installedConnectorEntryFailsClosedAgainstRealBackendWhenNonInteractive() throws Exception {
+    KeyPair keys = keyPair();
+    RuntimeFixture fixture =
+        runtime(keys, Clock.systemUTC(), () -> SecurityReadiness.allReady(Instant.now()));
+    try (LoopbackDevelopmentMcpServer server = fixture.server()) {
+      Path privateDir = Files.createTempDirectory("tp-installed-entry-test");
+      try {
+        Path keyPath = privateDir.resolve("endpoint.pk8");
+        Files.write(keyPath, keys.getPrivate().getEncoded());
+        Files.setPosixFilePermissions(keyPath, PosixFilePermissions.fromString("rw-------"));
+
+        String token = issueToken(server.port(), "cli-readonly");
+        Map<String, String> env =
+            Map.of(
+                "TRACEPERMIT_GATEWAY_URL",
+                "http://127.0.0.1:" + server.port() + "/mcp",
+                "TRACEPERMIT_ENDPOINT_ISSUER",
+                ISSUER,
+                "TRACEPERMIT_ENDPOINT_KEY_ID",
+                KEY_ID,
+                "TRACEPERMIT_ENDPOINT_DEVICE_ID",
+                DEVICE_ID,
+                "TRACEPERMIT_ENDPOINT_PRIVATE_KEY_PKCS8_PATH",
+                keyPath.toString(),
+                "TRACEPERMIT_CONNECTOR_BEARER_TOKEN",
+                token);
+
+        // 1. Offline --check succeeds with exit code 0
+        ByteArrayOutputStream checkOut = new ByteArrayOutputStream();
+        ByteArrayOutputStream checkErr = new ByteArrayOutputStream();
+        int checkExit =
+            EndpointConnectorMain.execute(
+                new String[] {"--check"},
+                env,
+                InputStream.nullInputStream(),
+                checkOut,
+                new PrintStream(checkErr, true, StandardCharsets.UTF_8));
+        assertThat(checkExit).isZero();
+        assertThat(checkOut.toString(StandardCharsets.UTF_8))
+            .contains(
+                "ENDPOINT_CONFIGURATION_VALID: offline only; no gateway, IdP, observer or client checked.");
+
+        // 2. Installed --run against actual backend:
+        // In this automated test process without an interactive PTY attached,
+        // the real process observer measures terminalAttached = false.
+        // The real LoopbackDevelopmentMcpServer evaluates source attestation and MUST reject fail-closed
+        // with SOURCE_TRIGGER_NOT_INTERACTIVE before any policy permit or executor is touched!
+        String frames =
+            """
+            {"jsonrpc":"2.0","id":"init","method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"installed-client","version":"1.0.0"}}}
+            {"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"aws.logs.filter_log_events","arguments":{"logGroupName":"/app/staging","filterPattern":"WARN","limit":2}}}
+            """;
+        ByteArrayOutputStream runOut = new ByteArrayOutputStream();
+        ByteArrayOutputStream runErr = new ByteArrayOutputStream();
+        int runExit =
+            EndpointConnectorMain.execute(
+                new String[] {"--run"},
+                env,
+                new ByteArrayInputStream(frames.getBytes(StandardCharsets.UTF_8)),
+                runOut,
+                new PrintStream(runErr, true, StandardCharsets.UTF_8));
+
+        // StdioMcpServer returns 0 on clean EOF
+        assertThat(runExit).isZero();
+        List<JsonNode> responses = responseLines(runOut);
+        assertThat(responses).isNotEmpty();
+
+        // In non-interactive automated test execution, the real MacOsDevelopmentProcessObserver
+        // measures terminalAttached = false. Real LoopbackDevelopmentMcpServer evaluates
+        // source attestation and rejects fail-closed with SOURCE_TRIGGER_NOT_INTERACTIVE
+        // before dispatch!
+        JsonNode initResp = find(responses, "init");
+        assertThat(initResp.path("error").path("data").path("tracepermitCode").asText())
+            .isEqualTo("SOURCE_TRIGGER_NOT_INTERACTIVE");
+
+        JsonNode callResp = find(responses, "1");
+        assertThat(callResp.path("error").path("data").path("tracepermitCode").asText())
+            .isEqualTo("SOURCE_TRIGGER_NOT_INTERACTIVE");
+
+        // Actual target executor was NEVER invoked
+        assertThat(fixture.targetInvocations()).hasValue(0);
+
+        // Secrets and proofs are kept private, assert redacted protocol output
+        String captured =
+            runOut.toString(StandardCharsets.UTF_8) + runErr.toString(StandardCharsets.UTF_8);
+        assertThat(captured)
+            .doesNotContain(token)
+            .doesNotContain(Base64.getEncoder().encodeToString(keys.getPrivate().getEncoded()));
+      } finally {
+        try (var stream = Files.walk(privateDir)) {
+          stream
+              .sorted(Comparator.reverseOrder())
+              .forEach(
+                  p -> {
+                    try {
+                      Files.deleteIfExists(p);
+                    } catch (Exception ignored) {
+                    }
+                  });
+        }
+      }
     }
   }
 
@@ -624,7 +790,12 @@ final class JavaBackendEndpointConnectorE2eTest {
 
   private static RuntimeFixture runtime(
       KeyPair keys, java.util.function.Supplier<SecurityReadiness> readiness) throws Exception {
-    RuntimeFixture components = components(keys);
+    return runtime(keys, CLOCK, readiness);
+  }
+
+  private static RuntimeFixture runtime(
+      KeyPair keys, Clock clock, java.util.function.Supplier<SecurityReadiness> readiness) throws Exception {
+    RuntimeFixture components = components(keys, clock);
     LoopbackDevelopmentMcpServer server =
         LoopbackDevelopmentMcpServer.start(
             new InetSocketAddress(InetAddress.getByName("127.0.0.1"), 0),
@@ -637,11 +808,15 @@ final class JavaBackendEndpointConnectorE2eTest {
   }
 
   private static RuntimeFixture components(KeyPair keys) {
+    return components(keys, CLOCK);
+  }
+
+  private static RuntimeFixture components(KeyPair keys, Clock clock) {
     byte[] developmentKey = "d".repeat(32).getBytes(StandardCharsets.UTF_8);
-    DevelopmentTokenVerifier tokenVerifier = new DevelopmentTokenVerifier(developmentKey, CLOCK);
+    DevelopmentTokenVerifier tokenVerifier = new DevelopmentTokenVerifier(developmentKey, clock);
     DevelopmentTestTokenIssuer tokenIssuer =
         new DevelopmentTestTokenIssuer(
-            developmentKey, CLOCK, () -> UUID.randomUUID().toString(), 300);
+            developmentKey, clock, () -> UUID.randomUUID().toString(), 300);
     SourceAttestationVerifier sourceVerifier =
         new SourceAttestationVerifier(
             new StaticEndpointKeyRegistry(
@@ -649,12 +824,12 @@ final class JavaBackendEndpointConnectorE2eTest {
                     new EndpointKeyRegistry.EnrolledEndpointKey(
                         ISSUER, KEY_ID, DEVICE_ID, keys.getPublic()))),
             new InMemorySourceAttestationReplayStore(),
-            CLOCK);
+            clock);
     AtomicInteger ids = new AtomicInteger();
     AtomicInteger targets = new AtomicInteger();
     InMemoryEvidenceLedger evidence =
         new InMemoryEvidenceLedger(
-            "urn:test:java-backend-e2e", CLOCK, () -> "evidence-" + ids.incrementAndGet());
+            "urn:test:java-backend-e2e", clock, () -> "evidence-" + ids.incrementAndGet());
     StatefulTargetSimulator simulator = new StatefulTargetSimulator();
     SecureExecutionService service =
         new SecureExecutionService(
@@ -665,7 +840,7 @@ final class JavaBackendEndpointConnectorE2eTest {
                 "java-e2e-key",
                 "p".repeat(32).getBytes(StandardCharsets.UTF_8),
                 30,
-                CLOCK,
+                clock,
                 () -> "permit-" + ids.incrementAndGet(),
                 new InMemoryPermitConsumptionStore()),
             new InMemoryExecutionLedger(() -> "attempt-" + ids.incrementAndGet()),
@@ -674,13 +849,13 @@ final class JavaBackendEndpointConnectorE2eTest {
               targets.incrementAndGet();
               return simulator.invoke(action);
             },
-            () -> SecurityReadiness.allReady(NOW),
-            CLOCK,
+            () -> SecurityReadiness.allReady(clock.instant()),
+            clock,
             "urn:test:java-e2e-simulator");
     EnforcingMcpDispatcher dispatcher =
         new EnforcingMcpDispatcher(
             service,
-            CLOCK,
+            clock,
             () -> UUID.randomUUID().toString(),
             () -> "ab".repeat(16));
     return new RuntimeFixture(

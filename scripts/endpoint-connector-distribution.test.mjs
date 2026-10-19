@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execSync, spawn, spawnSync } from "node:child_process";
 import crypto from "node:crypto";
-import { createServer } from "node:net";
+import net, { createServer } from "node:net";
 import {
   chmodSync,
   copyFileSync,
@@ -471,9 +471,14 @@ test("ambient JVM diagnostic options are unset and secret sentinels are not echo
   ensureDistributionBuilt();
   const extractRoot = mkdtempSync(join(tmpdir(), "tp endpoint sentinel test "));
   const unrelatedCwd = mkdtempSync(join(tmpdir(), "tp endpoint sentinel cwd "));
+  const privateDir = realpathSync(
+    mkdtempSync(join(tmpdir(), "tp endpoint sentinel priv ")),
+  );
+  chmodSync(privateDir, 0o700);
   t.after(() => {
     rmSync(extractRoot, { recursive: true, force: true });
     rmSync(unrelatedCwd, { recursive: true, force: true });
+    rmSync(privateDir, { recursive: true, force: true });
   });
 
   execSync(`tar -xzf "${distArchive}" -C "${extractRoot}"`);
@@ -485,6 +490,7 @@ test("ambient JVM diagnostic options are unset and secret sentinels are not echo
   const secretSentinel2 = "SENTINEL_SECRET_TOKEN_BETA_67890";
   const secretSentinel3 = "SENTINEL_SECRET_TOKEN_GAMMA_ABCDE";
 
+  // 1. Help flag invocation (before Java)
   const res = spawnSync(launcher, ["--help"], {
     cwd: unrelatedCwd,
     env: {
@@ -507,7 +513,7 @@ test("ambient JVM diagnostic options are unset and secret sentinels are not echo
   assert.ok(!res.stderr.includes("Picked up _JAVA_OPTIONS"));
   assert.ok(!res.stderr.includes("Picked up JDK_JAVA_OPTIONS"));
 
-  // Same on failure exit
+  // 2. Failure exit before Java
   const failRes = spawnSync(launcher, ["--unknown"], {
     cwd: unrelatedCwd,
     env: {
@@ -519,6 +525,95 @@ test("ambient JVM diagnostic options are unset and secret sentinels are not echo
   assert.equal(failRes.status, 2);
   assert.ok(!failRes.stderr.includes(secretSentinel1));
   assert.ok(!failRes.stderr.includes("Picked up JAVA_TOOL_OPTIONS"));
+
+  // 3. Actual valid --check JVM invocation with all three diagnostic variables
+  const { privateKey } = crypto.generateKeyPairSync("ed25519");
+  const pk8Der = privateKey.export({ type: "pkcs8", format: "der" });
+  const keyPath = join(privateDir, "endpoint.pk8");
+  writeFileSync(keyPath, pk8Der);
+  chmodSync(keyPath, 0o600);
+
+  const validCheckEnv = {
+    PATH: sanitizedPath,
+    TRACEPERMIT_GATEWAY_URL: "http://127.0.0.1:8080/mcp",
+    TRACEPERMIT_ENDPOINT_ISSUER: "tracepermit-endpoint:test",
+    TRACEPERMIT_ENDPOINT_KEY_ID: "endpoint-key-test",
+    TRACEPERMIT_ENDPOINT_DEVICE_ID: "device-test",
+    TRACEPERMIT_ENDPOINT_PRIVATE_KEY_PKCS8_PATH: keyPath,
+    TRACEPERMIT_CONNECTOR_BEARER_TOKEN: "valid-bearer-token",
+    JAVA_TOOL_OPTIONS: `-Dtest.secret=${secretSentinel1}`,
+    _JAVA_OPTIONS: `-Dtest.secret2=${secretSentinel2}`,
+    JDK_JAVA_OPTIONS: `-Dtest.secret3=${secretSentinel3}`,
+  };
+
+  if (process.platform === "darwin") {
+    const jvmCheckRes = spawnSync(launcher, ["--check"], {
+      cwd: unrelatedCwd,
+      env: validCheckEnv,
+      encoding: "utf8",
+    });
+    assert.equal(jvmCheckRes.status, 0, jvmCheckRes.stderr);
+    assert.ok(
+      jvmCheckRes.stdout.includes(
+        "ENDPOINT_CONFIGURATION_VALID: offline only; no gateway, IdP, observer or client checked.",
+      ),
+    );
+    assert.ok(!jvmCheckRes.stdout.includes(secretSentinel1));
+    assert.ok(!jvmCheckRes.stdout.includes(secretSentinel2));
+    assert.ok(!jvmCheckRes.stdout.includes(secretSentinel3));
+    assert.ok(!jvmCheckRes.stderr.includes(secretSentinel1));
+    assert.ok(!jvmCheckRes.stderr.includes(secretSentinel2));
+    assert.ok(!jvmCheckRes.stderr.includes(secretSentinel3));
+    assert.ok(!jvmCheckRes.stderr.includes("Picked up JAVA_TOOL_OPTIONS"));
+    assert.ok(!jvmCheckRes.stderr.includes("Picked up _JAVA_OPTIONS"));
+    assert.ok(!jvmCheckRes.stderr.includes("Picked up JDK_JAVA_OPTIONS"));
+
+    // 4. Negative probe sensitivity control:
+    // A private launcher copy with unset removed must leak banners/sentinels.
+    // NOTE: The real launcher in distDir is NEVER modified.
+    const privateLauncher = join(distDir, "bin/private-launcher-no-unset");
+    const originalLauncherContent = readFileSync(launcher, "utf8");
+    const brokenLauncherContent = originalLauncherContent.replace(
+      /unset (-v )?JAVA_TOOL_OPTIONS _JAVA_OPTIONS JDK_JAVA_OPTIONS/g,
+      "# unset removed for negative probe sensitivity verification",
+    );
+    assert.notEqual(
+      brokenLauncherContent,
+      originalLauncherContent,
+      "Sanity check: unset must have been matched and replaced in private copy",
+    );
+    writeFileSync(privateLauncher, brokenLauncherContent, { mode: 0o755 });
+
+    const brokenRes = spawnSync(privateLauncher, ["--check"], {
+      cwd: unrelatedCwd,
+      env: validCheckEnv,
+      encoding: "utf8",
+    });
+    const leakedBanner =
+      brokenRes.stderr.includes("Picked up JAVA_TOOL_OPTIONS") ||
+      brokenRes.stderr.includes("Picked up _JAVA_OPTIONS") ||
+      brokenRes.stderr.includes("Picked up JDK_JAVA_OPTIONS") ||
+      brokenRes.stderr.includes(secretSentinel1) ||
+      brokenRes.stderr.includes(secretSentinel2) ||
+      brokenRes.stderr.includes(secretSentinel3);
+    assert.ok(
+      leakedBanner,
+      "Negative probe sensitivity: removing unset from launcher must leak JVM diagnostic banners or secret sentinels to stderr",
+    );
+  } else {
+    const nonMacCheck = spawnSync(launcher, ["--check"], {
+      cwd: unrelatedCwd,
+      env: validCheckEnv,
+      encoding: "utf8",
+    });
+    assert.equal(nonMacCheck.status, 2);
+    assert.ok(
+      nonMacCheck.stderr.includes(
+        "TracePermit endpoint connector: UNSUPPORTED_PLATFORM",
+      ),
+    );
+    assert.ok(!nonMacCheck.stderr.includes(secretSentinel1));
+  }
 });
 
 test("installed launcher rejects unsupported non-macOS platforms fail-closed with code 2", (t) => {
@@ -694,12 +789,49 @@ test("offline --check verifies configuration with zero network calls and zero fi
     return;
   }
 
-  // 1. Valid offline --check
-  const validCheck = spawnSync(launcher, ["--check"], {
+  function runChildAsync(cmd, args, options = {}) {
+    return new Promise((resolve, reject) => {
+      const child = spawn(cmd, args, options);
+      let stdout = "";
+      let stderr = "";
+      const timeoutMs = options.timeout || 15_000;
+      const timer = setTimeout(() => {
+        child.kill("SIGKILL");
+        reject(
+          new Error(
+            `Timeout (${timeoutMs}ms) executing: ${cmd} ${args.join(" ")}`,
+          ),
+        );
+      }, timeoutMs);
+      if (child.stdout) {
+        child.stdout.on("data", (d) => {
+          stdout += d;
+        });
+      }
+      if (child.stderr) {
+        child.stderr.on("data", (d) => {
+          stderr += d;
+        });
+      }
+      child.on("error", (err) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+      child.on("close", (code, signal) => {
+        clearTimeout(timer);
+        resolve({ status: code, signal, stdout, stderr });
+      });
+    });
+  }
+
+  // 1. Valid offline --check (async execution preserves Node event loop for mockServer)
+  const validCheck = await runChildAsync(launcher, ["--check"], {
     cwd: unrelatedCwd,
     env: validEnv,
-    encoding: "utf8",
   });
+  // Finite settle barrier ensuring any asynchronous network callbacks drain
+  await new Promise((resolve) => setTimeout(resolve, 50));
+
   assert.equal(validCheck.status, 0, validCheck.stderr);
   assert.ok(
     validCheck.stdout.includes(
@@ -823,6 +955,30 @@ test("offline --check verifies configuration with zero network calls and zero fi
     0,
     "Total network requests during check tests must be zero",
   );
+
+  // Deliberate connect-on-check private control:
+  // Prove that a deliberate network connection to mockServer is detected and
+  // does not report zero before the callback runs
+  const preProbeCount = probeNetworkRequests;
+  await new Promise((resolve, reject) => {
+    const probeSocket = net.connect(
+      { host: "127.0.0.1", port: mockPort },
+      () => {
+        probeSocket.destroy();
+        resolve();
+      },
+    );
+    probeSocket.on("error", reject);
+    setTimeout(() => {
+      probeSocket.destroy();
+      reject(new Error("Timeout in sensitivity network probe"));
+    }, 2000);
+  });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.ok(
+    probeNetworkRequests > preProbeCount,
+    "Deliberate network connection to mockServer must be detected by probe (> 0)",
+  );
 });
 
 test("live stdio client execution against ephemeral local Java simulator gateway", async (t) => {
@@ -862,37 +1018,62 @@ test("live stdio client execution against ephemeral local Java simulator gateway
   let connector = null;
   let expiredConnector = null;
 
-  t.after(() => {
-    if (connector) {
+  async function gracefulTerminate(proc, name, timeoutMs = 2000) {
+    if (!proc || proc.exitCode !== null || proc.killed) return;
+    try {
+      proc.stdin?.end();
+    } catch {}
+    try {
+      proc.kill("SIGTERM");
+    } catch {}
+    const exited = await Promise.race([
+      new Promise((resolve) => proc.once("exit", () => resolve(true))),
+      new Promise((resolve) => setTimeout(() => resolve(false), timeoutMs)),
+    ]);
+    if (!exited) {
       try {
-        connector.stdin.end();
+        proc.kill("SIGKILL");
       } catch {}
-      try {
-        connector.kill("SIGKILL");
-      } catch {}
+      await new Promise((resolve) => proc.once("exit", () => resolve(true)));
     }
-    if (expiredConnector) {
-      try {
-        expiredConnector.stdin.end();
-      } catch {}
-      try {
-        expiredConnector.kill("SIGKILL");
-      } catch {}
+  }
+
+  async function checkPortReleased(port, timeoutMs = 2000) {
+    const started = Date.now();
+    while (Date.now() - started < timeoutMs) {
+      const free = await new Promise((resolve) => {
+        const s = net.createServer();
+        s.once("error", () => resolve(false));
+        s.once("listening", () => {
+          s.close(() => resolve(true));
+        });
+        s.listen(port, "127.0.0.1");
+      });
+      if (free) return true;
+      await new Promise((resolve) => setTimeout(resolve, 50));
     }
+    return false;
+  }
+
+  t.after(async () => {
+    await gracefulTerminate(connector, "connector");
+    await gracefulTerminate(expiredConnector, "expiredConnector");
     if (gatewayProcess) {
       try {
-        gatewayProcess.stdin.write("SHUTDOWN\n");
-        gatewayProcess.stdin.end();
+        gatewayProcess.stdin?.write("SHUTDOWN\n");
       } catch {}
-      try {
-        gatewayProcess.kill("SIGKILL");
-      } catch {}
+      await gracefulTerminate(gatewayProcess, "gatewayProcess");
+    }
+    if (gatewayPort) {
+      const released = await checkPortReleased(gatewayPort);
+      assert.ok(released, `Gateway port ${gatewayPort} must be released`);
     }
     rmSync(extractRoot, { recursive: true, force: true });
     rmSync(unrelatedCwd, { recursive: true, force: true });
     rmSync(privateDir, { recursive: true, force: true });
   });
 
+  // Start EphemeralSimulatorGatewayMain (mock protocol smoke server for transport wire-framing)
   gatewayProcess = spawn(
     javaBin,
     [
@@ -961,18 +1142,50 @@ test("live stdio client execution against ephemeral local Java simulator gateway
   });
 
   // PROTECT: process parentage check.
-  // Because launcher uses `exec java ...`, connector.pid IS the Java process directly.
+  // Because launcher uses `exec java ...`, connector.pid IS replaced by the Java process directly.
   assert.ok(connector.pid > 0);
-  try {
-    const psOut = execSync(`ps -o comm= -p ${connector.pid}`, {
-      encoding: "utf8",
-    }).trim();
-    assert.ok(
-      psOut.toLowerCase().includes("java"),
-      `Connector process command must be java, got: ${psOut}`,
+  let psOutput = null;
+  let osInspectionError = null;
+  const psDeadline = Date.now() + 3000;
+  while (Date.now() < psDeadline) {
+    try {
+      psOutput = execSync(`ps -o ppid=,comm= -p ${connector.pid}`, {
+        encoding: "utf8",
+      }).trim();
+      const parts = psOutput.split(/\s+/);
+      if (
+        parts.length >= 2 &&
+        parts.slice(1).join(" ").toLowerCase().includes("java")
+      ) {
+        break;
+      }
+    } catch (err) {
+      osInspectionError = err;
+      break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+
+  if (psOutput != null) {
+    // Assertions are outside of try-catch; mismatches will fail the test!
+    const parts = psOutput.trim().split(/\s+/);
+    assert.ok(parts.length >= 2, `ps output format invalid: "${psOutput}"`);
+    const observedPpid = parseInt(parts[0], 10);
+    const observedComm = parts.slice(1).join(" ").toLowerCase();
+    assert.equal(
+      observedPpid,
+      process.pid,
+      `Connector PPID must equal native spawning client PID (${process.pid}), observed: ${observedPpid}`,
     );
-  } catch (err) {
-    // Some restricted CI environments may disallow ps command inspect; check pid > 0
+    assert.ok(
+      observedComm.includes("java"),
+      `Connector process command must be java, observed: ${observedComm}`,
+    );
+  } else {
+    // Explicitly record skipped proof with reason rather than silently counting as passed
+    t.diagnostic(
+      `SKIPPED OS process parentage verification: ps command unavailable (${osInspectionError?.message})`,
+    );
   }
 
   // Communication helper: send JSON line, read response line
@@ -1122,13 +1335,37 @@ test("live stdio client execution against ephemeral local Java simulator gateway
 
   let expiredResp = "";
   expiredConnector.stdout.setEncoding("utf8");
-  const expiredPromise = new Promise((resolve) => {
-    expiredConnector.stdout.on("data", (chunk) => {
+  const expiredPromise = new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(new Error("Timeout waiting for expired connector response line"));
+    }, 5000);
+    const onData = (chunk) => {
       expiredResp += chunk;
       if (expiredResp.includes("\n")) {
+        cleanup();
         resolve(expiredResp.trim());
       }
-    });
+    };
+    const onError = (err) => {
+      cleanup();
+      reject(err);
+    };
+    const onExit = (code) => {
+      cleanup();
+      if (!expiredResp.includes("\n")) {
+        reject(new Error(`Expired connector exited early with code ${code}`));
+      }
+    };
+    function cleanup() {
+      clearTimeout(timer);
+      expiredConnector.stdout.removeListener("data", onData);
+      expiredConnector.removeListener("error", onError);
+      expiredConnector.removeListener("exit", onExit);
+    }
+    expiredConnector.stdout.on("data", onData);
+    expiredConnector.on("error", onError);
+    expiredConnector.on("exit", onExit);
   });
 
   expiredConnector.stdin.write(
@@ -1154,8 +1391,10 @@ test("live stdio client execution against ephemeral local Java simulator gateway
   });
   assert.equal(exitCode, 0, "Connector must exit cleanly with code 0 on EOF");
 
-  // 9. Fetch gateway counters and assert exact values!
-  const countersRes = await fetch(`http://127.0.0.1:${gatewayPort}/counters`);
+  // 9. Fetch gateway counters and assert exact values with bounded fetch timeout!
+  const countersRes = await fetch(`http://127.0.0.1:${gatewayPort}/counters`, {
+    signal: AbortSignal.timeout(5000),
+  });
   assert.equal(countersRes.status, 200);
   const counters = await countersRes.json();
 
@@ -1194,4 +1433,117 @@ test("live stdio client execution against ephemeral local Java simulator gateway
     setTimeout(() => resolve("TIMEOUT"), 5000);
   });
   assert.equal(gatewayExit, 0, "Gateway must exit cleanly with code 0");
+});
+
+test("fixture failure bounds: silent early-exit child and stalled responses fail fast with finite cleanup", async (t) => {
+  // 1. Negative control: silent early-exit child rejects promise immediately rather than hanging
+  const earlyExitChild = spawn(process.execPath, ["-e", "process.exit(2)"], {
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  t.after(() => {
+    try {
+      earlyExitChild.kill("SIGKILL");
+    } catch {}
+  });
+
+  let lineBuffer = "";
+  const boundedRead = new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(new Error("Timeout waiting for child"));
+    }, 2000);
+    const onData = (d) => {
+      lineBuffer += d;
+      if (lineBuffer.includes("\n")) {
+        cleanup();
+        resolve(lineBuffer.trim());
+      }
+    };
+    const onError = (e) => {
+      cleanup();
+      reject(e);
+    };
+    const onExit = (code) => {
+      cleanup();
+      reject(new Error(`Child exited early with code ${code}`));
+    };
+    function cleanup() {
+      clearTimeout(timer);
+      earlyExitChild.stdout.removeListener("data", onData);
+      earlyExitChild.removeListener("error", onError);
+      earlyExitChild.removeListener("exit", onExit);
+    }
+    earlyExitChild.stdout.on("data", onData);
+    earlyExitChild.on("error", onError);
+    earlyExitChild.on("exit", onExit);
+  });
+
+  await assert.rejects(
+    boundedRead,
+    /Child exited early with code 2/,
+    "Early-exit child must reject the line promise immediately rather than hanging until test timeout",
+  );
+
+  // 2. Negative control: stalled response rejected within finite deadline
+  const sockets = new Set();
+  const stalledServer = createServer((_req, _res) => {
+    // Deliberately hold connection open without responding
+  });
+  stalledServer.on("connection", (s) => {
+    sockets.add(s);
+    s.on("close", () => sockets.delete(s));
+  });
+  await new Promise((resolve) => stalledServer.listen(0, "127.0.0.1", resolve));
+  const stalledPort = stalledServer.address().port;
+  t.after(async () => {
+    for (const s of sockets) {
+      try {
+        s.destroy();
+      } catch {}
+    }
+    stalledServer.closeAllConnections?.();
+    await new Promise((resolve) => stalledServer.close(resolve));
+  });
+
+  const abortSignal = AbortSignal.timeout(500);
+  await assert.rejects(
+    fetch(`http://127.0.0.1:${stalledPort}/counters`, { signal: abortSignal }),
+    (err) => err.name === "TimeoutError" || err.name === "AbortError",
+    "Stalled counter response must abort within finite deadline rather than hang",
+  );
+});
+
+test("process parentage verification helper detects PPID and command mismatches", () => {
+  function verifyParentage(psOutput, expectedPpid) {
+    if (!psOutput) throw new Error("OS inspection unavailable");
+    const parts = psOutput.trim().split(/\s+/);
+    if (parts.length < 2)
+      throw new Error(`Invalid ps output format: ${psOutput}`);
+    const observedPpid = parseInt(parts[0], 10);
+    const observedComm = parts.slice(1).join(" ").toLowerCase();
+    assert.equal(
+      observedPpid,
+      expectedPpid,
+      `Connector PPID must equal native spawning client PID (${expectedPpid}), observed: ${observedPpid}`,
+    );
+    assert.ok(
+      observedComm.includes("java"),
+      `Connector process command must be java, observed: ${observedComm}`,
+    );
+  }
+
+  // 1. Matching ppid and java comm succeeds
+  assert.doesNotThrow(() => verifyParentage(`12345 /usr/bin/java`, 12345));
+
+  // 2. PPID mismatch throws AssertionError
+  assert.throws(
+    () => verifyParentage(`99999 /usr/bin/java`, 12345),
+    /Connector PPID must equal native spawning client PID \(12345\)/,
+  );
+
+  // 3. Command mismatch throws AssertionError
+  assert.throws(
+    () => verifyParentage(`12345 /bin/bash`, 12345),
+    /Connector process command must be java/,
+  );
 });

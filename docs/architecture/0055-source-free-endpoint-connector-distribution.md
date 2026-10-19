@@ -114,8 +114,21 @@ fail packaging immediately.
   Node.js, pnpm, Gradle, and git are not required on the target host.
 - Java itself and the native Codex client are not bundled in the archive.
 - The archive checksum and manifest represent integrity metadata from a trusted local build, not an
-  independent cryptographic release signature or third-party provenance attestation.
+  independent cryptographic release signature or third-party provenance attestation. Rebuilding the
+  distribution archive produces a different archive SHA-256 due to container timestamps, even though
+  uncompressed project-JAR entries match byte-for-byte; this distribution does not guarantee bit-for-bit
+  reproducible release archives.
+- POSIX key files provide same-UID development custody on the host, not exclusive or hardware-protected
+  custody against other processes running under the same UID. The connector does not implement
+  auto-enrollment, retry loops, credential download services, or global client configuration writes (`~/.codex`).
 - Offline `--check` cannot prove token validity with a remote IdP, backend readiness, public-key enrollment
   on the gateway, human presence, or policy acceptance.
 - The loopback gateway restriction (`http://127.0.0.1:<port>/mcp`) remains strictly enforced; remote HTTP/HTTPS
   gateways and non-loopback bindings are rejected.
+- Requirement test scope and limits:
+  - **FR-012:** Packages local simulated MCP adapters and standalone endpoint runtime; cloud endpoints remain simulated.
+  - **SEC-003:** Enforces ambient JVM option sanitization, private key file permission checks (`0600`/`0400`), and secret-safe diagnostics; hardware enclave custody is out of scope.
+  - **SEC-011:** Direct numeric loopback HTTP only (`http://127.0.0.1:<port>/mcp`); offline `--check` makes zero network calls and creates zero files.
+  - **SEC-014:** Request-bound Ed25519 source attestation verified against real backend; automated/non-interactive test runs fail closed with `SOURCE_TRIGGER_NOT_INTERACTIVE` before target execution. Wire framing is verified via mock protocol smoke server.
+  - **OPS-002:** Manifest 1.1 records build provenance (clean commit and commit timestamp); packaging rejects dirty working trees.
+  - **OPS-004:** Graceful termination (SIGTERM -> bounded wait -> SIGKILL) and port release verified; early exit and stalled response fixtures fail fast with bounded cleanup.

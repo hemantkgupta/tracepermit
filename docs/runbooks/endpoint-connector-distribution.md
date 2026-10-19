@@ -28,6 +28,9 @@ shasum -a 256 -c tracepermit-endpoint-connector-0.1.0.tar.gz.sha256
 > [!NOTE]
 > SHA-256 checksums verify transmission and storage integrity. They do not constitute
 > an independent cryptographic release signature or third-party provenance attestation.
+> Rebuilding the distribution archive produces a different archive SHA-256 due to archive
+> container timestamps, though uncompressed project-JAR entries match byte-for-byte;
+> this distribution does not guarantee bit-for-bit reproducible release archives.
 
 Extract the archive into your chosen installation directory (paths containing spaces are fully supported):
 
@@ -140,14 +143,18 @@ The `--check` command performs purely local validation:
 
 1. **Public-key enrollment versus private-key custody:** The simulator gateway must be pre-configured
    with the endpoint's public key (`TRACEPERMIT_ENDPOINT_PUBLIC_KEY_SPKI_BASE64`). Client requests
-   cannot enroll keys. The private key remains exclusively in endpoint custody on the workstation.
+   cannot enroll keys; the connector performs no auto-enrollment, retry loops, or credential download service.
+   Local POSIX key files (`0600`/`0400`) provide same-UID development custody on the workstation, not
+   hardware-isolated or kernel-protected custody against other processes running under the same UID.
 2. **Credential injection:** Bearer tokens must be injected via `TRACEPERMIT_CONNECTOR_BEARER_TOKEN`.
    Never embed secrets in configuration files or launcher arguments.
 3. **No client modification:** The distribution does not modify `~/.codex` or any global client configuration.
 4. **Convenience launcher vs. distribution runtime:** The repository script `scripts/run-codex-endpoint-demo.sh`
-   is a Node-based developer convenience wrapper that automatically issues tokens and starts the demo.
-   In contrast, this distribution runtime is fully independent of Node.js and requires external credential
-   and gateway coordination.
+   is a Node-based developer convenience wrapper that automatically issues tokens and coordinates with an
+   **already-started** local `pnpm demo` backend. In contrast, this distribution runtime is fully independent
+   of Node.js and requires external credential and gateway coordination. Note that the backend (`pnpm demo`
+   running on loopback), the Java runtime (Java 21), and the native client (e.g. Codex) are distinct prerequisites
+   with separate lifecycles.
 
 ## Native Codex client configuration
 
@@ -175,6 +182,17 @@ default_tools_approval_mode = "prompt"
 
 Start the local gateway before initiating the Codex session. To cleanly disconnect, terminate
 the client or close the stdio stream.
+
+## Qualification scope and test boundaries
+
+The distribution package and runtime are qualified under automated test suites with explicit requirement boundaries:
+
+- **FR-012 (Stateful simulator composition):** Qualified via `:endpoint-connector:packageEndpointConnectorDistribution` and `scripts/endpoint-connector-distribution.test.mjs`. Scope is strictly local simulated adapters; remote cloud services remain simulated.
+- **SEC-003 (Secret hygiene and exposure prevention):** Qualified via launcher unsetting of ambient JVM options (`JAVA_TOOL_OPTIONS`, `_JAVA_OPTIONS`, `JDK_JAVA_OPTIONS`), verified absence of sensitive tokens in diagnostics, and same-UID POSIX permissions check (`0600`/`0400`) on private key files. Does not provide hardware key protection.
+- **SEC-011 (Loopback isolation):** Qualified via `--check` offline verification (zero sockets, zero network traffic) and strict rejection of remote or non-loopback HTTP gateway URLs.
+- **SEC-014 (Source attestation verification):** Qualified via `EphemeralSimulatorGatewayMain` (protocol smoke test for transport wire-framing) and `JavaBackendEndpointConnectorE2eTest` (real backend evaluation: invalid-signature and expired JWT rejection, and fail-closed `SOURCE_TRIGGER_NOT_INTERACTIVE` enforcement when caller lacks interactive terminal attachment, preventing unapproved target execution).
+- **OPS-002 (Artifact and configuration provenance):** Qualified via schema `1.1` `manifest.json` tracking clean git commit, commit timestamp, Java 21 prerequisite, and per-JAR SHA-256 hashes. Package build fails closed on dirty working trees.
+- **OPS-004 (Lifecycle and clean shutdown):** Qualified via launcher replacement of shell process (`exec java`), bounded graceful shutdown (SIGTERM -> bounded wait -> SIGKILL), port release verification, and negative controls for child crashes and stalled responses.
 
 ## Related documentation
 
