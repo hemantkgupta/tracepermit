@@ -5,6 +5,63 @@
 
 Status values: **Implemented**, **Partial**, **Target**, or **Proposed**.
 
+## Bounded OIDC/JWKS refresh isolation
+
+Requirements: SEC-002/003/004/015/017; REL-001/009; OPS-001/005.
+
+`CachingOidcJwkResolver`, `JwksRefreshCoordinator`, `OidcAccessTokenVerifier`,
+`BoundedHostResolver` and `SsrfSafeHttpsJwkSetSource` qualify a bounded local
+identity-dependency slice. Fresh keys avoid unrelated provider I/O; same-pair
+refreshes coalesce; finite workers/queues, monotonic wait/transport budgets,
+caller-specific freshness, late-result discard and ordered success/failure
+cooldowns preserve fail-closed behavior. Access-token claims use trusted time
+re-sampled after key resolution/signature verification. Existing destination,
+pinning, TLS, key/JSON, size and bounded-error controls remain in force.
+
+`CachingOidcJwkResolverTest`, `OidcAccessTokenVerifierTest` and
+`SsrfSafeHttpsJwkSetSourceTest` cover warm/independent-provider progress,
+coalescing, late/expired results, timeout/interruption, cooldown storms,
+old-interrupted-worker/new-success ordering, full active capacity before
+queueing, saturation/recovery, combined DNS/HTTP delay, token expiry during
+resolution and retained SSRF/TLS/key negatives. See
+[ADR 0049](../architecture/0049-bounded-jwks-refresh-isolation.md) and the
+[runbook](../runbooks/jwks-refresh-isolation.md).
+
+SEC-017 receives resource-exhaustion defense, not completed pre/post-auth
+distributed abuse control. OPS-001/005 remain partial: no new metrics,
+production bootstrap/readiness or live IdP qualification. Pools and cooldowns
+are instance-local (default DNS is shared across sources); provider fairness,
+process-wide cardinality, forced OS-call cancellation and a universal hard
+wall-clock SLO are not established. No whole-requirement status is promoted.
+
+## Bounded simulator approval listener admission
+
+Requirements: FR-003/007/009; SEC-002/003/017; REL-001/004/009; OPS-001/005.
+
+`ApprovalAdmissionExecutors` and `SimulatorApprovalServer` bound one loopback
+listener's executor to eight active lanes plus sixteen pending tasks by default.
+Admission precedes every handler statement; overflow refuses the transport
+without a guaranteed JSON error. Constructor validation, lane reuse after
+failures, approved-execute saturation, repeated cycles, close races and default
+approval/replay regression are covered by `SimulatorApprovalAdmissionTest` and
+`SimulatorApprovalServerTest`. Two close probes use daemon tasks, finite waits
+and release-finally coverage including setup; released-handler and owned-task
+termination are checked. The interruption-ignoring resolver establishes that
+bounded close does not depend on cooperative cancellation. See
+[ADR 0050](../architecture/0050-bounded-simulator-approval-admission.md) and the
+[runbook](../runbooks/simulator-approval-admission.md).
+
+Counting key-resolution/database probes plus unchanged simulator state qualify
+no expensive handler work during overflow. Simulator rule cardinality is not
+an invocation count because identical rules deduplicate; application-level
+invocation-counter tests are separate evidence. Approval, permit consumption
+and execution-claim semantics are unchanged. Bounds are per-server task counts,
+not TCP/byte limits; close is not a drain, forced cancellation or target-outcome
+guarantee. SEC-017 public pre/post-attribution abuse controls and OPS-005 remote
+readiness are not satisfied. OPS-001 gains no metrics surface; fairness,
+distributed capacity and a wall-clock SLO remain unqualified. No whole-ID status
+is promoted.
+
 ## JWKS regression publication ordering
 
 SEC-002/003/015/017, REL-001/009 and OPS-001/005 retain their existing status.
