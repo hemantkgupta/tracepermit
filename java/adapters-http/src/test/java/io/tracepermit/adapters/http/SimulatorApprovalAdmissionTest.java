@@ -289,9 +289,9 @@ final class SimulatorApprovalAdmissionTest {
       assertThat(rules()).isZero();
 
       assertStatus(call("POST", approvalPath + "/execute", alice, hash(approved)), 200);
-      assertThat(rules()).as("the approved execute dispatches to the target exactly once").isEqualTo(1);
+      assertThat(rules()).as("the approved execute leaves one distinct simulator rule").isEqualTo(1);
       assertStatus(call("POST", approvalPath + "/execute", alice, hash(approved)), 409);
-      assertThat(rules()).as("a replay of the executed approval is denied and dispatches nothing").isEqualTo(1);
+      assertThat(rules()).as("the denied replay leaves simulator state unchanged").isEqualTo(1);
     } finally {
       CountDownLatch gate = parkGate.get();
       if (gate != null) gate.countDown();
@@ -400,14 +400,6 @@ final class SimulatorApprovalAdmissionTest {
     restart(1, 4);
     parkSignal.set(new CountDownLatch(1));
     parkGate.set(new CountDownLatch(1));
-    var parked = CompletableFuture.supplyAsync(() -> {
-      try { return call("POST", "/api/v1/approvals", token("alice", "park-key"), ACTION); }
-      catch (Exception failure) { throw new IllegalStateException(failure); }
-    });
-    assertThat(parkSignal.get().await(15, TimeUnit.SECONDS)).isTrue();
-    Thread lane = parkedLane;
-    assertThat(lane).isNotNull();
-
     // Close runs on a daemon task behind a finite deadline: a regression to an
     // unbounded close fails this get promptly instead of hanging the suite until
     // an external job timeout. The gate is always released in finally, so even
@@ -418,6 +410,13 @@ final class SimulatorApprovalAdmissionTest {
       return thread;
     });
     try {
+      var parked = CompletableFuture.supplyAsync(() -> {
+        try { return call("POST", "/api/v1/approvals", token("alice", "park-key"), ACTION); }
+        catch (Exception failure) { throw new IllegalStateException(failure); }
+      });
+      assertThat(parkSignal.get().await(15, TimeUnit.SECONDS)).isTrue();
+      Thread lane = parkedLane;
+      assertThat(lane).isNotNull();
       long startedAt = System.nanoTime();
       Future<?> closed = closer.submit(server::close);
       closed.get(10, TimeUnit.SECONDS);
@@ -439,18 +438,7 @@ final class SimulatorApprovalAdmissionTest {
           .isInstanceOf(ExecutionException.class);
       assertThat(rules()).isZero();
     } finally {
-      parkGate.get().countDown();
-      closer.shutdownNow();
-      try {
-        closer.awaitTermination(10, TimeUnit.SECONDS);
-      } catch (InterruptedException closeTask) {
-        Thread.currentThread().interrupt();
-      }
-      try {
-        lane.join(15_000);
-      } catch (InterruptedException laneThread) {
-        Thread.currentThread().interrupt();
-      }
+      finishCloseProbe(parkGate.get(), closer, parkedLane);
     }
   }
 
@@ -473,21 +461,20 @@ final class SimulatorApprovalAdmissionTest {
           return (RSAPublicKey) rsa.getPublic();
         }, clock);
     restart(1, 1);
-    var parked = CompletableFuture.supplyAsync(() -> {
-      try { return call("GET", "/api/v1/approvals", token("alice"), null); }
-      catch (Exception failure) { return failure; }
-    });
-    assertThat(entered.await(15, TimeUnit.SECONDS))
-        .as("the admitted lane must be parked inside key resolution").isTrue();
-    Thread lane = laneSeen.get();
-    assertThat(lane).isNotNull();
-
     var closer = Executors.newSingleThreadExecutor(r -> {
       var thread = new Thread(r, "admission-close-probe");
       thread.setDaemon(true);
       return thread;
     });
     try {
+      var parked = CompletableFuture.supplyAsync(() -> {
+        try { return call("GET", "/api/v1/approvals", token("alice"), null); }
+        catch (Exception failure) { return failure; }
+      });
+      assertThat(entered.await(15, TimeUnit.SECONDS))
+          .as("the admitted lane must be parked inside key resolution").isTrue();
+      Thread lane = laneSeen.get();
+      assertThat(lane).isNotNull();
       long startedAt = System.nanoTime();
       Future<?> closed = closer.submit(server::close);
       closed.get(10, TimeUnit.SECONDS);
@@ -513,18 +500,26 @@ final class SimulatorApprovalAdmissionTest {
           .as("the lane unwinds once the test releases it").isFalse();
       assertThat(rules()).isZero();
     } finally {
-      release.countDown();
-      closer.shutdownNow();
-      try {
-        closer.awaitTermination(10, TimeUnit.SECONDS);
-      } catch (InterruptedException closeTask) {
-        Thread.currentThread().interrupt();
+      finishCloseProbe(release, closer, laneSeen.get());
+    }
+  }
+
+  private static void finishCloseProbe(CountDownLatch release, ExecutorService closer, Thread lane)
+      throws InterruptedException {
+    // Cover setup assertions too: a resolver entering after a failed assertion
+    // must find an already-open gate, never be left parked by test cleanup.
+    release.countDown();
+    closer.shutdownNow();
+    try {
+      boolean stopped = closer.awaitTermination(10, TimeUnit.SECONDS);
+      if (lane != null) lane.join(15_000);
+      assertThat(stopped).as("the owned close task must terminate after release").isTrue();
+      if (lane != null) {
+        assertThat(lane.isAlive()).as("the released handler must unwind").isFalse();
       }
-      try {
-        lane.join(15_000);
-      } catch (InterruptedException laneThread) {
-        Thread.currentThread().interrupt();
-      }
+    } catch (InterruptedException interrupted) {
+      Thread.currentThread().interrupt();
+      throw interrupted;
     }
   }
 

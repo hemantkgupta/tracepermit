@@ -13,8 +13,9 @@ import java.util.concurrent.atomic.AtomicInteger;
  * are ever accepted: active work is the lane count, pending work is the queue.
  * A lane only starts a handler once it has been taken from the queue, so no
  * authentication, body parsing, or database work happens before admission, and
- * a queued exchange never consumes anything but its queue slot. An offer beyond
- * the pending bound is rejected before any handler runs, which the JDK HTTP
+ * a queued exchange runs no handler code but retains its connection and any
+ * buffered bytes. These are task-count bounds, not TCP or byte bounds. An offer
+ * beyond the pending bound is rejected before any handler runs, which the JDK HTTP
  * implementation surfaces as a closed connection with no response (the
  * dispatcher catches the rejection and closes only that connection); callers
  * must not reframe that into a guaranteed JSON error contract. Threads are
