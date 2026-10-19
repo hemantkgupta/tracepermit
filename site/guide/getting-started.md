@@ -47,6 +47,11 @@ presenter-led origin and enforcement flows.
 See the [numbered scenario runbook](https://github.com/hemantkgupta/tracepermit/tree/main/docs/demo-scenarios)
 for exact commands, expected outcomes, and extra requirements.
 
+To make Codex propose the read/block calls through the Java endpoint connector,
+follow [Endpoint connector for Codex](/guide/endpoint-connector). That guide
+separates endpoint runtime, source tooling and backend requirements; the current
+connector is local-only, not a connection to a hosted TracePermit service.
+
 ## Hosted ChatGPT qualification
 
 The separate [OAuth-attributed hosted-client

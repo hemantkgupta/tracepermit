@@ -2,6 +2,16 @@
 
 **Scope:** loopback development only
 
+For the evaluator-facing capabilities, diagram, requirements and Codex setup,
+see [Endpoint connector for Codex](https://tracepermit.org/guide/endpoint-connector).
+The connector's built application runs on Java 21 with its launcher/JARs; the
+supported source build and supplied Codex demo launcher also need Node/pnpm and
+local tooling. `installDist` does not bundle a JVM or constitute a published
+connector installer. Its gateway transport accepts only explicit numeric
+IPv4-loopback HTTP `/mcp`, not remote or HTTPS backend URLs. The public website
+is documentation, not a gateway. This runbook retains the manual composition
+and protocol details for developers.
+
 **Named client status:** Codex CLI 0.162.1/`gpt-5.6-sol` on macOS passed
 model-selected simulated read/termination-block calls on 2026-10-15. See the
 [dated evidence and limits](../demo-scenarios/evidence/codex-native-endpoint-2026-10-15.md).
@@ -18,6 +28,15 @@ They are not managed enrollment or protected key custody.
 The connector refuses non-loopback gateway URLs, redirects, and arbitrary MCP
 methods. The gateway trusts only a public Ed25519 key configured before
 startup. No request can enroll a key.
+
+The connector bounds complete HTTP response-body receipt under its exchange
+timeout, not only time to headers. A stalled response returns the safe
+`GATEWAY_UNAVAILABLE` error and cancels the exchange; it does not prove that an
+already submitted tool had no effect. Do not automatically repeat a mutation
+after this error. The fixed macOS terminal probe also bounds pipe reading and
+child exit together; neither control invents human presence or provides a
+global deadline for process hashing/signing. See
+[ADR 0057](../architecture/0057-endpoint-io-deadlines.md).
 
 ## Prerequisites and build
 

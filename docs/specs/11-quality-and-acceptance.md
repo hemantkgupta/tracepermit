@@ -99,6 +99,22 @@ and a real JVM SIGTERM/port-release test. These run in `pnpm test:approval-api`
 and the aggregate suite. Existing numbered demos remain separate development
 compositions; bootstrap qualification is not a live external-IdP test.
 
+## Endpoint connector I/O deadline acceptance
+
+FR-016/017, SEC-003/011/014, REL-001/002/005/009 and OPS-004 require bounded
+failure behavior for the local endpoint connector. The exchange budget covers
+complete HTTP body receipt, including stalled/partial success, error and
+redirect responses. Tests must retain byte limits, safe codes and the caller's
+interrupt flag, and independently observe cancellation at an owned loopback
+peer. They must detect a removed deadline, not rely on fixture shutdown to
+finish the call. Terminal-probe tests cover blocked output and pending child
+exit under one budget, without manufacturing terminal presence.
+
+Fixture waits and cleanup joins must be finite. These are local I/O controls,
+not production latency, universal process termination or zero-effect claims.
+A timeout after send never authorizes an automatic tool retry. See
+[ADR 0057](../architecture/0057-endpoint-io-deadlines.md).
+
 ## Performance and release qualification
 
 Measure classifier/policy time separately from token/JWKS, persistence,

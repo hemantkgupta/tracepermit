@@ -5,6 +5,43 @@
 
 Status values: **Implemented**, **Partial**, **Target**, or **Proposed**.
 
+## Public introduction visuals
+
+FR-005/007/008/009, SEC-005/006/014, REL-002/005 and OPS-002/004 are explained,
+not newly implemented, by the [public introduction](../../site/guide/what-is-tracepermit.md).
+Its request-flow and core-pillars SVGs distinguish block, sanitize, pending
+approval, explicit resume, permit verification/claim and simulator dispatch.
+Equivalent semantic HTML lists preserve readable mobile and assistive access.
+`scripts/intro-visuals.test.mjs` checks the static assets, text/branch boundaries,
+profile limits and responsive wiring; rendered browser QA is separate evidence.
+No runtime, trust boundary, assurance level or requirement status changes.
+
+## Bounded process-local replay and consumption
+
+Requirements: SEC-002/003/004/006/009/014; REL-001/004/009; OPS-004.
+
+The three `InMemory*ReplayStore` / `InMemoryPermitConsumptionStore` implementations
+preserve their boolean ports and no-arg callers while adding 65,536-entry default
+caps, 64-removal expiry budgets, atomic duplicate/capacity/insertion checks,
+no live eviction and one expiry-index entry per retained key. Compound source
+and workload keys preserve issuer and tenant namespaces; legacy permit IDs remain
+global across overloads. `InMemorySourceAttestationReplayStoreTest`,
+`InMemoryWorkloadIdentityReplayStoreTest` and `InMemoryPermitConsumptionStoreTest`
+cover saturation, live replay retention, expiry/equality, no refresh, budgets,
+expired duplicates behind the budget, bounded metadata and task contention.
+Race waits and checked teardown are bounded. `BoundedReplayVerifierIntegrationTest`
+and `ExecutionPermitAuthorityBoundedStoreTest` exercise actual verification or
+consumption followed by a gated test callback, with healthy post-expiry controls.
+
+This is bounded per-instance entry/removal state, not a target-dispatch count,
+wall-clock/byte/fairness bound, distributed or durable replay, restore fencing,
+revocation, or a public saturation metric. Existing replay codes also represent
+capacity refusal. Idle entries can remain retained after expiry; an expired
+duplicate can be refused until reclaimed. The durable coordinator and broad
+requirement statuses are unchanged. See
+[ADR 0054](../architecture/0054-bounded-local-replay-stores.md) and the
+[runbook](../runbooks/bounded-local-replay-stores.md).
+
 ## Owner-only read-only recovery inspection
 
 Requirements: FR-015; SEC-003/012/019; REL-002/005/008; OPS-002/004.
@@ -153,7 +190,34 @@ distinguish protocol tests from actual client/model and reviewer observations.
 
 See the [rehearsal plan](../runbooks/flow-rehearsal-plan.md) for remaining manual gates.
 
+## Endpoint connector I/O completion budgets
+
+Requirements: FR-016/017; SEC-003/011/014; REL-001/002/005/009; OPS-004.
+
+`LoopbackHttpGatewayTransport` now waits for a bounded subscriber's complete
+body under one monotonic exchange budget, cancels on timeout/interruption and
+preserves existing public error codes. `LoopbackGatewayDeadlineTest` records
+one owned-loopback request and connection closure for stalled headers/body,
+partial error/redirect responses and interruption. Subscriber tests cover byte
+caps, EOF, cancellation and subscription lifecycle. `TerminalProbeDeadlineTest`
+covers bounded output/exit waiting, failure and cleanup through declared
+synthetic process adapters; the fixed macOS command/client PID is unchanged.
+Existing source-proof and simulator E2E gates remain required. No live model,
+Linux/Windows, protected-key or archive qualification is added. A timeout after
+send is not proof of no target effect and does not trigger tool retry. See
+[ADR 0057](../architecture/0057-endpoint-io-deadlines.md). Broad statuses below
+are unchanged.
+
 ## Named native endpoint rehearsal
+
+The [public connector guide](../../site/guide/endpoint-connector.md) documents
+the Java application versus source/launcher prerequisites, same-checkout local
+backend connection, Codex setup, allow/block prompts and safe reconnect rules.
+This is documentation support for SEC-003/011/014 and OPS-002/004, not new
+runtime qualification or promotion of the existing requirement statuses.
+The guide regression checks keep commands, configuration names and expected
+outcomes aligned with the launcher and recorded evidence. Remote transport and
+an independently qualified connector installer remain outside this profile.
 
 The [2026-10-15 native Codex evidence](../demo-scenarios/evidence/codex-native-endpoint-2026-10-15.md)
 adds one CLI 0.162.1/`gpt-5.6-sol` macOS model-selected simulator read/block pair,
