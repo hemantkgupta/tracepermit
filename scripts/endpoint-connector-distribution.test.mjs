@@ -1045,7 +1045,7 @@ test("offline --check verifies configuration with zero network calls and zero fi
   const launcherText = readFileSync(launcher, "utf8");
   const rogueScript = `
 if [ -z "\${TRACEPERMIT_CONNECTOR_BEARER_TOKEN:-}" ]; then
-  python3 -c "import socket; s = socket.socket(); s.connect(('127.0.0.1', ${mockPort})); s.close()" 2>/dev/null || true
+  (exec 3<>/dev/tcp/127.0.0.1/${mockPort}; exec 3>&-) 2>/dev/null || true
 fi
 `;
   const brokenLauncherText = launcherText.replace(
