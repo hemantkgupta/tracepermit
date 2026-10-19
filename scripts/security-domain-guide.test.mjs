@@ -137,3 +137,63 @@ test("release gates are framed as obligations, not current state", () => {
   assert.match(page, /obligations before any real AWS or Jira credential/i);
   assert.match(page, /not statements about today's tree/i);
 });
+
+test("policy identity is bound outside the canonical action payload", () => {
+  assert.doesNotMatch(
+    page,
+    /canonical action\*\* — [^.]*policy version/i,
+    "the canonical-action enumeration must not claim a policy field",
+  );
+  assert.match(page, /strict intercepted-action v1 schema is closed/i);
+  assert.match(page, /has no policy field/i);
+  assert.match(
+    page,
+    /no supported contract path adds or changes a policy version inside the action/i,
+  );
+  assert.match(
+    page,
+    /signs the canonical action hash and the decision's `policyId`\/`policyVersion` as separate claims/i,
+  );
+  assert.match(
+    page,
+    /approval binding records policy version alongside the action hash/i,
+  );
+});
+
+test("permit minting and verification precede the atomic claim transaction", () => {
+  assert.doesNotMatch(
+    page,
+    /minting, verification, and the single-use claim happen in one/i,
+    "minting and verification are not inside the claim transaction",
+  );
+  assert.match(
+    page,
+    /minting and cryptographic verification happen \*\*before\*\* the claim/i,
+  );
+  assert.match(page, /issues and verifies the permit first/i);
+  assert.match(
+    page,
+    /atomically persists the single-use consumption together with the idempotency key, execution attempt, and bound evidence state/i,
+  );
+  assert.match(page, /target I\/O runs only after that claim commits/i);
+  assert.match(page, /completion is recorded separately/i);
+});
+
+test("a reviewer decision commits independently; approval is not execution", () => {
+  assert.doesNotMatch(
+    page,
+    /decision finalized and the approval consumed together/i,
+    "the decision commits in its own transaction, before any execution",
+  );
+  assert.match(page, /commits in \*\*its own transaction\*\*/i);
+  assert.match(page, /approved and not yet executed/i);
+  assert.match(
+    page,
+    /revalidates the approved request against the current policy and binding/i,
+  );
+  assert.match(
+    page,
+    /atomically consumes the approval together with the execution claim/i,
+  );
+  assert.match(page, /approval is not execution/i);
+});
