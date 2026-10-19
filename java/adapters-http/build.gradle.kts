@@ -2,6 +2,7 @@ import java.security.MessageDigest
 import java.time.Instant
 import org.gradle.api.tasks.bundling.Compression
 import org.gradle.api.tasks.bundling.Tar
+import org.gradle.api.tasks.testing.logging.TestExceptionFormat
 
 plugins {
   application
@@ -37,6 +38,9 @@ tasks.register<JavaExec>("runSimulatorApprovals") {
 
 tasks.test {
   systemProperty("tracepermit.approvalRuntimeClasspath", sourceSets["main"].runtimeClasspath.asPath)
+  testLogging {
+    exceptionFormat = TestExceptionFormat.FULL
+  }
 }
 
 tasks.register<JavaExec>("runApprovalBrowserQualification") {

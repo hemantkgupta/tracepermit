@@ -543,7 +543,8 @@ public final class ApprovalLatencyMeasurements {
       BatchExecution warmupBatch = runConcurrent(concurrency, warmupItems, operation, phaseTimeout);
       if (warmupBatch.failureCount() > 0 || warmupBatch.timeoutCount() > 0 || warmupBatch.cancelledCount() > 0) {
         failures.add(String.format("Phase %s (concurrency=%d) warmup had unexpected failures: %d failed, %d timed out, %d cancelled out of %d operations.",
-            phaseName, concurrency, warmupBatch.failureCount(), warmupBatch.timeoutCount(), warmupBatch.cancelledCount(), warmupItems.size()));
+            phaseName, concurrency, warmupBatch.failureCount(), warmupBatch.timeoutCount(), warmupBatch.cancelledCount(), warmupItems.size())
+            + " Categories: " + LatencyFailureDiagnostics.operationCategories(warmupBatch.failureCodes()));
         return new PhaseMetrics(
             phaseName,
             concurrency,
@@ -567,7 +568,8 @@ public final class ApprovalLatencyMeasurements {
 
     if (failed > 0 || timeouts > 0 || cancelled > 0 || successes != measuredCount) {
       failures.add(String.format("Phase %s (concurrency=%d) had %d failure(s), %d timeout(s), %d cancelled out of %d operations.",
-          phaseName, concurrency, failed, timeouts, cancelled, measuredCount));
+          phaseName, concurrency, failed, timeouts, cancelled, measuredCount)
+          + " Categories: " + LatencyFailureDiagnostics.operationCategories(measuredBatch.failureCodes()));
     }
 
     Percentiles percentiles = (successes > 0)

@@ -100,6 +100,29 @@ Run unit tests and lightweight integration smoke tests:
 
 ## 3. Repaired Benchmark Measurements
 
+### Reading a failed qualification
+
+The success gate retains every sweep and counter assertion. A failed phase now
+includes a bounded map of fixed operation categories, including numeric HTTP
+statuses. Unknown exception messages become `OTHER_OPERATION_FAILURE`; raw
+response bodies, credentials, request IDs, and arbitrary exception text are not
+copied into that map. At most eight distinct recognized categories plus the
+fallback are retained.
+
+The standalone runner also observes a fixed set of PostgreSQL log phrases and
+publishes only their constant category names on failure. This is asynchronous
+test-container diagnostic observation, not a unique-error count, SQL-state
+guarantee, target outcome, or proof that no database error occurred when empty.
+No raw SQL/log text is published by this diagnostic. Default HTTP/phase budgets,
+concurrency, warmup/measured counts, approval rules, and execution counters are
+unchanged. A failed qualification remains failed; do not automatically retry an
+effect, increase limits, or accept a locally passing run instead of required CI.
+
+`LatencyFailureDiagnosticsTest` checks category bounds, exact failure accounting,
+known HTTP statuses, unknown-message canaries, and PostgreSQL log projection.
+
+### Historical measurements
+
 The following measurements reflect the repaired qualification harness running on an Apple Silicon host (`aarch64`, 10 host CPUs, macOS, OpenJDK 21, `postgres:16.4-alpine` via Testcontainers):
 
 ### Concurrency 1 (Warmup: 5, Measured: 20 operations; 1 client thread vs 8 server workers)

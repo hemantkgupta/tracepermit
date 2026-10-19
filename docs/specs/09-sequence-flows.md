@@ -77,11 +77,40 @@ sequenceDiagram
   R-->>V: audience, JWKS URI, clients, tenants, scopes
   V->>K: resolve configured issuer/kid/RS256
   K-->>V: fresh trusted RSA public key
-  V->>V: verify signature, audience, time, client, tenant, scopes
+  V->>V: verify signature; re-sample trusted time; validate claims
   V-->>G: issuer-qualified subject + fingerprint-only evidence
   G->>M: dispatch with trusted identity
   Note over C,K: Token cannot supply its trust key or JWKS URL
 ```
+
+### Bounded refresh within key resolution
+
+```mermaid
+flowchart TD
+  R["Resolve configured issuer / JWKS / kid"] --> C{"Fresh cached key?"}
+  C -->|yes| K["Return trusted public key"]
+  C -->|no| J["Join current refresh or admit bounded work"]
+  J -->|capacity / deadline / interruption failure| X["Unavailable; no identity or dispatch"]
+  J --> D["Bounded DNS; validate and pin public addresses"]
+  D --> H["HTTPS with remaining transport budget"]
+  H --> P{"Valid keys before operation deadline?"}
+  P -->|no| F["Operation-ordered failure cooldown; discard late result"]
+  F --> X
+  P -->|yes| S["Publish freshness-ordered cache; record successful generation"]
+  S --> V{"Fresh at joining caller's trusted time?"}
+  V -->|no| X
+  V -->|yes| E{"Requested signing key present?"}
+  E -->|yes| K
+  E -->|no| I["Invalid token; no identity or dispatch"]
+  K --> T["Verify signature; re-sample time; validate token claims"]
+```
+
+Warm reads bypass refresh work. Different providers do not hold one global
+network lock, but share finite configured worker capacity. Waiters do not
+force-stop uninterruptible OS DNS. Late older failures cannot replace newer
+success with stale cooldown. Tests qualify these local boundaries, not a hard
+end-to-end deadline, distributed fairness or a production readiness claim.
+See [ADR 0049](../architecture/0049-bounded-jwks-refresh-isolation.md).
 
 ## 1B. SSRF-safe JWKS and authenticated remote MCP handshake
 
@@ -282,8 +311,9 @@ call.
 ## 4. Human approval flow
 
 This flow is implemented through the Java application and PostgreSQL simulator
-profile. The reviewer adapter is supplied by tests/application composition;
-there is no remote mutation endpoint.
+profile. The composing adapter supplies trusted reviewer context; the optional
+loopback bearer/browser approval API authenticates reviewers for this same
+workflow. There is no public approval administration endpoint.
 
 ```mermaid
 sequenceDiagram
@@ -322,6 +352,32 @@ sequenceDiagram
     G-->>A: result
   end
 ```
+
+### Separate approval listener: bounded admission before handler work
+
+This applies to the loopback approval API/browser/MCP composition, not the
+default or hosted MCP listeners. The executor allows eight active plus sixteen
+pending tasks by default. Host/URI/closed checks themselves consume an admitted
+lane; malformed input is not capacity-free.
+
+```mermaid
+flowchart TD
+  L["Loopback listener: connections and bytes not admission-bounded"] --> Q{"Executor lane or bounded queue slot?"}
+  Q -->|"overflow"| R["Transport refusal: no JSON response promised"]
+  Q -->|"queued"| W["Wait with connection and buffers; no handler work"]
+  Q -->|"lane free"| H["Handler: Host / URI / closed checks"]
+  W -->|"lane available"| H
+  H -->|"valid and open"| A["Authenticate, parse protected body, approval/claim path"]
+  H -->|"malformed or closing"| F["Bounded error; no target dispatch"]
+  A --> D["Return lane on completion or failure"]
+  F --> D
+```
+
+Close stops the listener, shuts down workers, waits up to two seconds, then
+interrupts remaining lanes. A handler that ignores interruption can remain as
+a daemon worker. Queued work need not run and admitted target outcomes can
+remain uncertain; close is not a drain or forced dependency cancellation.
+See [ADR 0050](../architecture/0050-bounded-simulator-approval-admission.md).
 
 ## 5. Scheduled workload with delegation
 
