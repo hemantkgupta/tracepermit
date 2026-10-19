@@ -41,18 +41,26 @@ needs Java 21, dedicated local PostgreSQL, private keys and operator-owned OIDC
 configuration. A build target is not a promise of a published downloadable release.
 Follow the [operator installation runbook](https://github.com/hemantkgupta/tracepermit/blob/main/docs/runbooks/simulator-approval-distribution.md).
 
-| Command              | What it establishes                                               | What it does not establish                                         |
-| -------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------ |
-| `--check`            | Offline configuration, key-pair and asset validity                | Database/IdP readiness or successful login                         |
-| `--init-db`          | Explicit first installation into a fresh empty dedicated schema   | Upgrade, repair or restore safety                                  |
-| `--run`              | Strict existing-state checks and numeric-loopback service startup | Public TLS deployment or universal provider compatibility          |
-| `--recovery-inspect` | Owner-only consistent aggregate stored-state snapshot             | Quiescence, verified target outcomes or safe resume                |
-| `--quarantine-db`    | Owner-declared one-way containment of new durable authority       | Cancellation of committed claims or automatic old-backup detection |
+| Command              | What it establishes                                               | What it does not establish                                           |
+| -------------------- | ----------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `--check`            | Offline configuration, key-pair and asset validity                | Database/IdP readiness or successful login                           |
+| `--init-db`          | Explicit first installation into a fresh empty dedicated schema   | Upgrade, repair or restore safety                                    |
+| `--upgrade-db`       | Explicit owner-only stopped-service V9→V10 schema upgrade         | Online migration, cancellation API, repair, downgrade or safe resume |
+| `--run`              | Strict existing-state checks and numeric-loopback service startup | Public TLS deployment or universal provider compatibility            |
+| `--recovery-inspect` | Owner-only consistent aggregate stored-state snapshot             | Quiescence, verified target outcomes or safe resume                  |
+| `--quarantine-db`    | Owner-declared one-way containment of new durable authority       | Cancellation of committed claims or automatic old-backup detection   |
 
 See the [startup sequence](/guide/core-flows#flow-11-check-initialize-and-start-a-local-package)
 and [inspection/quarantine sequence](/guide/core-flows#flow-12-inspect-and-declare-recovery-quarantine).
 There is no quarantine-clear/resume command. Keep effectful services stopped
 independently during recovery; already-committed claims can still finish.
+
+Current packages require V1–V10. Preserve a verified backup and stop all clients
+before upgrading an existing V9 simulator database with the new binary; ordinary
+run never migrates. Failed or uncertain upgrades require private inspection with
+services stopped, not blind retry or reset. V10 prepares cancelled storage and
+report-format2 inspection counts; requester withdrawal is **not exposed yet**.
+See the [upgrade procedure and limits](https://github.com/hemantkgupta/tracepermit/blob/main/docs/runbooks/simulator-approval-distribution.md#explicit-stopped-service-upgrade-v9-to-v10).
 
 ## Bounded local failure controls
 

@@ -30,6 +30,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.flywaydb.core.Flyway;
 import org.testcontainers.containers.PostgreSQLContainer;
 
 /** Operator files -> actual runtime -> signed HTTP -> PostgreSQL -> simulator; no external IdP. */
@@ -249,7 +250,7 @@ final class SimulatorApprovalBootstrapTest {
       var report = JsonSupport.MAPPER.readTree(line.substring("APPROVAL_RECOVERY_SNAPSHOT: ".length()));
       assertThat(report.size()).isEqualTo(6);
       assertThat(report.path("executions").size()).isEqualTo(4);
-      assertThat(report.path("approvals").size()).isEqualTo(5);
+      assertThat(report.path("approvals").size()).isEqualTo(6);
       assertThat(report.path("reconciliationQueued").longValue()).isZero();
       try (var rebound = new ServerSocket(fixture.json.path("port").intValue(), 1,
           java.net.InetAddress.getByName("127.0.0.1"))) { assertThat(rebound.isBound()).isTrue(); }
@@ -267,6 +268,34 @@ final class SimulatorApprovalBootstrapTest {
           .doesNotContain("APPROVAL_RECOVERY_SNAPSHOT", "INSPECTION_ONLY", "API listening", "synthetic-local-test-password", fixture.config.toString(), "jdbc:", "Exception");
       assertEmptyDatabaseAndNoListener();
     } finally { if (child.isAlive()) child.destroyForcibly().waitFor(); }
+  }
+
+  @Test void explicitUpgradeCommandUsesPredecessorOnlyAndNeverCallsRuntimeRunner() throws Exception {
+    var database = fixture.load().database();
+    Flyway.configure().dataSource(database).loggers(new String[0]).target("9").load().migrate();
+    var output = new java.io.ByteArrayOutputStream();
+    var errors = new java.io.ByteArrayOutputStream();
+    var environment = java.util.Map.of("TRACEPERMIT_APPROVAL_CONFIG", fixture.config.toString());
+    var forbidden = (SimulatorApprovalMain.Runner) configuration -> { throw new AssertionError("Upgrade must not run a service"); };
+    int result = SimulatorApprovalMain.execute(new String[] {"--upgrade-db"}, environment,
+        new java.io.PrintStream(output), new java.io.PrintStream(errors), forbidden);
+    assertThat(result).isZero();
+    assertThat(output.toString(StandardCharsets.UTF_8)).contains("APPROVAL_DATABASE_UPGRADED", "V9 to V10 only")
+        .doesNotContain("API listening", "jdbc:", fixture.config.toString(), "synthetic-local-test-password");
+    assertThat(errors.size()).isZero();
+    PostgresDatabaseLifecycle.validateExisting(database);
+    output.reset();
+    assertThat(SimulatorApprovalMain.execute(new String[] {"--upgrade-db"}, environment,
+        new java.io.PrintStream(output), new java.io.PrintStream(errors), forbidden)).isEqualTo(2);
+    assertThat(output.size()).isZero();
+    assertThat(errors.toString(StandardCharsets.UTF_8)).contains("APPROVAL_STARTUP_FAILED")
+        .doesNotContain("Exception", "jdbc:", fixture.config.toString(), "synthetic-local-test-password");
+    try (var rebound = new ServerSocket(fixture.json.path("port").intValue(), 1,
+        java.net.InetAddress.getByName("127.0.0.1"))) { assertThat(rebound.isBound()).isTrue(); }
+    try (var c = database.getConnection(); var s = c.createStatement(); var r = s.executeQuery(
+        "SELECT (SELECT count(*) FROM tp_execution_attempts), (SELECT count(*) FROM tp_consumed_execution_permits)")) {
+      r.next(); assertThat(r.getLong(1)).isZero(); assertThat(r.getLong(2)).isZero();
+    }
   }
 
   @Test void missingInvariantTriggerRefusesOperatorStartupWithoutRepairOrIdpCall() throws Exception {

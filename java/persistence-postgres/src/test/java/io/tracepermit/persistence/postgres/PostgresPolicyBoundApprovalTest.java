@@ -545,7 +545,7 @@ final class PostgresPolicyBoundApprovalTest {
     try (Connection connection = upgrade.getConnection(); Statement statement = connection.createStatement()) {
       try (var rs = statement.executeQuery("SELECT contract_version FROM tp_enforcement_schema_guard")) {
         assertThat(rs.next()).isTrue();
-        assertThat(rs.getInt(1)).isEqualTo(9);
+        assertThat(rs.getInt(1)).isEqualTo(PostgresDatabaseLifecycle.CURRENT_VERSION);
       }
       try (var rs = statement.executeQuery("SELECT count(*) FROM tp_policy_versions WHERE workspace_id = 'ws-v7'")) {
         assertThat(rs.next()).isTrue();

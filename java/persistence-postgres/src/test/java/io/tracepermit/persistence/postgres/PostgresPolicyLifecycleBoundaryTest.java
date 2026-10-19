@@ -268,7 +268,7 @@ final class PostgresPolicyLifecycleBoundaryTest {
     try (var connection = upgrade.getConnection(); var statement = connection.createStatement();
          var rows = statement.executeQuery("SELECT contract_version FROM tp_enforcement_schema_guard")) {
       assertThat(rows.next()).isTrue();
-      assertThat(rows.getInt(1)).isEqualTo(9);
+      assertThat(rows.getInt(1)).isEqualTo(PostgresDatabaseLifecycle.CURRENT_VERSION);
     }
   }
 

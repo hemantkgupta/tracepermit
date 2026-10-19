@@ -59,7 +59,7 @@ final class PostgresRecoveryInspectionTest {
     var ready = PostgresRecoveryInspection.inspect(source);
     assertThat(ready.recovery().mode()).isEqualTo("ready");
     assertThat(ready.executions()).isEqualTo(new PostgresRecoveryInspection.Executions(0, 0, 0, 0));
-    assertThat(ready.approvals()).isEqualTo(new PostgresRecoveryInspection.Approvals(0, 0, 0, 0, 0));
+    assertThat(ready.approvals()).isEqualTo(new PostgresRecoveryInspection.Approvals(0, 0, 0, 0, 0, 0));
     assertThat(ready.reconciliationQueued()).isZero();
     assertThat(ready.transactionStartedAt()).isNotNull();
     var quarantine = PostgresRecoveryQuarantine.quarantine(source, NOW);
@@ -81,7 +81,7 @@ final class PostgresRecoveryInspectionTest {
     var report = PostgresRecoveryInspection.inspect(source);
     assertThat(report.executions()).isEqualTo(new PostgresRecoveryInspection.Executions(1, 1, 1, 1));
     // NOW is in the past: inspection reports stored pending/approved, not eligibility or lazy expiry.
-    assertThat(report.approvals()).isEqualTo(new PostgresRecoveryInspection.Approvals(1, 1, 1, 0, 0));
+    assertThat(report.approvals()).isEqualTo(new PostgresRecoveryInspection.Approvals(1, 1, 1, 0, 0, 0));
     assertThat(report.reconciliationQueued()).isEqualTo(1);
     assertThat(PostgresRecoveryInspection.inspect(source).executions()).isEqualTo(report.executions());
     assertThat(state.find(TENANT, "pending").status()).isEqualTo("pending");
@@ -106,7 +106,7 @@ final class PostgresRecoveryInspectionTest {
     state.decide(new ApprovalDecision(TENANT, expired.approvalRequestId(), "decision-expired",
         "user:bob@demo.invalid", "synthetic_oidc", hash('e'), "approve", "REVIEWED", NOW.plusSeconds(301)));
     var report = PostgresRecoveryInspection.inspect(source);
-    assertThat(report.approvals()).isEqualTo(new PostgresRecoveryInspection.Approvals(0, 0, 0, 1, 1));
+    assertThat(report.approvals()).isEqualTo(new PostgresRecoveryInspection.Approvals(0, 0, 0, 1, 1, 0));
     assertThat(report.executions().executing()).isEqualTo(1);
     assertThat(report.reconciliationQueued()).isZero();
     // Inspection must not manufacture an unknown queue entry for the abandoned executing attempt.

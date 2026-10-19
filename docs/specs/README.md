@@ -28,4 +28,6 @@ No demo path may contact a real destructive target.
 Proposed product work is separate from the current implementation index. The
 [pending-request cancellation contract](../design/pending-approval-cancellation.md)
 and [ADR 0058](../architecture/0058-pending-approval-cancellation-contract.md)
-define withdrawal and upgrade gates only; they add no runnable API or command.
+define the proposed withdrawal feature. [ADR 0059](../architecture/0059-explicit-v9-v10-simulator-upgrade.md)
+implements only its storage/consumer compatibility and explicit local upgrade
+prerequisite, not the cancellation API or UI.

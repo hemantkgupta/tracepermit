@@ -14,7 +14,11 @@ import org.flywaydb.core.api.MigrationState;
 public final class PostgresDatabaseLifecycle {
   // Database-local, session-scoped; cooperating initializers fail fast rather than wait indefinitely.
   static final long INITIALIZATION_LOCK = 0x54504d4954475241L;
-  private static final Set<String> VERSIONS = Set.of("1", "2", "3", "4", "5", "6", "7", "8", "9");
+  public static final int CURRENT_VERSION = 10;
+  private static final Set<String> PREDECESSOR_VERSIONS = Set.of("1", "2", "3", "4", "5", "6", "7", "8", "9");
+  private static final Set<String> VERSIONS = Set.of("1", "2", "3", "4", "5", "6", "7", "8", "9", "10");
+  private static final String CANCELLATION_TRIGGER =
+      "tp_approval_transitions:tp_10_approval_cancellation_guard:tp_validate_approval_cancellation";
   private static final Set<String> TABLES = Set.of(
       "flyway_schema_history", "tp_enforcement_schema_guard", "tp_consumed_execution_permits",
       "tp_execution_attempts", "tp_execution_transitions", "tp_evidence_streams", "tp_evidence_events",
@@ -107,6 +111,55 @@ public final class PostgresDatabaseLifecycle {
 
   /** Reads metadata only; never invokes migrate/repair/clean/baseline. Not archive-authenticity proof. */
   public static void validateExisting(DataSource source) {
+    validateExisting(source, CURRENT_VERSION);
+  }
+
+  /** Explicit V9-to-V10 only. Services must be stopped; no automatic repair, retry or downgrade. */
+  public static void upgradeFromV9(DataSource source) {
+    Objects.requireNonNull(source);
+    try (Connection lock = source.getConnection(); var query = lock.createStatement()) {
+      query.setQueryTimeout(5);
+      if (!"public".equals(lock.getSchema())) throw new IllegalStateException("DATABASE_SCHEMA_NOT_READY");
+      try (var rows = query.executeQuery("SELECT pg_catalog.pg_try_advisory_lock(" + INITIALIZATION_LOCK + ")")) {
+        rows.next();
+        if (!rows.getBoolean(1)) throw new IllegalStateException("DATABASE_UPGRADE_BUSY");
+      }
+      try {
+        try (var rows = query.executeQuery("""
+            SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace
+              WHERE nspname !~ '^pg_' AND nspname NOT IN ('public', 'information_schema'))
+            """)) {
+          rows.next();
+          if (rows.getBoolean(1)) throw new IllegalStateException("DATABASE_SCHEMA_NOT_READY");
+        }
+        // Ownership is deliberately stronger than runtime DML permissions. Reject RLS-filtered views
+        // and unexpected public tables rather than qualify an unknown installation by partial counts.
+        try (var rows = query.executeQuery("""
+            SELECT c.relname, pg_catalog.pg_has_role(current_user, c.relowner, 'USAGE') AND NOT c.relrowsecurity
+            FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = 'public' AND c.relkind = 'r'
+            """)) {
+          Set<String> tables = new HashSet<>();
+          while (rows.next()) {
+            if (!rows.getBoolean(2)) throw new IllegalStateException("DATABASE_UPGRADE_OWNER_REQUIRED");
+            tables.add(rows.getString(1));
+          }
+          if (!tables.equals(TABLES)) throw new IllegalStateException("DATABASE_SCHEMA_NOT_READY");
+        }
+        validateExisting(source, 9);
+        // Migration V10 repeats ready/unresolved-work checks under conflicting table locks.
+        // Its one PostgreSQL transaction atomically changes DDL, guard and Flyway history.
+        flyway(source).migrate();
+        validateExisting(source);
+      } finally {
+        query.execute("SELECT pg_catalog.pg_advisory_unlock(" + INITIALIZATION_LOCK + ")");
+      }
+    } catch (SQLException failure) {
+      throw new PostgresStateException("Database upgrade failed", failure);
+    }
+  }
+
+  private static void validateExisting(DataSource source, int expectedVersion) {
     Objects.requireNonNull(source);
     try (Connection connection = source.getConnection(); var query = connection.createStatement()) {
       connection.setReadOnly(true);
@@ -124,7 +177,7 @@ public final class PostgresDatabaseLifecycle {
       if (!found.containsAll(TABLES)) throw new IllegalStateException("DATABASE_SCHEMA_NOT_READY");
       try (var rows = query.executeQuery(
           "SELECT contract_version FROM public.tp_enforcement_schema_guard WHERE singleton = TRUE")) {
-        if (!rows.next() || rows.getInt(1) != 9 || rows.next()) {
+        if (!rows.next() || rows.getInt(1) != expectedVersion || rows.next()) {
           throw new IllegalStateException("INCOMPATIBLE_DURABLE_STATE_SCHEMA");
         }
       }
@@ -143,20 +196,31 @@ public final class PostgresDatabaseLifecycle {
         while (rows.next()) triggers.add(rows.getString(1));
       }
       if (!triggers.containsAll(TRIGGERS)) throw new IllegalStateException("DATABASE_SCHEMA_NOT_READY");
+      if (expectedVersion == CURRENT_VERSION && !triggers.contains(CANCELLATION_TRIGGER)) {
+        throw new IllegalStateException("DATABASE_SCHEMA_NOT_READY");
+      }
       connection.rollback();
     } catch (SQLException failure) {
       throw new PostgresStateException("Database validation failed", failure);
     }
-    var validator = flyway(source);
+    // Only the explicit predecessor path resolves V10 above its target; ordinary startup
+    // retains full validation with no ignored pending/future migrations.
+    var validator = expectedVersion == 9
+        ? Flyway.configure().configuration(flyway(source).getConfiguration()).target("9").load() : flyway(source);
     validator.validate();
     Set<String> versions = new HashSet<>();
     for (var migration : validator.info().all()) {
+      if (expectedVersion == 9 && migration.getVersion() != null
+          && "10".equals(migration.getVersion().getVersion())
+          && migration.getState() == MigrationState.ABOVE_TARGET) continue;
       if (migration.getVersion() == null || migration.getState() != MigrationState.SUCCESS
           || !versions.add(migration.getVersion().getVersion())) {
         throw new IllegalStateException("DATABASE_SCHEMA_NOT_READY");
       }
     }
-    if (!versions.equals(VERSIONS)) throw new IllegalStateException("DATABASE_SCHEMA_NOT_READY");
+    if (!versions.equals(expectedVersion == 9 ? PREDECESSOR_VERSIONS : VERSIONS)) {
+      throw new IllegalStateException("DATABASE_SCHEMA_NOT_READY");
+    }
   }
 
   private static Flyway flyway(DataSource source) {

@@ -59,7 +59,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Simulator-only PostgreSQL backup and restore qualification for populated V9
+ * Simulator-only PostgreSQL backup and restore qualification for populated current-schema
  * policy-generation-bound approvals (ADR 0042, FR-007, FR-008, FR-013, SEC-005,
  * SEC-006, REL-001, REL-003, REL-005, OPS-004).
  *
@@ -189,14 +189,14 @@ final class PostgresPolicyBoundRestoreQualificationTest {
         try (ResultSet rs = stmt.executeQuery(
             "SELECT contract_version FROM tp_enforcement_schema_guard WHERE singleton = TRUE")) {
           assertThat(rs.next()).isTrue();
-          assertThat(rs.getInt("contract_version")).isEqualTo(9);
+          assertThat(rs.getInt("contract_version")).isEqualTo(PostgresDatabaseLifecycle.CURRENT_VERSION);
         }
 
-        // Flyway migration history must contain all 9 migrations successful
+        // Flyway migration history must contain every current migration successfully.
         try (ResultSet rs = stmt.executeQuery(
             "SELECT count(*) FROM flyway_schema_history WHERE success = TRUE")) {
           assertThat(rs.next()).isTrue();
-          assertThat(rs.getInt(1)).isEqualTo(9);
+          assertThat(rs.getInt(1)).isEqualTo(PostgresDatabaseLifecycle.CURRENT_VERSION);
         }
 
         // Raw tp_approval_policy_bindings row check
@@ -271,12 +271,12 @@ final class PostgresPolicyBoundRestoreQualificationTest {
         try (ResultSet rs = stmt.executeQuery(
             "SELECT contract_version FROM tp_enforcement_schema_guard WHERE singleton = TRUE")) {
           assertThat(rs.next()).isTrue();
-          assertThat(rs.getInt("contract_version")).isEqualTo(9);
+          assertThat(rs.getInt("contract_version")).isEqualTo(PostgresDatabaseLifecycle.CURRENT_VERSION);
         }
         try (ResultSet rs = stmt.executeQuery(
             "SELECT count(*) FROM flyway_schema_history WHERE success = TRUE")) {
           assertThat(rs.next()).isTrue();
-          assertThat(rs.getInt(1)).isEqualTo(9);
+          assertThat(rs.getInt(1)).isEqualTo(PostgresDatabaseLifecycle.CURRENT_VERSION);
         }
       }
 
@@ -889,11 +889,11 @@ final class PostgresPolicyBoundRestoreQualificationTest {
     assertThat(captured.get("tp_active_policies")).hasSize(1);
     assertThat(captured.get("tp_enforcement_schema_guard")).hasSize(1);
     assertThat(captured.get("tp_enforcement_schema_guard").getFirst().path("contract_version").asInt())
-        .isEqualTo(9);
+        .isEqualTo(PostgresDatabaseLifecycle.CURRENT_VERSION);
     var history = captured.get("flyway_schema_history");
-    assertThat(history).hasSize(9);
+    assertThat(history).hasSize(PostgresDatabaseLifecycle.CURRENT_VERSION);
     assertThat(history.stream().map(row -> row.path("version").asText()).sorted().toList())
-        .containsExactly("1", "2", "3", "4", "5", "6", "7", "8", "9");
+        .containsExactly("1", "10", "2", "3", "4", "5", "6", "7", "8", "9");
     assertThat(history).allSatisfy(row -> {
       assertThat(row.path("success").asBoolean()).isTrue();
       assertThat(row.path("checksum").isIntegralNumber()).isTrue();

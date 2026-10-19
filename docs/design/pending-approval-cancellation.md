@@ -1,9 +1,11 @@
 # Pending approval cancellation — proposed product contract
 
-**Status: Proposed; not implemented.** This document defines a future simulator-only
-API, durable transition and upgrade gate. It adds no route, scope, button,
-database migration or operator command. Do not use the proposed examples below
-as installation instructions.
+**Status: Proposed cancellation feature; storage/upgrade prerequisite implemented.**
+[ADR 0059](../architecture/0059-explicit-v9-v10-simulator-upgrade.md) implements
+V10 storage/consumer compatibility and explicit V9→V10 upgrade only. There is
+still no cancellation service, route, granted scope, MCP tool or button. This
+document retains the full future contract; proposed API examples are not runnable
+instructions. Use the distribution runbook for the implemented upgrade command.
 
 Requirements: FR-003/007/008/009/010; SEC-001/002/003/005/006/009/012;
 REL-001/002/004/005; DATA-001; OPS-002/004; PORT-001/003.
@@ -17,15 +19,15 @@ authority, impersonate an independent reviewer or promise to stop an effect.
 
 The current [approval API](../runbooks/authenticated-approval-api-foundation.md)
 supports request, read, review and explicit execution. Its stored statuses are
-`pending`, `approved`, `denied`, `expired` and `consumed`; it has no cancellation
+`pending`, `approved`, `denied`, `expired`, `consumed` and storage-compatible
+`cancelled`; it has no cancellation
 route. The browser's **Cancel** button dismisses a confirmation dialog; it does
 not change durable authority. Local expiry guidance is not a server transition.
 
-The current operator profile validates V1–V9 on startup. Its `--init-db` is
-empty-only, not an upgrade mechanism. [ADR 0045](../architecture/0045-explicit-database-initialization.md)
-explicitly requires separate upgrade design. Adding a new status without that
-gate would either strand existing installations or let an older binary
-misinterpret a new state. Neither is an acceptable silent compatibility change.
+The current operator profile validates V1–V10 on startup. Its `--init-db` remains
+empty-only. ADR0059 supplies the separate stopped-service V9→V10 upgrade gate
+required by ADR0045; other predecessors remain unsupported. Old binaries refuse
+guard10 rather than silently interpreting new statuses.
 
 ## 2. Narrow outcome
 
@@ -146,9 +148,9 @@ cancelled. Tests must exercise both lock schedules explicitly.
 
 ## 5. Proposed V10 schema and compatibility contract
 
-V10 is a **proposed next version**, not a committed migration. Before implementation,
-recheck that no other accepted migration has taken that number. Existing V1–V9
-resources and checksums must remain byte-identical.
+V10 storage and its consumers are implemented in ADR0059; V1–V9 resources remain
+byte-identical. The remaining authenticated transition and evidence service must
+fulfil the following contract before cancellation is exposed.
 
 The reviewed migration must add `cancelled` to aggregate/history contracts and
 permit **only pending-to-cancelled** transitions. Preserve the aggregate update
@@ -174,9 +176,9 @@ continue to apply; a migrated or restored ready database does not authorize resu
 
 ## 6. Explicit upgrade prerequisite
 
-Propose a separate operator-only **`--upgrade-db`**, initially for exactly V9→V10.
-It is not an HTTP/MCP operation and must not be smuggled into `--check`, `--run`
-or `--init-db`. No such command exists in the current launcher.
+A separate operator-only **`--upgrade-db`** now supports exactly V9→V10 under
+ADR0059. It is not an HTTP/MCP operation and is never invoked by `--check`,
+`--run` or `--init-db`. The requirements below remain its compatibility contract.
 
 The first implementation must:
 
@@ -210,7 +212,9 @@ a disconnected recovery exercise, not a documented safe effectful resume.
 
 ## 7. Implementation order and acceptance gate
 
-These are **required future tests**, not executed cancellation evidence:
+The storage/upgrade prerequisite in step2 is implemented under ADR0059.
+The cancellation feature's remaining steps are **required future tests**, not
+executed cancellation evidence:
 
 1. Review this contract and its API/errors/schema/upgrade boundaries.
 2. Implement explicit V9→V10 operator upgrade, preserving old migration bytes,
