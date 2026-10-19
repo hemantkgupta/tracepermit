@@ -102,7 +102,10 @@ and model-driven rehearsal are separate from protocol tests.
   An optional `pnpm dev:approvals` operator entry point requires private local
   configuration; `--check` validates it offline, first-install `--init-db`
   explicitly initializes an empty database, and normal run never migrates or
-  repairs state. `--recovery-status` and owner-only `--quarantine-db` add
+  repairs state. A separate owner-only stopped-service `--upgrade-db` supports
+  exactly V9→V10; see the [upgrade procedure](docs/runbooks/simulator-approval-distribution.md#explicit-stopped-service-upgrade-v9-to-v10).
+  This prepares cancelled storage only, not a cancellation API or UI.
+  `--recovery-status` and owner-only `--quarantine-db` add
   [one-way declared containment](docs/runbooks/operator-recovery-quarantine.md),
   not automatic rollback detection or effectful resume. Owner-only `--recovery-inspect` provides a
   [read-only aggregate snapshot](docs/runbooks/operator-recovery-inspection.md)

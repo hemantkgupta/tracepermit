@@ -1750,7 +1750,7 @@ public final class PostgresDurableEnforcementState
          PreparedStatement statement = connection.prepareStatement(
              "SELECT contract_version FROM tp_enforcement_schema_guard WHERE singleton = TRUE");
          ResultSet result = statement.executeQuery()) {
-      if (!result.next() || result.getInt(1) != 9 || result.next()) {
+      if (!result.next() || result.getInt(1) != PostgresDatabaseLifecycle.CURRENT_VERSION || result.next()) {
         throw new IllegalStateException("INCOMPATIBLE_DURABLE_STATE_SCHEMA");
       }
     } catch (SQLException exception) {

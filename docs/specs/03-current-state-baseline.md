@@ -116,6 +116,11 @@ file references. `--check` validates offline, without binding, migration or IdP
 traffic. First-install `--init-db` explicitly initializes an empty dedicated
 public schema; normal run uses strict non-migrating repository opens and rejects
 empty/partial/incompatible state. See [ADR 0045](../architecture/0045-explicit-database-initialization.md).
+Strict operator startup now requires V1–V10. A separate owner-only `--upgrade-db`
+accepts exactly V9→V10 while services are stopped; ready/unresolved-work, ownership,
+history/checksum and lock failures refuse migration. V10 adds cancelled storage
+compatibility, not an authenticated withdrawal feature. No cancellation route,
+scope or button is enabled. See [ADR 0059](../architecture/0059-explicit-v9-v10-simulator-upgrade.md).
 This does not detect a valid older restored snapshot or add a recovery fence.
 The five [generation-bound restore cases](../runbooks/policy-bound-restore-qualification.md)
 compare populated current-schema state (V8 policy bindings plus the V9 recovery

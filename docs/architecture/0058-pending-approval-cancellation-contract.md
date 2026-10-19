@@ -2,6 +2,11 @@
 
 **Status: Proposed; design only, not an implemented control.**
 
+Implementation follow-up: [ADR 0059](0059-explicit-v9-v10-simulator-upgrade.md)
+implements the V10 storage/consumer and explicit V9→V10 operator upgrade
+prerequisite only. The cancellation service, authenticated API and UI described
+below remain proposed; this historical decision must not be read as their proof.
+
 Requirements: FR-003/007/008/009/010; SEC-001/002/003/005/006/009/012;
 REL-001/002/004/005; DATA-001; OPS-002/004; PORT-001/003.
 

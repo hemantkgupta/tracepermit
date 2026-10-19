@@ -928,6 +928,123 @@ test("online --run starts, binds loopback port, and terminates cleanly on SIGTER
     assert.ok(!output.includes("jdbc:"));
   }
 
+  // JDK-based test setup creates genuine predecessor checksums; the installed
+  // operator commands themselves still have no source/Node/pnpm/Gradle on PATH.
+  command(
+    "docker",
+    [
+      "exec",
+      containerId,
+      "psql",
+      "-v",
+      "ON_ERROR_STOP=1",
+      "-U",
+      "tracepermit_approvals",
+      "-d",
+      "tracepermit_approvals",
+      "-c",
+      "CREATE DATABASE upgrade_fixture",
+    ],
+    unrelatedCwd,
+  );
+  config.postgres.database = "upgrade_fixture";
+  writeFileSync(configPath, JSON.stringify(config));
+  const predecessor = spawnSync(
+    "java",
+    [
+      "--class-path",
+      join(distDir, "lib", "*"),
+      join(
+        repoRoot,
+        "java/adapters-http/src/test/fixtures/V9DatabaseFixture.java",
+      ),
+    ],
+    commandOptions,
+  );
+  assert.equal(predecessor.status, 0, "Owned V9 fixture setup failed");
+  assert.ok(predecessor.stdout.includes("SYNTHETIC_V9_FIXTURE_READY"));
+  // Optional integrator probe against a retained, privately verified historical
+  // artifact. Not required/present in CI and never fetched from an untrusted URL.
+  let legacyLauncher;
+  if (process.env.TRACEPERMIT_LEGACY_V9_ARCHIVE) {
+    const legacyRoot = join(extractRoot, "legacy");
+    mkdirSync(legacyRoot);
+    command(
+      "tar",
+      ["-xzf", process.env.TRACEPERMIT_LEGACY_V9_ARCHIVE, "-C", legacyRoot],
+      unrelatedCwd,
+    );
+    legacyLauncher = join(
+      legacyRoot,
+      "tracepermit-simulator-approval-0.1.0/bin/tracepermit-simulator-approval",
+    );
+    const baseline = spawnSync(
+      legacyLauncher,
+      ["--recovery-status"],
+      commandOptions,
+    );
+    assert.equal(
+      baseline.status,
+      0,
+      "Retained V9 binary must accept genuine predecessor before negative probe",
+    );
+    assert.ok(baseline.stdout.includes("APPROVAL_RECOVERY_MODE: ready"));
+  }
+  for (const mode of ["--run", "--init-db"]) {
+    const refused = spawnSync(launcher, [mode], commandOptions);
+    assert.equal(refused.status, 2);
+    assert.ok(!refused.stdout.includes("API listening"));
+  }
+  const upgraded = spawnSync(launcher, ["--upgrade-db"], commandOptions);
+  assert.equal(upgraded.status, 0, upgraded.stderr);
+  assert.ok(upgraded.stdout.includes("APPROVAL_DATABASE_UPGRADED"));
+  assert.ok(!upgraded.stdout.includes("API listening"));
+  const repeatedUpgrade = spawnSync(launcher, ["--upgrade-db"], commandOptions);
+  assert.equal(repeatedUpgrade.status, 2);
+  assert.ok(!repeatedUpgrade.stdout.includes("APPROVAL_DATABASE_UPGRADED"));
+  if (legacyLauncher) {
+    for (const mode of ["--run", "--recovery-status"]) {
+      const old = spawnSync(legacyLauncher, [mode], commandOptions);
+      assert.equal(old.status, 2, "Old binary must refuse V10");
+      assert.ok(old.stderr.includes("APPROVAL_STARTUP_FAILED"));
+      assert.ok(!old.stdout.includes("API listening"));
+    }
+    t.diagnostic(
+      "Retained genuine V9 binary accepted V9 and refused V10 startup/metadata reads.",
+    );
+  }
+  const upgradedInspection = spawnSync(
+    launcher,
+    ["--recovery-inspect"],
+    commandOptions,
+  );
+  assert.equal(upgradedInspection.status, 0);
+  assert.ok(upgradedInspection.stdout.includes('"schemaVersion":"2.0"'));
+  assert.equal(
+    command(
+      "docker",
+      [
+        "exec",
+        containerId,
+        "psql",
+        "-U",
+        "tracepermit_approvals",
+        "-d",
+        "upgrade_fixture",
+        "-Atc",
+        "SELECT contract_version, (SELECT count(*) FROM tp_execution_attempts), (SELECT count(*) FROM tp_consumed_execution_permits) FROM tp_enforcement_schema_guard",
+      ],
+      unrelatedCwd,
+    ),
+    "10|0|0",
+  );
+  for (const result of [upgraded, repeatedUpgrade, upgradedInspection]) {
+    assert.ok(!(result.stdout + result.stderr).includes(pgPassword));
+    assert.ok(!(result.stdout + result.stderr).includes(configPath));
+  }
+  config.postgres.database = "tracepermit_approvals";
+  writeFileSync(configPath, JSON.stringify(config));
+
   // Spawn --run
   const child = spawn(launcher, ["--run"], {
     cwd: unrelatedCwd,
@@ -936,6 +1053,18 @@ test("online --run starts, binds loopback port, and terminates cleanly on SIGTER
       TRACEPERMIT_APPROVAL_CONFIG: configPath,
     },
     stdio: ["ignore", "pipe", "pipe"],
+  });
+  t.after(async () => {
+    const exited = () => child.exitCode !== null || child.signalCode !== null;
+    if (!exited()) child.kill("SIGTERM");
+    let deadline = Date.now() + 10_000;
+    while (!exited() && Date.now() < deadline)
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    if (!exited()) child.kill("SIGKILL");
+    deadline = Date.now() + 5_000;
+    while (!exited() && Date.now() < deadline)
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.ok(exited(), "Installed child must exit within bounded cleanup");
   });
 
   let childStdout = "";
@@ -1036,7 +1165,7 @@ test("online --run starts, binds loopback port, and terminates cleanly on SIGTER
       const report = JSON.parse(
         line.slice("APPROVAL_RECOVERY_SNAPSHOT: ".length),
       );
-      assert.equal(report.schemaVersion, "1.0");
+      assert.equal(report.schemaVersion, "2.0");
       assert.equal(report.recoveryMode, expectedRecoveryMode);
       assert.deepEqual(report.executions, {
         executing: 0,
@@ -1050,6 +1179,7 @@ test("online --run starts, binds loopback port, and terminates cleanly on SIGTER
         denied: 0,
         expired: 0,
         consumed: 0,
+        cancelled: 0,
       });
       assert.equal(report.reconciliationQueued, 0);
       assert.ok(output.includes("INSPECTION_ONLY"));

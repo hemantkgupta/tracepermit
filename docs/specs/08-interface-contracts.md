@@ -18,11 +18,12 @@
 
 ### Authenticated simulator approval API foundation
 
-Pending-request cancellation and an explicit predecessor-schema upgrade are
-proposed in [ADR 0058](../architecture/0058-pending-approval-cancellation-contract.md)
-and its [design contract](../design/pending-approval-cancellation.md). Their
-routes, scope, status and command are **not implemented**; the current API and
-strict V1–V9 startup behavior below are unchanged.
+Pending-request cancellation remains proposed in
+[ADR 0058](../architecture/0058-pending-approval-cancellation-contract.md).
+[ADR 0059](../architecture/0059-explicit-v9-v10-simulator-upgrade.md) implements
+only V10 cancelled storage/consumer compatibility and explicit V9→V10 upgrade.
+There is no cancellation route, granted scope, tool or button. Normal startup
+strictly validates V1–V10 without migration.
 
 A separately composed `SimulatorApprovalServer` exposes pending/read/review/
 execute routes under `/api/v1/approvals`. It binds only to IPv4 loopback,
@@ -69,23 +70,27 @@ schema lifecycle superseded by [ADR 0045](../architecture/0045-explicit-database
 `--check` is offline; `--init-db` installs only fresh empty state without
 starting a listener; normal run validates existing state without implicit DDL.
 Failures return exit 2/code-only redacted diagnostics; no public init, repair,
-upgrade or recovery-resume HTTP/MCP endpoint is added.
+upgrade or recovery-resume HTTP/MCP endpoint is added. Local owner-only
+`--upgrade-db` supports exactly stopped-service V9→V10, with predecessor
+validation, transactional migration and final strict validation, not repair or resume.
 Owner-only `--recovery-inspect` emits fixed-format `APPROVAL_RECOVERY_SNAPSHOT`
-JSON (`schemaVersion: 1.0`, database `transactionStartedAt`, `recoveryMode`,
+JSON (`schemaVersion: 2.0`, database `transactionStartedAt`, `recoveryMode`,
 execution/approval stored-status counts and `reconciliationQueued`) followed by
 an `INSPECTION_ONLY` caveat. It is installation-wide, read-only and non-migrating,
 without per-tenant/request data, expiry refresh, target lookup or authority change.
+Format2 adds `approvals.cancelled`; it is not database contract10 or an API
+version change. Existing approval projections remain format1.0.
 Failures emit no partial report. Ordinary runtime SELECT privileges are not
 sufficient. See [ADR 0052](../architecture/0052-owner-only-recovery-inspection.md).
 
 `--recovery-status` and owner-only `--quarantine-db` operate without a listener,
-IdP or target against existing V1–V9 state. The latter is installation-wide,
+IdP or target against existing V1–V10 state. The latter is installation-wide,
 one-way containment of new durable claims/reviews, not automatic rollback
 detection or cancellation. Already quarantined state refuses operator `--run`;
 already-running replicas retain reads/completion but authority writes return
 their existing generic unavailable errors. Internal permit minting is unchanged.
-There is no resume or in-place upgrade command; strict V8 startup is refused
-without migration. See [ADR 0051](../architecture/0051-operator-declared-recovery-quarantine.md)
+There is no resume command; only the explicit V9→V10 upgrade is supported.
+Other predecessors remain offline. See [ADR 0051](../architecture/0051-operator-declared-recovery-quarantine.md)
 and the [runbook](../runbooks/operator-recovery-quarantine.md).
 The `/health`, `/ready` and `/mcp` surfaces below belong to other compositions,
 not to this approval listener.

@@ -9,7 +9,7 @@ import javax.sql.DataSource;
 /** Owner-only, installation-wide counts. A snapshot is neither a health verdict nor recovery authority. */
 public final class PostgresRecoveryInspection {
   public record Executions(long executing, long succeeded, long failed, long unknown) {}
-  public record Approvals(long pending, long approved, long denied, long expired, long consumed) {}
+  public record Approvals(long pending, long approved, long denied, long expired, long consumed, long cancelled) {}
   public record Snapshot(Instant transactionStartedAt, PostgresRecoveryQuarantine.Status recovery,
       Executions executions, Approvals approvals, long reconciliationQueued) {}
 
@@ -52,15 +52,16 @@ public final class PostgresRecoveryInspection {
                 count(*) FILTER (WHERE status = 'approved') AS approved,
                 count(*) FILTER (WHERE status = 'denied') AS denied,
                 count(*) FILTER (WHERE status = 'expired') AS expired,
-                count(*) FILTER (WHERE status = 'consumed') AS consumed
+                count(*) FILTER (WHERE status = 'consumed') AS consumed,
+                count(*) FILTER (WHERE status = 'cancelled') AS cancelled
                 FROM public.tp_approval_requests) a
               CROSS JOIN (SELECT count(*) AS queued FROM public.tp_reconciliation_queue) r
               """)) {
             if (!rows.next()) throw new IllegalStateException("RECOVERY_INSPECTION_UNAVAILABLE");
             var snapshot = new Snapshot(rows.getObject(1, OffsetDateTime.class).toInstant(), recovery,
                 new Executions(rows.getLong(2), rows.getLong(3), rows.getLong(4), rows.getLong(5)),
-                new Approvals(rows.getLong(6), rows.getLong(7), rows.getLong(8), rows.getLong(9), rows.getLong(10)),
-                rows.getLong(11));
+                new Approvals(rows.getLong(6), rows.getLong(7), rows.getLong(8), rows.getLong(9), rows.getLong(10), rows.getLong(11)),
+                rows.getLong(12));
             if (rows.next()) throw new IllegalStateException("RECOVERY_INSPECTION_UNAVAILABLE");
             // End the read-only snapshot before returning anything; an error never yields a partial report.
             connection.rollback();

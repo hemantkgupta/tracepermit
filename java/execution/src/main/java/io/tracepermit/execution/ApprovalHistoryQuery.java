@@ -9,7 +9,7 @@ public record ApprovalHistoryQuery(
     Instant beforeCreatedAt, String afterRequestId) {
   public ApprovalHistoryQuery {
     if (limit < 1 || limit > 50) throw new IllegalArgumentException("Invalid history limit.");
-    if (status != null && !Set.of("pending", "approved", "denied", "expired", "consumed").contains(status)) {
+    if (status != null && !Set.of("pending", "approved", "denied", "expired", "consumed", "cancelled").contains(status)) {
       throw new IllegalArgumentException("Invalid history status.");
     }
     if (toolName != null) DurableExecutionClaim.requireIdentifier(toolName, 256, "tool name");
