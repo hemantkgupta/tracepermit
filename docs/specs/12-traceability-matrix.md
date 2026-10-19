@@ -5,6 +5,18 @@
 
 Status values: **Implemented**, **Partial**, **Target**, or **Proposed**.
 
+## JWKS regression publication ordering
+
+SEC-002/003/015/017, REL-001/009 and OPS-001/005 retain their existing status.
+`CachingOidcJwkResolverTest` now waits for actual in-flight publication before
+inspecting an interrupted operation, with a second deterministic
+worker-before-publication case. The original 400 ms operation deadline,
+late-result refusal and obsolete-cooldown guard remain unchanged. Bounded
+cleanup, exact supplier counts and interrupt-status checks strengthen test
+evidence; they add no runtime authorization behavior. See
+[ADR 0049](../architecture/0049-bounded-jwks-refresh-isolation.md) and its
+[fixture explanation](../runbooks/jwks-refresh-isolation.md#concurrency-regression-fixture-ordering).
+
 ## Public introduction visuals
 
 FR-005/007/008/009, SEC-005/006/014, REL-002/005 and OPS-002/004 are explained,
