@@ -13,6 +13,11 @@ an implicit recovery operation or a cross-tenant runtime endpoint.
 
 ## Decision
 
+Current consumer follow-up: [ADR 0059](0059-explicit-v9-v10-simulator-upgrade.md)
+requires V1–V10 and advances the inspection report to format `2.0` with a
+`cancelled` approval count. This ADR's original format/version evidence below is
+historical; the owner-only, read-only and no-safe-resume boundary is unchanged.
+
 Add an explicit local `--recovery-inspect` command to the source and installed
 simulator approval launchers. Validate existing V1–V9 schema/history first, without
 migration or repair. On a new connection, use a read-only repeatable-read
