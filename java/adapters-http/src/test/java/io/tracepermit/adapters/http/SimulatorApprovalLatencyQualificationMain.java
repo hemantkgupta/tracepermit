@@ -30,9 +30,12 @@ public final class SimulatorApprovalLatencyQualificationMain {
     int[] measuredCounts = new int[] {20, 32, 40};
 
     PostgreSQLContainer<?> postgres = null;
+    var diagnostics = new LatencyFailureDiagnostics();
+    boolean failed = false;
     try {
       out.println("Starting disposable PostgreSQL container (postgres:16.4-alpine)...");
       postgres = new PostgreSQLContainer<>("postgres:16.4-alpine");
+      postgres.withLogConsumer(frame -> diagnostics.observeDatabaseLog(frame.getUtf8String()));
       postgres.start();
 
       out.println("Running closed-loop simulator approval latency qualification...");
@@ -44,6 +47,7 @@ public final class SimulatorApprovalLatencyQualificationMain {
       out.println(report.toJson().toPrettyString());
 
       if (!report.passed()) {
+        failed = true;
         err.println("\n[ERROR] Qualification failed with " + report.failures().size() + " failure(s):");
         for (String failure : report.failures()) {
           err.println("  - " + failure);
@@ -54,6 +58,7 @@ public final class SimulatorApprovalLatencyQualificationMain {
       out.println("\n[OK] Qualification passed successfully.");
       return 0;
     } catch (Throwable t) {
+      failed = true;
       err.println("\n[FATAL] Error during latency qualification: " + t.getClass().getSimpleName());
       return 1;
     } finally {
@@ -61,6 +66,10 @@ public final class SimulatorApprovalLatencyQualificationMain {
         try {
           postgres.close();
         } catch (Throwable ignored) {}
+      }
+      if (failed) {
+        err.println("[DIAGNOSTIC] Observed database error categories: " + diagnostics.databaseCategories());
+        err.println("[DIAGNOSTIC] Log observation is asynchronous; an empty category set does not exclude a database error.");
       }
     }
   }

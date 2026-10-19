@@ -492,6 +492,14 @@ See [ADR 0044](../architecture/0044-database-restore-safety-limits.md) and the
 | PERF-003 | No scale/load validation                                                                              | Proposed objective                                       |
 | PERF-004 | Synchronous execution plus durable pending approval; no remote async workflow                         | Partial design                                           |
 
+The simulator latency harness retains nonzero failure/timeout/cancellation and
+exact state-delta gates while adding bounded, fixed-category operation and
+test-container log diagnostics. `LatencyFailureDiagnosticsTest` qualifies safe
+projection, category cardinality and failure accounting (SEC-003; REL-001/005;
+OPS-003). It does not establish PERF-003 scale validation, a latency SLO, an
+authoritative database-error count or successful qualification of a failed run.
+See the [latency runbook](../runbooks/simulator-approval-latency-qualification.md#reading-a-failed-qualification).
+
 ## Data and privacy requirements
 
 | ID       | Current evidence                                                                                                                                              | Status                                                               |
