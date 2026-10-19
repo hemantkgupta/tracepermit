@@ -6,8 +6,11 @@ description: The implemented POC data flow, trust boundaries, and production lim
 # End-to-end architecture
 
 TracePermit is an Agentic Visibility & Control (AVC) proof of concept. Java is
-the sole supported backend; React provides a read-only console. Every
-**supported simulated side effect** is evaluated before simulator execution.
+the sole supported backend. React provides the default read-only evidence console
+and a separate authenticated approval inbox for independent review and explicit
+simulated execution. Every **supported simulated side effect** is evaluated before
+simulator execution. See [what works today](/guide/working-today) for the separate
+qualification profiles.
 
 ## End-to-end architecture diagram
 
@@ -49,7 +52,14 @@ independent authorized reviewer in the durable profile.
 The durable PostgreSQL profile claims permits and records attempts before
 simulator I/O. When the outcome is uncertain, read-only reconciliation can
 append a confirmed result; the effect is not blindly retried. This does **not**
-guarantee exactly-once effects in an independent real target.
+guarantee exactly-once effects in an independent real target. The lookup worker is
+a separately tested foundation, not an automatic service in the browser launcher;
+see [Flow 9](core-flows.md#flow-9-uncertainty-is-not-permission-to-retry).
+
+The [browser/history](core-flows.md#flow-10-browser-sign-in-and-role-scoped-history),
+[local startup](core-flows.md#flow-11-check-initialize-and-start-a-local-package)
+and [recovery containment](core-flows.md#flow-12-inspect-and-declare-recovery-quarantine)
+diagrams expand the architecture into its supported local operating paths.
 
 For implementation details and explicit production gaps, read the
 [high-level design](https://github.com/hemantkgupta/tracepermit/blob/main/docs/specs/04-high-level-design.md)

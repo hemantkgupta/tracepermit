@@ -1,6 +1,6 @@
 ---
 title: Core Action Flows & Use Cases
-description: Nine implemented control paths, their trust boundaries, and their qualification limits.
+description: Twelve implemented action and operator paths, their trust boundaries, and their qualification limits.
 aside: false
 ---
 
@@ -25,6 +25,13 @@ guide are generated from one checked-in diagram catalog.
   [read-then-send denial](#flow-5-read-then-send-denied).
 - Authority and recovery: [narrow delegation](#flow-8-delegation-must-narrow) and
   [uncertain outcomes](#flow-9-uncertainty-is-not-permission-to-retry).
+- Browser workflow: [sign-in and approval history](#flow-10-browser-sign-in-and-role-scoped-history).
+- Local operations: [package startup](#flow-11-check-initialize-and-start-a-local-package)
+  and [inspect/quarantine](#flow-12-inspect-and-declare-recovery-quarantine).
+
+New here? Start with [what works today](/guide/working-today) or the
+[clean Mac evaluation](/guide/fresh-macbook-evaluation). The latter needs no
+personal identity-provider account for its synthetic source walkthrough.
 
 ## The central invariant
 
@@ -536,7 +543,9 @@ sequenceDiagram
   participant W as Lookup-only worker
   E->>D: Commit approval consumption and executing claim before dispatch
   E->>S: Invoke the approved simulator action
-  E->>D: Attempt separate completion write, a fault can leave consumed/executing
+  E->>D: Attempt separate completion write after simulator dispatch
+  E->>D: On completion failure, make one bounded UNKNOWN recording attempt without retrying the effect
+  Note over C,W: Keep committed terminal outcomes. Persistent database failure can still leave the attempt executing.
   E-->>C: Return safe error, not invented failure or success, inspect durable status
   C->>E: After restart, attempt resume of the same approval
   E-->>C: Reject redispatch because the authority is already consumed
@@ -551,12 +560,161 @@ sequenceDiagram
 
 </details>
 
-**Proof boundary:** approval failure/restart rejection and a lookup-only worker
-are separately tested. The worker leases persisted `UNKNOWN` attempts and records
+**Proof boundary:** a failed completion write triggers one bounded attempt to
+record `unknown` and lookup-only eligibility without regressing an already
+committed outcome. Persistent outage can still leave consumed/executing state.
+Approval failure/restart rejection and a lookup-only worker are separately tested.
+The worker leases persisted `UNKNOWN` attempts and records
 a terminal outcome only when confirmed; otherwise it defers. No automatic
 `executing` → `UNKNOWN` sweeper or worker is wired into the browser launcher.
 Real-target outcome lookup remains future work. This is not a claim of exactly-once
-external effects. [Recovery decision](https://github.com/hemantkgupta/tracepermit/blob/main/docs/architecture/0020-reconcile-by-lookup-never-reexecution.md).
+external effects. See [bounded uncertainty](https://github.com/hemantkgupta/tracepermit/blob/main/docs/architecture/0048-bounded-durable-completion-uncertainty.md)
+and the [recovery decision](https://github.com/hemantkgupta/tracepermit/blob/main/docs/architecture/0020-reconcile-by-lookup-never-reexecution.md).
+
+## Flow 10: browser sign-in and role-scoped history
+
+Sign in through the separate Java-served inbox, then inspect authorized approval
+history. Provider tokens stay server-side. Every page rechecks current role,
+scope and tenant/owner; unsigned cursors grant no authority. Reading is not execution.
+
+<div class="flow-diagram" tabindex="0" role="region" aria-label="Browser sign-in and approval history sequence, horizontally scrollable">
+
+![Flow 10: browser sign-in and role-scoped history](/images/flows/flow-10-browser-history.svg)
+
+</div>
+
+[Open full-size diagram](/images/flows/flow-10-browser-history.svg)
+
+<details>
+<summary>View Mermaid source</summary>
+
+<!-- diagram:flow-10-browser-history -->
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant B as Browser
+  participant J as Java session API
+  participant I as Configured IdP
+  participant D as PostgreSQL
+  B->>J: Start sign-in on the numeric-loopback approval origin
+  J-->>B: Redirect with browser-bound state, nonce and S256 PKCE
+  B->>I: Complete sign-in with the configured identity provider
+  I-->>J: Browser returns the authorization code and issuer
+  J->>I: After checking state, exchange code and verify signed access and ID tokens
+  J-->>B: Set an opaque session cookie, reusable provider tokens stay server-side
+  B->>J: Request exact metadata filters and a bounded page using the current session
+  J->>D: Recheck token, membership, role, scopes and tenant/owner before querying
+  J-->>B: Return safe-rendered history and cursor, reading grants no execution authority
+  Note over B,D: Synthetic browser profile is qualified. This is not a new live external-IdP or public browser qualification.
+```
+
+<!-- /diagram:flow-10-browser-history -->
+
+</details>
+
+**Proof boundary:** synthetic sign-in, role-scoped history and mounted UI are
+qualified locally and in CI. This does not qualify every external OIDC provider,
+public browser ingress, full audit export or retention. Try the
+[clean Mac walkthrough](/guide/fresh-macbook-evaluation) and read the
+[history contract](https://github.com/hemantkgupta/tracepermit/blob/main/docs/runbooks/approval-history-api.md).
+
+## Flow 11: check, initialize and start a local package
+
+The buildable archive contains the Java approval application and built React inbox.
+The operator supplies Java 21, local PostgreSQL, persistent keys and approved OIDC
+configuration. This is not a one-command production install or a hosted service.
+
+<div class="flow-diagram" tabindex="0" role="region" aria-label="Packaged check initialization and startup sequence, horizontally scrollable">
+
+![Flow 11: offline check and strict local package startup](/images/flows/flow-11-package-startup.svg)
+
+</div>
+
+[Open full-size diagram](/images/flows/flow-11-package-startup.svg)
+
+<details>
+<summary>View Mermaid source</summary>
+
+<!-- diagram:flow-11-package-startup -->
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant O as Local operator
+  participant C as Java launcher
+  participant D as Local PostgreSQL
+  participant R as Loopback runtime
+  O->>C: Run --check with private configuration, key files and bundled assets
+  C-->>O: Report offline validity only, no database, IdP traffic or listener
+  O->>C: For first installation only, explicitly run --init-db
+  C->>D: Hold the initialization lock and install only into a fresh empty dedicated schema
+  O->>C: Run --run using the same operator-owned configuration
+  C->>D: Validate existing schema and recovery state, never implicitly migrate or repair
+  C->>R: Bind 127.0.0.1 and compose authenticated API, optional inbox and approval MCP
+  Note over O,R: Normal runtime needs operator OIDC and PostgreSQL. The synthetic source demo is a different test composition.
+  Note over O,R: An archive manifest identifies a clean source build, not signed provenance or production readiness.
+```
+
+<!-- /diagram:flow-11-package-startup -->
+
+</details>
+
+**Proof boundary:** `--check` validates offline; `--init-db` initializes only a
+fresh empty dedicated schema; `--run` validates existing state without repair or
+migration. A manifest/checksum is not signed provenance. Follow the
+[package installation runbook](https://github.com/hemantkgupta/tracepermit/blob/main/docs/runbooks/simulator-approval-distribution.md).
+The synthetic account picker is not selectable in this operator runtime.
+
+## Flow 12: inspect and declare recovery quarantine
+
+Stop agents and effectful services independently before recovery. Read-only
+inspection reports stored-state counts. Explicit owner-declared quarantine then
+refuses new durable authority writes; it does not cancel prior committed claims.
+
+<div class="flow-diagram" tabindex="0" role="region" aria-label="Recovery inspection and one-way quarantine sequence, horizontally scrollable">
+
+![Flow 12: inspect stored state and declare quarantine](/images/flows/flow-12-recovery-quarantine.svg)
+
+</div>
+
+[Open full-size diagram](/images/flows/flow-12-recovery-quarantine.svg)
+
+<details>
+<summary>View Mermaid source</summary>
+
+<!-- diagram:flow-12-recovery-quarantine -->
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant O as Local operator
+  participant C as Owner-only CLI
+  participant D as PostgreSQL guard
+  participant R as Running service
+  Note over O,R: First stop agents and effectful services independently. Quarantine cannot cancel already committed claims.
+  O->>C: Run --recovery-inspect with separate owner configuration
+  C->>D: Read aggregate stored-state counts in one read-only snapshot
+  C-->>O: Return bounded counts, not target outcome proof or permission to resume
+  O->>C: Explicitly run --quarantine-db against the intended simulator database
+  C->>D: Serialize and commit the one-way recovery guard transition
+  R->>D: Attempt a new authority claim or approval review after quarantine
+  D-->>R: Refuse new authority writes, previous claim completion remains possible
+  O->>C: Attempt --run against an already quarantined database
+  C-->>O: Refuse startup, no resume or quarantine-clear command is provided
+  Note over O,R: An older restored ready row is not detected automatically. This is declared containment, not a restore fence.
+```
+
+<!-- /diagram:flow-12-recovery-quarantine -->
+
+</details>
+
+**Proof boundary:** operator commands have PostgreSQL and packaged-runtime tests.
+Inspection is not a safe-resume verdict. Quarantine is one-way declared containment,
+not automatic old-backup detection or a restore fence; already-claimed work may
+finish and there is no clear/resume command. See the
+[inspection runbook](https://github.com/hemantkgupta/tracepermit/blob/main/docs/runbooks/operator-recovery-inspection.md)
+and [quarantine runbook](https://github.com/hemantkgupta/tracepermit/blob/main/docs/runbooks/operator-recovery-quarantine.md).
 
 ## More controls and qualification
 

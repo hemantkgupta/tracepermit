@@ -117,3 +117,9 @@ jobs:
 
       - name: Verify the rendered simulator approval inbox
         run: pnpm test:approvals:browser
+
+      - name: Verify built documentation onboarding and responsive navigation
+        run: |
+          npm --prefix site ci
+          pnpm site:build
+          node --test scripts/site-onboarding-browser.test.mjs

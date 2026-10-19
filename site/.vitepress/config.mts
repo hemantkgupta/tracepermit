@@ -3,7 +3,7 @@ import { defineConfig } from "vitepress";
 export default defineConfig({
   title: "TracePermit",
   description:
-    "Agentic Visibility & Control POC for attributed, pre-execution policy on simulated AI-agent actions.",
+    "Request-bound approvals for coding agents: authenticated requests, independent review and explicit simulator execution.",
   cleanUrls: true,
   lastUpdated: true,
 
@@ -22,7 +22,7 @@ export default defineConfig({
       "meta",
       {
         property: "og:title",
-        content: "TracePermit | Agentic Visibility & Control POC",
+        content: "TracePermit | Request-bound approvals for coding agents",
       },
     ],
     [
@@ -30,7 +30,7 @@ export default defineConfig({
       {
         property: "og:description",
         content:
-          "Attribute, classify, and govern AI-agent actions before safe simulated execution.",
+          "Explore a simulator-only approval workflow with independent review, single-use authority and durable evidence.",
       },
     ],
   ],
@@ -40,11 +40,26 @@ export default defineConfig({
     siteTitle: "TracePermit",
 
     nav: [
-      { text: "Guide", link: "/guide/what-is-tracepermit" },
-      { text: "Core Flows", link: "/guide/core-flows" },
-      { text: "Local Demo", link: "/guide/getting-started" },
-      { text: "Architecture", link: "/guide/architecture" },
-      { text: "Connector", link: "/guide/endpoint-connector" },
+      {
+        text: "Guide",
+        items: [
+          { text: "What is TracePermit?", link: "/guide/what-is-tracepermit" },
+          { text: "What Works Today", link: "/guide/working-today" },
+          { text: "Core Flows", link: "/guide/core-flows" },
+          { text: "Architecture", link: "/guide/architecture" },
+        ],
+      },
+      {
+        text: "Evaluate locally",
+        items: [
+          {
+            text: "Fresh MacBook Evaluation",
+            link: "/guide/fresh-macbook-evaluation",
+          },
+          { text: "Local POC Quickstart", link: "/guide/getting-started" },
+          { text: "Connector for Codex", link: "/guide/endpoint-connector" },
+        ],
+      },
       { text: "GitHub", link: "https://github.com/hemantkgupta/tracepermit" },
     ],
 
@@ -52,7 +67,12 @@ export default defineConfig({
       {
         text: "Overview",
         items: [
+          { text: "What Works Today", link: "/guide/working-today" },
           { text: "What is TracePermit?", link: "/guide/what-is-tracepermit" },
+          {
+            text: "Fresh MacBook Evaluation",
+            link: "/guide/fresh-macbook-evaluation",
+          },
           { text: "Local POC Quickstart", link: "/guide/getting-started" },
           { text: "Connector for Codex", link: "/guide/endpoint-connector" },
           {
@@ -85,7 +105,13 @@ export default defineConfig({
       },
       {
         text: "Deployment & Operations",
-        items: [{ text: "Deployment Status", link: "/guide/deployment" }],
+        items: [
+          { text: "Deployment & Operator Paths", link: "/guide/deployment" },
+          {
+            text: "Fresh MacBook Evaluation",
+            link: "/guide/fresh-macbook-evaluation",
+          },
+        ],
       },
     ],
 

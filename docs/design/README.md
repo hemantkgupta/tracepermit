@@ -1,7 +1,7 @@
 # Flow diagram maintenance
 
 [flow-diagrams.json](flow-diagrams.json) is the source of truth for the central
-overview and nine action sequences. Each entry defines a stable ID, title,
+overview and twelve action/operator sequences. Each entry defines a stable ID, title,
 participants and ordered messages/notes. It contains no credentials or external
 image dependencies. The source is illustrative documentation, not runtime policy.
 
