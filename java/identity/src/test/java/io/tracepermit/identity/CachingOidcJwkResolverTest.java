@@ -762,26 +762,74 @@ final class CachingOidcJwkResolverTest {
 
   @Test
   void olderInterruptedOperationCannotReinstallCooldownAfterNewerSuccess() throws Exception {
+    assertOlderInterruptedOperationCannotRegressSuccess(false);
+  }
+
+  @Test
+  void olderInterruptedOperationHandlesWorkerStartBeforeMapPublication() throws Exception {
+    assertOlderInterruptedOperationCannotRegressSuccess(true);
+  }
+
+  private void assertOlderInterruptedOperationCannotRegressSuccess(boolean delayPublication) throws Exception {
     var entered = new CountDownLatch(1);
     var release = new CountDownLatch(1);
+    var publicationAllowed = new CountDownLatch(1);
     var callerThread = new AtomicReference<Thread>();
+    var interruptRestored = new AtomicReference<Boolean>();
+    var calls = new AtomicInteger();
     var callers = Executors.newSingleThreadExecutor(r -> { var t = new Thread(r); t.setDaemon(true); return t; });
     var provider = OidcTestSupport.provider();
     try (var coordinator = new JwksRefreshCoordinator(2, 0, Duration.ofMillis(400), Duration.ofSeconds(10))) {
+      var executorField = JwksRefreshCoordinator.class.getDeclaredField("executor");
+      executorField.setAccessible(true);
+      var workers = (java.util.concurrent.ThreadPoolExecutor) executorField.get(coordinator);
       try {
+        if (delayPublication) {
+          // submit() is inside inFlight.compute(). A worker may enter task.call() before
+          // submit() returns and compute() publishes the operation. Force that legal order.
+          workers.shutdownNow();
+          workers = new java.util.concurrent.ThreadPoolExecutor(
+              2, 2, 0, TimeUnit.SECONDS, new java.util.concurrent.SynchronousQueue<>(),
+              runnable -> { var worker = new Thread(runnable, "jwks-test-before-publication"); worker.setDaemon(true); return worker; }) {
+            @Override
+            public Future<?> submit(Runnable task) {
+              Future<?> submitted = super.submit(task);
+              try {
+                if (!entered.await(2, TimeUnit.SECONDS)
+                    || !publicationAllowed.await(2, TimeUnit.SECONDS)) {
+                  throw new AssertionError("Publication fixture release timed out");
+                }
+              } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                throw new AssertionError("Publication fixture interrupted", interrupted);
+              }
+              return submitted;
+            }
+          };
+          executorField.set(coordinator, workers);
+        }
         var interrupted = callers.submit(() -> {
           callerThread.set(Thread.currentThread());
-          return coordinator.refresh("same-provider", provider, OidcTestSupport.NOW, () -> {
-            entered.countDown();
-            if (!release.await(4, TimeUnit.SECONDS)) throw new AssertionError("Worker release timed out");
-            return "old";
-          });
+          try {
+            return coordinator.refresh("same-provider", provider, OidcTestSupport.NOW, () -> {
+              calls.incrementAndGet();
+              entered.countDown();
+              if (!release.await(4, TimeUnit.SECONDS)) throw new AssertionError("Worker release timed out");
+              return "old";
+            });
+          } finally {
+            interruptRestored.set(Thread.currentThread().isInterrupted());
+          }
         });
         assertThat(entered.await(2, TimeUnit.SECONDS)).isTrue();
         var mapField = JwksRefreshCoordinator.class.getDeclaredField("inFlight");
         mapField.setAccessible(true);
-        Object operation = ((Map<?, ?>) mapField.get(coordinator)).get("same-provider");
-        assertThat(operation).isNotNull();
+        var operations = (Map<?, ?>) mapField.get(coordinator);
+        if (delayPublication) {
+          assertThat(operations.get("same-provider"))
+              .as("worker entry is not an inFlight publication barrier").isNull();
+        }
+        Object operation = awaitPublishedOperation(operations, publicationAllowed);
         var futureMethod = operation.getClass().getDeclaredMethod("future");
         futureMethod.setAccessible(true);
         var oldFuture = (CompletableFuture<?>) futureMethod.invoke(operation);
@@ -790,21 +838,45 @@ final class CachingOidcJwkResolverTest {
         long operationDeadline = deadlineField.getLong(operation);
         callerThread.get().interrupt();
         assertThatThrownBy(() -> interrupted.get(2, TimeUnit.SECONDS)).hasCauseInstanceOf(AuthenticationException.class);
+        assertThat(interruptRestored).hasValue(true);
         // The only waiter is gone; the old background task remains stalled beyond its deadline.
         long waitLimit = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
         while (System.nanoTime() <= operationDeadline && System.nanoTime() < waitLimit) Thread.sleep(2);
         assertThat(System.nanoTime()).isGreaterThan(operationDeadline);
-        assertThat(coordinator.refresh("same-provider", provider, OidcTestSupport.NOW.plusSeconds(1), () -> "new"))
+        assertThat(coordinator.refresh("same-provider", provider, OidcTestSupport.NOW.plusSeconds(1), () -> {
+          calls.incrementAndGet(); return "new";
+        }))
             .isEqualTo("new");
         release.countDown();
         assertThatThrownBy(() -> oldFuture.get(2, TimeUnit.SECONDS))
             .hasCauseInstanceOf(java.util.concurrent.TimeoutException.class);
         // Completion of the older operation must not regress the newer successful operation state.
-        assertThat(coordinator.refresh("same-provider", provider, OidcTestSupport.NOW.plusSeconds(2), () -> "healthy"))
+        assertThat(coordinator.refresh("same-provider", provider, OidcTestSupport.NOW.plusSeconds(2), () -> {
+          calls.incrementAndGet(); return "healthy";
+        }))
             .isEqualTo("healthy");
-      } finally { release.countDown(); }
+        assertThat(calls).hasValue(3);
+      } finally {
+        publicationAllowed.countDown();
+        release.countDown();
+        workers.shutdownNow();
+        assertThat(workers.awaitTermination(3, TimeUnit.SECONDS)).isTrue();
+      }
     } finally {
       release.countDown(); callers.shutdownNow(); assertThat(callers.awaitTermination(3, TimeUnit.SECONDS)).isTrue();
     }
+  }
+
+  private static Object awaitPublishedOperation(Map<?, ?> operations, CountDownLatch publicationAllowed)
+      throws InterruptedException {
+    Object operation = operations.get("same-provider");
+    publicationAllowed.countDown();
+    long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+    while (operation == null && System.nanoTime() < deadline) {
+      Thread.sleep(1);
+      operation = operations.get("same-provider");
+    }
+    assertThat(operation).as("refresh must be published before inspecting or interrupting it").isNotNull();
+    return operation;
   }
 }

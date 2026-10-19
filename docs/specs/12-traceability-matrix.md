@@ -5,6 +5,29 @@
 
 Status values: **Implemented**, **Partial**, **Target**, or **Proposed**.
 
+## JWKS regression publication ordering
+
+SEC-002/003/015/017, REL-001/009 and OPS-001/005 retain their existing status.
+`CachingOidcJwkResolverTest` now waits for actual in-flight publication before
+inspecting an interrupted operation, with a second deterministic
+worker-before-publication case. The original 400 ms operation deadline,
+late-result refusal and obsolete-cooldown guard remain unchanged. Bounded
+cleanup, exact supplier counts and interrupt-status checks strengthen test
+evidence; they add no runtime authorization behavior. See
+[ADR 0049](../architecture/0049-bounded-jwks-refresh-isolation.md) and its
+[fixture explanation](../runbooks/jwks-refresh-isolation.md#concurrency-regression-fixture-ordering).
+
+## Public introduction visuals
+
+FR-005/007/008/009, SEC-005/006/014, REL-002/005 and OPS-002/004 are explained,
+not newly implemented, by the [public introduction](../../site/guide/what-is-tracepermit.md).
+Its request-flow and core-pillars SVGs distinguish block, sanitize, pending
+approval, explicit resume, permit verification/claim and simulator dispatch.
+Equivalent semantic HTML lists preserve readable mobile and assistive access.
+`scripts/intro-visuals.test.mjs` checks the static assets, text/branch boundaries,
+profile limits and responsive wiring; rendered browser QA is separate evidence.
+No runtime, trust boundary, assurance level or requirement status changes.
+
 ## Bounded process-local replay and consumption
 
 Requirements: SEC-002/003/004/006/009/014; REL-001/004/009; OPS-004.
