@@ -74,6 +74,12 @@ evidence; they add no runtime authorization behavior. See
 [ADR 0049](../architecture/0049-bounded-jwks-refresh-isolation.md) and its
 [fixture explanation](../runbooks/jwks-refresh-isolation.md#concurrency-regression-fixture-ordering).
 
+The late-older-failure regressions also assert the retained newer-success
+cooldown state directly, without assuming future completion makes a zero-queue
+worker available for another submission. Deadlines, publication scheduling,
+interruption and cleanup assertions are not relaxed; capacity/isolation tests
+remain separate. This changes test evidence, not runtime behavior or status.
+
 ## Public introduction visuals
 
 FR-005/007/008/009, SEC-005/006/014, REL-002/005 and OPS-002/004 are explained,
