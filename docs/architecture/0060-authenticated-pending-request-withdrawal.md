@@ -1,6 +1,8 @@
 # ADR 0060 — Authenticated pending-only requester withdrawal
 
-**Status: Implemented Java simulator API; requester UI and installed withdrawal qualification remain separate.**
+**Status: Implemented Java simulator API.** Subsequent
+[ADR 0061](0061-requester-withdrawal-inbox.md) adds local requester UI; source-free
+installed withdrawal qualification remains separate.
 
 Requirements: FR-003/007/009/010; SEC-001/002/003/005/006/009/012;
 REL-001/002/004/005; DATA-001; OPS-002/004.

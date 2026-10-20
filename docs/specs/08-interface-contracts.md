@@ -27,8 +27,12 @@ Exactly `requestHash` is accepted; current requester enrollment, explicit verifi
 `approvals.cancel`, owner and tenant checks are required. Auth/session deadlines
 and pending/request/hash checks are repeated under the PostgreSQL request lock.
 Success commits cancelled/not_executed plus version3 requester-provenance lifecycle
-evidence/outbox, never reviewer/permit/attempt metadata. No MCP tool or requester
-button exists. Normal startup still validates V1–V10 without migration.
+evidence/outbox, never reviewer/permit/attempt metadata. The optional React
+inbox now offers owner-only **Withdraw request** followed by **Confirm withdrawal**
+([ADR 0061](../architecture/0061-requester-withdrawal-inbox.md)); **Back** only
+dismisses the confirmation. No MCP cancellation tool exists. Normal startup
+still validates V1–V10 without migration. Installed withdrawal qualification is
+separate from the built-source browser flow.
 
 A separately composed `SimulatorApprovalServer` exposes pending/read/review/
 execute routes under `/api/v1/approvals`. It binds only to IPv4 loopback,

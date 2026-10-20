@@ -1,11 +1,12 @@
 # Pending approval cancellation — proposed product contract
 
-**Status: Java API implemented; requester UI and installed withdrawal qualification remain.**
+**Status: Java API and local requester UI implemented; installed withdrawal qualification remains.**
 [ADR 0059](../architecture/0059-explicit-v9-v10-simulator-upgrade.md) implements
 V10 storage/consumer compatibility and explicit V9→V10 upgrade only.
 [ADR 0060](../architecture/0060-authenticated-pending-request-withdrawal.md) adds
 the cancellation service and authenticated bearer/browser route with explicit
-scope. No MCP tool or requester button is added. This document retains the full
+scope. [ADR 0061](../architecture/0061-requester-withdrawal-inbox.md) adds the
+local requester button and explicit confirmation. No MCP tool is added. This document retains the full
 product contract; use the [withdrawal runbook](../runbooks/pending-approval-withdrawal.md)
 for the current API boundary and the distribution runbook for upgrade.
 
@@ -22,8 +23,9 @@ authority, impersonate an independent reviewer or promise to stop an effect.
 The current [approval API](../runbooks/authenticated-approval-api-foundation.md)
 supports request, read, review and explicit execution. Its stored statuses are
 `pending`, `approved`, `denied`, `expired`, `consumed` and storage-compatible
-`cancelled`; the cancellation route is now implemented. The browser's **Cancel** button dismisses a confirmation dialog; it does
-not change durable authority. Local expiry guidance is not a server transition.
+`cancelled`; the cancellation route and explicit requester confirmation are
+implemented. The browser's **Back** button only dismisses a confirmation dialog;
+it does not change durable authority. Local expiry guidance is not a server transition.
 
 The current operator profile validates V1–V10 on startup. Its `--init-db` remains
 empty-only. ADR0059 supplies the separate stopped-service V9→V10 upgrade gate
@@ -214,8 +216,9 @@ a disconnected recovery exercise, not a documented safe effectful resume.
 ## 7. Implementation order and acceptance gate
 
 The storage/upgrade prerequisite in step2 is implemented under ADR0059.
-ADR0060 implements steps3–4. The requester UI and installed qualification in
-steps5–6 remain **required future tests**, not completed acceptance evidence:
+ADR0060 implements steps3–4. ADR0061 implements step5 with local built-source
+mounted tests. Step6 remains a **required future installed acceptance gate**, not
+closed by the source-tree UI tests:
 
 1. Review this contract and its API/errors/schema/upgrade boundaries.
 2. Implement explicit V9→V10 operator upgrade, preserving old migration bytes,

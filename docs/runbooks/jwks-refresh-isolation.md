@@ -60,7 +60,14 @@ The OIDC key resolution path separates cache lookups from network I/O, isolates 
 ## Concurrency regression fixture ordering
 
 `CachingOidcJwkResolverTest` exercises an interrupted older refresh completing
-after a newer success. Its worker-entry latch is not a publication barrier:
+after a newer success. The regression compares the retained newer-success state
+before and after the older timeout completes, including its cleared cooldown.
+A completed future is not a worker-return barrier: an immediate third submission
+to the zero-queue pool may legitimately be refused while callbacks finish, so
+that unrelated admission is not used as the cooldown oracle. Existing capacity
+and healthy-provider isolation tests remain separate. No timeout is widened and
+the before-publication schedule and bounded cleanup remain required.
+Its worker-entry latch is not a publication barrier:
 `ThreadPoolExecutor.submit` may start the supplier while the enclosing
 `ConcurrentHashMap.compute` has not yet published the in-flight operation.
 Reading the map immediately can therefore return null without a runtime
@@ -71,7 +78,7 @@ bound before inspecting and interrupting that operation. A second case gates
 `submit` after worker entry but before publication, proving the old one-shot
 map read fails under a legal ordering. Both cases retain the 400 ms operation
 deadline, interrupted-caller refusal, late-result timeout, newer-success and
-post-late-completion healthy refresh assertions. Counts and interrupt status
+post-late-completion success/cooldown preservation assertions. Counts and interrupt status
 are checked; worker/caller cleanup uses finite termination waits.
 
 This is test scheduling hardening, not a runtime timing relaxation, new IdP
