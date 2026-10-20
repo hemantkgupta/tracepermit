@@ -223,8 +223,13 @@ See [ADR 0045](../architecture/0045-explicit-database-initialization.md).
 `upgradeFromV9` is a separate owner-only, cooperating-session-locked path:
 validate exact predecessor9, transactionally apply V10, strictly validate10,
 then report success. It is never invoked by runtime open. SQL cancellation
-provenance/terminal guards prepare storage only; no authenticated cancellation
-service exists yet. See [ADR 0059](../architecture/0059-explicit-v9-v10-simulator-upgrade.md).
+provenance/terminal guards support `DurableApprovalCancellationState`; the
+`HumanApprovalService.cancel` path accepts a distinct `TrustedRequesterContext`
+and never calls policy, signer, claim or target. PostgreSQL rechecks deadlines
+after recovery/request locks and atomically appends transition/evidence/outbox.
+Bearer/browser routes share this service; no MCP tool or React mutation is added.
+See [ADR 0059](../architecture/0059-explicit-v9-v10-simulator-upgrade.md) and
+[ADR 0060](../architecture/0060-authenticated-pending-request-withdrawal.md).
 The runtime validates before binding the
 loopback approval service with a fixed default-block/explicit-approval policy.
 Offline check mode performs no DB, DNS, IdP or listener operation. See

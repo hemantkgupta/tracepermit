@@ -89,7 +89,7 @@ final class ApprovalBrowserAdapter {
         cookie(request, FLOW_COOKIE, binder, 120);
         redirect(request, authorizationUri + "?" + form(Map.of(
             "response_type", "code", "client_id", clientId, "redirect_uri", callback(port),
-            "scope", "openid approvals.read approvals.request approvals.decide approvals.execute",
+            "scope", "openid approvals.read approvals.request approvals.decide approvals.execute approvals.cancel",
             "audience", audience, "state", flow.state(), "nonce", flow.nonce(),
             "code_challenge", challenge(flow.verifier()), "code_challenge_method", "S256")));
       }
@@ -144,6 +144,11 @@ final class ApprovalBrowserAdapter {
     Session session = session(request);
     if (!"GET".equals(request.getRequestMethod())) csrf(request, session, port);
     return verified(session);
+  }
+
+  /** Bound cancellation authority to the browser session too, not just its access token. */
+  Instant authorityExpiresAt(HttpExchange request) {
+    return session(request).expires;
   }
 
   private void callback(HttpExchange request, int port) throws IOException {

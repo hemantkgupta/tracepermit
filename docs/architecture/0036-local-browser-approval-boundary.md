@@ -92,8 +92,13 @@ is only guidance. Review and execution are separate explicit confirmations.
 No mutation is automatically retried. Approval expiry, stale policy, changed
 hash, reviewer removal and consumed claims remain enforced by the existing API.
 
+[ADR 0061](0061-requester-withdrawal-inbox.md) adds explicit owner-only pending
+withdrawal over ADR0060's Java cancellation route. It requires requester
+membership and the separate cancel scope, not reviewer authority. **Back** only
+dismisses confirmation; **Confirm withdrawal** sends the exact-hash POST.
+
 The inbox samples one shared local clock while loaded pending/approved requests
-are still live, and on focus/visible-tab events. Expiry removes review/execute
+are still live, and on focus/visible-tab events. Expiry removes review/withdraw/execute
 controls and invalidates the displayed confirmation without a network refresh or
 mutation. A last-moment click rechecks current selection, ID/hash, role/scope,
 session lifetime, status and approval expiry before POST. Observed local time is
@@ -115,7 +120,7 @@ Stored status is never rewritten merely because the browser labels it expired.
   operator JSON and is not evidence of real-provider compatibility.
 - The existing unauthenticated read console stays separate; this does not
   authenticate every existing demo endpoint or compose hosted MCP approvals.
-- No administrator provisioning UI, approval cancellation, managed key custody,
+- No administrator provisioning UI, approved-authority revocation, managed key custody,
   real target adapter, enterprise SLO or independent security audit is claimed.
 
 ## Sources

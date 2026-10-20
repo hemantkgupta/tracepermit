@@ -1,6 +1,12 @@
 # ADR 0059 — Explicit V9-to-V10 simulator database upgrade
 
-**Status: Implemented storage/upgrade foundation; authenticated withdrawal remains proposed.**
+**Status: Implemented storage/upgrade foundation.**
+
+Subsequent [ADR 0060](0060-authenticated-pending-request-withdrawal.md) implements
+authenticated Java pending withdrawal. This ADR retains its original upgrade-only
+scope; it is not the evidence for that later service/API or a requester button.
+[ADR 0061](0061-requester-withdrawal-inbox.md) covers the subsequent local inbox
+withdrawal; source-free installed withdrawal qualification remains separate.
 
 Requirements: FR-007/008/009/010; SEC-003/005/006/009/012;
 REL-001/002/004/005; DATA-001; OPS-002/004; PORT-001/003.

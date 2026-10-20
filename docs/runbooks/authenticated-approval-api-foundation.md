@@ -1,5 +1,12 @@
 # Authenticated approval API foundation
 
+Pending-only owner withdrawal is documented in the
+[withdrawal runbook](pending-approval-withdrawal.md): explicit `approvals.cancel`,
+current requester membership, exact stored hash and live authority/request
+deadlines are required. The Java bearer/browser API exists; the requester button
+and installed withdrawal qualification remain separate. See
+[ADR 0060](../architecture/0060-authenticated-pending-request-withdrawal.md).
+
 This is a local simulator-only Java API composition, not a production product
 profile. It is intentionally separate from `pnpm demo`, the hosted OAuth
 demo and the read-only React console. No personal login or cloud credential is
@@ -82,12 +89,12 @@ operator-approved IdP configuration. Membership `subject` is the exact verified
 `sub`, not email/display name; `human` and roles are independent enrollment facts.
 Roles are `REQUESTER`, `REVIEWER`, `VIEWER`; non-human reviewers and a setup lacking
 a distinct requester/reviewer are rejected. The API requires access-token scope
-`approvals.request`, `approvals.read`, `approvals.decide` or `approvals.execute`
+`approvals.request`, `approvals.read`, `approvals.decide`, `approvals.execute` or `approvals.cancel`
 for the corresponding route, not token-provided role claims. The existing
 verifier requires RS256, `typ: at+jwt`, `kid`, issuer, audience, client, configured
 tenant claim, scopes and `iat`/`exp` within its 15-minute lifetime bound. ID tokens,
 opaque access tokens and sender-constrained tokens are not accepted here.
-Only the four `approvals.*` scopes listed above are allowlisted by default;
+Only the five `approvals.*` scopes listed above are allowlisted by default;
 the optional browser profile additionally allows `openid`. Other IdP-added
 scope names are not silently accepted. Optional browser sign-in requires the
 separate configuration and qualification described in the

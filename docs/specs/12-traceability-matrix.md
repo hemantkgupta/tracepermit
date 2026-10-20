@@ -74,6 +74,12 @@ evidence; they add no runtime authorization behavior. See
 [ADR 0049](../architecture/0049-bounded-jwks-refresh-isolation.md) and its
 [fixture explanation](../runbooks/jwks-refresh-isolation.md#concurrency-regression-fixture-ordering).
 
+The late-older-failure regressions also assert the retained newer-success
+cooldown state directly, without assuming future completion makes a zero-queue
+worker available for another submission. Deadlines, publication scheduling,
+interruption and cleanup assertions are not relaxed; capacity/isolation tests
+remain separate. This changes test evidence, not runtime behavior or status.
+
 ## Public introduction visuals
 
 FR-005/007/008/009, SEC-005/006/014, REL-002/005 and OPS-002/004 are explained,
@@ -651,9 +657,38 @@ FR-003/007/008/009/010; SEC-001/002/003/005/006/009/012;
 REL-001/002/004/005; DATA-001; OPS-002/004; PORT-001/003 are mapped to the
 [proposed contract](../design/pending-approval-cancellation.md) and
 [ADR 0058](../architecture/0058-pending-approval-cancellation-contract.md).
-**Cancellation remains design only:** owner withdrawal, exact hash/authority,
-atomic lifecycle evidence/outbox and authenticated route/UI races remain future
-acceptance gates. No cancellation service, route, scope, MCP tool or button exists.
+The design itself is not implementation evidence. The Java withdrawal slice is
+recorded below; local requester UI is covered by ADR0061, while source-free
+installed withdrawal qualification remains a future acceptance gate. No
+cancellation MCP tool exists.
+
+### Authenticated pending-only Java withdrawal
+
+[ADR 0060](../architecture/0060-authenticated-pending-request-withdrawal.md)
+and the [withdrawal runbook](../runbooks/pending-approval-withdrawal.md) define the bounded slice.
+
+| Requirements                                   | Enforcement point                                                                                                                                                         | Regression evidence                                                                                                                                                                                    |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| FR-003/007/009; SEC-001/002/005/006/012        | Shared bearer/browser cancel route, current enrollment plus explicit scope, owner visibility, distinct trusted requester context and post-lock deadline/hash/state checks | `PendingApprovalCancellationTest`; `SimulatorApprovalServerTest` cancellation cases; `SimulatorApprovalBrowserTest` owner/CSRF/shorter-session-deadline cases                                          |
+| FR-010; REL-001/002/004; DATA-001; SEC-003/009 | `PostgresDurableEnforcementState.cancel`, recovery→request→evidence locks, V10 append-only transition and version3 bounded evidence/outbox transaction                    | `PostgresApprovalCancellationTest`: both review schedules, duplicate cancellation, expiry during lock wait, evidence/outbox rollback, quarantine, restart, uncertain commit and zero claim/permit rows |
+
+These are local Java/synthetic-authentication simulator boundaries, not external
+IdP, installed withdrawal or production-target qualification.
+
+### Explicit withdrawal in the local requester inbox
+
+[ADR 0061](../architecture/0061-requester-withdrawal-inbox.md) and
+`approval-withdrawal.test.ts` / `approval-history-browser.test.mjs` add bounded
+client evidence for FR-003/007/009/010; SEC-004/005/006/009/012; REL-002/004/005.
+Owner/requester/explicit-scope/pending/expiry guidance, exact ID/hash and authority
+confirmation binding, cookie/CSRF exact-hash POST, Back without mutation, duplicate
+click suppression and cancelled history are covered. Mounted real-Java/DB tests
+exercise review-first conflict and a committed cancellation whose client-facing
+acknowledgement is replaced with503. The UI clears stale authority, claims no
+success and does not automatically retry. Controlled client scope/session/time
+projections are UX controls, not live-provider or server-time qualification.
+Backend authorization/atomicity remains ADR0060's boundary; installed withdrawal,
+fresh-host and external-IdP gates remain open.
 
 ### Implemented storage/upgrade prerequisite
 

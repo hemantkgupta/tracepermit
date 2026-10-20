@@ -29,9 +29,12 @@
 
 V10 storage additionally recognizes terminal `cancelled` and separate requester
 cancellation provenance on pending→cancelled transitions, never reviewer fields.
-This is the storage/consumer prerequisite of
-[ADR 0059](../architecture/0059-explicit-v9-v10-simulator-upgrade.md), not an
-exposed authenticated withdrawal API or lifecycle evidence service.
+The storage prerequisite is
+[ADR 0059](../architecture/0059-explicit-v9-v10-simulator-upgrade.md).
+[ADR 0060](../architecture/0060-authenticated-pending-request-withdrawal.md)
+adds authenticated pending-only withdrawal with version3 bounded requester
+lifecycle evidence and atomic outbox. It is not reviewer denial, approved-authority
+revocation or interruption of a target operation. The React mutation is separate.
 
 ## 2. Aggregate boundaries
 

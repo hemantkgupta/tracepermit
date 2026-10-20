@@ -1,11 +1,14 @@
 # Pending approval cancellation — proposed product contract
 
-**Status: Proposed cancellation feature; storage/upgrade prerequisite implemented.**
+**Status: Java API and local requester UI implemented; installed withdrawal qualification remains.**
 [ADR 0059](../architecture/0059-explicit-v9-v10-simulator-upgrade.md) implements
-V10 storage/consumer compatibility and explicit V9→V10 upgrade only. There is
-still no cancellation service, route, granted scope, MCP tool or button. This
-document retains the full future contract; proposed API examples are not runnable
-instructions. Use the distribution runbook for the implemented upgrade command.
+V10 storage/consumer compatibility and explicit V9→V10 upgrade only.
+[ADR 0060](../architecture/0060-authenticated-pending-request-withdrawal.md) adds
+the cancellation service and authenticated bearer/browser route with explicit
+scope. [ADR 0061](../architecture/0061-requester-withdrawal-inbox.md) adds the
+local requester button and explicit confirmation. No MCP tool is added. This document retains the full
+product contract; use the [withdrawal runbook](../runbooks/pending-approval-withdrawal.md)
+for the current API boundary and the distribution runbook for upgrade.
 
 Requirements: FR-003/007/008/009/010; SEC-001/002/003/005/006/009/012;
 REL-001/002/004/005; DATA-001; OPS-002/004; PORT-001/003.
@@ -20,9 +23,9 @@ authority, impersonate an independent reviewer or promise to stop an effect.
 The current [approval API](../runbooks/authenticated-approval-api-foundation.md)
 supports request, read, review and explicit execution. Its stored statuses are
 `pending`, `approved`, `denied`, `expired`, `consumed` and storage-compatible
-`cancelled`; it has no cancellation
-route. The browser's **Cancel** button dismisses a confirmation dialog; it does
-not change durable authority. Local expiry guidance is not a server transition.
+`cancelled`; the cancellation route and explicit requester confirmation are
+implemented. The browser's **Back** button only dismisses a confirmation dialog;
+it does not change durable authority. Local expiry guidance is not a server transition.
 
 The current operator profile validates V1–V10 on startup. Its `--init-db` remains
 empty-only. ADR0059 supplies the separate stopped-service V9→V10 upgrade gate
@@ -49,12 +52,12 @@ operation, reconcile an unknown outcome or undo an effect. Those require a
 separate revocation/dispatch design. Cancellation does not block the same owner
 from explicitly proposing a genuinely new action under ordinary policy.
 
-## 3. Proposed authenticated HTTP contract
+## 3. Authenticated HTTP contract
 
-Proposed bearer route: `POST /api/v1/approvals/{approvalRequestId}/cancel`.
-The optional browser session adapter would expose the same operation under
+Bearer route: `POST /api/v1/approvals/{approvalRequestId}/cancel`.
+The optional browser session adapter exposes the same operation under
 `/browser/api/v1/approvals/{approvalRequestId}/cancel`, through the shared Java
-service and existing origin/session/CSRF protections. Neither route exists yet.
+service and existing origin/session/CSRF protections. The UI control remains separate.
 
 The body contains exactly one field:
 
@@ -213,8 +216,9 @@ a disconnected recovery exercise, not a documented safe effectful resume.
 ## 7. Implementation order and acceptance gate
 
 The storage/upgrade prerequisite in step2 is implemented under ADR0059.
-The cancellation feature's remaining steps are **required future tests**, not
-executed cancellation evidence:
+ADR0060 implements steps3–4. ADR0061 implements step5 with local built-source
+mounted tests. Step6 remains a **required future installed acceptance gate**, not
+closed by the source-tree UI tests:
 
 1. Review this contract and its API/errors/schema/upgrade boundaries.
 2. Implement explicit V9→V10 operator upgrade, preserving old migration bytes,

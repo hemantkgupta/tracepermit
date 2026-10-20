@@ -42,7 +42,8 @@ final class SimulatorApprovalConfiguration {
       .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
   private static final Set<ConnectorScope> SCOPES = Set.of(
       ConnectorScope.of("approvals.read"), ConnectorScope.of("approvals.request"),
-      ConnectorScope.of("approvals.decide"), ConnectorScope.of("approvals.execute"));
+      ConnectorScope.of("approvals.decide"), ConnectorScope.of("approvals.execute"),
+      ConnectorScope.of("approvals.cancel"));
   private final int port;
   private final OidcProviderConfiguration provider;
   private final ApprovalMemberships memberships;

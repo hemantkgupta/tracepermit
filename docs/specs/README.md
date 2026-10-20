@@ -29,5 +29,8 @@ Proposed product work is separate from the current implementation index. The
 [pending-request cancellation contract](../design/pending-approval-cancellation.md)
 and [ADR 0058](../architecture/0058-pending-approval-cancellation-contract.md)
 define the proposed withdrawal feature. [ADR 0059](../architecture/0059-explicit-v9-v10-simulator-upgrade.md)
-implements only its storage/consumer compatibility and explicit local upgrade
-prerequisite, not the cancellation API or UI.
+implements its storage/consumer compatibility and explicit local upgrade
+prerequisite. [ADR 0060](../architecture/0060-authenticated-pending-request-withdrawal.md)
+adds the Java pending-only withdrawal API; [ADR 0061](../architecture/0061-requester-withdrawal-inbox.md)
+adds explicit owner withdrawal in the local React inbox. Source-free installed
+withdrawal qualification remains separate.

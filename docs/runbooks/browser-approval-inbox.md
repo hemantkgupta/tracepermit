@@ -32,7 +32,12 @@ operator runtime cannot select this issuer or account picker from JSON.
    does not become available again. The server atomically claims single use.
 5. Optional: sign in as `dave` (requester + reviewer), request a new change.
    Self-review is unavailable and is rejected by the API even if called directly.
-6. Press Enter in the launcher terminal to stop and discard its database and
+6. For a separate fresh pending request, Alice can select **Withdraw request**,
+   inspect ID/hash, and choose **Back** without a mutation or **Confirm withdrawal**
+   for terminal `cancelled` / `not_executed`. This requires `approvals.cancel`;
+   reviewer/viewer access alone is insufficient. It cannot stop approved work.
+   Use the [withdrawal walkthrough](pending-approval-withdrawal.md) for details.
+7. Press Enter in the launcher terminal to stop and discard its database and
    synthetic keys. Do not use qualification data as retained audit evidence.
 
 Signing in a second tab replaces the host cookie for all tabs on that origin.
@@ -40,7 +45,7 @@ Use sequential sign-out/sign-in or separate browser profiles for concurrent role
 Pending approvals expire after five minutes; do not approve an old recording run.
 
 The inbox updates loaded pending/approved expiry labels without pressing Refresh.
-When a lifetime elapses, review/execute controls and an open confirmation become
+When a lifetime elapses, review/withdraw/execute controls and an open confirmation become
 unavailable. Stored `pending` or `approved` status remains visible with an expired
 label, not silently replaced by a new durable status. A click between UI clock
 ticks also rechecks eligibility before POST. No expiry timer sends a decision,
@@ -77,7 +82,7 @@ dedicated IdP client. The provider must support authorization code, S256 PKCE,
 client_secret_basic and `iss` authorization response (RFC 9207). Configure its
 API audience, `client_id`, tenant claim and enrolled `sub` values to match the
 existing strict access-token verifier. Access tokens must be signed RS256
-`at+jwt`, no more than 15 minutes; only the four approval scopes plus `openid`
+`at+jwt`, no more than 15 minutes; only the five approval scopes plus `openid`
 are supported when browser mode is enabled. ID tokens require signed RS256,
 one client audience, matching subject and nonce, and no more than 15 minutes.
 No email/profile/Gmail scope or refresh token is requested. A provider account
