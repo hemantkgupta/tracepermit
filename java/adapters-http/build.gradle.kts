@@ -60,8 +60,8 @@ val expectedHeadCommitProperty = providers.systemProperty("tracepermit.endpointC
 
 tasks.test {
   systemProperty("tracepermit.approvalRuntimeClasspath", sourceSets["main"].runtimeClasspath.asPath)
-  systemProperty("tracepermit.endpointConnector.requireInstalledArchive", requireInstalledArchiveProperty)
-  systemProperty("tracepermit.endpointConnector.expectedHeadCommit", expectedHeadCommitProperty)
+  systemProperty("tracepermit.endpointConnector.requireInstalledArchive", requireInstalledArchiveProperty.get())
+  systemProperty("tracepermit.endpointConnector.expectedHeadCommit", expectedHeadCommitProperty.get())
 
   inputs.files(endpointDistributionArchive)
     .withPropertyName("endpointConnectorArchive")
