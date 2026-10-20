@@ -32,9 +32,9 @@ Provenance was verified against the official repository with the GitHub API:
 
 ## 2. Action Runtime and Runner Compatibility
 
-The action's own JavaScript runtime and the project's Node.js runtime are distinct:
+The Node.js runtime that executes the action and the project's Node.js runtime are distinct:
 
-- **Action runtime (release code):** `action.yml` at both pinned SHAs declares `runs.using: node24`. The action bundles its own Node 24 runtime for `dist/setup/index.js` and the `dist/cache-save/index.js` post step; this runtime is independent of what the workflow installs for builds.
+- **Action runtime (release code):** `action.yml` at both pinned SHAs declares `runs.using: node24`, which tells the runner to execute the action's JavaScript (`dist/setup/index.js`, plus the `dist/cache-save/index.js` post step) with the Node 24 runtime the runner supplies; the action does not bundle a runtime. This execution runtime is independent of what the workflow installs for builds.
 - **Project runtime (workflow input):** the `node-version: 22` input installs Node.js 22 for the console/Java/tooling steps. The project's pnpm 11.25.0 comes from the `packageManager` field via `corepack enable`, followed by `pnpm install --frozen-lockfile`. Neither is touched by this PR.
 - **Runner minimum:** the node24 runtime was introduced in v5.0.0, whose release notes require [actions/runner v2.327.1 or later](https://github.com/actions/runner/releases/tag/v2.327.1). v7.1.0 keeps `node24`, so this bump does **not** raise the runner minimum. Both jobs run on GitHub-hosted `ubuntu-latest` images, which receive current runner versions, and CI already ran the v5.0.0 (node24) action on these runners.
 
