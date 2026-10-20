@@ -462,7 +462,7 @@ test(
       }
       async function assertNoMutation(page) {
         const buttons = page.getByRole("button", {
-          name: /^(Request approval|Approve exact action|Deny|Execute approved simulation|Confirm (approve|deny|execute))$/,
+          name: /^(Request approval|Approve exact action|Deny|Execute approved simulation|Withdraw request|Confirm (approve|deny|execute|withdrawal))$/,
         });
         for (const button of await buttons.all())
           assert.equal(await button.isEnabled(), false);
@@ -1024,6 +1024,316 @@ test(
           await page.context().close();
         },
       );
+      const confirmName = (decision) =>
+        decision === "withdraw" ? "Confirm withdrawal" : `Confirm ${decision}`;
+      const withdrawalNotice =
+        "Pending request withdrawn. Refresh shows durable server state.";
+      const confirmationRegion = (page) =>
+        page.getByRole("region", { name: "Confirm exact action", exact: true });
+      const withdrawalButton = (page) =>
+        page.getByRole("button", { name: "Withdraw request", exact: true });
+      async function storedState(page, id) {
+        return page.evaluate(async (path) => {
+          const response = await fetch(path);
+          if (!response.ok) return null;
+          const item = await response.json();
+          return { status: item.status, executionStatus: item.executionStatus };
+        }, `${approvalsPath}/${id}`);
+      }
+      async function pendingWithdrawal() {
+        const page = await pageFor("alice");
+        const [item] = await seed(page, 1, 5643);
+        await filterId(page, item.id);
+        await withdrawalButton(page).click();
+        await confirmationRegion(page).waitFor();
+        return { page, item };
+      }
+      function watchWithdrawal(page) {
+        const requests = [];
+        page.on("request", (request) => {
+          if (
+            request.method() === "POST" &&
+            new URL(request.url()).pathname.endsWith("/cancel")
+          )
+            requests.push(request);
+        });
+        return requests;
+      }
+
+      await step(
+        "owner withdrawal is an explicit exact-hash action; Back is non-mutating; duplicate clicks send one POST",
+        async () => {
+          const { page, item } = await pendingWithdrawal();
+          const requests = watchWithdrawal(page);
+          const confirm = confirmationRegion(page);
+          assert.deepEqual(await confirm.locator("code").allTextContents(), [
+            item.id,
+            item.hash,
+          ]);
+          assert.match(await confirm.innerText(), /not an emergency stop/);
+          await confirm
+            .getByRole("button", { name: "Back", exact: true })
+            .click();
+          assert.equal(await confirm.count(), 0);
+          assert.equal(requests.length, 0);
+          assert.deepEqual(await storedState(page, item.id), {
+            status: "pending",
+            executionStatus: "not_executed",
+          });
+          await withdrawalButton(page).click();
+          await confirm.scrollIntoViewIfNeeded();
+          await screenshot(page, "withdrawal-confirm-desktop");
+          await page.setViewportSize({ width: 390, height: 1000 });
+          await confirm.scrollIntoViewIfNeeded();
+          assert.equal(
+            await page.evaluate(
+              () => document.documentElement.scrollWidth <= innerWidth,
+            ),
+            true,
+          );
+          await screenshot(page, "withdrawal-confirm-mobile");
+          await confirm
+            .getByRole("button", { name: "Confirm withdrawal", exact: true })
+            .evaluate((button) => {
+              button.click();
+              button.click();
+            });
+          await page.getByText(withdrawalNotice, { exact: true }).waitFor();
+          await rows(page, 1);
+          assert.equal(requests.length, 1);
+          assert.deepEqual(requests[0].postDataJSON(), {
+            requestHash: item.hash,
+          });
+          assert.equal(
+            new URL(requests[0].url()).pathname,
+            `${approvalsPath}/${item.id}/cancel`,
+          );
+          assert.deepEqual(await storedState(page, item.id), {
+            status: "cancelled",
+            executionStatus: "not_executed",
+          });
+          await page.getByText(/Withdrawn by its requester/).waitFor();
+          assert.equal(await withdrawalButton(page).count(), 0);
+          assert.equal(await confirmationRegion(page).count(), 0);
+          await page
+            .getByLabel("Status", { exact: true })
+            .selectOption("cancelled");
+          await page
+            .getByRole("button", { name: "Apply filters", exact: true })
+            .click();
+          await rows(page, 1);
+          assert.equal(
+            await page.locator(".approval-row .approval-status").innerText(),
+            "cancelled",
+          );
+          await page
+            .getByRole("region", { name: "Exact action detail", exact: true })
+            .scrollIntoViewIfNeeded();
+          await screenshot(page, "withdrawal-cancelled-mobile");
+          assert.equal(requests.length, 1);
+          await page.context().close();
+        },
+      );
+
+      await step(
+        "reviewer viewer and combined-role non-owner have no withdrawal control; legacy scope projection offers none",
+        async () => {
+          const owner = await pageFor("alice");
+          const [item] = await seed(owner, 1, 5743);
+          for (const account of ["bob", "carol", "dave"]) {
+            const page = await pageFor(account);
+            await filterId(page, item.id);
+            assert.equal(await withdrawalButton(page).count(), 0);
+            await page.context().close();
+          }
+          // Controlled client projection only; not an external-provider scope test.
+          await owner.route("**/browser/session", async (route) => {
+            const response = await route.fetch();
+            const session = await response.json();
+            session.scopes = session.scopes.filter(
+              (scope) => scope !== "approvals.cancel",
+            );
+            await route.fulfill({ response, json: session });
+          });
+          await owner.reload();
+          await filterId(owner, item.id);
+          assert.equal(await withdrawalButton(owner).count(), 0);
+          assert.deepEqual(await storedState(owner, item.id), {
+            status: "pending",
+            executionStatus: "not_executed",
+          });
+          await owner.context().close();
+        },
+      );
+
+      await step(
+        "changing selection filters or refreshing discards withdrawal confirmation without a POST",
+        async () => {
+          const page = await pageFor("alice");
+          const items = await seed(page, 2, 5843);
+          await page.reload();
+          await rows(page, 50);
+          const requests = watchWithdrawal(page);
+          const select = (item) =>
+            page
+              .locator(".approval-row")
+              .filter({ hasText: item.id.slice(0, 8) })
+              .click();
+          await select(items[0]);
+          await withdrawalButton(page).click();
+          await confirmationRegion(page).waitFor();
+          await select(items[1]);
+          assert.equal(await confirmationRegion(page).count(), 0);
+          await withdrawalButton(page).click();
+          await page
+            .getByLabel("Request ID", { exact: true })
+            .fill(items[1].id);
+          assert.equal(await confirmationRegion(page).count(), 0);
+          await withdrawalButton(page).click();
+          await page
+            .getByRole("button", { name: "Refresh", exact: true })
+            .click();
+          await rows(page, 50);
+          assert.equal(await confirmationRegion(page).count(), 0);
+          assert.equal(requests.length, 0);
+          await page.context().close();
+        },
+      );
+
+      await step(
+        "a real reviewer decision winning before withdrawal yields conflict and never claims withdrawal or executes",
+        async () => {
+          const { page, item } = await pendingWithdrawal();
+          const reviewer = await pageFor("bob");
+          await filterId(reviewer, item.id);
+          await reviewer
+            .getByRole("button", { name: "Approve exact action", exact: true })
+            .click();
+          await reviewer
+            .getByRole("button", { name: "Confirm approve", exact: true })
+            .click();
+          await reviewer
+            .getByText(
+              "Review decision recorded. Refresh shows durable server state.",
+              { exact: true },
+            )
+            .waitFor();
+          const requests = watchWithdrawal(page);
+          await page
+            .getByRole("button", { name: "Confirm withdrawal", exact: true })
+            .click();
+          await page.getByRole("alert").waitFor();
+          assert.equal(
+            await page.getByText(withdrawalNotice, { exact: true }).count(),
+            0,
+          );
+          assert.equal(requests.length, 1);
+          assert.deepEqual(await storedState(reviewer, item.id), {
+            status: "approved",
+            executionStatus: "not_executed",
+          });
+          await assertNoMutation(page);
+          await page.context().close();
+          await reviewer.context().close();
+        },
+      );
+
+      for (const status of [401, 403]) {
+        await step(
+          `withdrawal transport HTTP ${status} clears stale authority without retry or raw diagnostics`,
+          async () => {
+            const { page, item } = await pendingWithdrawal();
+            const requests = watchWithdrawal(page);
+            await page.route(
+              `${fixture.origin}${approvalsPath}/${item.id}/cancel`,
+              (route) => route.fulfill({ status, body: CANARY }),
+            );
+            await page
+              .getByRole("button", { name: "Confirm withdrawal", exact: true })
+              .click();
+            await page.getByRole("alert").waitFor();
+            await assertNoMutation(page);
+            assert.equal(requests.length, 1);
+            assert.equal(
+              await page.getByText(withdrawalNotice, { exact: true }).count(),
+              0,
+            );
+            assert.deepEqual(await storedState(page, item.id), {
+              status: "pending",
+              executionStatus: "not_executed",
+            });
+            await page.context().close();
+          },
+        );
+      }
+
+      await step(
+        "a committed withdrawal with a lost-success transport response stays uncertain and is not automatically repeated",
+        async () => {
+          const { page, item } = await pendingWithdrawal();
+          const requests = watchWithdrawal(page);
+          await page.route(
+            `${fixture.origin}${approvalsPath}/${item.id}/cancel`,
+            async (route) => {
+              const response = await route.fetch();
+              assert.equal(response.status(), 200);
+              // Real Java transaction commits; only the client-facing acknowledgement is replaced.
+              await route.fulfill({ status: 503, body: CANARY });
+            },
+          );
+          await page
+            .getByRole("button", { name: "Confirm withdrawal", exact: true })
+            .click();
+          await page.getByRole("alert").waitFor();
+          await assertNoMutation(page);
+          assert.equal(
+            await page.getByText(withdrawalNotice, { exact: true }).count(),
+            0,
+          );
+          assert.equal(requests.length, 1);
+          assert.deepEqual(await storedState(page, item.id), {
+            status: "cancelled",
+            executionStatus: "not_executed",
+          });
+          assert.equal(requests.length, 1);
+          await page.context().close();
+        },
+      );
+
+      await step(
+        "session expiry during an open withdrawal clears confirmation and sends no cancellation",
+        async () => {
+          const page = await pageFor("alice", true);
+          const [item] = await seed(page, 1, 5943);
+          // Shorten only the client projection. Java credentials remain unchanged.
+          await page.route("**/browser/session", async (route) => {
+            const response = await route.fetch();
+            const session = await response.json();
+            session.expiresAt = await page.evaluate(() =>
+              new Date(Date.now() + 10_000).toISOString(),
+            );
+            await route.fulfill({ response, json: session });
+          });
+          await page.reload();
+          await filterId(page, item.id);
+          await withdrawalButton(page).click();
+          await confirmationRegion(page).waitFor();
+          const requests = watchWithdrawal(page);
+          await page.clock.fastForward(11_000);
+          await page
+            .getByRole("heading", { name: signInHeading, exact: true })
+            .waitFor();
+          await assertNoMutation(page);
+          assert.equal(await confirmationRegion(page).count(), 0);
+          assert.equal(requests.length, 0);
+          assert.deepEqual(await storedState(page, item.id), {
+            status: "pending",
+            executionStatus: "not_executed",
+          });
+          await page.context().close();
+        },
+      );
+
       async function expiryConfirmation(decision) {
         const requester = await pageFor("alice", true);
         const [item] = await seed(requester, 1, 5543);
@@ -1043,17 +1353,21 @@ test(
             )
             .waitFor();
         }
-        const page = decision === "execute" ? requester : reviewer;
+        const page = ["execute", "withdraw"].includes(decision)
+          ? requester
+          : reviewer;
         // The clock was installed before navigation and any application timers.
         await filterId(page, item.id);
         await page
           .getByRole("button", {
             name:
-              decision === "execute"
-                ? "Execute approved simulation"
-                : decision === "deny"
-                  ? "Deny"
-                  : "Approve exact action",
+              decision === "withdraw"
+                ? "Withdraw request"
+                : decision === "execute"
+                  ? "Execute approved simulation"
+                  : decision === "deny"
+                    ? "Deny"
+                    : "Approve exact action",
             exact: true,
           })
           .click();
@@ -1069,7 +1383,7 @@ test(
         return { page, item, expiresAt, requester, reviewer };
       }
 
-      for (const decision of ["approve", "execute"]) {
+      for (const decision of ["approve", "execute", "withdraw"]) {
         await step(
           `approval lifetime expires during open ${decision} confirmation without any network mutation`,
           async () => {
@@ -1108,7 +1422,7 @@ test(
             assert.equal(
               await page
                 .getByRole("button", {
-                  name: /^(Approve exact action|Deny|Execute approved simulation|Confirm (approve|deny|execute))$/,
+                  name: /^(Approve exact action|Deny|Execute approved simulation|Withdraw request|Confirm (approve|deny|execute|withdrawal))$/,
                 })
                 .count(),
               0,
@@ -1164,7 +1478,7 @@ test(
         );
       }
 
-      for (const decision of ["approve", "deny", "execute"]) {
+      for (const decision of ["approve", "deny", "execute", "withdraw"]) {
         await step(
           `last-moment ${decision} click after expiry but before a timer tick sends no POST`,
           async () => {
@@ -1188,7 +1502,7 @@ test(
             // The stale DOM still has the button: its handler, not a render/tick,
             // must refuse this attempt before fetch is called.
             await page
-              .getByRole("button", { name: `Confirm ${decision}`, exact: true })
+              .getByRole("button", { name: confirmName(decision), exact: true })
               .click();
             assert.equal(
               posts,

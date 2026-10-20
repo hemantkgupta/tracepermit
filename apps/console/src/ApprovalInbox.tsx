@@ -6,6 +6,8 @@ import {
   canExecute,
   canRequest,
   canReview,
+  canWithdraw,
+  cancelApproval,
   decideApproval,
   isExpired,
   loadApprovalPage,
@@ -13,7 +15,7 @@ import {
   signOut,
   submitApproval,
   type Approval,
-  type ApprovalDecision,
+  type ApprovalAction,
   type ApprovalQuery,
   type ApprovalSession,
   type ApprovalStatusFilter,
@@ -37,7 +39,8 @@ import "./approval-history.css";
 
 type Confirmation = {
   approval: Approval;
-  decision: ApprovalDecision;
+  decision: ApprovalAction;
+  authority: string;
 };
 
 export function ApprovalInbox() {
@@ -70,6 +73,8 @@ export function ApprovalInbox() {
   );
   const confirmationReady = Boolean(
     confirmation &&
+    session &&
+    confirmation.authority === authorityContext(session) &&
     canConfirmApproval(
       session,
       selected,
@@ -239,6 +244,8 @@ export function ApprovalInbox() {
     );
     if (
       !confirmation ||
+      !currentSession ||
+      confirmation.authority !== authorityContext(currentSession) ||
       !historyAuthorityReady(stateRef.current, currentSession) ||
       !canConfirmApproval(
         currentSession,
@@ -258,9 +265,22 @@ export function ApprovalInbox() {
     // ticks. The server still independently verifies identity, binding and time.
     if (!currentSession || !current) return;
     void perform(
-      () => decideApproval(currentSession, current, confirmation.decision),
-      `${confirmation.decision === "execute" ? "Simulator execution completed" : "Review decision recorded"}. Refresh shows durable server state.`,
+      () =>
+        confirmation.decision === "withdraw"
+          ? cancelApproval(currentSession, current)
+          : decideApproval(currentSession, current, confirmation.decision),
+      `${confirmation.decision === "withdraw" ? "Pending request withdrawn" : confirmation.decision === "execute" ? "Simulator execution completed" : "Review decision recorded"}. Refresh shows durable server state.`,
     );
+  }
+
+  function openConfirmation(approval: Approval, decision: ApprovalAction) {
+    const currentSession = sessionRef.current;
+    if (!currentSession || submitting.current) return;
+    setConfirmation({
+      approval,
+      decision,
+      authority: authorityContext(currentSession),
+    });
   }
 
   function handleApplyFilters(event: React.FormEvent) {
@@ -553,6 +573,7 @@ export function ApprovalInbox() {
                       <option value="denied">Denied</option>
                       <option value="expired">Expired</option>
                       <option value="consumed">Consumed</option>
+                      <option value="cancelled">Cancelled (withdrawn)</option>
                     </select>
                   </div>
 
@@ -757,9 +778,9 @@ export function ApprovalInbox() {
                     isExpired(selected, observedNow) && (
                       <p className="approval-muted" role="status">
                         Approval lifetime has elapsed. The stored status is
-                        unchanged; no review or execution is available. Refresh
-                        to read server state. Local time is advisory; Java
-                        remains authoritative.
+                        unchanged; no review, withdrawal or execution is
+                        available. Refresh to read server state. Local time is
+                        advisory; Java remains authoritative.
                       </p>
                     )}
                   <h3>Target and arguments</h3>
@@ -779,24 +800,14 @@ export function ApprovalInbox() {
                         <button
                           className="approval-primary"
                           disabled={busy || !authorityReady}
-                          onClick={() =>
-                            setConfirmation({
-                              approval: selected,
-                              decision: "approve",
-                            })
-                          }
+                          onClick={() => openConfirmation(selected, "approve")}
                         >
                           Approve exact action
                         </button>
                         <button
                           className="approval-danger"
                           disabled={busy || !authorityReady}
-                          onClick={() =>
-                            setConfirmation({
-                              approval: selected,
-                              decision: "deny",
-                            })
-                          }
+                          onClick={() => openConfirmation(selected, "deny")}
                         >
                           Deny
                         </button>
@@ -806,27 +817,40 @@ export function ApprovalInbox() {
                       <button
                         className="approval-primary"
                         disabled={busy || !authorityReady}
-                        onClick={() =>
-                          setConfirmation({
-                            approval: selected,
-                            decision: "execute",
-                          })
-                        }
+                        onClick={() => openConfirmation(selected, "execute")}
                       >
                         Execute approved simulation
                       </button>
                     )}
+                    {canWithdraw(session, selected, observedNow) && (
+                      <button
+                        className="approval-danger"
+                        disabled={busy || !authorityReady}
+                        onClick={() => openConfirmation(selected, "withdraw")}
+                      >
+                        Withdraw request
+                      </button>
+                    )}
                   </div>
+                  {selected.status === "cancelled" && (
+                    <p className="approval-muted" role="status">
+                      Withdrawn by its requester. This request cannot be
+                      reviewed or executed. Withdrawal does not stop or reverse
+                      other work.
+                    </p>
+                  )}
                   {selected.requesterId === session.principalId &&
                     selected.status === "pending" && (
                       <p className="approval-muted">
                         A different enrolled human reviewer must decide this
-                        request.
+                        request before execution. Withdrawing a pending request
+                        is a separate owner action, not reviewer denial.
                       </p>
                     )}
                   {session.roles.includes("VIEWER") &&
                     !canReview(session, selected, observedNow) &&
-                    !canExecute(session, selected, observedNow) && (
+                    !canExecute(session, selected, observedNow) &&
+                    !canWithdraw(session, selected, observedNow) && (
                       <p className="approval-muted">
                         Read-only access. No authorized mutation is available.
                       </p>
@@ -842,16 +866,37 @@ export function ApprovalInbox() {
                       className="approval-confirm"
                       aria-label="Confirm exact action"
                     >
-                      <h3>Confirm: {confirmation.decision}</h3>
+                      <h3>
+                        {confirmation.decision === "withdraw"
+                          ? "Withdraw this pending request?"
+                          : `Confirm: ${confirmation.decision}`}
+                      </h3>
                       <p>
                         This applies only to the displayed request and hash.{" "}
-                        {confirmation.decision === "approve"
-                          ? "It does not execute the action."
-                          : confirmation.decision === "execute"
-                            ? "The server rechecks policy and atomically claims one simulator execution."
-                            : "The action will not execute."}
+                        {confirmation.decision === "withdraw"
+                          ? "Only this still-pending request can become cancelled, without execution. This is not an emergency stop, revocation of approved work or rollback. Java rechecks current ownership, scope, state and expiry."
+                          : confirmation.decision === "approve"
+                            ? "It does not execute the action."
+                            : confirmation.decision === "execute"
+                              ? "The server rechecks policy and atomically claims one simulator execution."
+                              : "The action will not execute."}
                       </p>
-                      <code>{confirmation.approval.requestHash}</code>
+                      {confirmation.decision === "withdraw" ? (
+                        <>
+                          <p>
+                            Request ID
+                            <code>
+                              {confirmation.approval.approvalRequestId}
+                            </code>
+                          </p>
+                          <p>
+                            Request hash
+                            <code>{confirmation.approval.requestHash}</code>
+                          </p>
+                        </>
+                      ) : (
+                        <code>{confirmation.approval.requestHash}</code>
+                      )}
                       <div className="approval-toolbar">
                         <button
                           className="approval-primary"
@@ -860,13 +905,15 @@ export function ApprovalInbox() {
                         >
                           {busy
                             ? "Submitting…"
-                            : `Confirm ${confirmation.decision}`}
+                            : confirmation.decision === "withdraw"
+                              ? "Confirm withdrawal"
+                              : `Confirm ${confirmation.decision}`}
                         </button>
                         <button
                           disabled={busy}
                           onClick={() => setConfirmation(null)}
                         >
-                          Cancel
+                          Back
                         </button>
                       </div>
                     </section>

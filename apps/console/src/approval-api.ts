@@ -45,6 +45,7 @@ export interface ApprovalQuery {
 }
 
 export type ApprovalDecision = "approve" | "deny" | "execute";
+export type ApprovalAction = ApprovalDecision | "withdraw";
 
 export class ApprovalApiError extends Error {
   constructor(public readonly status: number) {
@@ -245,6 +246,22 @@ export function canExecute(
   );
 }
 
+export function canWithdraw(
+  session: ApprovalSession,
+  approval: Approval,
+  now = Date.now(),
+) {
+  return (
+    session.roles.includes("REQUESTER") &&
+    session.scopes.includes("approvals.cancel") &&
+    session.principalId === approval.requesterId &&
+    Date.parse(session.expiresAt) > now &&
+    approval.status === "pending" &&
+    approval.executionStatus === "not_executed" &&
+    !isExpired(approval, now)
+  );
+}
+
 export function isExpired(approval: Approval, now = Date.now()) {
   const expiry = Date.parse(approval.expiresAt);
   return (
@@ -260,19 +277,21 @@ export function canConfirmApproval(
   session: ApprovalSession | null,
   current: Approval | undefined,
   snapshot: Approval,
-  decision: ApprovalDecision,
+  decision: ApprovalAction,
   now = Date.now(),
 ) {
   return Boolean(
     session &&
     current &&
-    ["approve", "deny", "execute"].includes(decision) &&
+    ["approve", "deny", "execute", "withdraw"].includes(decision) &&
     Date.parse(session.expiresAt) > now &&
     current.approvalRequestId === snapshot.approvalRequestId &&
     current.requestHash === snapshot.requestHash &&
-    (decision === "execute"
-      ? canExecute(session, current, now)
-      : canReview(session, current, now)),
+    (decision === "withdraw"
+      ? canWithdraw(session, current, now)
+      : decision === "execute"
+        ? canExecute(session, current, now)
+        : canReview(session, current, now)),
   );
 }
 
@@ -299,6 +318,29 @@ export function decideApproval(
 
 export function signOut(session: ApprovalSession) {
   return mutate<{ signedOut: boolean }>("/browser/logout", session, {});
+}
+
+// Withdrawal is not a reviewer decision or an execution command.
+export async function cancelApproval(
+  session: ApprovalSession,
+  approval: Approval,
+) {
+  const result = validateApproval(
+    await mutate<unknown>(
+      `${root}/${encodeURIComponent(approval.approvalRequestId)}/cancel`,
+      session,
+      { requestHash: approval.requestHash },
+    ),
+  );
+  if (
+    result.approvalRequestId !== approval.approvalRequestId ||
+    result.requestHash !== approval.requestHash ||
+    result.requesterId !== approval.requesterId ||
+    result.status !== "cancelled" ||
+    result.executionStatus !== "not_executed"
+  )
+    throw new ApprovalApiError(502);
+  return result;
 }
 
 function mutate<T>(path: string, session: ApprovalSession, body: object) {

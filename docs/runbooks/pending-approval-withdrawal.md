@@ -2,8 +2,8 @@
 
 This is owner withdrawal of an unreviewed request, **not an emergency stop**.
 Only a live `pending` request may become terminal `cancelled`. No real AWS
-resource is changed. The Java API exists; the requester React button and
-source-free installed withdrawal qualification are separate work.
+resource is changed. The Java API and optional local React inbox support this
+flow; source-free installed withdrawal qualification remains separate work.
 
 Requirements: FR-003/007/009/010; SEC-001/002/003/005/006/009/012;
 REL-001/002/004/005; DATA-001. See [ADR 0060](../architecture/0060-authenticated-pending-request-withdrawal.md).
@@ -46,8 +46,30 @@ An already-authenticated browser client uses
 session cookie, exact same-origin `Origin` and session `X-CSRF-Token`; mixing a
 bearer header with the browser session is forbidden. Do not bypass those checks.
 Browser login requests the new scope, but only the provider can grant it.
-There is no Withdraw button yet, and the existing dialog Cancel/Back is not
-durable cancellation. No new MCP tool is exposed.
+The inbox exposes **Withdraw request** only for an eligible owner. **Back** in
+the confirmation is not durable cancellation. No new MCP tool is exposed.
+
+## Browser walkthrough
+
+For the built-source synthetic profile, run `pnpm demo:approvals:browser` and open
+its printed `/approvals` URL. No personal login is required. Sign in as Alice,
+submit a fresh fixed simulated change and select its pending row.
+
+1. Click **Withdraw request**. Inspect the exact ID/hash and pending-only warning.
+2. Click **Back** to dismiss without a mutation. The request remains pending.
+3. Open it again and click **Confirm withdrawal** once. A confirmed response
+   produces the withdrawal notice and a fresh server read: `cancelled`,
+   `not_executed`. The row cannot be reviewed or executed.
+4. Select **Cancelled (withdrawn)** in Status and apply the filter. If a pending
+   filter was active, cancellation correctly removes that row from its results.
+5. Bob/Carol have no withdrawal control for Alice's request. Dave's reviewer
+   membership also does not permit withdrawing someone else's request.
+
+Missing `approvals.cancel`, expiry, changed selection/authority or a new search
+invalidates confirmation. A click between timer ticks rechecks expiry. Timers,
+focus, refresh and reads never submit cancellation. Java remains authoritative
+if a reviewer decides first or authentication expires during a database wait.
+See [ADR 0061](../architecture/0061-requester-withdrawal-inbox.md).
 
 ## Interpret the result
 
