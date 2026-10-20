@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execSync, spawn, spawnSync } from "node:child_process";
 import crypto from "node:crypto";
+import { EventEmitter } from "node:events";
 import net, { createServer } from "node:net";
 import {
   chmodSync,
@@ -92,61 +93,132 @@ export async function gracefulTerminate(
   proc,
   name = "child",
   timeoutMs = 2000,
+  primaryError = null,
 ) {
-  if (!proc) return;
-  if (proc.exitCode !== null && proc.exitCode !== undefined) return;
-  if (proc.signalCode !== null && proc.signalCode !== undefined) return;
+  if (!proc) {
+    if (primaryError) throw primaryError;
+    return;
+  }
+
+  function isExited() {
+    return (
+      (proc.exitCode !== null && proc.exitCode !== undefined) ||
+      (proc.signalCode !== null && proc.signalCode !== undefined)
+    );
+  }
+
+  // If already confirmed exited, return immediately
+  if (isExited()) {
+    if (primaryError) throw primaryError;
+    return;
+  }
+
+  const startNano = process.hrtime.bigint();
+  const boundedTimeout = Math.max(50, timeoutMs);
+  const gracefulTimeout = Math.max(25, Math.floor(boundedTimeout / 2));
 
   try {
     proc.stdin?.end();
   } catch {}
-  try {
-    proc.kill("SIGTERM");
-  } catch {}
 
-  const exitedOnSigterm = await new Promise((resolve) => {
-    if (proc.exitCode !== null || proc.signalCode !== null) {
-      resolve(true);
-      return;
-    }
-    const onExit = () => {
-      cleanup();
-      resolve(true);
-    };
-    const timer = setTimeout(() => {
-      cleanup();
-      resolve(false);
-    }, timeoutMs);
-    function cleanup() {
-      clearTimeout(timer);
-      proc.removeListener("exit", onExit);
-    }
-    proc.once("exit", onExit);
-  });
-
-  if (!exitedOnSigterm && proc.exitCode === null && proc.signalCode === null) {
-    try {
-      proc.kill("SIGKILL");
-    } catch {}
-    await new Promise((resolve) => {
-      if (proc.exitCode !== null || proc.signalCode !== null) {
+  function waitForExit(waitLimitMs) {
+    return new Promise((resolve) => {
+      if (isExited()) {
         resolve(true);
         return;
       }
-      const onExit = () => {
+      let timer = null;
+      let done = false;
+
+      function cleanup() {
+        if (!done) {
+          done = true;
+          if (timer) clearTimeout(timer);
+          proc.removeListener?.("exit", onExit);
+          proc.removeListener?.("close", onClose);
+        }
+      }
+
+      function onExit() {
         cleanup();
         resolve(true);
-      };
-      const timer = setTimeout(() => {
-        cleanup();
-        resolve(false);
-      }, timeoutMs);
-      function cleanup() {
-        clearTimeout(timer);
-        proc.removeListener("exit", onExit);
       }
-      proc.once("exit", onExit);
+
+      function onClose() {
+        cleanup();
+        resolve(true);
+      }
+
+      timer = setTimeout(
+        () => {
+          cleanup();
+          resolve(isExited());
+        },
+        Math.max(10, waitLimitMs),
+      );
+
+      proc.once?.("exit", onExit);
+      proc.once?.("close", onClose);
     });
+  }
+
+  // 1. Graceful SIGTERM
+  let termSent = false;
+  let termError = null;
+  try {
+    termSent = proc.kill ? Boolean(proc.kill("SIGTERM")) : false;
+  } catch (err) {
+    termError = err;
+  }
+
+  let exited = await waitForExit(gracefulTimeout);
+
+  // 2. Escalation to SIGKILL if exit not confirmed
+  let killSent = false;
+  let killError = null;
+  if (!exited && !isExited()) {
+    const elapsedMs = Number(
+      (process.hrtime.bigint() - startNano) / 1_000_000n,
+    );
+    const remainingMs = Math.max(25, boundedTimeout - elapsedMs);
+    try {
+      killSent = proc.kill ? Boolean(proc.kill("SIGKILL")) : false;
+    } catch (err) {
+      killError = err;
+    }
+    exited = await waitForExit(remainingMs);
+  }
+
+  const confirmed = exited || isExited();
+  if (!confirmed) {
+    const cleanupErr = new Error(
+      `[ERR_CLEANUP_UNCONFIRMED] Failed to confirm exit of child process "${name}" [pid: ${proc.pid ?? "unknown"}] within ${timeoutMs}ms (termSent: ${termSent}, killSent: ${killSent}${termError ? `, termError: ${termError.message}` : ""}${killError ? `, killError: ${killError.message}` : ""})`,
+    );
+    cleanupErr.code = "ERR_CLEANUP_UNCONFIRMED";
+    cleanupErr.name = "CleanupUnconfirmedError";
+
+    if (primaryError) {
+      if (typeof primaryError.addSuppressed === "function") {
+        primaryError.addSuppressed(cleanupErr);
+      } else if (Array.isArray(primaryError.suppressed)) {
+        primaryError.suppressed.push(cleanupErr);
+      } else {
+        try {
+          primaryError.suppressed = [cleanupErr];
+        } catch {}
+      }
+      if (!primaryError.cause) {
+        try {
+          primaryError.cause = cleanupErr;
+        } catch {}
+      }
+      throw primaryError;
+    }
+    throw cleanupErr;
+  }
+
+  if (primaryError) {
+    throw primaryError;
   }
 }
 
@@ -205,9 +277,9 @@ export function runChildAsync(cmd, args, options = {}) {
 export function redactDiagnosticText(text, maxChars = 200) {
   if (!text) return "";
   let str = typeof text === "string" ? text : String(text);
-  // Redact private keys
+  // Redact private keys (generic PKCS#8, specific algorithm variants, and truncated blocks)
   str = str.replace(
-    /-----BEGIN [A-Z ]+ PRIVATE KEY-----[\s\S]*?-----END [A-Z ]+ PRIVATE KEY-----/g,
+    /-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----[\s\S]*?(?:-----END (?:[A-Z ]+ )?PRIVATE KEY-----|$)/g,
     "[REDACTED_PRIVATE_KEY]",
   );
   // Redact Bearer tokens
@@ -245,7 +317,7 @@ export function waitForProcessPattern(
 ) {
   const maxBufferBytes = options.maxBufferBytes ?? 64 * 1024;
   const maxTotalBytes = options.maxTotalBytes ?? 512 * 1024;
-  const redact = options.redact ?? true;
+  // Neutralize options.redact: public failure diagnostics NEVER include child stdout/stderr
 
   return new Promise((resolve, reject) => {
     if (!child) {
@@ -257,27 +329,37 @@ export function waitForProcessPattern(
       );
     }
     if (child.exitCode !== null || child.signalCode !== null) {
+      const safeCode =
+        typeof child.exitCode === "number" ? child.exitCode : "none";
+      const safeSignal =
+        typeof child.signalCode === "string" ? child.signalCode : "none";
       return reject(
         createReadinessError(
           "ERR_CHILD_ALREADY_EXITED",
-          `[ERR_CHILD_ALREADY_EXITED] Child process already exited with code ${child.exitCode} (signal ${child.signalCode}) before waiting for ${desc}`,
+          `[ERR_CHILD_ALREADY_EXITED] Child process already exited with code ${safeCode} (signal ${safeSignal}) before waiting for ${desc}`,
         ),
       );
     }
 
+    const startNano = process.hrtime.bigint();
     let buffer = "";
     let totalBytes = 0;
     let timer = null;
+    let done = false;
 
     function cleanup() {
-      if (timer) clearTimeout(timer);
-      child.stdout?.removeListener("data", onData);
-      child.stderr?.removeListener("data", onData);
-      child.removeListener("error", onError);
-      child.removeListener("exit", onExit);
+      if (!done) {
+        done = true;
+        if (timer) clearTimeout(timer);
+        child.stdout?.removeListener("data", onData);
+        child.stderr?.removeListener("data", onData);
+        child.removeListener("error", onError);
+        child.removeListener("exit", onExit);
+      }
     }
 
     function onData(chunk) {
+      if (done) return;
       const chunkStr = chunk.toString("utf8");
       totalBytes += Buffer.byteLength(chunk);
       if (totalBytes > maxTotalBytes) {
@@ -285,7 +367,7 @@ export function waitForProcessPattern(
         reject(
           createReadinessError(
             "ERR_READINESS_FLOOD",
-            `[ERR_READINESS_FLOOD] Output stream exceeded ${maxTotalBytes} bytes without matching ${desc} [pid: ${child.pid}]`,
+            `[ERR_READINESS_FLOOD] Output stream exceeded ${maxTotalBytes} bytes without matching ${desc} [pid: ${child.pid ?? "unknown"}, bytesRead: ${totalBytes}]`,
           ),
         );
         return;
@@ -302,36 +384,43 @@ export function waitForProcessPattern(
     }
 
     function onError(err) {
+      if (done) return;
       cleanup();
-      const safeMsg = redact
-        ? redactDiagnosticText(err?.message || String(err), 200)
-        : err?.message || String(err);
+      // Do NOT include uncontrolled child Error.message in public diagnostics!
       reject(
         createReadinessError(
           "ERR_CHILD_EMITTED_ERROR",
-          `[ERR_CHILD_EMITTED_ERROR] Child process emitted error while waiting for ${desc}: ${safeMsg}`,
+          `[ERR_CHILD_EMITTED_ERROR] Child process emitted error before matching ${desc} [pid: ${child.pid ?? "unknown"}]`,
         ),
       );
     }
 
     function onExit(code, signal) {
+      if (done) return;
       cleanup();
-      const safeSnippet = redact ? redactDiagnosticText(buffer, 200) : buffer;
+      const elapsedMs = Math.round(
+        Number(process.hrtime.bigint() - startNano) / 1e6,
+      );
+      const safeCode = typeof code === "number" ? code : "none";
+      const safeSignal = typeof signal === "string" ? signal : "none";
       reject(
         createReadinessError(
           "ERR_READINESS_EARLY_EXIT",
-          `[ERR_READINESS_EARLY_EXIT] Child process exited early with code ${code} (signal ${signal}) before matching ${desc}. Output was: ${safeSnippet}`,
+          `[ERR_READINESS_EARLY_EXIT] Child process exited early with code ${safeCode} (signal ${safeSignal}) before matching ${desc} [pid: ${child.pid ?? "unknown"}, elapsedMs: ${elapsedMs}, bytesRead: ${totalBytes}]`,
         ),
       );
     }
 
     timer = setTimeout(() => {
+      if (done) return;
       cleanup();
-      const safeSnippet = redact ? redactDiagnosticText(buffer, 200) : buffer;
+      const elapsedMs = Math.round(
+        Number(process.hrtime.bigint() - startNano) / 1e6,
+      );
       reject(
         createReadinessError(
           "ERR_READINESS_TIMEOUT",
-          `[ERR_READINESS_TIMEOUT] Timeout (${timeoutMs}ms) waiting for ${desc} on child process [pid ${child.pid}]. Accumulated output: ${safeSnippet}`,
+          `[ERR_READINESS_TIMEOUT] Timeout (${timeoutMs}ms) waiting for ${desc} on child process [pid: ${child.pid ?? "unknown"}, elapsedMs: ${elapsedMs}, bytesRead: ${totalBytes}]`,
         ),
       );
     }, timeoutMs);
@@ -1858,13 +1947,154 @@ test("fixture failure bounds and graceful termination: silent child, early exit,
     `Port ${failedSetupPort} must be released after failed setup cleanup`,
   );
 
-  // 6. Synthetic canary timeout regression: child emits canary credential and stalls, timeout error redacts credential
+  // 6. Real owned child that exits cleanly on SIGTERM
+  const termChild = spawn(
+    process.execPath,
+    ["-e", "setInterval(() => {}, 1000)"],
+    {
+      stdio: ["pipe", "pipe", "pipe"],
+    },
+  );
+  t.after(() => gracefulTerminate(termChild, "termChild"));
+  await gracefulTerminate(termChild, "termChild", 2000);
+  assert.ok(
+    termChild.exitCode !== null || termChild.signalCode !== null,
+    "Real child must have confirmed exit after graceful SIGTERM",
+  );
+  assert.equal(
+    termChild.signalCode,
+    "SIGTERM",
+    "Real child must exit on SIGTERM",
+  );
+
+  // 7. Synthetic model child with kill=false and no exit: must reject with ERR_CLEANUP_UNCONFIRMED
+  const modelKillFalse = new EventEmitter();
+  modelKillFalse.exitCode = null;
+  modelKillFalse.signalCode = null;
+  modelKillFalse.pid = 99901;
+  modelKillFalse.kill = () => false;
+
+  await assert.rejects(
+    gracefulTerminate(modelKillFalse, "modelKillFalse", 100),
+    (err) => {
+      assert.equal(err.code, "ERR_CLEANUP_UNCONFIRMED");
+      assert.ok(
+        err.message.includes("[ERR_CLEANUP_UNCONFIRMED]"),
+        `Error must contain stable code: ${err.message}`,
+      );
+      assert.ok(
+        err.message.includes("pid: 99901"),
+        `Error must include bounded PID metadata: ${err.message}`,
+      );
+      return true;
+    },
+    "Model with kill=false and no exit must reject with ERR_CLEANUP_UNCONFIRMED",
+  );
+  // Verify timer and listeners were completely cleaned up on rejection
+  assert.equal(
+    modelKillFalse.listenerCount("exit"),
+    0,
+    "Exit listener must be cleaned up on unconfirmed cleanup",
+  );
+  assert.equal(
+    modelKillFalse.listenerCount("close"),
+    0,
+    "Close listener must be cleaned up on unconfirmed cleanup",
+  );
+
+  // 8. Synthetic model child with kill throwing and no exit: must reject with ERR_CLEANUP_UNCONFIRMED
+  const modelKillThrow = new EventEmitter();
+  modelKillThrow.exitCode = null;
+  modelKillThrow.signalCode = null;
+  modelKillThrow.pid = 99902;
+  modelKillThrow.kill = () => {
+    throw new Error("simulated ESRCH / permission denied");
+  };
+
+  await assert.rejects(
+    gracefulTerminate(modelKillThrow, "modelKillThrow", 100),
+    (err) => {
+      assert.equal(err.code, "ERR_CLEANUP_UNCONFIRMED");
+      assert.ok(
+        err.message.includes("[ERR_CLEANUP_UNCONFIRMED]"),
+        `Error must contain stable code: ${err.message}`,
+      );
+      return true;
+    },
+    "Model with kill throwing and no exit must reject with ERR_CLEANUP_UNCONFIRMED",
+  );
+  assert.equal(
+    modelKillThrow.listenerCount("exit"),
+    0,
+    "Exit listener must be cleaned up on throw rejection",
+  );
+  assert.equal(
+    modelKillThrow.listenerCount("close"),
+    0,
+    "Close listener must be cleaned up on throw rejection",
+  );
+
+  // 9. Synthetic model child that exits on TERM: resolves cleanly and cleans up listeners
+  const modelExitOnTerm = new EventEmitter();
+  modelExitOnTerm.exitCode = null;
+  modelExitOnTerm.signalCode = null;
+  modelExitOnTerm.pid = 99903;
+  modelExitOnTerm.kill = (sig) => {
+    setTimeout(() => {
+      modelExitOnTerm.signalCode = sig;
+      modelExitOnTerm.emit("exit", null, sig);
+    }, 15);
+    return true;
+  };
+  await gracefulTerminate(modelExitOnTerm, "modelExitOnTerm", 500);
+  assert.equal(
+    modelExitOnTerm.listenerCount("exit"),
+    0,
+    "Exit listener must be cleaned up on successful exit",
+  );
+  assert.equal(
+    modelExitOnTerm.listenerCount("close"),
+    0,
+    "Close listener must be cleaned up on successful exit",
+  );
+
+  // 10. Preserving primary test failure when cleanup also fails
+  const primaryTestFailure = new Error("primary test assertion failure");
+  const modelFailingCleanup = new EventEmitter();
+  modelFailingCleanup.exitCode = null;
+  modelFailingCleanup.signalCode = null;
+  modelFailingCleanup.pid = 99904;
+  modelFailingCleanup.kill = () => false;
+
+  await assert.rejects(
+    gracefulTerminate(
+      modelFailingCleanup,
+      "modelFailingCleanup",
+      100,
+      primaryTestFailure,
+    ),
+    (err) => {
+      assert.equal(
+        err,
+        primaryTestFailure,
+        "Must rethrow primary test error rather than masking it",
+      );
+      const cleanupErr = err.suppressed?.[0] || err.cause;
+      assert.ok(
+        cleanupErr,
+        "Cleanup error must be attached to primary error as suppressed or cause",
+      );
+      assert.equal(cleanupErr.code, "ERR_CLEANUP_UNCONFIRMED");
+      return true;
+    },
+    "gracefulTerminate must preserve primary error and attach unconfirmed cleanup error",
+  );
+
+  // 11. Timeout diagnostics: unlabelled opaque synthetic output is omitted from public error
+  const opaqueCanary1 = "OPAQUE_UNLABELLED_CANARY_SECRET_TIMEOUT_1234567890";
   const canaryTimeoutChild = spawn(
     process.execPath,
-    [
-      "-e",
-      "console.log('canary_token=secret-canary-token-9876543210-xyz'); setInterval(() => {}, 1000)",
-    ],
+    ["-e", `console.log('${opaqueCanary1}'); setInterval(() => {}, 1000)`],
     { stdio: ["pipe", "pipe", "pipe"] },
   );
   t.after(() => gracefulTerminate(canaryTimeoutChild, "canaryTimeoutChild"));
@@ -1879,16 +2109,20 @@ test("fixture failure bounds and graceful termination: silent child, early exit,
     (err) => {
       assert.equal(err.code, "ERR_READINESS_TIMEOUT");
       assert.ok(
-        !err.message.includes("secret-canary-token-9876543210-xyz"),
-        `Error message must not leak canary secret: ${err.message}`,
+        !err.message.includes(opaqueCanary1),
+        "Timeout error message must not leak unlabelled synthetic child output",
       );
       assert.ok(
-        err.message.includes("[REDACTED_CREDENTIAL]"),
-        `Error message must include redacted token placeholder: ${err.message}`,
+        err.message.includes("[ERR_READINESS_TIMEOUT]"),
+        `Error message must contain stable error code: ${err.message}`,
+      );
+      assert.ok(
+        err.message.includes("pid:"),
+        `Error message must contain bounded metadata: ${err.message}`,
       );
       return true;
     },
-    "Synthetic canary timeout must fail with ERR_READINESS_TIMEOUT and redacted credential",
+    "Opaque synthetic timeout must fail with ERR_READINESS_TIMEOUT and omit child output",
   );
   assert.ok(
     Date.now() - canaryTimeoutStart < 1500,
@@ -1896,12 +2130,108 @@ test("fixture failure bounds and graceful termination: silent child, early exit,
   );
   await gracefulTerminate(canaryTimeoutChild, "canaryTimeoutChild", 1000);
 
-  // 7. Synthetic canary early-exit regression: child outputs bearer token and exits early, error redacts credential
+  // 12. Timeout diagnostics: generic PKCS#8 private-key block is omitted from public error
+  const genericKeyBody = "CANARY_GENERIC_KEY_BODY_DATA_PROBE_9876543210";
+  const genericKeyChild = spawn(
+    process.execPath,
+    [
+      "-e",
+      `console.log('-----BEGIN PRIVATE KEY-----\\n${genericKeyBody}\\n-----END PRIVATE KEY-----'); setInterval(() => {}, 1000)`,
+    ],
+    { stdio: ["pipe", "pipe", "pipe"] },
+  );
+  t.after(() => gracefulTerminate(genericKeyChild, "genericKeyChild"));
+  await assert.rejects(
+    waitForProcessPattern(
+      genericKeyChild,
+      /UNMATCHABLE_KEY_PATTERN/,
+      250,
+      "genericKeyChild ready",
+    ),
+    (err) => {
+      assert.equal(err.code, "ERR_READINESS_TIMEOUT");
+      assert.ok(
+        !err.message.includes(genericKeyBody),
+        "Timeout error message must not leak generic private key body",
+      );
+      assert.ok(
+        !err.message.includes("BEGIN PRIVATE KEY"),
+        "Timeout error message must not include private key headers",
+      );
+      return true;
+    },
+    "Generic PKCS#8 timeout must fail with ERR_READINESS_TIMEOUT and omit key material",
+  );
+  await gracefulTerminate(genericKeyChild, "genericKeyChild", 1000);
+
+  // 13. Timeout diagnostics: truncated private-key block is omitted from public error
+  const truncatedKeyBody = "CANARY_TRUNCATED_KEY_BODY_PROBE_456789";
+  const truncatedKeyChild = spawn(
+    process.execPath,
+    [
+      "-e",
+      `console.log('-----BEGIN PRIVATE KEY-----\\n${truncatedKeyBody}'); setInterval(() => {}, 1000)`,
+    ],
+    { stdio: ["pipe", "pipe", "pipe"] },
+  );
+  t.after(() => gracefulTerminate(truncatedKeyChild, "truncatedKeyChild"));
+  await assert.rejects(
+    waitForProcessPattern(
+      truncatedKeyChild,
+      /UNMATCHABLE_TRUNCATED_PATTERN/,
+      250,
+      "truncatedKeyChild ready",
+    ),
+    (err) => {
+      assert.equal(err.code, "ERR_READINESS_TIMEOUT");
+      assert.ok(
+        !err.message.includes(truncatedKeyBody),
+        "Timeout error message must not leak truncated private key body",
+      );
+      return true;
+    },
+    "Truncated PKCS#8 timeout must fail with ERR_READINESS_TIMEOUT and omit key material",
+  );
+  await gracefulTerminate(truncatedKeyChild, "truncatedKeyChild", 1000);
+
+  // 14. Early-exit diagnostics: unlabelled opaque synthetic output is omitted from public error
+  const opaqueCanary2 = "OPAQUE_UNLABELLED_CANARY_EXIT_SECRET_abcdef123456";
+  const opaqueExitChild = spawn(
+    process.execPath,
+    ["-e", `console.log('${opaqueCanary2}'); process.exit(17)`],
+    { stdio: ["pipe", "pipe", "pipe"] },
+  );
+  t.after(() => gracefulTerminate(opaqueExitChild, "opaqueExitChild"));
+  await assert.rejects(
+    waitForProcessPattern(
+      opaqueExitChild,
+      /UNMATCHABLE_EXIT_PATTERN/,
+      3000,
+      "opaqueExitChild ready",
+    ),
+    (err) => {
+      assert.equal(err.code, "ERR_READINESS_EARLY_EXIT");
+      assert.ok(
+        !err.message.includes(opaqueCanary2),
+        "Early exit error message must not leak unlabelled child output",
+      );
+      assert.ok(
+        err.message.includes("code 17"),
+        `Early exit error message must report validated exit code 17: ${err.message}`,
+      );
+      return true;
+    },
+    "Opaque synthetic early exit must fail with ERR_READINESS_EARLY_EXIT and omit child output",
+  );
+  await gracefulTerminate(opaqueExitChild, "opaqueExitChild", 1000);
+
+  // 15. Early-exit diagnostics: Bearer token is omitted from public error
+  const bearerSecret = "canary-bearer-token-1234567890abcdef-secret";
   const canaryEarlyExitChild = spawn(
     process.execPath,
     [
       "-e",
-      "console.log('Authorization: Bearer canary-bearer-token-1234567890abcdef'); process.exit(19)",
+      `console.log('Authorization: Bearer ${bearerSecret}'); process.exit(19)`,
     ],
     { stdio: ["pipe", "pipe", "pipe"] },
   );
@@ -1919,12 +2249,8 @@ test("fixture failure bounds and graceful termination: silent child, early exit,
     (err) => {
       assert.equal(err.code, "ERR_READINESS_EARLY_EXIT");
       assert.ok(
-        !err.message.includes("canary-bearer-token-1234567890abcdef"),
-        `Error message must not leak bearer token: ${err.message}`,
-      );
-      assert.ok(
-        err.message.includes("[REDACTED_TOKEN]"),
-        `Error message must include redacted token placeholder: ${err.message}`,
+        !err.message.includes(bearerSecret),
+        "Early exit error message must not leak bearer token",
       );
       assert.ok(
         err.message.includes("code 19"),
@@ -1932,7 +2258,7 @@ test("fixture failure bounds and graceful termination: silent child, early exit,
       );
       return true;
     },
-    "Synthetic canary early exit must fail with ERR_READINESS_EARLY_EXIT and redacted token",
+    "Synthetic canary early exit must fail with ERR_READINESS_EARLY_EXIT and omit token",
   );
   assert.ok(
     Date.now() - canaryExitStart < 1500,
@@ -1940,7 +2266,78 @@ test("fixture failure bounds and graceful termination: silent child, early exit,
   );
   await gracefulTerminate(canaryEarlyExitChild, "canaryEarlyExitChild", 1000);
 
-  // 8. Bounded flood control regression: flood of output rejects with ERR_READINESS_FLOOD within bounded total bytes
+  // 16. Early-exit diagnostics: JWT token is omitted from public error
+  const jwtSecret =
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjYW5hcnkiOiJzZWNyZXQifQ.synthetic_signature_1234567890";
+  const jwtExitChild = spawn(
+    process.execPath,
+    [
+      "-e",
+      `console.log('Authorization: Bearer ${jwtSecret}'); process.exit(23)`,
+    ],
+    { stdio: ["pipe", "pipe", "pipe"] },
+  );
+  t.after(() => gracefulTerminate(jwtExitChild, "jwtExitChild"));
+  await assert.rejects(
+    waitForProcessPattern(
+      jwtExitChild,
+      /UNMATCHABLE_JWT_PATTERN/,
+      3000,
+      "jwtExitChild ready",
+    ),
+    (err) => {
+      assert.equal(err.code, "ERR_READINESS_EARLY_EXIT");
+      assert.ok(
+        !err.message.includes(jwtSecret),
+        "Early exit error message must not leak JWT token",
+      );
+      assert.ok(
+        err.message.includes("code 23"),
+        `Error message must report exit code 23: ${err.message}`,
+      );
+      return true;
+    },
+    "JWT early exit must fail with ERR_READINESS_EARLY_EXIT and omit token",
+  );
+  await gracefulTerminate(jwtExitChild, "jwtExitChild", 1000);
+
+  // 17. Emitted-error diagnostics: child error message is omitted from public error
+  const errorLeakSecret = "CANARY_ERROR_LEAK_SECRET_1234567890";
+  const emitErrorChild = new EventEmitter();
+  emitErrorChild.exitCode = null;
+  emitErrorChild.signalCode = null;
+  emitErrorChild.pid = 99905;
+  emitErrorChild.stdout = new EventEmitter();
+  emitErrorChild.stderr = new EventEmitter();
+
+  const emitPromise = waitForProcessPattern(
+    emitErrorChild,
+    /UNMATCHABLE_PATTERN/,
+    3000,
+    "emitErrorChild ready",
+  );
+  emitErrorChild.emit(
+    "error",
+    new Error(`Internal connection failure: ${errorLeakSecret}`),
+  );
+  await assert.rejects(
+    emitPromise,
+    (err) => {
+      assert.equal(err.code, "ERR_CHILD_EMITTED_ERROR");
+      assert.ok(
+        !err.message.includes(errorLeakSecret),
+        "Emitted error message must not leak child error message text",
+      );
+      assert.ok(
+        err.message.includes("[ERR_CHILD_EMITTED_ERROR]"),
+        `Error message must contain stable code: ${err.message}`,
+      );
+      return true;
+    },
+    "Child emitted error must fail with ERR_CHILD_EMITTED_ERROR and omit internal error text",
+  );
+
+  // 18. Bounded flood control regression: flood of output rejects with ERR_READINESS_FLOOD within bounded total bytes
   const floodChild = spawn(
     process.execPath,
     [
@@ -1970,7 +2367,7 @@ test("fixture failure bounds and graceful termination: silent child, early exit,
   );
   await gracefulTerminate(floodChild, "floodChild", 1000);
 
-  // 9. Direct unit verification of redactDiagnosticText helper
+  // 19. Direct unit verification of redactDiagnosticText helper
   assert.equal(
     redactDiagnosticText(
       "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.t-IDcSemACt8x4iTMCda8Yhe3iZaWbvV5XKSTbuAn0M",
@@ -1980,6 +2377,18 @@ test("fixture failure bounds and graceful termination: silent child, early exit,
   assert.equal(
     redactDiagnosticText(
       "-----BEGIN EC PRIVATE KEY-----\nMIGkAgEBBA...\n-----END EC PRIVATE KEY-----",
+    ),
+    "[REDACTED_PRIVATE_KEY]",
+  );
+  assert.equal(
+    redactDiagnosticText(
+      "-----BEGIN PRIVATE KEY-----\nMIGkAgEBBA...\n-----END PRIVATE KEY-----",
+    ),
+    "[REDACTED_PRIVATE_KEY]",
+  );
+  assert.equal(
+    redactDiagnosticText(
+      "-----BEGIN PRIVATE KEY-----\nMIGkAgEBBA... truncated without end",
     ),
     "[REDACTED_PRIVATE_KEY]",
   );
