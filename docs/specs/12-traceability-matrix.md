@@ -642,9 +642,22 @@ FR-003/007/008/009/010; SEC-001/002/003/005/006/009/012;
 REL-001/002/004/005; DATA-001; OPS-002/004; PORT-001/003 are mapped to the
 [proposed contract](../design/pending-approval-cancellation.md) and
 [ADR 0058](../architecture/0058-pending-approval-cancellation-contract.md).
-**Cancellation remains design only:** owner withdrawal, exact hash/authority,
-atomic lifecycle evidence/outbox and authenticated route/UI races remain future
-acceptance gates. No cancellation service, route, scope, MCP tool or button exists.
+The design itself is not implementation evidence. The Java withdrawal slice is
+recorded below; requester UI and installed withdrawal qualification remain future
+acceptance gates. No cancellation MCP tool or requester button exists.
+
+### Authenticated pending-only Java withdrawal
+
+[ADR 0060](../architecture/0060-authenticated-pending-request-withdrawal.md)
+and the [withdrawal runbook](../runbooks/pending-approval-withdrawal.md) define the bounded slice.
+
+| Requirements                                   | Enforcement point                                                                                                                                                         | Regression evidence                                                                                                                                                                                    |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| FR-003/007/009; SEC-001/002/005/006/012        | Shared bearer/browser cancel route, current enrollment plus explicit scope, owner visibility, distinct trusted requester context and post-lock deadline/hash/state checks | `PendingApprovalCancellationTest`; `SimulatorApprovalServerTest` cancellation cases; `SimulatorApprovalBrowserTest` owner/CSRF/shorter-session-deadline cases                                          |
+| FR-010; REL-001/002/004; DATA-001; SEC-003/009 | `PostgresDurableEnforcementState.cancel`, recovery→request→evidence locks, V10 append-only transition and version3 bounded evidence/outbox transaction                    | `PostgresApprovalCancellationTest`: both review schedules, duplicate cancellation, expiry during lock wait, evidence/outbox rollback, quarantine, restart, uncertain commit and zero claim/permit rows |
+
+These are local Java/synthetic-authentication simulator boundaries, not external
+IdP, mounted requester UI, installed withdrawal or production-target qualification.
 
 ### Implemented storage/upgrade prerequisite
 

@@ -140,7 +140,7 @@ final class SimulatorApprovalBrowserFixture implements AutoCloseable {
       ObjectNode access = JsonSupport.MAPPER.createObjectNode().put("iss", ISSUER)
           .put("aud", config.provider().resourceAudience()).put("sub", params.get("synthetic_subject"))
           .put("client_id", CLIENT).put("org_id", "alpha")
-          .put("scope", "approvals.read approvals.request approvals.decide approvals.execute")
+          .put("scope", "approvals.read approvals.request approvals.decide approvals.execute approvals.cancel")
           .put("iat", now - 10).put("exp", now + 290).put("jti", UUID.randomUUID().toString());
       accessClaims.accept(access);
       ObjectNode identity = JsonSupport.MAPPER.createObjectNode().put("iss", ISSUER).put("aud", CLIENT)

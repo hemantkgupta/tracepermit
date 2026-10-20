@@ -8,6 +8,7 @@ import io.tracepermit.contracts.JsonSupport;
 import io.tracepermit.contracts.ActionValidator;
 import io.tracepermit.contracts.CanonicalJson;
 import io.tracepermit.execution.ApprovalBinding;
+import io.tracepermit.execution.ApprovalCancellation;
 import io.tracepermit.execution.ApprovalConsumptionResult;
 import io.tracepermit.execution.ApprovalConsumptionStatus;
 import io.tracepermit.execution.ApprovalDecision;
@@ -19,6 +20,7 @@ import io.tracepermit.execution.ApprovalHistoryPage;
 import io.tracepermit.execution.DurableClaimResult;
 import io.tracepermit.execution.DurableClaimStatus;
 import io.tracepermit.execution.DurableApprovalActionState;
+import io.tracepermit.execution.DurableApprovalCancellationState;
 import io.tracepermit.execution.DurablePolicyBoundApprovalState;
 import io.tracepermit.execution.DurableEnforcementState;
 import io.tracepermit.execution.DurableEvidenceRecord;
@@ -55,6 +57,7 @@ import java.util.function.Supplier;
 public final class PostgresDurableEnforcementState
     implements DurableEnforcementState,
         DurablePolicyBoundApprovalState,
+        DurableApprovalCancellationState,
         EvidencePublicationState,
         DurableReconciliationState {
   public static final String MIGRATION_LOCATION = "classpath:db/migration";
@@ -887,6 +890,71 @@ public final class PostgresDurableEnforcementState
           decision.decidedAt(),
           null,
           null);
+      return updated;
+    });
+  }
+
+  @Override
+  public ApprovalRequestState cancel(ApprovalCancellation cancellation) {
+    Objects.requireNonNull(cancellation);
+    return inTransaction(connection -> {
+      // Finite waits, with exactly the same recovery -> request -> evidence lock order as review.
+      try (var limits = connection.createStatement()) {
+        limits.execute("SET LOCAL lock_timeout = '3s'");
+        limits.execute("SET LOCAL statement_timeout = '5s'");
+      }
+      PostgresRecoveryQuarantine.requireReady(connection);
+      ApprovalRequestState current = requireApproval(
+          connection, cancellation.tenant(), cancellation.approvalRequestId(), true);
+      if (!current.binding().subjectId().equals(cancellation.requesterSubjectId())) {
+        throw new SecurityException("REQUESTER_NOT_AUTHORIZED");
+      }
+      if (!current.binding().requestHash().equals(cancellation.requestHash())) {
+        throw new IllegalArgumentException("APPROVAL_BINDING_MISMATCH");
+      }
+      if (!"pending".equals(current.status())) {
+        throw new IllegalStateException("APPROVAL_NOT_CANCELLABLE");
+      }
+      // Do not reuse ingress time: the credential/request may expire while the row lock waits.
+      Instant now = clock.instant();
+      if (!cancellation.authorityExpiresAt().isAfter(now)) {
+        throw new SecurityException("CANCELLATION_AUTHENTICATION_EXPIRED");
+      }
+      if (!current.binding().expiresAt().isAfter(now)) {
+        throw new IllegalStateException("APPROVAL_EXPIRED");
+      }
+      try (var transition = connection.prepareStatement("""
+          INSERT INTO tp_approval_transitions
+            (tenant_id, approval_request_id, sequence, from_status, to_status,
+             reason_code, occurred_at, cancellation_subject_id,
+             cancellation_authentication_method, cancellation_credential_fingerprint,
+             cancellation_authority_expires_at)
+          VALUES (?, ?, ?, 'pending', 'cancelled', 'REQUESTER_CANCELLED', ?, ?, ?, ?, ?)
+          """)) {
+        transition.setString(1, cancellation.tenant().value());
+        transition.setString(2, cancellation.approvalRequestId());
+        transition.setInt(3, current.transitionSequence() + 1);
+        transition.setObject(4, databaseTime(now));
+        transition.setString(5, cancellation.requesterSubjectId());
+        transition.setString(6, cancellation.authenticationMethod());
+        transition.setString(7, cancellation.credentialFingerprint());
+        transition.setObject(8, databaseTime(cancellation.authorityExpiresAt()));
+        transition.executeUpdate();
+      }
+      ApprovalRequestState updated = requireApproval(
+          connection, cancellation.tenant(), cancellation.approvalRequestId(), false);
+      appendEvidence(connection, cancellation.tenant(), (eventId, sequence, recordedAt) -> {
+        ObjectNode payload = approvalEvidencePayload(updated, eventId, sequence,
+            "approval.cancelled", "REQUESTER_CANCELLED", now, recordedAt, null, null);
+        // A new kind with distinct requester provenance is a versioned lifecycle payload.
+        payload.put("schemaVersion", "3.0");
+        payload.putObject("cancellation")
+            .put("requesterSubjectId", cancellation.requesterSubjectId())
+            .put("authenticationMethod", cancellation.authenticationMethod())
+            .put("credentialFingerprint", cancellation.credentialFingerprint())
+            .put("authorityExpiresAt", cancellation.authorityExpiresAt().toString());
+        return payload;
+      });
       return updated;
     });
   }
@@ -1760,10 +1828,12 @@ public final class PostgresDurableEnforcementState
 
   private <T> T inTransaction(SqlWork<T> work) {
     try (Connection connection = dataSource.getConnection()) {
+      boolean originalAutoCommit = connection.getAutoCommit();
       connection.setAutoCommit(false);
       try {
         T result = work.run(connection);
         connection.commit();
+        connection.setAutoCommit(originalAutoCommit);
         return result;
       } catch (RuntimeException | SQLException failure) {
         try {
@@ -1773,8 +1843,6 @@ public final class PostgresDurableEnforcementState
         }
         if (failure instanceof RuntimeException runtime) throw runtime;
         throw databaseFailure(failure);
-      } finally {
-        connection.setAutoCommit(true);
       }
     } catch (SQLException exception) {
       throw databaseFailure(exception);

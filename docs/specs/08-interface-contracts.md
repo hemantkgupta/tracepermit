@@ -18,12 +18,17 @@
 
 ### Authenticated simulator approval API foundation
 
-Pending-request cancellation remains proposed in
-[ADR 0058](../architecture/0058-pending-approval-cancellation-contract.md).
-[ADR 0059](../architecture/0059-explicit-v9-v10-simulator-upgrade.md) implements
-only V10 cancelled storage/consumer compatibility and explicit V9→V10 upgrade.
-There is no cancellation route, granted scope, tool or button. Normal startup
-strictly validates V1–V10 without migration.
+Pending-only requester withdrawal implements the Java API slice of
+[ADR 0058](../architecture/0058-pending-approval-cancellation-contract.md), after
+the [V10 upgrade prerequisite](../architecture/0059-explicit-v9-v10-simulator-upgrade.md).
+[ADR 0060](../architecture/0060-authenticated-pending-request-withdrawal.md)
+defines `POST /api/v1/approvals/{id}/cancel` and the browser equivalent.
+Exactly `requestHash` is accepted; current requester enrollment, explicit verified
+`approvals.cancel`, owner and tenant checks are required. Auth/session deadlines
+and pending/request/hash checks are repeated under the PostgreSQL request lock.
+Success commits cancelled/not_executed plus version3 requester-provenance lifecycle
+evidence/outbox, never reviewer/permit/attempt metadata. No MCP tool or requester
+button exists. Normal startup still validates V1–V10 without migration.
 
 A separately composed `SimulatorApprovalServer` exposes pending/read/review/
 execute routes under `/api/v1/approvals`. It binds only to IPv4 loopback,

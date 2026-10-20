@@ -13,6 +13,7 @@ import io.tracepermit.adapters.remote.EnforcingMcpDispatcher;
 import io.tracepermit.application.HumanApprovalService;
 import io.tracepermit.application.SecurityReadiness;
 import io.tracepermit.application.TrustedReviewerContext;
+import io.tracepermit.application.TrustedRequesterContext;
 import io.tracepermit.application.TrustedTenantContext;
 import io.tracepermit.contracts.ActionValidator;
 import io.tracepermit.contracts.CanonicalJson;
@@ -204,7 +205,9 @@ public final class SimulatorApprovalServer implements AutoCloseable {
     } catch (AuthenticationException failure) {
       error(exchange, 401, "INVALID_ACCESS_TOKEN");
     } catch (SecurityException failure) {
-      error(exchange, 403, "NOT_AUTHORIZED");
+      if ("CANCELLATION_AUTHENTICATION_EXPIRED".equals(failure.getMessage())) {
+        error(exchange, 401, "INVALID_ACCESS_TOKEN");
+      } else error(exchange, 403, "NOT_AUTHORIZED");
     } catch (IllegalArgumentException failure) {
       if ("SELF_APPROVAL_DENIED".equals(failure.getMessage())) {
         error(exchange, 403, "SELF_APPROVAL_DENIED");
@@ -213,7 +216,7 @@ public final class SimulatorApprovalServer implements AutoCloseable {
       } else error(exchange, 400, "INVALID_REQUEST");
     } catch (IllegalStateException failure) {
       String code = failure.getMessage();
-      if (Set.of("APPROVAL_ALREADY_DECIDED", "APPROVAL_NOT_EXECUTABLE", "APPROVAL_REPLAYED",
+      if (Set.of("APPROVAL_ALREADY_DECIDED", "APPROVAL_NOT_EXECUTABLE", "APPROVAL_NOT_CANCELLABLE", "APPROVAL_REPLAYED",
           "APPROVAL_EXPIRED", "APPROVAL_BINDING_MISMATCH", "APPROVAL_POLICY_MISMATCH",
           "APPROVAL_NOT_REQUIRED", "STALE_POLICY_GENERATION")
           .contains(code == null ? "" : code)) error(exchange, 409, code);
@@ -317,6 +320,26 @@ public final class SimulatorApprovalServer implements AutoCloseable {
         var reviewed = approvals.review(reviewer, parts[0], decision.path("decision").asText(),
             "CHANGE_REVIEWED");
         send(exchange, 200, projection(reviewed, member));
+      } else if ("POST".equals(method) && parts.length == 2
+          && "cancel".equals(parts[1])) {
+        require(connector, member, ApprovalMemberships.Role.REQUESTER, HumanApprovalService.CANCELLATION_SCOPE);
+        ApprovalRequestState approval = owned(member, parts[0]);
+        JsonNode intent = body(exchange, Set.of("requestHash"));
+        if (!intent.path("requestHash").isTextual()
+            || !intent.path("requestHash").asText().matches("^sha256:[a-f0-9]{64}$")) {
+          throw failure(400, "INVALID_REQUEST");
+        }
+        checkHash(intent, approval);
+        var deadline = connector.expiresAt();
+        if (browserRequest) {
+          var sessionDeadline = browser.authorityExpiresAt(exchange);
+          if (sessionDeadline.isBefore(deadline)) deadline = sessionDeadline;
+        }
+        var requester = new TrustedRequesterContext(member.tenant(), member.principalId(), true,
+            Set.of(HumanApprovalService.REQUESTER_ROLE), Set.of(HumanApprovalService.CANCELLATION_SCOPE),
+            connector.authenticationProfile(), connector.credentialFingerprint().value(), deadline);
+        send(exchange, 200, projection(approvals.cancel(requester, parts[0],
+            intent.path("requestHash").asText()), member));
       } else if ("POST".equals(method) && parts.length == 2
           && "execute".equals(parts[1])) {
         require(connector, member, ApprovalMemberships.Role.REQUESTER, "approvals.execute");
