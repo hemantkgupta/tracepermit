@@ -18,7 +18,16 @@ RUN groupadd --gid 10001 tracepermit \
     && install -d -o root -g root -m 0755 /opt/tracepermit /run/tracepermit
 
 COPY distribution.tar.gz /tmp/distribution.tar.gz
-RUN tar -xzf /tmp/distribution.tar.gz --strip-components=1 -C /opt/tracepermit \
+RUN case "$TRACEPERMIT_ARCHIVE_SHA256" in ""|*[!0-9a-f]*) exit 1 ;; esac \
+    && [ "${#TRACEPERMIT_ARCHIVE_SHA256}" -eq 64 ] \
+    && case "$TRACEPERMIT_SOURCE_COMMIT" in ""|*[!0-9a-f]*) exit 1 ;; esac \
+    && { [ "${#TRACEPERMIT_SOURCE_COMMIT}" -eq 40 ] \
+      || [ "${#TRACEPERMIT_SOURCE_COMMIT}" -eq 64 ]; } \
+    && printf '%s  %s\n' "$TRACEPERMIT_ARCHIVE_SHA256" /tmp/distribution.tar.gz \
+      | sha256sum --check --strict \
+    && tar -xzf /tmp/distribution.tar.gz --strip-components=1 -C /opt/tracepermit \
+    && grep -Fq -- "\"sourceCommit\": \"$TRACEPERMIT_SOURCE_COMMIT\"" \
+      /opt/tracepermit/manifest.json \
     && rm /tmp/distribution.tar.gz \
     && chown -R root:root /opt/tracepermit \
     && chmod -R a-w /opt/tracepermit

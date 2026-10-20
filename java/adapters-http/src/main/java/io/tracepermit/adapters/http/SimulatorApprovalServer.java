@@ -374,8 +374,12 @@ public final class SimulatorApprovalServer implements AutoCloseable {
   private void status(HttpExchange exchange, Headers headers, URI uri, String path)
       throws IOException {
     if (!"GET".equals(exchange.getRequestMethod())) throw failure(405, "METHOD_NOT_ALLOWED");
+    String contentLength = headers.getFirst("Content-Length");
     if (uri.getRawQuery() != null || headers.containsKey("Authorization")
-        || headers.containsKey("Cookie") || headers.containsKey("Origin")) {
+        || headers.containsKey("Cookie") || headers.containsKey("Origin")
+        || headers.getOrDefault("Content-Length", java.util.List.of()).size() > 1
+        || (contentLength != null && !"0".equals(contentLength))
+        || headers.containsKey("Transfer-Encoding")) {
       throw failure(400, "INVALID_REQUEST");
     }
     ObjectNode response = JsonSupport.MAPPER.createObjectNode()

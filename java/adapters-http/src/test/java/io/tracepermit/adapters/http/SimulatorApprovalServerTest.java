@@ -296,6 +296,7 @@ final class SimulatorApprovalServerTest {
     assertStatus(ready, 200);
     assertThat(json(ready).path("status").asText()).isEqualTo("ready");
     assertStatus(call("POST", "/health", null, "{}"), 405);
+    assertStatus(call("GET", "/health", null, "{}"), 400);
     assertStatus(call("GET", "/health?detail=true", null, null), 400);
     assertStatus(call("GET", "/ready", token("alice"), null), 400);
     assertStatus(call("GET", "/ready", null, null, "Cookie", "session=forged"), 400);

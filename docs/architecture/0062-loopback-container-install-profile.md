@@ -27,7 +27,8 @@ It has the following properties:
 
 1. The application image is built from the existing source-free distribution,
    not a second runtime assembly. Its Temurin Java 21 base is digest-pinned. The
-   image records the exact source commit and archive SHA-256 as OCI labels.
+   image verifies the copied archive SHA-256 and manifest source commit before
+   recording those exact values as OCI labels.
 2. The runtime image contains no source checkout, Node.js, pnpm, Gradle, Git,
    development credentials, private keys, or PostgreSQL password. It defaults
    to UID/GID `10001`, exposes no image port, and runs with a read-only root
@@ -85,9 +86,10 @@ checks remain mandatory after a ready response.
 - Host networking is an explicit compatibility constraint, not a general
   container deployment recommendation. Another local process or root can still
   access or interfere with loopback services and volumes.
-- The setup container briefly has root access to mounted private input. Docker
-  daemon/root compromise, same-operator compromise and hostile parent paths are
-  outside this POC boundary.
+- The setup container briefly has root access to mounted private input. It
+  rejects group/world-accessible source directories and files before copying.
+  Docker daemon/root compromise, same-operator compromise and hostile parent
+  paths are outside this POC boundary.
 - Digest pinning and archive checksums improve repeatability and inventory. They
   are not signed provenance, vulnerability attestations or an update service.
 - No TLS termination, reverse-proxy trust, sender constraint, shared abuse state,

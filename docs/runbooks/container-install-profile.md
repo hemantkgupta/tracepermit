@@ -20,7 +20,8 @@ readiness checks.
   capabilities dropped and `no-new-privileges`.
 - A one-shot preparation service copies only `operator.json`, `database.secret`,
   `permit.pk8`, `permit.spki` and optional `browser.secret` into an owned volume.
-  It refuses changed replacements. The runtime mounts that volume read-only.
+  It rejects group/world-accessible input and changed replacements. The runtime
+  mounts that volume read-only.
 - PostgreSQL gets its password from a file-backed Compose secret. No reusable
   secret belongs in an environment variable, image, repository, command line or
   chat transcript.
@@ -53,10 +54,12 @@ minimal temporary Docker context and prints the exact local image tag. Review:
 docker image inspect tracepermit/simulator-approval:0.1.0-<commit>
 ```
 
-For registry distribution, publish through a separately reviewed release
-process and configure the immutable registry digest, not a mutable convenience
-tag. OCI revision/archive-hash labels and pinned base digests are inventory, not
-independent signed provenance.
+The image build fails unless the supplied archive SHA-256 matches the copied
+archive and its manifest source commit matches the OCI revision label. For
+registry distribution, publish through a separately reviewed release process
+and configure the immutable registry digest, not a mutable convenience tag.
+These bound labels and pinned base digests are inventory, not independent signed
+provenance.
 
 ## Prepare private operator input
 

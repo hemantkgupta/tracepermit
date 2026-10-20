@@ -185,11 +185,13 @@ The Linux container profile preserves that same boundary rather than adding a
 new remote one. Application and database have no published ports and still bind
 `127.0.0.1` in the host network namespace. The application image contains no
 private input and runs non-root/read-only without capabilities. A one-shot setup
-container has narrowly retained ownership capabilities, copies only fixed file
-names and refuses different bytes over retained keys/secrets. Image digests and
-archive hashes identify inputs but are not signed provenance. Docker daemon/root,
-same-operator and hostile-parent compromise remain possible; Docker Desktop,
-bridge ingress, reverse proxies and TLS are unsupported. See
+container has narrowly retained ownership capabilities, rejects group/world-
+accessible input, copies only fixed file names and refuses different bytes over
+retained keys/secrets. The image build binds its OCI inventory to the verified
+archive hash and embedded source commit. Image digests and those checks identify
+inputs but are not signed provenance. Docker daemon/root, same-operator and
+hostile-parent compromise remain possible; Docker Desktop, bridge ingress,
+reverse proxies and TLS are unsupported. See
 [ADR 0062](../architecture/0062-loopback-container-install-profile.md).
 
 - Signed request-bound capability

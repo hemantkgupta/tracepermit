@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { generateKeyPairSync, randomBytes } from "node:crypto";
+import { createHash, generateKeyPairSync, randomBytes } from "node:crypto";
 import {
   chmodSync,
+  copyFileSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -210,6 +211,17 @@ test(
       imageInspect.Config.Labels["io.tracepermit.profile"],
       "simulator-approval-container-foundation",
     );
+    const packagedManifest = JSON.parse(
+      run("docker", [
+        "run",
+        "--rm",
+        "--entrypoint",
+        "/bin/cat",
+        image,
+        "/opt/tracepermit/manifest.json",
+      ]).stdout,
+    );
+    assert.equal(packagedManifest.sourceCommit, sourceCommit);
     run("docker", [
       "run",
       "--rm",
@@ -219,6 +231,74 @@ test(
       "-c",
       "set -eu; for tool in node pnpm gradle git; do ! command -v \"$tool\"; done; ! find /opt/tracepermit -type f \\( -name '*.java' -o -name '*.kt' -o -name '*.ts' -o -name '*.tsx' \\) -print -quit | grep .; test ! -e /opt/tracepermit/node_modules",
     ]);
+
+    const archive = join(
+      repoRoot,
+      "java/adapters-http/build/distributions/tracepermit-simulator-approval-0.1.0.tar.gz",
+    );
+    const archiveHash = createHash("sha256")
+      .update(readFileSync(archive))
+      .digest("hex");
+    const rejectedContext = mkdtempSync(
+      join(tmpdir(), "tracepermit rejected container build "),
+    );
+    t.after(() => rmSync(rejectedContext, { recursive: true, force: true }));
+    copyFileSync(archive, join(rejectedContext, "distribution.tar.gz"));
+    for (const name of [
+      "Dockerfile",
+      "tracepermit-container-prepare",
+      "tracepermit-container-healthcheck",
+    ]) {
+      copyFileSync(
+        join(repoRoot, "deploy/container", name),
+        join(rejectedContext, name),
+      );
+    }
+    const rejectedBuild = (commit, hash) =>
+      run(
+        "docker",
+        [
+          "build",
+          "--build-arg",
+          `TRACEPERMIT_SOURCE_COMMIT=${commit}`,
+          "--build-arg",
+          `TRACEPERMIT_ARCHIVE_SHA256=${hash}`,
+          rejectedContext,
+        ],
+        { allowFailure: true },
+      );
+    assert.notEqual(rejectedBuild(sourceCommit, "0".repeat(64)).status, 0);
+    const wrongCommit = sourceCommit.replace(
+      /^./,
+      sourceCommit[0] === "0" ? "1" : "0",
+    );
+    assert.notEqual(rejectedBuild(wrongCommit, archiveHash).status, 0);
+
+    chmodSync(privateDirectory, 0o750);
+    const insecureDirectory = compose(
+      ["--profile", "setup", "run", "--rm", "prepare"],
+      { allowFailure: true },
+    );
+    assert.notEqual(insecureDirectory.status, 0);
+    assert.match(
+      `${insecureDirectory.stdout}${insecureDirectory.stderr}`,
+      /CONTAINER_PREPARE_FAILED/,
+    );
+    chmodSync(privateDirectory, 0o700);
+    chmodSync(join(privateDirectory, "database.secret"), 0o640);
+    const insecureInput = compose(
+      ["--profile", "setup", "run", "--rm", "prepare"],
+      { allowFailure: true },
+    );
+    assert.notEqual(insecureInput.status, 0);
+    assert.match(
+      `${insecureInput.stdout}${insecureInput.stderr}`,
+      /CONTAINER_PREPARE_FAILED/,
+    );
+    assert.ok(
+      !`${insecureInput.stdout}${insecureInput.stderr}`.includes(password),
+    );
+    chmodSync(join(privateDirectory, "database.secret"), 0o600);
 
     const prepared = compose(["--profile", "setup", "run", "--rm", "prepare"]);
     assert.match(prepared.stdout, /CONTAINER_PRIVATE_CONFIGURATION_PREPARED/);
