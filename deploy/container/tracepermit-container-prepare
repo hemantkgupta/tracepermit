@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+fail() {
+  echo "CONTAINER_PREPARE_FAILED: check private input and retained configuration; details redacted." >&2
+  exit 2
+}
+
+if [ "$(id -u)" != "0" ] || [ ! -d /input ] || [ ! -d /prepared ]; then
+  fail
+fi
+if [ -n "$(find /input -maxdepth 0 -perm /077 -print -quit)" ]; then
+  fail
+fi
+
+copy_private() {
+  local name="$1"
+  local source="/input/$name"
+  local destination="/prepared/$name"
+  if [ -L "$source" ] || [ ! -f "$source" ] || [ ! -s "$source" ]; then
+    fail
+  fi
+  if [ -n "$(find "$source" -maxdepth 0 -perm /077 -print -quit)" ]; then
+    fail
+  fi
+  if [ -e "$destination" ] || [ -L "$destination" ]; then
+    if [ -L "$destination" ] || [ ! -f "$destination" ] \
+        || ! cmp -s "$source" "$destination"; then
+      fail
+    fi
+  else
+    install -o 10001 -g 10001 -m 0600 "$source" "$destination"
+  fi
+}
+
+install -d -o 10001 -g 10001 -m 0700 /prepared
+for required in operator.json database.secret permit.pk8 permit.spki; do
+  copy_private "$required"
+done
+
+if [ -e /input/browser.secret ] || [ -L /input/browser.secret ]; then
+  copy_private browser.secret
+elif [ -e /prepared/browser.secret ] || [ -L /prepared/browser.secret ]; then
+  fail
+fi
+
+chown 10001:10001 /prepared
+chmod 0700 /prepared
+echo "CONTAINER_PRIVATE_CONFIGURATION_PREPARED: run the offline check before database initialization."

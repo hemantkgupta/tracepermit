@@ -67,6 +67,8 @@
     "test:endpoint-connector-e2e": "scripts/test-java-endpoint-connector-e2e.sh",
     "build:distribution": "scripts/build-simulator-approval-distribution.sh",
     "test:distribution": "node --test scripts/simulator-approval-distribution.test.mjs",
+    "build:container-profile": "scripts/build-container-install-profile.sh",
+    "test:container-profile": "node --test scripts/container-install-profile.test.mjs",
     "build:endpoint-distribution": "scripts/build-endpoint-connector-distribution.sh",
     "test:endpoint-distribution": "node --test scripts/endpoint-connector-distribution.test.mjs"
   },

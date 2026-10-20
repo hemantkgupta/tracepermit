@@ -254,6 +254,20 @@ integrity verification, not third-party code signing. All credentials and privat
 remain operator-owned outside the bundle. See
 [ADR 0040](../architecture/0040-source-free-simulator-approval-distribution.md).
 
+`scripts/build-container-install-profile.sh` turns that exact archive into a
+source-free Java 21 OCI image through a minimal temporary build context. The
+image records source commit and archive hash labels, defaults to UID/GID 10001,
+declares no exposed port and contains neither build tools nor private input.
+`deploy/container/compose.yaml` uses Linux host networking so both Java and
+PostgreSQL can preserve their `127.0.0.1` constraints without a port mapping.
+The application runtime is read-only/capability-free; a limited one-shot root
+container stages only the fixed private-file allowlist and cannot replace
+different retained bytes. `/health` is listener liveness; `/ready` calls an
+injected fail-closed probe that validates existing PostgreSQL state and the
+non-quarantined recovery row. Existing test factories inject an explicit local
+ready probe and cannot select a public bind. See
+[ADR 0062](../architecture/0062-loopback-container-install-profile.md).
+
 Signed artifacts use named canonicalization and algorithm profiles with
 allowlisted keys. An endpoint source proof binds the exact MCP method/params
 and the authenticated connector credential fingerprint. Delegation grants

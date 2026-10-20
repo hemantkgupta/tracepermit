@@ -101,8 +101,16 @@ their existing generic unavailable errors. Internal permit minting is unchanged.
 There is no resume command; only the explicit V9→V10 upgrade is supported.
 Other predecessors remain offline. See [ADR 0051](../architecture/0051-operator-declared-recovery-quarantine.md)
 and the [runbook](../runbooks/operator-recovery-quarantine.md).
-The `/health`, `/ready` and `/mcp` surfaces below belong to other compositions,
-not to this approval listener.
+
+The approval listener also exposes exact `GET /health` and `GET /ready` local
+projections. Both retain strict numeric-loopback/Host enforcement, require no
+authentication, reject query, Authorization, Cookie and Origin, and return only
+`{"schemaVersion":"1.0","service":"tracepermit-simulator-approval","status":...}`.
+Health returns `live` while the listener handles requests. Readiness returns
+`ready` only when the exact PostgreSQL schema validates and recovery state is
+`ready`; dependency failure returns HTTP 503 `not_ready` without a reason field.
+It does not probe the IdP or grant authority. The `/mcp` surface remains a
+separate authenticated route. See [ADR 0062](../architecture/0062-loopback-container-install-profile.md).
 
 ### Optional local browser approval boundary
 

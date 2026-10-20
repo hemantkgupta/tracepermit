@@ -34,3 +34,8 @@ prerequisite. [ADR 0060](../architecture/0060-authenticated-pending-request-with
 adds the Java pending-only withdrawal API; [ADR 0061](../architecture/0061-requester-withdrawal-inbox.md)
 adds explicit owner withdrawal in the local React inbox. Source-free installed
 withdrawal qualification remains separate.
+
+[ADR 0062](../architecture/0062-loopback-container-install-profile.md) and the
+[container runbook](../runbooks/container-install-profile.md) define the Linux
+numeric-loopback container install foundation. It is partial TP-MVP-05 evidence,
+not a public-edge, external-IdP or production-readiness claim.
