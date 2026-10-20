@@ -63,7 +63,7 @@ Verified unchanged by reading the full workflow at the reconciled head:
 
 ## 5. Local Qualification Results
 
-Main was reconciled into the branch after an overlap review: `main` advanced from the PR base by one merge (PR #60, approval-expiry UX) with no changes to `.github/workflows/ci.yml`, so the merge was conflict-free and the Dependabot commit required no modification. All checks ran at the reconciled head with Node.js >= 22, pnpm 11.25.0 (corepack), Java 21, and a `--frozen-lockfile` install.
+Main was reconciled into the branch after overlap reviews: `main` first advanced by one merge (PR #60, approval-expiry UX) and later by two more (PR #61, pending-approval cancellation contract and design docs; PR #62, explicit V9-to-V10 simulator database upgrade) — none of these touched `.github/workflows/ci.yml`, so each merge was conflict-free and the Dependabot commit required no modification. A docs-only wording correction to this runbook followed the second reconciliation. The table below records the full gate battery at the first reconciled head, run locally with Node.js >= 22, pnpm 11.25.0 (corepack), Java 21, and a `--frozen-lockfile` install.
 
 | Gate                                                       | Result                                         |
 | ---------------------------------------------------------- | ---------------------------------------------- |
@@ -73,6 +73,8 @@ Main was reconciled into the branch after an overlap review: `main` advanced fro
 | `pnpm docs:flows:check`                                    | PASS (diagrams and guide sources synchronized) |
 
 No repair beyond the reconciliation was needed; the Dependabot commit's pins matched the official tags exactly and were adopted as-is.
+
+At the final pushed head the three documentation gates (`pnpm format:check`, `pnpm docs:links`, `pnpm docs:flows:check`) were re-run locally and passed. The Docker-backed portion of `pnpm check` could not re-run on this workstation because its Docker daemon was unavailable: the Testcontainers-based PostgreSQL tests abort with `IllegalStateException: Previous attempts to find a Docker environment failed`, an environment failure of the local machine and unrelated to this CI-only change (no Java or product files are touched by this PR). That gate passed in the exact-head CI run referenced in section 6, whose hosted runners provide Docker; CI is therefore the authoritative environment for the Java battery at this head.
 
 ## 6. CI Verification and Observed-Versus-Untested Boundaries
 
