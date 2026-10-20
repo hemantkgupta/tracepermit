@@ -230,8 +230,11 @@ final class PostgresApprovalCancellationTest {
   }
 
   @Test void lostCommitAcknowledgementDoesNotReportSuccessOrAutomaticallyRetry() {
+    var cancelling = new java.util.concurrent.atomic.AtomicBoolean();
     var uncertain = repository(intercept((connection, operation, args, result) -> {
-      if (operation.equals("commit")) throw new SQLException("Synthetic acknowledgement lost");
+      if (operation.equals("prepareStatement") && args[0] instanceof String sql
+          && sql.contains("cancellation_subject_id")) cancelling.set(true);
+      if (operation.equals("commit") && cancelling.get()) throw new SQLException("Synthetic acknowledgement lost");
       return result;
     }));
     assertThatThrownBy(() -> uncertain.cancel(intent())).isInstanceOf(PostgresStateException.class);
@@ -283,7 +286,7 @@ final class PostgresApprovalCancellationTest {
         "reviewers", NOW, NOW.plusSeconds(300), 1);
   }
   private ApprovalDecision decision(String decision) {
-    return new ApprovalDecision(TENANT, "request-1", "decision-1", "issuer#reviewer", "oidc-access-token",
+    return new ApprovalDecision(TENANT, "request-1", "decision-1", "principal:" + "e".repeat(64), "oidc-access-token",
         hash('e'), decision, "REVIEWED", clock.instant());
   }
   private ApprovalCancellation intent() {
