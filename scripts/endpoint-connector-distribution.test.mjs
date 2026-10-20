@@ -202,29 +202,71 @@ export function runChildAsync(cmd, args, options = {}) {
   });
 }
 
+export function redactDiagnosticText(text, maxChars = 200) {
+  if (!text) return "";
+  let str = typeof text === "string" ? text : String(text);
+  // Redact private keys
+  str = str.replace(
+    /-----BEGIN [A-Z ]+ PRIVATE KEY-----[\s\S]*?-----END [A-Z ]+ PRIVATE KEY-----/g,
+    "[REDACTED_PRIVATE_KEY]",
+  );
+  // Redact Bearer tokens
+  str = str.replace(/(Bearer\s+)[A-Za-z0-9._~+/-]+=*/gi, "$1[REDACTED_TOKEN]");
+  // Redact JWT tokens (eyJ...)
+  str = str.replace(
+    /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9._-]+\.[A-Za-z0-9._-]+/g,
+    "[REDACTED_JWT]",
+  );
+  // Redact credential/token/secret/canary/proof assignments
+  str = str.replace(
+    /(["']?(?:token|secret|password|bearer|canary|proof|key|credential)["']?\s*[:=]\s*["']?)[A-Za-z0-9._~+/-]{6,}["']?/gi,
+    "$1[REDACTED_CREDENTIAL]",
+  );
+  // Redact standalone hex credentials (32 to 64 chars)
+  str = str.replace(/\b[0-9a-fA-F]{32,64}\b/g, "[REDACTED_HEX]");
+  if (str.length > maxChars) {
+    str = str.slice(0, maxChars) + " ...[truncated]";
+  }
+  return str;
+}
+
+function createReadinessError(code, message) {
+  const err = new Error(message);
+  err.code = code;
+  return err;
+}
+
 export function waitForProcessPattern(
   child,
   pattern,
   timeoutMs = 15_000,
   desc = "pattern",
+  options = {},
 ) {
+  const maxBufferBytes = options.maxBufferBytes ?? 64 * 1024;
+  const maxTotalBytes = options.maxTotalBytes ?? 512 * 1024;
+  const redact = options.redact ?? true;
+
   return new Promise((resolve, reject) => {
     if (!child) {
       return reject(
-        new Error(
-          `Cannot wait for ${desc}: child process is null or undefined`,
+        createReadinessError(
+          "ERR_CHILD_NOT_FOUND",
+          `[ERR_CHILD_NOT_FOUND] Cannot wait for ${desc}: child process is null or undefined`,
         ),
       );
     }
     if (child.exitCode !== null || child.signalCode !== null) {
       return reject(
-        new Error(
-          `Child process already exited with code ${child.exitCode} (signal ${child.signalCode}) before waiting for ${desc}`,
+        createReadinessError(
+          "ERR_CHILD_ALREADY_EXITED",
+          `[ERR_CHILD_ALREADY_EXITED] Child process already exited with code ${child.exitCode} (signal ${child.signalCode}) before waiting for ${desc}`,
         ),
       );
     }
 
     let buffer = "";
+    let totalBytes = 0;
     let timer = null;
 
     function cleanup() {
@@ -236,7 +278,22 @@ export function waitForProcessPattern(
     }
 
     function onData(chunk) {
-      buffer += chunk.toString("utf8");
+      const chunkStr = chunk.toString("utf8");
+      totalBytes += Buffer.byteLength(chunk);
+      if (totalBytes > maxTotalBytes) {
+        cleanup();
+        reject(
+          createReadinessError(
+            "ERR_READINESS_FLOOD",
+            `[ERR_READINESS_FLOOD] Output stream exceeded ${maxTotalBytes} bytes without matching ${desc} [pid: ${child.pid}]`,
+          ),
+        );
+        return;
+      }
+      buffer += chunkStr;
+      if (buffer.length > maxBufferBytes) {
+        buffer = buffer.slice(-maxBufferBytes);
+      }
       const match = pattern.exec(buffer);
       if (match) {
         cleanup();
@@ -246,27 +303,35 @@ export function waitForProcessPattern(
 
     function onError(err) {
       cleanup();
+      const safeMsg = redact
+        ? redactDiagnosticText(err?.message || String(err), 200)
+        : err?.message || String(err);
       reject(
-        new Error(
-          `Child process emitted error while waiting for ${desc}: ${err.message}`,
+        createReadinessError(
+          "ERR_CHILD_EMITTED_ERROR",
+          `[ERR_CHILD_EMITTED_ERROR] Child process emitted error while waiting for ${desc}: ${safeMsg}`,
         ),
       );
     }
 
     function onExit(code, signal) {
       cleanup();
+      const safeSnippet = redact ? redactDiagnosticText(buffer, 200) : buffer;
       reject(
-        new Error(
-          `Child process exited early with code ${code} (signal ${signal}) before matching ${desc}. Output was: ${buffer}`,
+        createReadinessError(
+          "ERR_READINESS_EARLY_EXIT",
+          `[ERR_READINESS_EARLY_EXIT] Child process exited early with code ${code} (signal ${signal}) before matching ${desc}. Output was: ${safeSnippet}`,
         ),
       );
     }
 
     timer = setTimeout(() => {
       cleanup();
+      const safeSnippet = redact ? redactDiagnosticText(buffer, 200) : buffer;
       reject(
-        new Error(
-          `Timeout (${timeoutMs}ms) waiting for ${desc} on child process [pid ${child.pid}]. Accumulated output: ${buffer}`,
+        createReadinessError(
+          "ERR_READINESS_TIMEOUT",
+          `[ERR_READINESS_TIMEOUT] Timeout (${timeoutMs}ms) waiting for ${desc} on child process [pid ${child.pid}]. Accumulated output: ${safeSnippet}`,
         ),
       );
     }, timeoutMs);
@@ -1792,6 +1857,142 @@ test("fixture failure bounds and graceful termination: silent child, early exit,
     failedSetupPortReleased,
     `Port ${failedSetupPort} must be released after failed setup cleanup`,
   );
+
+  // 6. Synthetic canary timeout regression: child emits canary credential and stalls, timeout error redacts credential
+  const canaryTimeoutChild = spawn(
+    process.execPath,
+    [
+      "-e",
+      "console.log('canary_token=secret-canary-token-9876543210-xyz'); setInterval(() => {}, 1000)",
+    ],
+    { stdio: ["pipe", "pipe", "pipe"] },
+  );
+  t.after(() => gracefulTerminate(canaryTimeoutChild, "canaryTimeoutChild"));
+  const canaryTimeoutStart = Date.now();
+  await assert.rejects(
+    waitForProcessPattern(
+      canaryTimeoutChild,
+      /UNMATCHABLE_CANARY_PATTERN/,
+      250,
+      "canaryTimeoutChild ready",
+    ),
+    (err) => {
+      assert.equal(err.code, "ERR_READINESS_TIMEOUT");
+      assert.ok(
+        !err.message.includes("secret-canary-token-9876543210-xyz"),
+        `Error message must not leak canary secret: ${err.message}`,
+      );
+      assert.ok(
+        err.message.includes("[REDACTED_CREDENTIAL]"),
+        `Error message must include redacted token placeholder: ${err.message}`,
+      );
+      return true;
+    },
+    "Synthetic canary timeout must fail with ERR_READINESS_TIMEOUT and redacted credential",
+  );
+  assert.ok(
+    Date.now() - canaryTimeoutStart < 1500,
+    "Canary timeout must fail within bounded duration",
+  );
+  await gracefulTerminate(canaryTimeoutChild, "canaryTimeoutChild", 1000);
+
+  // 7. Synthetic canary early-exit regression: child outputs bearer token and exits early, error redacts credential
+  const canaryEarlyExitChild = spawn(
+    process.execPath,
+    [
+      "-e",
+      "console.log('Authorization: Bearer canary-bearer-token-1234567890abcdef'); process.exit(19)",
+    ],
+    { stdio: ["pipe", "pipe", "pipe"] },
+  );
+  t.after(() =>
+    gracefulTerminate(canaryEarlyExitChild, "canaryEarlyExitChild"),
+  );
+  const canaryExitStart = Date.now();
+  await assert.rejects(
+    waitForProcessPattern(
+      canaryEarlyExitChild,
+      /UNMATCHABLE_CANARY_PATTERN/,
+      3000,
+      "canaryEarlyExitChild ready",
+    ),
+    (err) => {
+      assert.equal(err.code, "ERR_READINESS_EARLY_EXIT");
+      assert.ok(
+        !err.message.includes("canary-bearer-token-1234567890abcdef"),
+        `Error message must not leak bearer token: ${err.message}`,
+      );
+      assert.ok(
+        err.message.includes("[REDACTED_TOKEN]"),
+        `Error message must include redacted token placeholder: ${err.message}`,
+      );
+      assert.ok(
+        err.message.includes("code 19"),
+        `Error message must report exit code 19: ${err.message}`,
+      );
+      return true;
+    },
+    "Synthetic canary early exit must fail with ERR_READINESS_EARLY_EXIT and redacted token",
+  );
+  assert.ok(
+    Date.now() - canaryExitStart < 1500,
+    "Canary early exit must reject promptly",
+  );
+  await gracefulTerminate(canaryEarlyExitChild, "canaryEarlyExitChild", 1000);
+
+  // 8. Bounded flood control regression: flood of output rejects with ERR_READINESS_FLOOD within bounded total bytes
+  const floodChild = spawn(
+    process.execPath,
+    [
+      "-e",
+      "for (let i = 0; i < 200; i++) console.log('spam_flood_line_chunk_data_probe_'.repeat(20)); setInterval(() => console.log('more_flood_data'), 50)",
+    ],
+    { stdio: ["pipe", "pipe", "pipe"] },
+  );
+  t.after(() => gracefulTerminate(floodChild, "floodChild"));
+  await assert.rejects(
+    waitForProcessPattern(
+      floodChild,
+      /NON_EXISTENT_FLOOD_PATTERN/,
+      5000,
+      "floodChild",
+      { maxTotalBytes: 4096 },
+    ),
+    (err) => {
+      assert.equal(err.code, "ERR_READINESS_FLOOD");
+      assert.ok(
+        err.message.includes("exceeded 4096 bytes"),
+        `Error must mention exceeded bytes limit: ${err.message}`,
+      );
+      return true;
+    },
+    "Stream flood exceeding maxTotalBytes must reject with ERR_READINESS_FLOOD",
+  );
+  await gracefulTerminate(floodChild, "floodChild", 1000);
+
+  // 9. Direct unit verification of redactDiagnosticText helper
+  assert.equal(
+    redactDiagnosticText(
+      "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.t-IDcSemACt8x4iTMCda8Yhe3iZaWbvV5XKSTbuAn0M",
+    ),
+    "Bearer [REDACTED_TOKEN]",
+  );
+  assert.equal(
+    redactDiagnosticText(
+      "-----BEGIN EC PRIVATE KEY-----\nMIGkAgEBBA...\n-----END EC PRIVATE KEY-----",
+    ),
+    "[REDACTED_PRIVATE_KEY]",
+  );
+  assert.equal(
+    redactDiagnosticText("my_secret=abcdef1234567890"),
+    "my_secret=[REDACTED_CREDENTIAL]",
+  );
+  const longText = "a".repeat(300);
+  const truncated = redactDiagnosticText(longText, 50);
+  assert.ok(
+    truncated.length <= 70 && truncated.endsWith("...[truncated]"),
+    "Long diagnostic text must be bounded and truncated",
+  );
 });
 
 test("process parentage verification helper detects PPID and command mismatches", () => {
@@ -1916,4 +2117,146 @@ test("Gradle test task tracks connector archive input and invalidates cached gre
 
   // 4. Restore valid archive
   restoreArchive();
+});
+
+test("isolated temporary repo proves ordinary Gradle target cannot be UP-TO-DATE or green with stale archive after Git commit advances", async (t) => {
+  ensureDistributionBuilt();
+  assert.ok(
+    existsSync(distArchive),
+    `Distribution archive must exist at ${distArchive}`,
+  );
+
+  const tempRepo = mkdtempSync(join(tmpdir(), "tp-isolated-repo-"));
+  t.after(() => {
+    rmSync(tempRepo, { recursive: true, force: true });
+  });
+
+  // Clone repository using git clone -s -l into tempRepo
+  command("git", ["clone", "-s", "-l", repoRoot, tempRepo], repoRoot);
+
+  // Copy distribution archive to expected build/distributions path in tempRepo
+  const tempDistDir = join(
+    tempRepo,
+    "java/endpoint-connector/build/distributions",
+  );
+  mkdirSync(tempDistDir, { recursive: true });
+  const archiveBaseName = "tracepermit-endpoint-connector-0.1.0.tar.gz";
+  copyFileSync(distArchive, join(tempDistDir, archiveBaseName));
+  if (existsSync(distSha256File)) {
+    copyFileSync(
+      distSha256File,
+      join(tempDistDir, `${archiveBaseName}.sha256`),
+    );
+  }
+
+  // 1. Establish strict success at commit A
+  const runA = spawnSync(
+    join(tempRepo, "java/gradlew"),
+    [
+      "-p",
+      join(tempRepo, "java"),
+      "--no-daemon",
+      ":adapters-http:test",
+      "-Dtracepermit.endpointConnector.requireInstalledArchive=true",
+      "--tests",
+      "io.tracepermit.adapters.http.JavaBackendEndpointConnectorE2eTest.installedArchiveConnectorAgainstRealBackendWithNativePty",
+    ],
+    {
+      cwd: tempRepo,
+      encoding: "utf8",
+      timeout: 180_000,
+    },
+  );
+  assert.equal(
+    runA.status,
+    0,
+    `Strict qualification at commit A must succeed:\n${runA.stdout}\n${runA.stderr}`,
+  );
+
+  // 2. Advance HEAD to commit B in tempRepo without rebuilding or changing archive bytes
+  command(
+    "git",
+    [
+      "-c",
+      "user.name=Test Runner",
+      "-c",
+      "user.email=test@example.com",
+      "commit",
+      "--allow-empty",
+      "-m",
+      "Commit B advancing HEAD without rebuilding archive",
+    ],
+    tempRepo,
+  );
+  const commitB = command("git", ["rev-parse", "HEAD"], tempRepo);
+  assert.ok(
+    commitB && commitB.length >= 40,
+    `Commit B HEAD must be resolved: ${commitB}`,
+  );
+
+  // 3. Prove ordinary non-forced target CANNOT be UP-TO-DATE or green with stale archive A
+  // Notice: NO --rerun-tasks flag is provided!
+  const runB = spawnSync(
+    join(tempRepo, "java/gradlew"),
+    [
+      "-p",
+      join(tempRepo, "java"),
+      "--no-daemon",
+      ":adapters-http:test",
+      "-Dtracepermit.endpointConnector.requireInstalledArchive=true",
+      "--tests",
+      "io.tracepermit.adapters.http.JavaBackendEndpointConnectorE2eTest.installedArchiveConnectorAgainstRealBackendWithNativePty",
+    ],
+    {
+      cwd: tempRepo,
+      encoding: "utf8",
+      timeout: 180_000,
+    },
+  );
+  assert.notEqual(
+    runB.status,
+    0,
+    "Ordinary Gradle target must fail closed when Git advances to commit B with stale archive A",
+  );
+  const outB = `${runB.stdout}\n${runB.stderr}`;
+  assert.ok(
+    !outB.includes(":adapters-http:test UP-TO-DATE") &&
+      !outB.includes(":adapters-http:test FROM-CACHE"),
+    "Task :adapters-http:test must NOT be UP-TO-DATE or served FROM-CACHE when Git HEAD advances",
+  );
+  assert.ok(
+    outB.includes("expected current git HEAD") ||
+      outB.includes("Archive manifest commit was"),
+    `Failure output must identify stale commit mismatch against commit B:\n${outB}`,
+  );
+
+  // 4. Forced-failure sensitivity control: prove explicit mismatched expected commit fails reliably
+  const runSensitivity = spawnSync(
+    join(tempRepo, "java/gradlew"),
+    [
+      "-p",
+      join(tempRepo, "java"),
+      "--no-daemon",
+      ":adapters-http:test",
+      "-Dtracepermit.endpointConnector.requireInstalledArchive=true",
+      "-Dtracepermit.endpointConnector.expectedHeadCommit=0000000000000000000000000000000000000000",
+      "--tests",
+      "io.tracepermit.adapters.http.JavaBackendEndpointConnectorE2eTest.installedArchiveConnectorAgainstRealBackendWithNativePty",
+    ],
+    {
+      cwd: tempRepo,
+      encoding: "utf8",
+      timeout: 180_000,
+    },
+  );
+  assert.notEqual(
+    runSensitivity.status,
+    0,
+    "Forced-failure sensitivity control: mismatched expected commit must fail",
+  );
+  const sensOut = `${runSensitivity.stdout}\n${runSensitivity.stderr}`;
+  assert.ok(
+    sensOut.includes("0000000000000000000000000000000000000000"),
+    `Sensitivity control failure must reflect forced expected commit:\n${sensOut}`,
+  );
 });

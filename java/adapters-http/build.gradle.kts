@@ -42,21 +42,33 @@ val endpointDistributionArchive = layout.projectDirectory.file(
   "../endpoint-connector/build/distributions/tracepermit-endpoint-connector-0.1.0.tar.gz"
 )
 
+val repoRootDir = rootDir.parentFile
+val gitHeadProvider = providers.exec {
+  workingDir(repoRootDir)
+  commandLine("git", "rev-parse", "HEAD")
+  isIgnoreExitValue = true
+}.standardOutput.asText.map { it.trim() }
+
+val requireInstalledArchiveProperty = providers.systemProperty("tracepermit.endpointConnector.requireInstalledArchive")
+  .orElse(providers.environmentVariable("TRACEPERMIT_REQUIRE_INSTALLED_ARCHIVE"))
+  .orElse("false")
+
+val expectedHeadCommitProperty = providers.systemProperty("tracepermit.endpointConnector.expectedHeadCommit")
+  .orElse(providers.environmentVariable("TRACEPERMIT_EXPECTED_HEAD_COMMIT"))
+  .orElse(gitHeadProvider)
+  .orElse("")
+
 tasks.test {
   systemProperty("tracepermit.approvalRuntimeClasspath", sourceSets["main"].runtimeClasspath.asPath)
-  System.getProperties().forEach { (k, v) ->
-    if (k.toString().startsWith("tracepermit.")) {
-      systemProperty(k.toString(), v.toString())
-    }
-  }
-  System.getenv().forEach { (k, v) ->
-    if (k.startsWith("TRACEPERMIT_")) {
-      environment(k, v)
-    }
-  }
+  systemProperty("tracepermit.endpointConnector.requireInstalledArchive", requireInstalledArchiveProperty)
+  systemProperty("tracepermit.endpointConnector.expectedHeadCommit", expectedHeadCommitProperty)
+
   inputs.files(endpointDistributionArchive)
     .withPropertyName("endpointConnectorArchive")
     .withPathSensitivity(PathSensitivity.NONE)
+  inputs.property("endpointConnectorRequireInstalledArchive", requireInstalledArchiveProperty)
+  inputs.property("endpointConnectorExpectedHeadCommit", expectedHeadCommitProperty)
+
   testLogging {
     exceptionFormat = TestExceptionFormat.FULL
   }

@@ -33,6 +33,7 @@ import io.tracepermit.simulator.StatefulTargetSimulator;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.io.PrintStream;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -40,6 +41,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -58,8 +60,11 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Assumptions;
@@ -494,7 +499,7 @@ final class JavaBackendEndpointConnectorE2eTest {
             new ProcessBuilder("tar", "-xzf", archivePath.toString(), "-C", extractDir.toString())
                 .redirectErrorStream(true)
                 .start();
-        ByteArrayOutputStream tarOut = new ByteArrayOutputStream();
+        BoundedByteArrayOutputStream tarOut = new BoundedByteArrayOutputStream(256 * 1024);
         Thread tarThread =
             Thread.ofVirtual()
                 .start(
@@ -504,12 +509,15 @@ final class JavaBackendEndpointConnectorE2eTest {
                       } catch (Exception ignored) {
                       }
                     });
+        long tarStartNano = System.nanoTime();
+        long tarDeadlineNano = tarStartNano + TimeUnit.SECONDS.toNanos(10);
         boolean tarFinished = tarProc.waitFor(10, TimeUnit.SECONDS);
         if (!tarFinished) {
           tarProc.destroyForcibly();
           fail("Timeout waiting for tar extraction of " + archivePath);
         }
-        tarThread.join(2000);
+        long tarRemainingMillis = Math.max(100, (tarDeadlineNano - System.nanoTime()) / 1_000_000);
+        tarThread.join(Math.min(2000, tarRemainingMillis));
         assertThat(tarProc.exitValue())
             .describedAs("tar extraction failed: %s", tarOut.toString(StandardCharsets.UTF_8))
             .isZero();
@@ -529,41 +537,39 @@ final class JavaBackendEndpointConnectorE2eTest {
         JsonNode manifest = JsonSupport.MAPPER.readTree(manifestPath.toFile());
         String manifestCommit = manifest.path("sourceCommit").asText();
 
-        if (requireInstalledArchive) {
-          Process gitProc =
-              new ProcessBuilder("git", "rev-parse", "HEAD")
-                  .directory(repoRoot.toFile())
-                  .redirectErrorStream(true)
-                  .start();
-          ByteArrayOutputStream gitOut = new ByteArrayOutputStream();
-          Thread gitThread =
-              Thread.ofVirtual()
-                  .start(
-                      () -> {
-                        try {
-                          gitProc.getInputStream().transferTo(gitOut);
-                        } catch (Exception ignored) {
-                        }
-                      });
-          boolean gitFinished = gitProc.waitFor(5, TimeUnit.SECONDS);
-          if (gitFinished && gitProc.exitValue() == 0) {
-            gitThread.join(1000);
-            String headCommit = gitOut.toString(StandardCharsets.UTF_8).trim();
-            if (headCommit.matches("[0-9a-f]{40}|[0-9a-f]{64}")) {
-              assertThat(manifestCommit)
-                  .describedAs(
-                      "Installed E2E qualification requires an exact-HEAD connector archive. "
-                          + "Archive manifest commit was %s, expected current git HEAD %s.",
-                      manifestCommit,
-                      headCommit)
-                  .isEqualTo(headCommit);
-              assertThat(manifest.path("sourceTree").asText())
-                  .describedAs("Installed E2E qualification requires clean sourceTree in manifest")
-                  .isEqualTo("clean");
-            }
-          } else {
-            gitProc.destroyForcibly();
+        String expectedHead;
+        String configuredExpectedHead =
+            System.getProperty("tracepermit.endpointConnector.expectedHeadCommit");
+        if (configuredExpectedHead != null && !configuredExpectedHead.isBlank()) {
+          expectedHead = configuredExpectedHead.trim();
+          if (!expectedHead.matches("^[0-9a-f]{40}$|^[0-9a-f]{64}$")) {
+            fail("Configured expectedHeadCommit is malformed: " + configuredExpectedHead);
           }
+        } else {
+          expectedHead =
+              resolveGitHeadCommit(repoRoot, List.of("git", "rev-parse", "HEAD"), Duration.ofSeconds(5));
+        }
+
+        if (requireInstalledArchive) {
+          assertThat(manifestCommit)
+              .describedAs(
+                  "Installed E2E qualification requires an exact-HEAD connector archive. "
+                      + "Archive manifest commit was %s, expected current git HEAD %s.",
+                  manifestCommit,
+                  expectedHead)
+              .isEqualTo(expectedHead);
+          assertThat(manifest.path("sourceTree").asText())
+              .describedAs("Installed E2E qualification requires clean sourceTree in manifest")
+              .isEqualTo("clean");
+        } else {
+          Assumptions.assumeTrue(
+              expectedHead.equals(manifestCommit)
+                  && "clean".equals(manifest.path("sourceTree").asText()),
+              "Archive manifest ("
+                  + manifestCommit
+                  + ") does not match HEAD ("
+                  + expectedHead
+                  + ") or sourceTree is not clean; skipping for ordinary development check.");
         }
 
         // On Linux / non-macOS: explicitly exercise platform refusal with bounded waits and stream drains,
@@ -577,8 +583,8 @@ final class JavaBackendEndpointConnectorE2eTest {
           pb.environment().put("TRACEPERMIT_ENDPOINT_PRIVATE_KEY_PKCS8_PATH", keyPath.toString());
           pb.environment().put("TRACEPERMIT_CONNECTOR_BEARER_TOKEN", token);
           Process linuxProc = pb.start();
-          ByteArrayOutputStream linuxOut = new ByteArrayOutputStream();
-          ByteArrayOutputStream linuxErrOut = new ByteArrayOutputStream();
+          BoundedByteArrayOutputStream linuxOut = new BoundedByteArrayOutputStream(256 * 1024);
+          BoundedByteArrayOutputStream linuxErrOut = new BoundedByteArrayOutputStream(256 * 1024);
           Thread linuxOutThread =
               Thread.ofVirtual()
                   .start(
@@ -597,13 +603,15 @@ final class JavaBackendEndpointConnectorE2eTest {
                         } catch (Exception ignored) {
                         }
                       });
+          long linuxDeadlineNano = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
           boolean linuxFinished = linuxProc.waitFor(10, TimeUnit.SECONDS);
           if (!linuxFinished) {
             linuxProc.destroyForcibly();
             fail("Timeout waiting for Linux platform refusal process to exit");
           }
-          linuxOutThread.join(2000);
-          linuxErrThread.join(2000);
+          long linuxRemainingMillis = Math.max(100, (linuxDeadlineNano - System.nanoTime()) / 1_000_000);
+          linuxOutThread.join(Math.min(2000, linuxRemainingMillis));
+          linuxErrThread.join(Math.min(2000, linuxRemainingMillis));
           String linuxErr = linuxErrOut.toString(StandardCharsets.UTF_8);
           int linuxExit = linuxProc.exitValue();
           assertThat(linuxExit).isEqualTo(2);
@@ -683,10 +691,10 @@ final class JavaBackendEndpointConnectorE2eTest {
                 token);
         scriptPb.directory(privateDir.toFile());
         Process runningScript = scriptPb.start();
-        scriptProc = runningScript;
+        ProcessTreeTracker scriptTracker = new ProcessTreeTracker(runningScript);
 
-        ByteArrayOutputStream scriptOut = new ByteArrayOutputStream();
-        ByteArrayOutputStream scriptErr = new ByteArrayOutputStream();
+        BoundedByteArrayOutputStream scriptOut = new BoundedByteArrayOutputStream(256 * 1024);
+        BoundedByteArrayOutputStream scriptErr = new BoundedByteArrayOutputStream(256 * 1024);
         Thread outThread =
             Thread.ofVirtual()
                 .start(
@@ -706,15 +714,25 @@ final class JavaBackendEndpointConnectorE2eTest {
                       }
                     });
 
-        boolean finished = scriptProc.waitFor(25, TimeUnit.SECONDS);
+        long scriptStartNano = System.nanoTime();
+        long scriptDeadlineNano = scriptStartNano + TimeUnit.SECONDS.toNanos(25);
+        boolean finished = false;
+        while (System.nanoTime() < scriptDeadlineNano) {
+          scriptTracker.sampleDescendants();
+          if (runningScript.waitFor(100, TimeUnit.MILLISECONDS)) {
+            finished = true;
+            break;
+          }
+        }
         if (!finished) {
-          terminateProcessTree(scriptProc, Duration.ofSeconds(5));
+          scriptTracker.terminate(Duration.ofSeconds(5));
           fail("Timeout waiting for installed connector execution in PTY");
         }
-        outThread.join(2000);
-        errThread.join(2000);
+        long remainingJoinMillis = Math.max(100, (scriptDeadlineNano - System.nanoTime()) / 1_000_000);
+        outThread.join(Math.min(2000, remainingJoinMillis));
+        errThread.join(Math.min(2000, remainingJoinMillis));
 
-        assertThat(scriptProc.exitValue()).isZero();
+        assertThat(runningScript.exitValue()).isZero();
         List<JsonNode> responses = new ArrayList<>();
         for (String line : scriptOut.toString(StandardCharsets.UTF_8).lines().toList()) {
           String trimmed = line.trim();
@@ -766,10 +784,10 @@ final class JavaBackendEndpointConnectorE2eTest {
         assertThat(captured)
             .doesNotContain(token)
             .doesNotContain(Base64.getEncoder().encodeToString(keys.getPrivate().getEncoded()));
+
+        // Ensure clean shutdown of process tree
+        scriptTracker.terminate(Duration.ofSeconds(5));
       } finally {
-        if (scriptProc != null) {
-          terminateProcessTree(scriptProc, Duration.ofSeconds(5));
-        }
         try (var stream = Files.walk(privateDir)) {
           stream
               .sorted(Comparator.reverseOrder())
@@ -785,73 +803,533 @@ final class JavaBackendEndpointConnectorE2eTest {
     }
   }
 
-  private static void terminateProcessTree(Process process, Duration timeout) {
-    if (process == null) {
-      return;
-    }
-    ProcessHandle rootHandle = process.toHandle();
-    List<ProcessHandle> descendants = rootHandle.descendants().toList();
+  static final class BoundedByteArrayOutputStream extends OutputStream {
+    private final ByteArrayOutputStream underlying;
+    private final int maxBytes;
+    private int totalBytes = 0;
+    private boolean truncated = false;
 
-    process.destroy();
-    for (ProcessHandle d : descendants) {
-      try {
-        d.destroy();
-      } catch (Exception ignored) {
+    BoundedByteArrayOutputStream(int maxBytes) {
+      this.maxBytes = maxBytes;
+      this.underlying = new ByteArrayOutputStream(Math.min(maxBytes, 4096));
+    }
+
+    @Override
+    public synchronized void write(int b) {
+      totalBytes++;
+      if (underlying.size() < maxBytes) {
+        underlying.write(b);
+      } else {
+        truncated = true;
       }
     }
 
-    long deadline = System.currentTimeMillis() + timeout.toMillis();
-    boolean allExited = waitForTreeExit(rootHandle, descendants, Math.min(2000, timeout.toMillis()));
-
-    if (!allExited) {
-      process.destroyForcibly();
-      for (ProcessHandle d : descendants) {
-        try {
-          d.destroyForcibly();
-        } catch (Exception ignored) {
-        }
+    @Override
+    public synchronized void write(byte[] b, int off, int len) {
+      totalBytes += len;
+      int available = maxBytes - underlying.size();
+      if (available > 0) {
+        int toWrite = Math.min(len, available);
+        underlying.write(b, off, toWrite);
       }
-      long remaining = Math.max(500, deadline - System.currentTimeMillis());
-      waitForTreeExit(rootHandle, descendants, remaining);
+      if (len > available) {
+        truncated = true;
+      }
+    }
+
+    public synchronized byte[] toByteArray() {
+      return underlying.toByteArray();
+    }
+
+    public synchronized String toString(Charset charset) {
+      return underlying.toString(charset);
+    }
+
+    public int totalBytes() {
+      return totalBytes;
+    }
+
+    public boolean isTruncated() {
+      return truncated;
     }
   }
 
-  private static boolean waitForTreeExit(
-      ProcessHandle root, List<ProcessHandle> descendants, long timeoutMs) {
-    long start = System.currentTimeMillis();
-    while (System.currentTimeMillis() - start < timeoutMs) {
-      boolean anyAlive = root.isAlive() || descendants.stream().anyMatch(ProcessHandle::isAlive);
-      if (!anyAlive) {
-        return true;
-      }
+  static String resolveGitHeadCommit(Path workingDir, List<String> command, Duration timeout) {
+    long deadlineNano = System.nanoTime() + timeout.toNanos();
+    Process gitProc;
+    try {
+      gitProc =
+          new ProcessBuilder(command)
+              .directory(workingDir.toFile())
+              .redirectErrorStream(true)
+              .start();
+    } catch (Exception e) {
+      fail("Failed to execute git command " + command + ": " + e.getMessage());
+      throw new AssertionError("unreachable");
+    }
+
+    BoundedByteArrayOutputStream gitOut = new BoundedByteArrayOutputStream(16 * 1024);
+    Thread gitThread =
+        Thread.ofVirtual()
+            .start(
+                () -> {
+                  try {
+                    gitProc.getInputStream().transferTo(gitOut);
+                  } catch (Exception ignored) {
+                  }
+                });
+
+    long remainingMillis = Math.max(1, (deadlineNano - System.nanoTime()) / 1_000_000);
+    boolean finished = false;
+    try {
+      finished = gitProc.waitFor(remainingMillis, TimeUnit.MILLISECONDS);
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      gitProc.destroyForcibly();
+      fail("Interrupted while waiting for git command " + command);
+    }
+
+    if (!finished) {
+      gitProc.destroyForcibly();
+      fail("Timeout waiting for git command " + command + " within " + timeout.toMillis() + "ms");
+    }
+
+    try {
+      gitThread.join(Math.min(1000, Math.max(100, (deadlineNano - System.nanoTime()) / 1_000_000)));
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+    }
+
+    int exitCode = gitProc.exitValue();
+    if (exitCode != 0) {
+      fail("Git command " + command + " exited with non-zero code " + exitCode);
+    }
+
+    String headCommit = gitOut.toString(StandardCharsets.UTF_8).trim();
+    if (!headCommit.matches("^[0-9a-f]{40}$|^[0-9a-f]{64}$")) {
+      fail("Git command " + command + " produced malformed commit output: " + headCommit);
+    }
+
+    return headCommit;
+  }
+
+  static final class ProcessTreeTracker {
+    private final Process rootProcess;
+    private final ProcessHandle rootHandle;
+    private final Set<ProcessHandle> knownDescendants = ConcurrentHashMap.newKeySet();
+
+    ProcessTreeTracker(Process rootProcess) {
+      this.rootProcess = Objects.requireNonNull(rootProcess);
+      ProcessHandle handle = null;
       try {
-        Thread.sleep(50);
-      } catch (InterruptedException e) {
-        Thread.currentThread().interrupt();
-        break;
+        handle = rootProcess.toHandle();
+      } catch (UnsupportedOperationException ignored) {
+      }
+      this.rootHandle = handle;
+      sampleDescendants();
+    }
+
+    Set<ProcessHandle> sampleDescendants() {
+      try {
+        if (rootHandle != null && rootHandle.isAlive()) {
+          rootHandle.descendants().forEach(knownDescendants::add);
+        }
+      } catch (Exception ignored) {
+      }
+      return Set.copyOf(knownDescendants);
+    }
+
+    void trackHandle(ProcessHandle handle) {
+      if (handle != null) {
+        knownDescendants.add(handle);
       }
     }
-    return !root.isAlive() && descendants.stream().noneMatch(ProcessHandle::isAlive);
+
+    Process rootProcess() {
+      return rootProcess;
+    }
+
+    ProcessHandle rootHandle() {
+      return rootHandle;
+    }
+
+    Set<ProcessHandle> knownDescendants() {
+      return Set.copyOf(knownDescendants);
+    }
+
+    void terminate(Duration timeout) {
+      long startNano = System.nanoTime();
+      long deadlineNano = startNano + timeout.toNanos();
+
+      sampleDescendants();
+
+      // 1. Graceful SIGTERM to known descendants and root
+      for (ProcessHandle d : knownDescendants) {
+        try {
+          if (d.isAlive()) {
+            d.destroy();
+          }
+        } catch (Exception ignored) {
+        }
+      }
+      try {
+        if (rootProcess.isAlive()) {
+          rootProcess.destroy();
+        }
+      } catch (Exception ignored) {
+      }
+
+      long gracefulDeadlineNano =
+          startNano + Math.min(timeout.toNanos() / 2, TimeUnit.SECONDS.toNanos(2));
+      boolean allExited = waitForTreeExit(gracefulDeadlineNano);
+
+      // 2. Escalation to SIGKILL (destroyForcibly)
+      if (!allExited) {
+        for (ProcessHandle d : knownDescendants) {
+          try {
+            if (d.isAlive()) {
+              d.destroyForcibly();
+            }
+          } catch (Exception ignored) {
+          }
+        }
+        try {
+          if (rootProcess.isAlive()) {
+            rootProcess.destroyForcibly();
+          }
+        } catch (Exception ignored) {
+        }
+        allExited = waitForTreeExit(deadlineNano);
+      }
+
+      // 3. Surface unconfirmed cleanup as explicit failure!
+      if (!allExited) {
+        List<Long> lingeringPids = new ArrayList<>();
+        if (rootHandle != null && rootHandle.isAlive()) {
+          lingeringPids.add(rootHandle.pid());
+        }
+        for (ProcessHandle d : knownDescendants) {
+          if (d.isAlive()) {
+            lingeringPids.add(d.pid());
+          }
+        }
+        throw new IllegalStateException(
+            "Process tree cleanup unconfirmed: living processes remain after force termination: "
+                + lingeringPids);
+      }
+    }
+
+    private boolean waitForTreeExit(long deadlineNano) {
+      while (System.nanoTime() < deadlineNano) {
+        boolean rootAlive = rootHandle != null ? rootHandle.isAlive() : rootProcess.isAlive();
+        boolean anyAlive =
+            rootAlive || knownDescendants.stream().anyMatch(ProcessHandle::isAlive);
+        if (!anyAlive) {
+          return true;
+        }
+        try {
+          Thread.sleep(50);
+        } catch (InterruptedException e) {
+          Thread.currentThread().interrupt();
+          break;
+        }
+      }
+      boolean rootAlive = rootHandle != null ? rootHandle.isAlive() : rootProcess.isAlive();
+      return !rootAlive && knownDescendants.stream().noneMatch(ProcessHandle::isAlive);
+    }
+  }
+
+  @Test
+  void strictProvenanceRejectsExit73Git() throws Exception {
+    Path tempDir = Files.createTempDirectory("tp-git-exit73-probe");
+    try {
+      assertThatThrownBy(
+              () ->
+                  resolveGitHeadCommit(
+                      tempDir, List.of("sh", "-c", "exit 73"), Duration.ofSeconds(2)))
+          .isInstanceOf(AssertionError.class)
+          .hasMessageContaining("exited with non-zero code 73");
+    } finally {
+      Files.deleteIfExists(tempDir);
+    }
+  }
+
+  @Test
+  void strictProvenanceRejectsMalformedExit0GitOutput() throws Exception {
+    Path tempDir = Files.createTempDirectory("tp-git-malformed-probe");
+    try {
+      assertThatThrownBy(
+              () ->
+                  resolveGitHeadCommit(
+                      tempDir,
+                      List.of("sh", "-c", "echo not-a-valid-sha; exit 0"),
+                      Duration.ofSeconds(2)))
+          .isInstanceOf(AssertionError.class)
+          .hasMessageContaining("produced malformed commit output");
+    } finally {
+      Files.deleteIfExists(tempDir);
+    }
+  }
+
+  @Test
+  void strictProvenanceRejectsMissingGit() throws Exception {
+    Path tempDir = Files.createTempDirectory("tp-git-missing-probe");
+    try {
+      assertThatThrownBy(
+              () ->
+                  resolveGitHeadCommit(
+                      tempDir,
+                      List.of("this-git-command-does-not-exist-probe"),
+                      Duration.ofSeconds(2)))
+          .isInstanceOf(AssertionError.class)
+          .hasMessageContaining("Failed to execute git command");
+    } finally {
+      Files.deleteIfExists(tempDir);
+    }
+  }
+
+  @Test
+  void strictProvenanceRejectsStalledGitWithinFiniteBounds() throws Exception {
+    Path tempDir = Files.createTempDirectory("tp-git-stalled-probe");
+    try {
+      long start = System.nanoTime();
+      assertThatThrownBy(
+              () ->
+                  resolveGitHeadCommit(
+                      tempDir, List.of("sh", "-c", "sleep 60"), Duration.ofMillis(300)))
+          .isInstanceOf(AssertionError.class)
+          .hasMessageContaining("Timeout waiting for git command");
+      long elapsedMillis = (System.nanoTime() - start) / 1_000_000;
+      assertThat(elapsedMillis)
+          .describedAs("Stalled git command must fail within finite bounds")
+          .isLessThan(2000);
+    } finally {
+      Files.deleteIfExists(tempDir);
+    }
+  }
+
+  @Test
+  void strictProvenanceRejectsStaleArchiveAgainstHead() {
+    String archiveCommit = "1111111111111111111111111111111111111111";
+    String actualHead = "2222222222222222222222222222222222222222";
+    assertThatThrownBy(
+            () -> {
+              assertThat(archiveCommit)
+                  .describedAs(
+                      "Installed E2E qualification requires an exact-HEAD connector archive. "
+                          + "Archive manifest commit was %s, expected current git HEAD %s.",
+                      archiveCommit,
+                      actualHead)
+                  .isEqualTo(actualHead);
+            })
+        .isInstanceOf(AssertionError.class)
+        .hasMessageContaining("expected current git HEAD " + actualHead);
+  }
+
+  @Test
+  void processTreeTrackerEscalatesToForceKillWhenTermIgnored() throws Exception {
+    ProcessBuilder pb =
+        new ProcessBuilder(
+            "sh", "-c", "trap '' TERM; echo READY; sleep 60");
+    Process proc = pb.start();
+    ProcessTreeTracker tracker = new ProcessTreeTracker(proc);
+
+    BoundedByteArrayOutputStream out = new BoundedByteArrayOutputStream(1024);
+    Thread t =
+        Thread.ofVirtual()
+            .start(
+                () -> {
+                  try {
+                    proc.getInputStream().transferTo(out);
+                  } catch (Exception ignored) {
+                  }
+                });
+
+    long start = System.nanoTime();
+    while (System.nanoTime() - start < TimeUnit.SECONDS.toNanos(3)) {
+      tracker.sampleDescendants();
+      if (out.toString(StandardCharsets.UTF_8).contains("READY")) {
+        break;
+      }
+      Thread.sleep(50);
+    }
+    assertThat(proc.isAlive()).isTrue();
+
+    long termStart = System.nanoTime();
+    tracker.terminate(Duration.ofSeconds(3));
+    long elapsedMillis = (System.nanoTime() - termStart) / 1_000_000;
+
+    assertThat(elapsedMillis).isLessThan(4000);
+    assertThat(proc.isAlive()).isFalse();
+    for (ProcessHandle d : tracker.knownDescendants()) {
+      assertThat(d.isAlive()).isFalse();
+    }
+  }
+
+  @Test
+  void processTreeTrackerHandlesRootEarlyExitWithoutProcessNameKills() throws Exception {
+    ProcessBuilder pb =
+        new ProcessBuilder("sh", "-c", "sleep 60 & echo GRANDCHILD_PID=$!; exit 0");
+    Process proc = pb.start();
+    ProcessTreeTracker tracker = new ProcessTreeTracker(proc);
+
+    BoundedByteArrayOutputStream out = new BoundedByteArrayOutputStream(1024);
+    Thread t =
+        Thread.ofVirtual()
+            .start(
+                () -> {
+                  try {
+                    proc.getInputStream().transferTo(out);
+                  } catch (Exception ignored) {
+                  }
+                });
+
+    long start = System.nanoTime();
+    Long grandchildPid = null;
+    while (System.nanoTime() - start < TimeUnit.SECONDS.toNanos(3)) {
+      tracker.sampleDescendants();
+      String output = out.toString(StandardCharsets.UTF_8);
+      if (output.contains("GRANDCHILD_PID=")) {
+        String[] lines = output.lines().toArray(String[]::new);
+        for (String l : lines) {
+          if (l.startsWith("GRANDCHILD_PID=")) {
+            grandchildPid = Long.parseLong(l.substring("GRANDCHILD_PID=".length()).trim());
+            break;
+          }
+        }
+        if (grandchildPid != null) {
+          break;
+        }
+      }
+      Thread.sleep(50);
+    }
+
+    assertThat(grandchildPid).isNotNull();
+    ProcessHandle.of(grandchildPid).ifPresent(tracker::trackHandle);
+
+    proc.waitFor(1, TimeUnit.SECONDS);
+    assertThat(proc.isAlive()).isFalse();
+
+    tracker.terminate(Duration.ofSeconds(2));
+    Optional<ProcessHandle> grandchildHandle = ProcessHandle.of(grandchildPid);
+    assertThat(grandchildHandle.map(ProcessHandle::isAlive).orElse(false)).isFalse();
+  }
+
+  @Test
+  void processTreeTrackerSurfacesUnconfirmedCleanupAsFailure() {
+    ProcessHandle current = ProcessHandle.current();
+    Process dummyProc =
+        new Process() {
+          @Override
+          public OutputStream getOutputStream() {
+            return OutputStream.nullOutputStream();
+          }
+
+          @Override
+          public InputStream getInputStream() {
+            return InputStream.nullInputStream();
+          }
+
+          @Override
+          public InputStream getErrorStream() {
+            return InputStream.nullInputStream();
+          }
+
+          @Override
+          public int waitFor() {
+            return 0;
+          }
+
+          @Override
+          public boolean waitFor(long timeout, TimeUnit unit) {
+            return true;
+          }
+
+          @Override
+          public int exitValue() {
+            return 0;
+          }
+
+          @Override
+          public void destroy() {}
+
+          @Override
+          public Process destroyForcibly() {
+            return this;
+          }
+
+          @Override
+          public boolean isAlive() {
+            return false;
+          }
+
+          @Override
+          public ProcessHandle toHandle() {
+            return current;
+          }
+        };
+    ProcessTreeTracker tracker = new ProcessTreeTracker(dummyProc);
+    tracker.trackHandle(current);
+
+    assertThatThrownBy(() -> tracker.terminate(Duration.ofMillis(200)))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("Process tree cleanup unconfirmed");
   }
 
   @Test
   void ptyProcessTreeCleanupTerminatesAllDescendantsWithNoLingeringProcesses() throws Exception {
     boolean isMac = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("mac");
     if (!isMac) {
-      // On non-macOS, test process tree termination using standard ProcessBuilder
-      ProcessBuilder pb = new ProcessBuilder("sh", "-c", "sleep 60 & sleep 60");
+      // On non-macOS, test process tree termination using standard ProcessBuilder with grandchild confirmation
+      ProcessBuilder pb =
+          new ProcessBuilder("sh", "-c", "sleep 60 & echo GRANDCHILD_PID=$!; sleep 60");
       Process proc = pb.start();
-      Thread.sleep(200);
-      List<ProcessHandle> descendants = proc.toHandle().descendants().toList();
-      terminateProcessTree(proc, Duration.ofSeconds(3));
+      ProcessTreeTracker tracker = new ProcessTreeTracker(proc);
+
+      BoundedByteArrayOutputStream out = new BoundedByteArrayOutputStream(1024);
+      Thread t =
+          Thread.ofVirtual()
+              .start(
+                  () -> {
+                    try {
+                      proc.getInputStream().transferTo(out);
+                    } catch (Exception ignored) {
+                    }
+                  });
+
+      long start = System.nanoTime();
+      Long grandchildPid = null;
+      while (System.nanoTime() - start < TimeUnit.SECONDS.toNanos(3)) {
+        tracker.sampleDescendants();
+        String output = out.toString(StandardCharsets.UTF_8);
+        if (output.contains("GRANDCHILD_PID=")) {
+          String[] lines = output.lines().toArray(String[]::new);
+          for (String l : lines) {
+            if (l.startsWith("GRANDCHILD_PID=")) {
+              grandchildPid = Long.parseLong(l.substring("GRANDCHILD_PID=".length()).trim());
+              break;
+            }
+          }
+          if (grandchildPid != null) {
+            break;
+          }
+        }
+        Thread.sleep(50);
+      }
+      assertThat(grandchildPid).isNotNull();
+      ProcessHandle.of(grandchildPid).ifPresent(tracker::trackHandle);
+      assertThat(ProcessHandle.of(grandchildPid).map(ProcessHandle::isAlive).orElse(false))
+          .isTrue();
+
+      tracker.terminate(Duration.ofSeconds(3));
       assertThat(proc.isAlive()).isFalse();
-      for (ProcessHandle d : descendants) {
+      for (ProcessHandle d : tracker.knownDescendants()) {
         assertThat(d.isAlive()).isFalse();
       }
       return;
     }
 
-    // On macOS: spawn real /usr/bin/script PTY tree with child processes
+    // On macOS: spawn real /usr/bin/script PTY tree with child processes, confirming grandchild started
     Path tempDir = Files.createTempDirectory("tp-pty-cleanup-probe");
     try {
       Path scriptFile = tempDir.resolve("lingering_worker.py");
@@ -860,6 +1338,8 @@ final class JavaBackendEndpointConnectorE2eTest {
           """
           import time, subprocess, sys
           p = subprocess.Popen(["sleep", "60"])
+          sys.stdout.write(f"GRANDCHILD_PID={p.pid}\\n")
+          sys.stdout.flush()
           time.sleep(60)
           """);
       ProcessBuilder pb =
@@ -870,42 +1350,73 @@ final class JavaBackendEndpointConnectorE2eTest {
               "/usr/bin/python3",
               scriptFile.toString());
       Process ptyProc = pb.start();
+      ProcessTreeTracker tracker = new ProcessTreeTracker(ptyProc);
 
-      // Wait briefly for python and sleep subprocesses to spawn
-      long deadline = System.currentTimeMillis() + 3000;
-      List<ProcessHandle> descendants = List.of();
+      BoundedByteArrayOutputStream ptyOut = new BoundedByteArrayOutputStream(4096);
+      Thread t =
+          Thread.ofVirtual()
+              .start(
+                  () -> {
+                    try {
+                      ptyProc.getInputStream().transferTo(ptyOut);
+                    } catch (Exception ignored) {
+                    }
+                  });
+
+      // Confirm intended grandchild actually started before cleanup
+      long deadline = System.currentTimeMillis() + 4000;
+      Long grandchildPid = null;
       while (System.currentTimeMillis() < deadline) {
-        descendants = ptyProc.toHandle().descendants().toList();
-        if (!descendants.isEmpty()) {
-          break;
+        tracker.sampleDescendants();
+        String output = ptyOut.toString(StandardCharsets.UTF_8);
+        if (output.contains("GRANDCHILD_PID=")) {
+          String[] lines = output.lines().toArray(String[]::new);
+          for (String l : lines) {
+            if (l.startsWith("GRANDCHILD_PID=")) {
+              grandchildPid = Long.parseLong(l.substring("GRANDCHILD_PID=".length()).trim());
+              break;
+            }
+          }
+          if (grandchildPid != null) {
+            break;
+          }
         }
         Thread.sleep(50);
       }
+      assertThat(grandchildPid).describedAs("Grandchild PID must be reported by worker").isNotNull();
+      ProcessHandle.of(grandchildPid).ifPresent(tracker::trackHandle);
+      assertThat(ProcessHandle.of(grandchildPid).map(ProcessHandle::isAlive).orElse(false))
+          .describedAs("Grandchild process must be alive before cleanup")
+          .isTrue();
       assertThat(ptyProc.isAlive()).isTrue();
-      assertThat(descendants).isNotEmpty();
 
       // Probe: execute tree termination
       long termStart = System.currentTimeMillis();
-      terminateProcessTree(ptyProc, Duration.ofSeconds(3));
+      tracker.terminate(Duration.ofSeconds(3));
       long elapsed = System.currentTimeMillis() - termStart;
 
       // Assert termination is bounded, root is dead, and NO owned descendants remain alive
       assertThat(elapsed).isLessThan(4000);
       assertThat(ptyProc.isAlive()).isFalse();
-      for (ProcessHandle descendant : descendants) {
+      for (ProcessHandle descendant : tracker.knownDescendants()) {
         assertThat(descendant.isAlive())
-            .describedAs("Descendant process PID %d must not remain alive after tree termination", descendant.pid())
+            .describedAs(
+                "Descendant process PID %d must not remain alive after tree termination",
+                descendant.pid())
             .isFalse();
       }
       assertThat(ptyProc.toHandle().descendants().filter(ProcessHandle::isAlive).count()).isZero();
     } finally {
       try (var stream = Files.walk(tempDir)) {
-        stream.sorted(Comparator.reverseOrder()).forEach(p -> {
-          try {
-            Files.deleteIfExists(p);
-          } catch (Exception ignored) {
-          }
-        });
+        stream
+            .sorted(Comparator.reverseOrder())
+            .forEach(
+                p -> {
+                  try {
+                    Files.deleteIfExists(p);
+                  } catch (Exception ignored) {
+                  }
+                });
       }
     }
   }
