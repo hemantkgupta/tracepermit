@@ -14,6 +14,11 @@ or a safe-resume protocol.
 
 ## Decision
 
+Current version follow-up: [ADR 0059](0059-explicit-v9-v10-simulator-upgrade.md)
+extends strict startup to V1–V10 and adds a stopped-service V9→V10-only upgrade
+that refuses quarantined state. The V9 provenance and historical slice below
+remain; the one-way recovery/no-resume boundary is unchanged.
+
 Flyway V9 installs one installation-wide `tp_recovery_quarantine` row, initially
 `ready`. The table owner (or a role inheriting that owner's authority) may declare
 `quarantined`, recording one random recovery UUID and trusted operator-process

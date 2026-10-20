@@ -13,7 +13,7 @@ revoke a signer, or provide a way to resume.
 2. Use private operator configuration pointing to the exact intended database.
    Do not paste credentials into commands or logs. `--check` only validates local
    files and is not a database/recovery check.
-3. Use the matching V9 distribution. `--recovery-status` validates packaged
+3. Use the matching V10 distribution. `--recovery-status` validates packaged
    schema/history/trigger metadata and reads the current mode:
 
    ```bash
@@ -77,9 +77,11 @@ Role provisioning remains operator-owned, not a production least-privilege claim
 - The row records mode, recovery UUID and declaration time. It is not an
   independently anchored audit trail or proof that no prior effect occurred.
 
-There is deliberately **no resume or in-place schema-upgrade command**. V8 and
-incomplete installations remain disconnected for separate offline recovery/
-upgrade work. Do not replace their state with a fresh installation. Do not
+There is deliberately **no resume command**. Only a separate stopped-service
+[V9→V10 upgrade](simulator-approval-distribution.md#explicit-stopped-service-upgrade-v9-to-v10)
+is supported, and it refuses quarantined state; it is not recovery authorization.
+V8 and incomplete installations remain disconnected for separate offline work.
+Do not replace their state with a fresh installation. Do not
 classify executing/unknown attempts as failed or release their authority merely
 because they are old. Further recovery must reconcile bound target observations
 and define invalidation/re-enrollment before any effectful resume.

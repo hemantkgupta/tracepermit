@@ -27,6 +27,12 @@
 | Evidence event     | Append-only lifecycle fact                                    |
 | Reconciliation     | Later determination of an initially uncertain outcome         |
 
+V10 storage additionally recognizes terminal `cancelled` and separate requester
+cancellation provenance on pending→cancelled transitions, never reviewer fields.
+This is the storage/consumer prerequisite of
+[ADR 0059](../architecture/0059-explicit-v9-v10-simulator-upgrade.md), not an
+exposed authenticated withdrawal API or lifecycle evidence service.
+
 ## 2. Aggregate boundaries
 
 ### Action aggregate

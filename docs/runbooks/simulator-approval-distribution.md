@@ -176,7 +176,7 @@ With the private config pointing to a dedicated empty local database, initialize
 ```
 
 Success emits `APPROVAL_DATABASE_INITIALIZED` and exits without a listener,
-IdP call or target effect. It installs packaged V1–V9 with an initialization
+IdP call or target effect. It installs packaged V1–V10 with an initialization
 role. Existing/partial state is refused; cooperating concurrent initializers
 fail fast. Never use this command after a restore or for an upgrade. Migration
 failure can leave partial state; no automatic repair, clean or retry is provided.
@@ -189,6 +189,51 @@ runtime config. Runtime row locks also require SELECT and UPDATE on
 transitions. Exact checks and limits are in
 [ADR 0045](../architecture/0045-explicit-database-initialization.md).
 
+## Explicit stopped-service upgrade (V9 to V10)
+
+This is a **local, simulator-only, V9→V10 storage prerequisite**, not a
+cancellation feature, online migration or recovery/resume command.
+
+1. Stop every client and service using this dedicated database, including old
+   binaries. Verify a private backup and retain the original installation and
+   persistent key/configuration files. Check the new archive's checksums and
+   intended commit. Matching package names/version numbers alone are insufficient.
+2. Point `TRACEPERMIT_APPROVAL_CONFIG` at a private config for that same database
+   with table-owner or inherited-owner credentials. Keep this separate from the
+   runtime DML config. Run `--check` first; it does not establish DB readiness.
+3. Run the **new** distribution's command once:
+
+   ```bash
+   /path/to/new-distribution/bin/tracepermit-simulator-approval --upgrade-db
+   ```
+
+   Success emits `APPROVAL_DATABASE_UPGRADED: V9 to V10 only; no listener or target
+started; not recovery authorization.` and exits 0. It validates exactly the
+   packaged V1–V9 checksums/history and guard 9, then transactionally applies V10
+   and validates the complete result. Existing request/action/policy/evidence/
+   outbox/consumption rows are retained. V1–V9 migration bytes are unchanged.
+
+4. Repeated upgrades, other versions, partial/modified/future schemas, unexpected
+   public tables or user schemas, insufficient ownership/RLS, disabled required
+   triggers, quarantined mode, unresolved executing/unknown work and competing
+   upgrades fail without reporting success. Individual waits are bounded, not
+   an overall command deadline. A local advisory lock is not proof services stopped.
+5. On exit 2/timeout/disconnection, **keep services stopped** and retain the DB and
+   private records. The public diagnostic is deliberately redacted. A failed DDL
+   transaction leaves V9; loss of final validation acknowledgement can leave a
+   committed V10. Inspect privately with matching tools before deciding what
+   happened. Do not reset, repair history, blindly retry, rerun `--init-db`, or
+   automatically restore/downgrade to make startup pass. An old binary refuses V10.
+6. Only after an ordinary planned upgrade is confirmed may the new binary be
+   started with the separate runtime config. A restored/quarantined or otherwise
+   incident-affected DB remains disconnected under the recovery runbook; this
+   command never grants safe-resume authority.
+
+V10 recognizes terminal cancelled storage records but exposes **no cancellation
+API, scope, tool or button**. Reported inspection format is now2.0 (adds the
+cancelled count); API projections remain1.0. Details and limits:
+[ADR 0059](../architecture/0059-explicit-v9-v10-simulator-upgrade.md).
+
 ## Running the application (`--run`)
 
 Start the approval service:
@@ -200,7 +245,7 @@ Start the approval service:
 During startup:
 
 1. Validates operator configuration and credentials.
-2. Validates existing packaged PostgreSQL V1–V9 migration history/checksums,
+2. Validates existing packaged PostgreSQL V1–V10 migration history/checksums,
    guard, required tables and enabled invariant triggers. Empty/partial,
    incompatible or pending-upgrade state fails without migration or repair.
 3. Refuses an already quarantined recovery row, then binds the HTTP listener
@@ -208,15 +253,15 @@ During startup:
 4. Outputs: `TracePermit simulator approval API listening on http://127.0.0.1:<port>`.
 
 The default launcher still uses its fixed static simulator policy. Installing
-schema V9 does not select an active policy or enable generation-bound approvals;
+schema V10 does not select an active policy or enable generation-bound approvals;
 that composition is an opt-in Java factory described in
 [ADR 0042](../architecture/0042-durable-policy-generation-binding.md).
 
 Schema validation does not prove successful recovery: a complete old snapshot
 can revive consumed approvals. Keep agents/effectful services disconnected after
 restore or restore failure; no external recovery fence or safe-resume command
-is implemented. There is no in-place schema-upgrade command; never reset or
-rewrite a populated database to make this version start.
+is implemented. Only the explicit stopped-service V9→V10 upgrade above is
+supported; never reset or rewrite a populated database to make this version start.
 
 Owner-only `--recovery-inspect` prints a read-only, consistent aggregate snapshot
 without identifiers, mutation or target lookup. It is not a safe-resume verdict;

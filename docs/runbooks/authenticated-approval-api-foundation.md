@@ -28,8 +28,11 @@ SIGTERM shutdown. All identities and credentials in these tests are synthetic.
 
 ## Operator setup (macOS/Linux only)
 
-Current operator schema is V9. Strict run refuses V8/incomplete state without
-migration; there is no in-place upgrade command. One-way owner-declared
+Current operator schema is V10. Strict run refuses V9/older/incomplete state
+without migration. The separate owner-only, stopped-service
+[V9→V10 upgrade](simulator-approval-distribution.md#explicit-stopped-service-upgrade-v9-to-v10)
+is the sole supported upgrade; it is not recovery authorization or cancellation.
+One-way owner-declared
 containment and runtime guard privileges are documented in the
 [recovery quarantine runbook](operator-recovery-quarantine.md). Do not reset a
 populated database to make startup pass.
@@ -143,9 +146,9 @@ DB availability/schema and port conflicts privately. Never enable driver/debug
 credential logging. A successful startup is not evidence of IdP readiness: the
 first token requiring an uncached JWKS key triggers bounded HTTPS verification.
 
-Normal startup validates packaged V1–V8 history/checksums, guard, tables and
+Normal startup validates packaged V1–V10 history/checksums, guard, tables and
 enabled invariant triggers without DDL. Older populated or partial schemas fail;
-there is no in-place upgrade command in this slice. Do not reset, baseline or
+only the explicit V9→V10 command above may upgrade supported state. Do not reset, baseline or
 repair history to force startup, or downgrade an older binary against this schema.
 Explicit initialization can partially commit migrations if a later step fails;
 retain that DB for investigation rather than retry/reset it automatically.

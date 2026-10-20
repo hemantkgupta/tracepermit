@@ -17,6 +17,10 @@ installation. This decision separates first-install intent from normal startup.
 Version note: this ADR introduced packaged V1–V8. [ADR 0051](0051-operator-declared-recovery-quarantine.md)
 extends current strict installation/validation to V1–V9 and adds explicit status/
 quarantine commands. It does not add implicit upgrade or recovery resume.
+Later [ADR 0059](0059-explicit-v9-v10-simulator-upgrade.md) moves strict startup
+to V1–V10 and adds only the separate stopped-service V9→V10 upgrade. The original
+initialization decision and historical version-specific evidence below remain;
+empty-only init, validate-only run and no safe-resume promise are unchanged.
 
 `SimulatorApprovalMain`, the source launcher and the packaged launcher share:
 
