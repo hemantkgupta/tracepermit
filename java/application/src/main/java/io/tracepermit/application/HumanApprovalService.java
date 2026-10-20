@@ -6,6 +6,7 @@ import io.tracepermit.contracts.ActionValidator;
 import io.tracepermit.contracts.CanonicalJson;
 import io.tracepermit.contracts.JsonSupport;
 import io.tracepermit.execution.ApprovalBinding;
+import io.tracepermit.execution.ApprovalCancellation;
 import io.tracepermit.execution.ApprovalConsumptionResult;
 import io.tracepermit.execution.ApprovalConsumptionStatus;
 import io.tracepermit.execution.ApprovalDecision;
@@ -13,6 +14,7 @@ import io.tracepermit.execution.ApprovalExecutionClaim;
 import io.tracepermit.execution.ApprovalPolicyBinding;
 import io.tracepermit.execution.ApprovalRequestState;
 import io.tracepermit.execution.DurableApprovalState;
+import io.tracepermit.execution.DurableApprovalCancellationState;
 import io.tracepermit.execution.DurableApprovalActionState;
 import io.tracepermit.execution.DurablePolicyBoundApprovalState;
 import io.tracepermit.execution.DurableEnforcementState;
@@ -35,6 +37,8 @@ import java.util.function.Supplier;
 public final class HumanApprovalService {
   public static final String REVIEWER_ROLE = "approval_reviewer";
   public static final String REVIEWER_SCOPE = "approvals.decide";
+  public static final String REQUESTER_ROLE = "approval_requester";
+  public static final String CANCELLATION_SCOPE = "approvals.cancel";
 
   private final PolicyEvaluator policyEvaluator;
   private final JsonNode policy;
@@ -200,6 +204,27 @@ public final class HumanApprovalService {
     ApprovalRequestState updated = approvals.decide(trustedDecision);
     if ("expired".equals(updated.status())) throw new IllegalStateException("APPROVAL_EXPIRED");
     return updated;
+  }
+
+  /** Withdrawal grants no execution authority and is independent of the current policy. */
+  public ApprovalRequestState cancel(
+      TrustedRequesterContext requester, String approvalRequestId, String requestHash) {
+    requireReady();
+    Objects.requireNonNull(requester);
+    if (!requester.authenticated()
+        || !requester.roles().contains(REQUESTER_ROLE)
+        || !requester.scopes().contains(CANCELLATION_SCOPE)) {
+      throw new SecurityException("REQUESTER_NOT_AUTHORIZED");
+    }
+    if (!requester.authorityExpiresAt().isAfter(clock.instant())) {
+      throw new SecurityException("CANCELLATION_AUTHENTICATION_EXPIRED");
+    }
+    if (!(approvals instanceof DurableApprovalCancellationState cancellable)) {
+      throw new IllegalStateException("APPROVAL_CANCELLATION_UNAVAILABLE");
+    }
+    return cancellable.cancel(new ApprovalCancellation(requester.tenant(), approvalRequestId,
+        requestHash, requester.requesterSubjectId(), requester.authenticationMethod(),
+        requester.credentialFingerprint(), requester.authorityExpiresAt()));
   }
 
   public ApprovalExecutionResult executeApproved(

@@ -77,7 +77,7 @@ dedicated IdP client. The provider must support authorization code, S256 PKCE,
 client_secret_basic and `iss` authorization response (RFC 9207). Configure its
 API audience, `client_id`, tenant claim and enrolled `sub` values to match the
 existing strict access-token verifier. Access tokens must be signed RS256
-`at+jwt`, no more than 15 minutes; only the four approval scopes plus `openid`
+`at+jwt`, no more than 15 minutes; only the five approval scopes plus `openid`
 are supported when browser mode is enabled. ID tokens require signed RS256,
 one client audience, matching subject and nonce, and no more than 15 minutes.
 No email/profile/Gmail scope or refresh token is requested. A provider account

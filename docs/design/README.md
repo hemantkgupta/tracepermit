@@ -39,5 +39,8 @@ or authoritative replacement for the maintained flow catalog.
 
 - [Pending approval cancellation](pending-approval-cancellation.md): owner-only,
   pending-to-cancelled withdrawal, race/evidence semantics and the prerequisite
-  explicit database upgrade. **Design only; no cancellation route, migration,
-  operator command or UI control is implemented by this proposal.**
+  explicit database upgrade. The proposal itself is design only;
+  [ADR 0059](../architecture/0059-explicit-v9-v10-simulator-upgrade.md) implements
+  the storage/upgrade prerequisite and
+  [ADR 0060](../architecture/0060-authenticated-pending-request-withdrawal.md)
+  implements the Java API. Requester UI/installed withdrawal qualification remain.

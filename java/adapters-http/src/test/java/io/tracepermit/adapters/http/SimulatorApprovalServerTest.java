@@ -59,7 +59,7 @@ final class SimulatorApprovalServerTest {
   private static final Path ROOT = Path.of(System.getProperty("tracepermit.repositoryRoot"));
   private static final String ISSUER = "https://idp.example.invalid";
   private static final String AUDIENCE = "https://approval.example.invalid";
-  private static final String SCOPES = "approvals.read approvals.request approvals.decide approvals.execute";
+  private static final String SCOPES = "approvals.read approvals.request approvals.decide approvals.execute approvals.cancel";
   private static final String ACTION = "{\"groupId\":\"sg-demo\",\"port\":443,\"cidr\":\"192.0.2.0/24\"}";
   private static final TenantPartition TENANT = new TenantPartition("simulated-alpha");
   private static final AtomicInteger SCHEMA = new AtomicInteger();
@@ -483,6 +483,7 @@ final class SimulatorApprovalServerTest {
   }
 
   @Test void durablePolicyModeFailsClosedWhenActivePolicyIsUnavailable() throws Exception {
+    JsonNode existingPending = create(token("alice"));
     var policyStore = new PostgresPolicyLifecycleStore(dataSource, clock, () -> "plt-" + UUID.randomUUID());
     if (server != null) server.close();
     state = new PostgresDurableEnforcementState(dataSource, clock, () -> UUID.randomUUID().toString());
@@ -496,6 +497,90 @@ final class SimulatorApprovalServerTest {
     var response = call("POST", "/api/v1/approvals", token("alice"), ACTION);
     assertStatus(response, 503);
     assertThat(json(response).path("error").path("code").asText()).isEqualTo("SECURITY_STATE_UNAVAILABLE");
+    // Withdrawal does not need or restore execution authority under a missing active policy.
+    assertStatus(call("POST", path(existingPending) + "/cancel", token("alice"), hash(existingPending)), 200);
+    assertThat(rules()).isZero();
+  }
+
+  @Test void pendingOwnerCanWithdrawButCannotReviewResumeOrReplayCancelledAuthority() throws Exception {
+    String bearer = token("alice");
+    JsonNode pending = create(bearer);
+    var cancelled = json(call("POST", path(pending) + "/cancel", bearer, hash(pending)));
+    assertThat(cancelled.path("status").asText()).isEqualTo("cancelled");
+    assertThat(cancelled.path("executionStatus").asText()).isEqualTo("not_executed");
+    assertThat(cancelled.path("requestHash")).isEqualTo(pending.path("requestHash"));
+    assertThat(cancelled.has("reviewerId")).isFalse();
+    assertThat(cancelled.toString()).doesNotContain(bearer, "credentialFingerprint");
+    restart();
+    assertThat(json(call("GET", path(pending), bearer, null)).path("status").asText()).isEqualTo("cancelled");
+    assertStatus(call("POST", path(pending) + "/cancel", bearer, hash(pending)), 409);
+    assertStatus(call("POST", path(pending) + "/decision", token("bob"), decision(pending, "approve")), 409);
+    assertStatus(call("POST", path(pending) + "/execute", bearer, hash(pending)), 409);
+    assertThat(state.readEvidence(TENANT)).hasSize(2);
+    assertThat(rules()).isZero();
+    // A genuinely new proposal is permitted, not automatic resubmission of the cancelled one.
+    assertThat(create(bearer).path("approvalRequestId")).isNotEqualTo(pending.path("approvalRequestId"));
+  }
+
+  @Test void withdrawalRequiresExplicitScopeCurrentEnrollmentRoleOwnerTenantAndBinding() throws Exception {
+    JsonNode pending = create(token("alice"));
+    String route = path(pending) + "/cancel";
+    assertStatus(call("POST", route, token("alice", c -> c.put("scope", "approvals.read approvals.request")), hash(pending)), 403);
+    assertStatus(call("POST", route, token("charlie"), hash(pending)), 404);
+    assertStatus(call("POST", route, token("bob"), hash(pending)), 403);
+    assertStatus(call("POST", route, token("beta", c -> c.put("org_id", "beta")), hash(pending)), 403);
+    assertStatus(call("POST", route, token("alice", c -> c.put("exp", clock.instant().minusSeconds(1).getEpochSecond())), hash(pending)), 401);
+    assertStatus(call("POST", route, token("alice"), "{\"requestHash\":\"sha256:" + "0".repeat(64) + "\"}"), 409);
+    memberships.replace(entries().stream().filter(e -> !e.verifiedSubjectId().equals(ISSUER + "#alice")).toList());
+    assertStatus(call("POST", route, token("alice"), hash(pending)), 403);
+    assertThat(state.find(TENANT, pending.path("approvalRequestId").asText()).status()).isEqualTo("pending");
+    assertThat(state.readEvidence(TENANT)).hasSize(1);
+    assertThat(rules()).isZero();
+  }
+
+  @ParameterizedTest @ValueSource(strings = {"approved", "denied", "consumed", "expired"})
+  void withdrawalRejectsNonPendingStatesAndExpiredPendingWithoutRelabelling(String status) throws Exception {
+    JsonNode pending = create(token("alice"));
+    if (!status.equals("expired")) {
+      assertStatus(call("POST", path(pending) + "/decision", token("bob"),
+          decision(pending, status.equals("denied") ? "deny" : "approve")), 200);
+    }
+    if (status.equals("consumed")) assertStatus(call("POST", path(pending) + "/execute", token("alice"), hash(pending)), 200);
+    if (status.equals("expired")) clock.advance(301);
+    var response = call("POST", path(pending) + "/cancel", token("alice"), hash(pending));
+    assertStatus(response, 409);
+    assertThat(json(response).path("error").path("code").asText()).isEqualTo(status.equals("expired")
+        ? "APPROVAL_EXPIRED" : "APPROVAL_NOT_CANCELLABLE");
+    assertThat(state.find(TENANT, pending.path("approvalRequestId").asText()).status())
+        .isEqualTo(status.equals("expired") ? "pending" : status);
+    assertThat(rules()).isEqualTo(status.equals("consumed") ? 1 : 0);
+  }
+
+  @ParameterizedTest @ValueSource(strings = {"{}", "{\"requestHash\":1}", "{\"requestHash\":\"bad\"}",
+      "{\"requestHash\":\"a\",\"authenticated\":true}", "{\"requestHash\":\"a\",\"requestHash\":\"b\"}", "{} {}"})
+  void cancellationPayloadCannotSupplyIdentityReplacementArgumentsOrDuplicateFields(String body) throws Exception {
+    JsonNode pending = create(token("alice"));
+    assertStatus(call("POST", path(pending) + "/cancel", token("alice"), body), 400);
+    assertThat(state.readEvidence(TENANT)).hasSize(1);
+    assertThat(rules()).isZero();
+  }
+
+  @Test void enrolledWorkloadCanWithdrawOnlyItsOwnPendingRequest() throws Exception {
+    JsonNode pending = create(token("service"));
+    assertStatus(call("POST", path(pending) + "/cancel", token("service"), hash(pending)), 200);
+    assertThat(rules()).isZero();
+  }
+
+  @Test void correctlyEnrolledRequesterInAnotherTenantCannotProbeOrWithdrawTheRow() throws Exception {
+    JsonNode pending = create(token("alice"));
+    var updated = new ArrayList<>(entries());
+    updated.add(new ApprovalMemberships.Entry(ISSUER + "#alice", "approval-client",
+        new TenantPartition("simulated-beta"), true, Set.of(ApprovalMemberships.Role.REQUESTER)));
+    memberships.replace(updated);
+    var response = call("POST", path(pending) + "/cancel", token("alice", c -> c.put("org_id", "beta")), hash(pending));
+    assertStatus(response, 404);
+    assertThat(json(response).path("error").path("code").asText()).isEqualTo("APPROVAL_NOT_FOUND");
+    assertThat(state.readEvidence(TENANT)).hasSize(1);
     assertThat(rules()).isZero();
   }
 

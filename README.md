@@ -104,7 +104,9 @@ and model-driven rehearsal are separate from protocol tests.
   explicitly initializes an empty database, and normal run never migrates or
   repairs state. A separate owner-only stopped-service `--upgrade-db` supports
   exactly V9→V10; see the [upgrade procedure](docs/runbooks/simulator-approval-distribution.md#explicit-stopped-service-upgrade-v9-to-v10).
-  This prepares cancelled storage only, not a cancellation API or UI.
+  The Java [pending-request withdrawal API](docs/runbooks/pending-approval-withdrawal.md)
+  requires owner/requester enrollment and an explicit scope; requester UI and
+  installed withdrawal qualification remain separate.
   `--recovery-status` and owner-only `--quarantine-db` add
   [one-way declared containment](docs/runbooks/operator-recovery-quarantine.md),
   not automatic rollback detection or effectful resume. Owner-only `--recovery-inspect` provides a

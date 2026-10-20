@@ -2,6 +2,10 @@
 
 **Status: Implemented storage/upgrade foundation; authenticated withdrawal remains proposed.**
 
+Subsequent [ADR 0060](0060-authenticated-pending-request-withdrawal.md) implements
+authenticated Java pending withdrawal. This ADR retains its original upgrade-only
+scope; it is not the evidence for that later service/API or a requester button.
+
 Requirements: FR-007/008/009/010; SEC-003/005/006/009/012;
 REL-001/002/004/005; DATA-001; OPS-002/004; PORT-001/003.
 

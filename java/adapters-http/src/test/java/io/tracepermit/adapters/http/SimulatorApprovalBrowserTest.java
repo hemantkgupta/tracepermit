@@ -67,6 +67,64 @@ final class SimulatorApprovalBrowserTest {
     assertThat(call("GET", fixture.origin() + ApprovalBrowserAdapter.API + "/" + own.path("approvalRequestId").asText(), alice.cookie(), null, Map.of()).statusCode()).isEqualTo(404);
   }
 
+  @Test void ownerBrowserWithdrawalUsesSharedDurableServiceAndExistingCsrfBoundary() throws Exception {
+    Login alice = login("alice"); Login bob = login("bob"); Login dave = login("dave");
+    var pending = mutate(alice, "", SimulatorApprovalBrowserFixture.ACTION, 201);
+    String suffix = "/" + pending.path("approvalRequestId").asText() + "/cancel";
+    String hash = "{\"requestHash\":\"" + pending.path("requestHash").asText() + "\"}";
+    assertThat(call("POST", fixture.origin() + ApprovalBrowserAdapter.API + suffix,
+        alice.cookie(), hash, Map.of()).statusCode()).isEqualTo(403);
+    mutate(bob, suffix, hash, 403);
+    mutate(dave, suffix, hash, 403);
+    assertThat(rules()).isZero();
+    var cancelled = mutate(alice, suffix, hash, 200);
+    assertThat(cancelled.path("status").asText()).isEqualTo("cancelled");
+    assertThat(cancelled.path("executionStatus").asText()).isEqualTo("not_executed");
+    mutate(alice, suffix, hash, 409);
+    assertThat(fixture.state.readEvidence(new io.tracepermit.execution.TenantPartition("simulated-alpha"))).hasSize(2);
+    assertThat(rules()).isZero();
+  }
+
+  @Test void browserSessionDeadlineNotLongerAccessTokenControlsWithdrawalAfterLockWait() throws Exception {
+    fixture.idClaims = claims -> claims.put("exp", fixture.clock.instant().plusSeconds(30).getEpochSecond());
+    Login alice = login("alice");
+    var pending = mutate(alice, "", SimulatorApprovalBrowserFixture.ACTION, 201);
+    String suffix = "/" + pending.path("approvalRequestId").asText() + "/cancel";
+    String hash = "{\"requestHash\":\"" + pending.path("requestHash").asText() + "\"}";
+    var pool = java.util.concurrent.Executors.newSingleThreadExecutor(task -> {
+      Thread thread = new Thread(task, "browser-cancellation-wait"); thread.setDaemon(true); return thread;
+    });
+    try (var blocker = fixture.config.database().getConnection()) {
+      blocker.setAutoCommit(false);
+      try (var sql = blocker.createStatement()) { sql.execute("SELECT * FROM tp_approval_requests FOR UPDATE"); }
+      try {
+        var waiting = pool.submit(() -> call("POST", fixture.origin() + ApprovalBrowserAdapter.API + suffix,
+            alice.cookie(), hash, headers(alice)));
+        boolean blocked = false;
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(2);
+        try (var connection = fixture.config.database().getConnection(); var sql = connection.createStatement()) {
+          sql.setQueryTimeout(2);
+          while (!blocked && System.nanoTime() < deadline) {
+            try (var rows = sql.executeQuery("SELECT count(*) FROM pg_stat_activity WHERE datname=current_database()"
+                + " AND pid<>pg_backend_pid() AND wait_event_type='Lock' AND query LIKE '%tp_approval_requests%'")) {
+              rows.next(); blocked = rows.getInt(1) > 0;
+            }
+            if (!blocked) Thread.sleep(10);
+          }
+        }
+        assertThat(blocked).as("actual cancellation row-lock wait").isTrue();
+        fixture.clock.now = fixture.clock.instant().plusSeconds(31);
+        blocker.rollback();
+        assertThat(waiting.get(10, java.util.concurrent.TimeUnit.SECONDS).statusCode()).isEqualTo(401);
+      } finally { blocker.rollback(); }
+      assertThat(fixture.state.find(new io.tracepermit.execution.TenantPartition("simulated-alpha"),
+          pending.path("approvalRequestId").asText()).status()).isEqualTo("pending");
+      assertThat(rules()).isZero();
+    } finally {
+      pool.shutdownNow(); assertThat(pool.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+    }
+  }
+
   @Test void csrfOriginMixedAuthCookieAndHostBoundaries() throws Exception {
     Login alice = login("alice");
     for (Map<String, String> headers : java.util.List.of(Map.<String, String>of(),
