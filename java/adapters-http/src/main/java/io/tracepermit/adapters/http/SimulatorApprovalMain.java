@@ -50,7 +50,7 @@ public final class SimulatorApprovalMain {
   static int execute(String[] args, Map<String, String> environment, PrintStream out,
       PrintStream err, Runner runner) {
     try {
-      if (args.length != 1 || !Set.of("--check", "--run", "--init-db", "--quarantine-db", "--recovery-status", "--recovery-inspect").contains(args[0])) {
+      if (args.length != 1 || !Set.of("--check", "--run", "--init-db", "--upgrade-db", "--quarantine-db", "--recovery-status", "--recovery-inspect").contains(args[0])) {
         throw new IllegalArgumentException();
       }
       String path = environment.get("TRACEPERMIT_APPROVAL_CONFIG");
@@ -61,6 +61,9 @@ public final class SimulatorApprovalMain {
       } else if ("--init-db".equals(args[0])) {
         PostgresDatabaseLifecycle.initializeEmpty(configuration.database());
         out.println("APPROVAL_DATABASE_INITIALIZED: fresh simulator schema only; no listener or target started.");
+      } else if ("--upgrade-db".equals(args[0])) {
+        PostgresDatabaseLifecycle.upgradeFromV9(configuration.database());
+        out.println("APPROVAL_DATABASE_UPGRADED: V9 to V10 only; no listener or target started; not recovery authorization.");
       } else if ("--quarantine-db".equals(args[0])) {
         PostgresRecoveryQuarantine.quarantine(configuration.database(), java.time.Instant.now());
         out.println("APPROVAL_DATABASE_QUARANTINED: new durable claims/reviews disabled; previously admitted work may finish; no resume command.");
@@ -70,7 +73,7 @@ public final class SimulatorApprovalMain {
       } else if ("--recovery-inspect".equals(args[0])) {
         var snapshot = PostgresRecoveryInspection.inspect(configuration.database());
         // Serialize fully before printing: failed reads/serialization never produce partial success output.
-        var report = JsonSupport.MAPPER.createObjectNode().put("schemaVersion", "1.0")
+        var report = JsonSupport.MAPPER.createObjectNode().put("schemaVersion", "2.0")
             .put("transactionStartedAt", snapshot.transactionStartedAt().toString())
             .put("recoveryMode", snapshot.recovery().mode())
             .put("reconciliationQueued", snapshot.reconciliationQueued());

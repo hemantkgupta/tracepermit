@@ -19,7 +19,7 @@ public record ApprovalRequestState(
     String consumedAttemptId) {
   public ApprovalRequestState {
     Objects.requireNonNull(binding);
-    if (!java.util.Set.of("pending", "approved", "denied", "expired", "consumed").contains(status)) {
+    if (!java.util.Set.of("pending", "approved", "denied", "expired", "consumed", "cancelled").contains(status)) {
       throw new IllegalArgumentException("The approval status is invalid.");
     }
     if (transitionSequence < 1) {

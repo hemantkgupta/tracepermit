@@ -50,6 +50,37 @@ const approval: Approval = {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("role-scoped approval client", () => {
+  it("reads cancelled storage projections without offering review or execution authority", async () => {
+    const cancelled = { ...approval, status: "cancelled" };
+    const fetcher = vi.fn(() =>
+      Promise.resolve(
+        new Response(
+          JSON.stringify({
+            mode: "simulated",
+            items: [cancelled],
+            pageSize: 20,
+            nextCursor: null,
+          }),
+        ),
+      ),
+    );
+    vi.stubGlobal("fetch", fetcher);
+    expect((await loadApprovalPage()).items[0]?.status).toBe("cancelled");
+    expect(canExecute(session, cancelled)).toBe(false);
+    expect(
+      canReview(
+        {
+          ...session,
+          principalId: "principal:bob",
+          roles: ["REVIEWER"],
+          scopes: ["approvals.decide"],
+        },
+        cancelled,
+      ),
+    ).toBe(false);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
   it("requires role AND scope, distinct human review and owner-only execution", () => {
     const reviewer = {
       ...session,

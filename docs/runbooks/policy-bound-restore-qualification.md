@@ -15,8 +15,9 @@ Related specifications: [System requirements](../specs/02-system-requirements.md
 > establishes relational tables and triggers, but generation-bound enforcement requires
 > explicit opt-in Java service composition.
 
-Current reruns use packaged V1–V9 (V8 introduced the policy binding). Capture now
-also includes the V9 recovery row, before and after service recreation. Scenario E
+Current reruns use packaged V1–V10 (V8 introduced the policy binding). Capture
+includes the V9 recovery row and V10-compatible transition columns, before and
+after service recreation; this does not qualify an authenticated cancellation API. Scenario E
 declares source quarantine after its snapshot, then proves that restoring the
 older archive restores `ready` and can dispatch the old approval again. This is
 deliberate unsafe-gap characterization, not a supported resume procedure. See
@@ -114,7 +115,7 @@ A valid pending approval bound to active policy generation 1 is backed up and re
 into an empty destination database:
 
 - **Pre-constructor parity:** Raw SQL queries inspect `tp_enforcement_schema_guard`,
-  `flyway_schema_history` (all V1–V9 rows, including checksums), and all 16 other
+  `flyway_schema_history` (all V1–V10 rows, including checksums), and all 16 other
   application tables _before_ any destination Java store or service constructors
   execute. Every captured row/field is compared with the quiescent source capture,
   including nonempty bindings, exact action snapshots, approval and policy state.

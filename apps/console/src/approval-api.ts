@@ -34,7 +34,7 @@ export interface ApprovalPage {
 }
 
 export type ApprovalStatusFilter =
-  "pending" | "approved" | "denied" | "expired" | "consumed";
+  "pending" | "approved" | "denied" | "expired" | "consumed" | "cancelled";
 
 export interface ApprovalQuery {
   limit?: number;
@@ -115,9 +115,14 @@ export function validateApproval(value: unknown): Approval {
     ) ||
     (value.reviewerId !== undefined && !text(value.reviewerId)) ||
     !text(value.status) ||
-    !["pending", "approved", "denied", "expired", "consumed"].includes(
-      value.status,
-    ) ||
+    ![
+      "pending",
+      "approved",
+      "denied",
+      "expired",
+      "consumed",
+      "cancelled",
+    ].includes(value.status) ||
     !timestamp(value.createdAt) ||
     !timestamp(value.expiresAt) ||
     typeof value.expired !== "boolean" ||
