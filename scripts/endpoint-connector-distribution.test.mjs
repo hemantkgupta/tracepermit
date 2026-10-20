@@ -202,6 +202,82 @@ export function runChildAsync(cmd, args, options = {}) {
   });
 }
 
+export function waitForProcessPattern(
+  child,
+  pattern,
+  timeoutMs = 15_000,
+  desc = "pattern",
+) {
+  return new Promise((resolve, reject) => {
+    if (!child) {
+      return reject(
+        new Error(
+          `Cannot wait for ${desc}: child process is null or undefined`,
+        ),
+      );
+    }
+    if (child.exitCode !== null || child.signalCode !== null) {
+      return reject(
+        new Error(
+          `Child process already exited with code ${child.exitCode} (signal ${child.signalCode}) before waiting for ${desc}`,
+        ),
+      );
+    }
+
+    let buffer = "";
+    let timer = null;
+
+    function cleanup() {
+      if (timer) clearTimeout(timer);
+      child.stdout?.removeListener("data", onData);
+      child.stderr?.removeListener("data", onData);
+      child.removeListener("error", onError);
+      child.removeListener("exit", onExit);
+    }
+
+    function onData(chunk) {
+      buffer += chunk.toString("utf8");
+      const match = pattern.exec(buffer);
+      if (match) {
+        cleanup();
+        resolve(match);
+      }
+    }
+
+    function onError(err) {
+      cleanup();
+      reject(
+        new Error(
+          `Child process emitted error while waiting for ${desc}: ${err.message}`,
+        ),
+      );
+    }
+
+    function onExit(code, signal) {
+      cleanup();
+      reject(
+        new Error(
+          `Child process exited early with code ${code} (signal ${signal}) before matching ${desc}. Output was: ${buffer}`,
+        ),
+      );
+    }
+
+    timer = setTimeout(() => {
+      cleanup();
+      reject(
+        new Error(
+          `Timeout (${timeoutMs}ms) waiting for ${desc} on child process [pid ${child.pid}]. Accumulated output: ${buffer}`,
+        ),
+      );
+    }, timeoutMs);
+
+    child.stdout?.on("data", onData);
+    child.stderr?.on("data", onData);
+    child.once("error", onError);
+    child.once("exit", onExit);
+  });
+}
+
 function findJavaBinDir() {
   if (process.env.JAVA_HOME) {
     const candidate = join(process.env.JAVA_HOME, "bin");
@@ -1181,30 +1257,13 @@ test("live stdio client execution against ephemeral local Java simulator gateway
 
   // Wait for gateway ready
   let gatewayPort = null;
-  const portPromise = new Promise((resolve, reject) => {
-    gatewayProcess.stdout.setEncoding("utf8");
-    gatewayProcess.stdout.on("data", (chunk) => {
-      const match = /GATEWAY_READY port=(\d+)/.exec(chunk);
-      if (match) {
-        gatewayPort = parseInt(match[1], 10);
-        resolve(gatewayPort);
-      }
-    });
-    gatewayProcess.once("error", reject);
-    gatewayProcess.once("exit", (code) => {
-      reject(new Error(`Gateway exited early with code ${code}`));
-    });
-  });
-
-  await Promise.race([
-    portPromise,
-    new Promise((_, reject) =>
-      setTimeout(
-        () => reject(new Error("Timeout waiting for gateway ready")),
-        15_000,
-      ),
-    ),
-  ]);
+  const gatewayMatch = await waitForProcessPattern(
+    gatewayProcess,
+    /GATEWAY_READY port=(\d+)/,
+    15_000,
+    "gateway ready",
+  );
+  gatewayPort = parseInt(gatewayMatch[1], 10);
 
   assert.ok(gatewayPort > 0, `Gateway port must be positive: ${gatewayPort}`);
 
@@ -1277,6 +1336,7 @@ test("live stdio client execution against ephemeral local Java simulator gateway
   let responseBuffer = "";
   let pendingLines = [];
   let lineWaiters = [];
+  let connectorFailure = null;
 
   connector.stdout.setEncoding("utf8");
   connector.stdout.on("data", (chunk) => {
@@ -1287,7 +1347,7 @@ test("live stdio client execution against ephemeral local Java simulator gateway
       if (l.trim()) {
         if (lineWaiters.length > 0) {
           const waiter = lineWaiters.shift();
-          waiter(l.trim());
+          waiter.resolve(l.trim());
         } else {
           pendingLines.push(l.trim());
         }
@@ -1295,18 +1355,54 @@ test("live stdio client execution against ephemeral local Java simulator gateway
     }
   });
 
+  const onConnectorExit = (code, signal) => {
+    connectorFailure = new Error(
+      `Connector process exited unexpectedly with code ${code} (signal ${signal}) while waiting for response`,
+    );
+    while (lineWaiters.length > 0) {
+      const waiter = lineWaiters.shift();
+      waiter.reject(connectorFailure);
+    }
+  };
+  const onConnectorError = (err) => {
+    connectorFailure = new Error(
+      `Connector process emitted error: ${err.message}`,
+    );
+    while (lineWaiters.length > 0) {
+      const waiter = lineWaiters.shift();
+      waiter.reject(connectorFailure);
+    }
+  };
+  connector.once("exit", onConnectorExit);
+  connector.once("error", onConnectorError);
+
   function nextResponse(timeoutMs = 10_000) {
+    if (connectorFailure) {
+      return Promise.reject(connectorFailure);
+    }
     if (pendingLines.length > 0) {
       return Promise.resolve(pendingLines.shift());
     }
     return new Promise((resolve, reject) => {
+      let waiterObj = null;
       const timer = setTimeout(() => {
-        reject(new Error("Timeout waiting for connector response"));
+        const idx = lineWaiters.indexOf(waiterObj);
+        if (idx !== -1) lineWaiters.splice(idx, 1);
+        reject(
+          new Error(`Timeout (${timeoutMs}ms) waiting for connector response`),
+        );
       }, timeoutMs);
-      lineWaiters.push((line) => {
-        clearTimeout(timer);
-        resolve(line);
-      });
+      waiterObj = {
+        resolve: (line) => {
+          clearTimeout(timer);
+          resolve(line);
+        },
+        reject: (err) => {
+          clearTimeout(timer);
+          reject(err);
+        },
+      };
+      lineWaiters.push(waiterObj);
     });
   }
 
@@ -1469,6 +1565,8 @@ test("live stdio client execution against ephemeral local Java simulator gateway
   expiredConnector.stdin.end();
 
   // 8. Clean EOF / shutdown on primary connector
+  connector.removeListener("exit", onConnectorExit);
+  connector.removeListener("error", onConnectorError);
   connector.stdin.end();
   const exitCode = await new Promise((resolve) => {
     connector.once("exit", (code) => resolve(code));
@@ -1521,86 +1619,85 @@ test("live stdio client execution against ephemeral local Java simulator gateway
 });
 
 test("fixture failure bounds and graceful termination: silent child, early exit, ignored SIGTERM, stalled response, failed setup", async (t) => {
-  // 1. Test gracefulTerminate on silent child: alive and producing no output, gracefully terminated
+  // 1. Test waitForProcessPattern on genuinely silent child: alive and producing no output, times out boundedly
   const silentChild = spawn(
     process.execPath,
-    ["-e", "console.log('READY'); setInterval(() => {}, 1000)"],
+    ["-e", "setInterval(() => {}, 1000)"],
     {
       stdio: ["pipe", "pipe", "pipe"],
     },
   );
-  await new Promise((resolve) => silentChild.stdout.once("data", resolve));
-  assert.ok(silentChild.pid > 0);
-  assert.equal(silentChild.exitCode, null);
-  assert.equal(silentChild.signalCode, null);
+  // Register cleanup before waiting
+  t.after(() => gracefulTerminate(silentChild, "silentChild"));
+
+  const silentStart = Date.now();
+  await assert.rejects(
+    waitForProcessPattern(silentChild, /READY/, 300, "silentChild ready"),
+    /Timeout \(300ms\) waiting for silentChild ready/,
+    "Genuinely silent child must timeout within bound",
+  );
+  assert.ok(
+    Date.now() - silentStart < 1500,
+    "Silent child timeout must be bounded",
+  );
   await gracefulTerminate(silentChild, "silentChild", 1000);
   assert.ok(
     silentChild.exitCode !== null || silentChild.signalCode !== null,
     "Silent child must be terminated by gracefulTerminate",
   );
 
-  // 2. Test gracefulTerminate on already-exited child: returns immediately without hanging
+  // 2. Test waitForProcessPattern on early-exited child: rejects immediately with exit code
   const earlyExitChild = spawn(process.execPath, ["-e", "process.exit(42)"], {
     stdio: ["pipe", "pipe", "pipe"],
   });
-  await new Promise((resolve) => earlyExitChild.once("exit", resolve));
-  assert.equal(earlyExitChild.exitCode, 42);
-  const earlyStart = Date.now();
-  await gracefulTerminate(earlyExitChild, "earlyExitChild", 2000);
-  assert.ok(
-    Date.now() - earlyStart < 100,
-    "gracefulTerminate on already-exited child must return immediately without waiting for timeout",
-  );
+  // Register cleanup before waiting
+  t.after(() => gracefulTerminate(earlyExitChild, "earlyExitChild"));
 
-  // Also verify bounded line reader rejects immediately on early-exit child
-  const earlyExitReaderChild = spawn(
-    process.execPath,
-    ["-e", "process.exit(2)"],
+  const earlyStart = Date.now();
+  await assert.rejects(
+    waitForProcessPattern(
+      earlyExitChild,
+      /READY/,
+      5000,
+      "earlyExitChild ready",
+    ),
+    /Child process exited early with code 42/,
+    "Early exit child must reject immediately before timeout",
+  );
+  assert.ok(
+    Date.now() - earlyStart < 1000,
+    "Early-exited child must reject promptly without waiting for timeout",
+  );
+  await gracefulTerminate(earlyExitChild, "earlyExitChild", 1000);
+
+  // 3. Test waitForProcessPattern on child spawn error (e.g. non-existent command)
+  const errorChild = spawn(
+    "tp-nonexistent-command-probe-for-failure-bounds",
+    [],
     {
       stdio: ["pipe", "pipe", "pipe"],
     },
   );
-  t.after(() => gracefulTerminate(earlyExitReaderChild));
-
-  let lineBuffer = "";
-  const boundedRead = new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      cleanup();
-      reject(new Error("Timeout waiting for child"));
-    }, 2000);
-    const onData = (d) => {
-      lineBuffer += d;
-      if (lineBuffer.includes("\n")) {
-        cleanup();
-        resolve(lineBuffer.trim());
-      }
-    };
-    const onError = (e) => {
-      cleanup();
-      reject(e);
-    };
-    const onExit = (code) => {
-      cleanup();
-      reject(new Error(`Child exited early with code ${code}`));
-    };
-    function cleanup() {
-      clearTimeout(timer);
-      earlyExitReaderChild.stdout.removeListener("data", onData);
-      earlyExitReaderChild.removeListener("error", onError);
-      earlyExitReaderChild.removeListener("exit", onExit);
-    }
-    earlyExitReaderChild.stdout.on("data", onData);
-    earlyExitReaderChild.on("error", onError);
-    earlyExitReaderChild.on("exit", onExit);
-  });
-
+  t.after(() => gracefulTerminate(errorChild, "errorChild"));
   await assert.rejects(
-    boundedRead,
-    /Child exited early with code 2/,
-    "Early-exit child must reject the line promise immediately rather than hanging until test timeout",
+    waitForProcessPattern(errorChild, /READY/, 5000, "errorChild ready"),
+    /Child process emitted error/,
+    "Spawn error must reject immediately",
   );
 
-  // 3. Test gracefulTerminate on ignored SIGTERM: escalates to SIGKILL and observes exit
+  // 4. Test gracefulTerminate on already-exited child: returns immediately without hanging
+  const alreadyExited = spawn(process.execPath, ["-e", "process.exit(0)"], {
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  await new Promise((resolve) => alreadyExited.once("exit", resolve));
+  const termStart = Date.now();
+  await gracefulTerminate(alreadyExited, "alreadyExited", 2000);
+  assert.ok(
+    Date.now() - termStart < 100,
+    "gracefulTerminate on already-exited child must return immediately without waiting for timeout",
+  );
+
+  // 5. Test gracefulTerminate on ignored SIGTERM: escalates to SIGKILL and observes exit
   const stubbornChild = spawn(
     process.execPath,
     [
@@ -1609,13 +1706,19 @@ test("fixture failure bounds and graceful termination: silent child, early exit,
     ],
     { stdio: ["pipe", "pipe", "pipe"] },
   );
-  await new Promise((resolve) => stubbornChild.stdout.once("data", resolve));
-  assert.ok(stubbornChild.pid > 0);
+  // Register cleanup before waiting
   t.after(() => {
     try {
       stubbornChild.kill("SIGKILL");
     } catch {}
   });
+  await waitForProcessPattern(
+    stubbornChild,
+    /READY/,
+    2000,
+    "stubborn child ready",
+  );
+  assert.ok(stubbornChild.pid > 0);
   await gracefulTerminate(stubbornChild, "stubbornChild", 400);
   assert.ok(
     stubbornChild.exitCode !== null || stubbornChild.signalCode !== null,
@@ -1724,4 +1827,93 @@ test("process parentage verification helper detects PPID and command mismatches"
     () => verifyParentage(`12345 /bin/bash`, 12345),
     /Connector process command must be java/,
   );
+});
+
+test("Gradle test task tracks connector archive input and invalidates cached green result when archive is replaced", async (t) => {
+  ensureDistributionBuilt();
+  assert.ok(
+    existsSync(distArchive),
+    `Distribution archive must exist at ${distArchive}`,
+  );
+
+  // Backup original archive
+  const backupArchive = `${distArchive}.cache-test-backup`;
+  copyFileSync(distArchive, backupArchive);
+  let restored = false;
+  const restoreArchive = () => {
+    if (!restored && existsSync(backupArchive)) {
+      copyFileSync(backupArchive, distArchive);
+      rmSync(backupArchive, { force: true });
+      restored = true;
+    }
+  };
+  t.after(restoreArchive);
+
+  // 1. Initial run: execute targeted Gradle test against current valid archive
+  const firstRun = spawnSync(
+    join(repoRoot, "java/gradlew"),
+    [
+      "-p",
+      join(repoRoot, "java"),
+      "--no-daemon",
+      ":adapters-http:test",
+      "-Dtracepermit.endpointConnector.requireInstalledArchive=true",
+      "--tests",
+      "io.tracepermit.adapters.http.JavaBackendEndpointConnectorE2eTest.installedArchiveConnectorAgainstRealBackendWithNativePty",
+    ],
+    {
+      cwd: repoRoot,
+      encoding: "utf8",
+      timeout: 180_000,
+    },
+  );
+  assert.equal(
+    firstRun.status,
+    0,
+    `Initial Gradle test run must succeed: ${firstRun.stdout}\n${firstRun.stderr}`,
+  );
+
+  // 2. Corrupt/replace the tracked distribution archive with broken bytes
+  writeFileSync(
+    distArchive,
+    "CORRUPTED_NON_TAR_CONTENT_FOR_CACHE_INVALIDATION_PROOF\n",
+  );
+
+  // 3. Re-run Gradle test for installed archive qualification requiring installed archive
+  // Note: NO --rerun-tasks flag is passed!
+  // If inputs were NOT tracked, Gradle would return UP-TO-DATE / FROM-CACHE.
+  // Because inputs.files(endpointDistributionArchive) is tracked, Gradle detects the change,
+  // re-runs the task, and fails on extracting/validating the corrupt archive.
+  const rerunBroken = spawnSync(
+    join(repoRoot, "java/gradlew"),
+    [
+      "-p",
+      join(repoRoot, "java"),
+      "--no-daemon",
+      ":adapters-http:test",
+      "-Dtracepermit.endpointConnector.requireInstalledArchive=true",
+      "--tests",
+      "io.tracepermit.adapters.http.JavaBackendEndpointConnectorE2eTest.installedArchiveConnectorAgainstRealBackendWithNativePty",
+    ],
+    {
+      cwd: repoRoot,
+      encoding: "utf8",
+      timeout: 180_000,
+    },
+  );
+
+  assert.notEqual(
+    rerunBroken.status,
+    0,
+    "Gradle must fail when archive is replaced with a corrupted one; cached green result must not occur",
+  );
+  const rerunOutput = `${rerunBroken.stdout}\n${rerunBroken.stderr}`;
+  assert.ok(
+    !rerunOutput.includes(":adapters-http:test UP-TO-DATE") &&
+      !rerunOutput.includes(":adapters-http:test FROM-CACHE"),
+    "Task :adapters-http:test must be executed out-of-date, not served from cache",
+  );
+
+  // 4. Restore valid archive
+  restoreArchive();
 });

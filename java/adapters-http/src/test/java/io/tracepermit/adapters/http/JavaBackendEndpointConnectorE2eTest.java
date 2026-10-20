@@ -62,6 +62,7 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
 final class JavaBackendEndpointConnectorE2eTest {
@@ -453,6 +454,7 @@ final class JavaBackendEndpointConnectorE2eTest {
         runtime(keys, clock, () -> SecurityReadiness.allReady(Instant.now()));
     try (LoopbackDevelopmentMcpServer server = fixture.server()) {
       Path privateDir = Files.createTempDirectory("tp-installed-archive-test");
+      Process scriptProc = null;
       try {
         Path keyPath = privateDir.resolve("endpoint.pk8");
         Files.write(keyPath, keys.getPrivate().getEncoded());
@@ -460,36 +462,111 @@ final class JavaBackendEndpointConnectorE2eTest {
 
         String token = issueToken(server.port(), "cli-readonly");
 
-        // Locate repository root and find the launcher (from staged distribution or extracted archive)
+        // Locate repository root and find the explicitly prepared distribution archive
         Path repoRoot = Path.of("../..").toAbsolutePath().normalize();
         Path archivePath =
             repoRoot.resolve(
                 "java/endpoint-connector/build/distributions/tracepermit-endpoint-connector-0.1.0.tar.gz");
-        Path stagedDir =
-            repoRoot.resolve(
-                "java/endpoint-connector/build/staged-distribution/tracepermit-endpoint-connector-0.1.0");
 
-        Path launcherPath;
-        if (Files.exists(archivePath)) {
-          Path extractDir = privateDir.resolve("extracted");
-          Files.createDirectories(extractDir);
-          Process tarProc =
-              new ProcessBuilder("tar", "-xzf", archivePath.toString(), "-C", extractDir.toString())
-                  .start();
-          int tarExit = tarProc.waitFor();
-          assertThat(tarExit).isZero();
-          launcherPath =
-              extractDir.resolve(
-                  "tracepermit-endpoint-connector-0.1.0/bin/tracepermit-endpoint-connector");
-        } else if (Files.exists(stagedDir)) {
-          launcherPath = stagedDir.resolve("bin/tracepermit-endpoint-connector");
+        boolean requireInstalledArchive =
+            Boolean.getBoolean("tracepermit.endpointConnector.requireInstalledArchive")
+                || "true".equalsIgnoreCase(System.getenv("TRACEPERMIT_REQUIRE_INSTALLED_ARCHIVE"));
+
+        if (requireInstalledArchive) {
+          assertThat(Files.exists(archivePath))
+              .describedAs(
+                  "Installed E2E qualification requires an explicitly prepared distribution archive at %s. "
+                      + "Run 'pnpm build:endpoint-distribution' or ':endpoint-connector:packageEndpointConnectorDistribution' first.",
+                  archivePath)
+              .isTrue();
         } else {
-          launcherPath =
-              repoRoot.resolve(
-                  "java/endpoint-connector/src/main/scripts/tracepermit-endpoint-connector");
+          Assumptions.assumeTrue(
+              Files.exists(archivePath),
+              "Endpoint connector distribution archive is not prepared at "
+                  + archivePath
+                  + "; skipping installed archive E2E test for ordinary development check.");
         }
 
-        // On Linux / non-macOS: explicitly exercise platform refusal and platform-neutral checks,
+        // Extract archive with bounded tar execution and stream draining; no staged/source fallback!
+        Path extractDir = privateDir.resolve("extracted");
+        Files.createDirectories(extractDir);
+        Process tarProc =
+            new ProcessBuilder("tar", "-xzf", archivePath.toString(), "-C", extractDir.toString())
+                .redirectErrorStream(true)
+                .start();
+        ByteArrayOutputStream tarOut = new ByteArrayOutputStream();
+        Thread tarThread =
+            Thread.ofVirtual()
+                .start(
+                    () -> {
+                      try {
+                        tarProc.getInputStream().transferTo(tarOut);
+                      } catch (Exception ignored) {
+                      }
+                    });
+        boolean tarFinished = tarProc.waitFor(10, TimeUnit.SECONDS);
+        if (!tarFinished) {
+          tarProc.destroyForcibly();
+          fail("Timeout waiting for tar extraction of " + archivePath);
+        }
+        tarThread.join(2000);
+        assertThat(tarProc.exitValue())
+            .describedAs("tar extraction failed: %s", tarOut.toString(StandardCharsets.UTF_8))
+            .isZero();
+
+        Path launcherPath =
+            extractDir.resolve(
+                "tracepermit-endpoint-connector-0.1.0/bin/tracepermit-endpoint-connector");
+        assertThat(Files.exists(launcherPath))
+            .describedAs("Launcher script must exist in extracted distribution at %s", launcherPath)
+            .isTrue();
+
+        Path manifestPath =
+            extractDir.resolve("tracepermit-endpoint-connector-0.1.0/manifest.json");
+        assertThat(Files.exists(manifestPath))
+            .describedAs("manifest.json must exist in distribution archive at %s", manifestPath)
+            .isTrue();
+        JsonNode manifest = JsonSupport.MAPPER.readTree(manifestPath.toFile());
+        String manifestCommit = manifest.path("sourceCommit").asText();
+
+        if (requireInstalledArchive) {
+          Process gitProc =
+              new ProcessBuilder("git", "rev-parse", "HEAD")
+                  .directory(repoRoot.toFile())
+                  .redirectErrorStream(true)
+                  .start();
+          ByteArrayOutputStream gitOut = new ByteArrayOutputStream();
+          Thread gitThread =
+              Thread.ofVirtual()
+                  .start(
+                      () -> {
+                        try {
+                          gitProc.getInputStream().transferTo(gitOut);
+                        } catch (Exception ignored) {
+                        }
+                      });
+          boolean gitFinished = gitProc.waitFor(5, TimeUnit.SECONDS);
+          if (gitFinished && gitProc.exitValue() == 0) {
+            gitThread.join(1000);
+            String headCommit = gitOut.toString(StandardCharsets.UTF_8).trim();
+            if (headCommit.matches("[0-9a-f]{40}|[0-9a-f]{64}")) {
+              assertThat(manifestCommit)
+                  .describedAs(
+                      "Installed E2E qualification requires an exact-HEAD connector archive. "
+                          + "Archive manifest commit was %s, expected current git HEAD %s.",
+                      manifestCommit,
+                      headCommit)
+                  .isEqualTo(headCommit);
+              assertThat(manifest.path("sourceTree").asText())
+                  .describedAs("Installed E2E qualification requires clean sourceTree in manifest")
+                  .isEqualTo("clean");
+            }
+          } else {
+            gitProc.destroyForcibly();
+          }
+        }
+
+        // On Linux / non-macOS: explicitly exercise platform refusal with bounded waits and stream drains,
         // skipping the macOS PTY proof.
         if (!isMac) {
           ProcessBuilder pb = new ProcessBuilder(launcherPath.toString(), "--run");
@@ -500,9 +577,35 @@ final class JavaBackendEndpointConnectorE2eTest {
           pb.environment().put("TRACEPERMIT_ENDPOINT_PRIVATE_KEY_PKCS8_PATH", keyPath.toString());
           pb.environment().put("TRACEPERMIT_CONNECTOR_BEARER_TOKEN", token);
           Process linuxProc = pb.start();
-          String linuxErr =
-              new String(linuxProc.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
-          int linuxExit = linuxProc.waitFor();
+          ByteArrayOutputStream linuxOut = new ByteArrayOutputStream();
+          ByteArrayOutputStream linuxErrOut = new ByteArrayOutputStream();
+          Thread linuxOutThread =
+              Thread.ofVirtual()
+                  .start(
+                      () -> {
+                        try {
+                          linuxProc.getInputStream().transferTo(linuxOut);
+                        } catch (Exception ignored) {
+                        }
+                      });
+          Thread linuxErrThread =
+              Thread.ofVirtual()
+                  .start(
+                      () -> {
+                        try {
+                          linuxProc.getErrorStream().transferTo(linuxErrOut);
+                        } catch (Exception ignored) {
+                        }
+                      });
+          boolean linuxFinished = linuxProc.waitFor(10, TimeUnit.SECONDS);
+          if (!linuxFinished) {
+            linuxProc.destroyForcibly();
+            fail("Timeout waiting for Linux platform refusal process to exit");
+          }
+          linuxOutThread.join(2000);
+          linuxErrThread.join(2000);
+          String linuxErr = linuxErrOut.toString(StandardCharsets.UTF_8);
+          int linuxExit = linuxProc.exitValue();
           assertThat(linuxExit).isEqualTo(2);
           assertThat(linuxErr).contains("TracePermit endpoint connector: UNSUPPORTED_PLATFORM");
           assertThat(fixture.targetInvocations()).hasValue(0);
@@ -579,7 +682,8 @@ final class JavaBackendEndpointConnectorE2eTest {
                 keyPath.toString(),
                 token);
         scriptPb.directory(privateDir.toFile());
-        Process scriptProc = scriptPb.start();
+        Process runningScript = scriptPb.start();
+        scriptProc = runningScript;
 
         ByteArrayOutputStream scriptOut = new ByteArrayOutputStream();
         ByteArrayOutputStream scriptErr = new ByteArrayOutputStream();
@@ -588,7 +692,7 @@ final class JavaBackendEndpointConnectorE2eTest {
                 .start(
                     () -> {
                       try {
-                        scriptProc.getInputStream().transferTo(scriptOut);
+                        runningScript.getInputStream().transferTo(scriptOut);
                       } catch (Exception ignored) {
                       }
                     });
@@ -597,14 +701,14 @@ final class JavaBackendEndpointConnectorE2eTest {
                 .start(
                     () -> {
                       try {
-                        scriptProc.getErrorStream().transferTo(scriptErr);
+                        runningScript.getErrorStream().transferTo(scriptErr);
                       } catch (Exception ignored) {
                       }
                     });
 
         boolean finished = scriptProc.waitFor(25, TimeUnit.SECONDS);
         if (!finished) {
-          scriptProc.destroyForcibly();
+          terminateProcessTree(scriptProc, Duration.ofSeconds(5));
           fail("Timeout waiting for installed connector execution in PTY");
         }
         outThread.join(2000);
@@ -663,6 +767,9 @@ final class JavaBackendEndpointConnectorE2eTest {
             .doesNotContain(token)
             .doesNotContain(Base64.getEncoder().encodeToString(keys.getPrivate().getEncoded()));
       } finally {
+        if (scriptProc != null) {
+          terminateProcessTree(scriptProc, Duration.ofSeconds(5));
+        }
         try (var stream = Files.walk(privateDir)) {
           stream
               .sorted(Comparator.reverseOrder())
@@ -674,6 +781,131 @@ final class JavaBackendEndpointConnectorE2eTest {
                     }
                   });
         }
+      }
+    }
+  }
+
+  private static void terminateProcessTree(Process process, Duration timeout) {
+    if (process == null) {
+      return;
+    }
+    ProcessHandle rootHandle = process.toHandle();
+    List<ProcessHandle> descendants = rootHandle.descendants().toList();
+
+    process.destroy();
+    for (ProcessHandle d : descendants) {
+      try {
+        d.destroy();
+      } catch (Exception ignored) {
+      }
+    }
+
+    long deadline = System.currentTimeMillis() + timeout.toMillis();
+    boolean allExited = waitForTreeExit(rootHandle, descendants, Math.min(2000, timeout.toMillis()));
+
+    if (!allExited) {
+      process.destroyForcibly();
+      for (ProcessHandle d : descendants) {
+        try {
+          d.destroyForcibly();
+        } catch (Exception ignored) {
+        }
+      }
+      long remaining = Math.max(500, deadline - System.currentTimeMillis());
+      waitForTreeExit(rootHandle, descendants, remaining);
+    }
+  }
+
+  private static boolean waitForTreeExit(
+      ProcessHandle root, List<ProcessHandle> descendants, long timeoutMs) {
+    long start = System.currentTimeMillis();
+    while (System.currentTimeMillis() - start < timeoutMs) {
+      boolean anyAlive = root.isAlive() || descendants.stream().anyMatch(ProcessHandle::isAlive);
+      if (!anyAlive) {
+        return true;
+      }
+      try {
+        Thread.sleep(50);
+      } catch (InterruptedException e) {
+        Thread.currentThread().interrupt();
+        break;
+      }
+    }
+    return !root.isAlive() && descendants.stream().noneMatch(ProcessHandle::isAlive);
+  }
+
+  @Test
+  void ptyProcessTreeCleanupTerminatesAllDescendantsWithNoLingeringProcesses() throws Exception {
+    boolean isMac = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("mac");
+    if (!isMac) {
+      // On non-macOS, test process tree termination using standard ProcessBuilder
+      ProcessBuilder pb = new ProcessBuilder("sh", "-c", "sleep 60 & sleep 60");
+      Process proc = pb.start();
+      Thread.sleep(200);
+      List<ProcessHandle> descendants = proc.toHandle().descendants().toList();
+      terminateProcessTree(proc, Duration.ofSeconds(3));
+      assertThat(proc.isAlive()).isFalse();
+      for (ProcessHandle d : descendants) {
+        assertThat(d.isAlive()).isFalse();
+      }
+      return;
+    }
+
+    // On macOS: spawn real /usr/bin/script PTY tree with child processes
+    Path tempDir = Files.createTempDirectory("tp-pty-cleanup-probe");
+    try {
+      Path scriptFile = tempDir.resolve("lingering_worker.py");
+      Files.writeString(
+          scriptFile,
+          """
+          import time, subprocess, sys
+          p = subprocess.Popen(["sleep", "60"])
+          time.sleep(60)
+          """);
+      ProcessBuilder pb =
+          new ProcessBuilder(
+              "/usr/bin/script",
+              "-q",
+              "/dev/null",
+              "/usr/bin/python3",
+              scriptFile.toString());
+      Process ptyProc = pb.start();
+
+      // Wait briefly for python and sleep subprocesses to spawn
+      long deadline = System.currentTimeMillis() + 3000;
+      List<ProcessHandle> descendants = List.of();
+      while (System.currentTimeMillis() < deadline) {
+        descendants = ptyProc.toHandle().descendants().toList();
+        if (!descendants.isEmpty()) {
+          break;
+        }
+        Thread.sleep(50);
+      }
+      assertThat(ptyProc.isAlive()).isTrue();
+      assertThat(descendants).isNotEmpty();
+
+      // Probe: execute tree termination
+      long termStart = System.currentTimeMillis();
+      terminateProcessTree(ptyProc, Duration.ofSeconds(3));
+      long elapsed = System.currentTimeMillis() - termStart;
+
+      // Assert termination is bounded, root is dead, and NO owned descendants remain alive
+      assertThat(elapsed).isLessThan(4000);
+      assertThat(ptyProc.isAlive()).isFalse();
+      for (ProcessHandle descendant : descendants) {
+        assertThat(descendant.isAlive())
+            .describedAs("Descendant process PID %d must not remain alive after tree termination", descendant.pid())
+            .isFalse();
+      }
+      assertThat(ptyProc.toHandle().descendants().filter(ProcessHandle::isAlive).count()).isZero();
+    } finally {
+      try (var stream = Files.walk(tempDir)) {
+        stream.sorted(Comparator.reverseOrder()).forEach(p -> {
+          try {
+            Files.deleteIfExists(p);
+          } catch (Exception ignored) {
+          }
+        });
       }
     }
   }

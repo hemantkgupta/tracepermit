@@ -1,5 +1,6 @@
 import java.security.MessageDigest
 import java.time.Instant
+import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.bundling.Compression
 import org.gradle.api.tasks.bundling.Tar
 import org.gradle.api.tasks.testing.logging.TestExceptionFormat
@@ -37,8 +38,25 @@ tasks.register<JavaExec>("runSimulatorApprovals") {
   mainClass = "io.tracepermit.adapters.http.SimulatorApprovalMain"
 }
 
+val endpointDistributionArchive = layout.projectDirectory.file(
+  "../endpoint-connector/build/distributions/tracepermit-endpoint-connector-0.1.0.tar.gz"
+)
+
 tasks.test {
   systemProperty("tracepermit.approvalRuntimeClasspath", sourceSets["main"].runtimeClasspath.asPath)
+  System.getProperties().forEach { (k, v) ->
+    if (k.toString().startsWith("tracepermit.")) {
+      systemProperty(k.toString(), v.toString())
+    }
+  }
+  System.getenv().forEach { (k, v) ->
+    if (k.startsWith("TRACEPERMIT_")) {
+      environment(k, v)
+    }
+  }
+  inputs.files(endpointDistributionArchive)
+    .withPropertyName("endpointConnectorArchive")
+    .withPathSensitivity(PathSensitivity.NONE)
   testLogging {
     exceptionFormat = TestExceptionFormat.FULL
   }
