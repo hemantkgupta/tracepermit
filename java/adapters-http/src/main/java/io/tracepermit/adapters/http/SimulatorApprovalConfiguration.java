@@ -44,6 +44,9 @@ final class SimulatorApprovalConfiguration {
       ConnectorScope.of("approvals.read"), ConnectorScope.of("approvals.request"),
       ConnectorScope.of("approvals.decide"), ConnectorScope.of("approvals.execute"),
       ConnectorScope.of("approvals.cancel"));
+  private static final Set<String> FORBIDDEN_DEFAULT_SECRETS = Set.of(
+      "change-me-password", "changeme-password", "replace-with-database-password",
+      "replace-with-client-secret", "tracepermit-password", "default-password");
   private final int port;
   private final OidcProviderConfiguration provider;
   private final ApprovalMemberships memberships;
@@ -102,8 +105,7 @@ final class SimulatorApprovalConfiguration {
       String password = utf8(readPrivateFile(reference(config, pg, "passwordFile"), 1024));
       // A single terminal newline from an operator-created secret file is allowed; no trimming otherwise.
       if (password.endsWith("\n")) password = password.substring(0, password.length() - 1);
-      require(password.length() >= 16 && password.chars().noneMatch(Character::isISOControl)
-          && !password.isBlank());
+      require(operatorSecret(password));
       database.setPassword(password);
       database.setConnectTimeout(3);
       database.setSocketTimeout(5);
@@ -134,7 +136,7 @@ final class SimulatorApprovalConfiguration {
             Duration.ofSeconds(3), Duration.ofSeconds(5));
         String secret = utf8(readPrivateFile(reference(config, web, "clientSecretFile"), 4096));
         if (secret.endsWith("\n")) secret = secret.substring(0, secret.length() - 1);
-        require(secret.length() >= 16 && secret.chars().noneMatch(Character::isISOControl));
+        require(operatorSecret(secret));
         Path console = reference(config, web, "consoleDirectory").toRealPath();
         require(Files.isDirectory(console) && Files.isRegularFile(console.resolve("index.html")));
         browser = new BrowserConfiguration(authorizationUri, tokenUri, secret, console);
@@ -223,6 +225,12 @@ final class SimulatorApprovalConfiguration {
     require(value.matches(subject ? "[A-Za-z0-9][A-Za-z0-9._:@/+\\-=|]{0,255}"
         : "[A-Za-z0-9][A-Za-z0-9._:@/+\\-=]{0,255}"));
     return value;
+  }
+
+  private static boolean operatorSecret(String value) {
+    return value.length() >= 16 && value.chars().noneMatch(Character::isISOControl)
+        && !value.isBlank()
+        && !FORBIDDEN_DEFAULT_SECRETS.contains(value.toLowerCase(java.util.Locale.ROOT));
   }
 
   private static int integer(JsonNode node, String field, int minimum, int maximum) {

@@ -1,0 +1,120 @@
+name: tracepermit-simulator-approval
+
+x-tracepermit-application: &tracepermit-application
+  image: ${TRACEPERMIT_CONTAINER_IMAGE:?Set TRACEPERMIT_CONTAINER_IMAGE to a reviewed version or digest}
+  pull_policy: missing
+  network_mode: host
+  user: "10001:10001"
+  read_only: true
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  pids_limit: 256
+  stop_grace_period: 10s
+  environment:
+    TRACEPERMIT_APPROVAL_CONFIG: /run/tracepermit/operator.json
+    TRACEPERMIT_APPROVAL_PORT: ${TRACEPERMIT_APPROVAL_PORT:?Set the exact numeric-loopback application port}
+  volumes:
+    - tracepermit-private-config:/run/tracepermit:ro
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
+
+services:
+  prepare:
+    profiles: [setup]
+    image: ${TRACEPERMIT_CONTAINER_IMAGE:?Set TRACEPERMIT_CONTAINER_IMAGE to a reviewed version or digest}
+    pull_policy: missing
+    user: "0:0"
+    read_only: true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+    security_opt:
+      - no-new-privileges:true
+    entrypoint: ["/usr/local/bin/tracepermit-container-prepare"]
+    volumes:
+      - type: bind
+        source: ${TRACEPERMIT_PRIVATE_DIR:?Set TRACEPERMIT_PRIVATE_DIR to an absolute private directory}
+        target: /input
+        read_only: true
+      - tracepermit-private-config:/prepared
+
+  check:
+    <<: *tracepermit-application
+    profiles: [setup]
+    command: ["--check"]
+
+  postgres:
+    image: postgres:16.14-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
+    pull_policy: missing
+    network_mode: host
+    read_only: true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      POSTGRES_DB: ${TRACEPERMIT_POSTGRES_DATABASE:?Set the dedicated PostgreSQL database}
+      POSTGRES_USER: ${TRACEPERMIT_POSTGRES_USER:?Set the dedicated PostgreSQL role}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      PGPORT: ${TRACEPERMIT_POSTGRES_PORT:?Set the exact numeric-loopback PostgreSQL port}
+    command:
+      - postgres
+      - -c
+      - listen_addresses=127.0.0.1
+      - -c
+      - port=${TRACEPERMIT_POSTGRES_PORT:?Set the exact numeric-loopback PostgreSQL port}
+    secrets:
+      - postgres_password
+    volumes:
+      - tracepermit-postgres-data:/var/lib/postgresql/data
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777
+      - /var/run/postgresql:rw,nosuid,nodev,size=16m,mode=3775
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -h 127.0.0.1 -p "$$PGPORT" -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
+  init:
+    <<: *tracepermit-application
+    profiles: [setup]
+    command: ["--init-db"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  tracepermit:
+    <<: *tracepermit-application
+    command: ["--run"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/tracepermit-container-healthcheck"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+
+secrets:
+  postgres_password:
+    file: ${TRACEPERMIT_PRIVATE_DIR:?Set TRACEPERMIT_PRIVATE_DIR to an absolute private directory}/database.secret
+
+volumes:
+  tracepermit-private-config:
+  tracepermit-postgres-data:

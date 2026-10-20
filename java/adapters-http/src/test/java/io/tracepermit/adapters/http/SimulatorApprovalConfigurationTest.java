@@ -124,6 +124,8 @@ final class SimulatorApprovalConfigurationTest {
   @Test void emptyOversizedWeakOrNonUtf8SecretAndWrongKeysAreRejected() throws Exception {
     for (byte[] secret : new byte[][] {new byte[0], new byte[1025], "short".getBytes(StandardCharsets.UTF_8),
         "                ".getBytes(StandardCharsets.UTF_8), "long-but\ninvalid-secret".getBytes(StandardCharsets.UTF_8),
+        "change-me-password".getBytes(StandardCharsets.UTF_8),
+        "replace-with-database-password".getBytes(StandardCharsets.UTF_8),
         new byte[] {(byte) 0xff}}) {
       fixture.write("database.secret", secret); rejected();
     }
@@ -131,6 +133,17 @@ final class SimulatorApprovalConfigurationTest {
     fixture.write("permit.spki", KeyPairGenerator.getInstance("Ed25519").generateKeyPair().getPublic().getEncoded()); rejected();
     fixture.write("permit.spki", fixture.key.getPublic().getEncoded());
     fixture.write("permit.pk8", KeyPairGenerator.getInstance("RSA").generateKeyPair().getPrivate().getEncoded()); rejected();
+  }
+
+  @Test void browserDefaultSecretIsRejected() throws Exception {
+    Files.createDirectories(directory.resolve("console"));
+    Files.writeString(directory.resolve("console/index.html"), "<html></html>");
+    fixture.write("client.secret", "replace-with-client-secret".getBytes(StandardCharsets.UTF_8));
+    fixture.json.putObject("browser").put("authorizationUri", "https://idp.example.invalid/authorize")
+        .put("tokenUri", "https://idp.example.invalid/token").put("clientSecretFile", "client.secret")
+        .put("consoleDirectory", "console");
+    fixture.save();
+    rejected();
   }
 
   @Test void checkOnlyNeverStartsDependenciesAndRunErrorsAreSecretSafe() throws Exception {

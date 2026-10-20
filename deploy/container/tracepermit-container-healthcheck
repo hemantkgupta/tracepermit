@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+port="${TRACEPERMIT_APPROVAL_PORT:-}"
+if [[ ! "$port" =~ ^[0-9]{1,5}$ ]] || [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
+  exit 1
+fi
+
+exec 3<>"/dev/tcp/127.0.0.1/$port" || exit 1
+printf 'GET /ready HTTP/1.1\r\nHost: 127.0.0.1:%s\r\nConnection: close\r\n\r\n' "$port" >&3
+IFS= read -r status <&3 || exit 1
+status="${status%$'\r'}"
+[ "$status" = "HTTP/1.1 200 OK" ]

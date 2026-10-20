@@ -43,6 +43,7 @@ import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.BooleanSupplier;
 
 /**
  * Authenticated, loopback-only API foundation. Not started by either existing demo launcher.
@@ -62,6 +63,7 @@ public final class SimulatorApprovalServer implements AutoCloseable {
   private final Clock clock;
   private final AtomicBoolean closed = new AtomicBoolean();
   private final ApprovalBrowserAdapter browser;
+  private final BooleanSupplier readiness;
 
   public static SimulatorApprovalServer start(
       InetSocketAddress address, OidcAccessTokenVerifier verifier, ApprovalMemberships memberships,
@@ -83,7 +85,20 @@ public final class SimulatorApprovalServer implements AutoCloseable {
     }
     return new SimulatorApprovalServer(address, verifier, memberships, state, policy, permits,
         simulator, clock, browser, ApprovalAdmissionExecutors.DEFAULT_ACTIVE_LANES,
-        ApprovalAdmissionExecutors.DEFAULT_PENDING_BOUND);
+        ApprovalAdmissionExecutors.DEFAULT_PENDING_BOUND, () -> true);
+  }
+
+  static SimulatorApprovalServer start(
+      InetSocketAddress address, OidcAccessTokenVerifier verifier, ApprovalMemberships memberships,
+      PostgresDurableEnforcementState state, JsonNode policy, ExecutionPermitAuthority permits,
+      StatefulTargetSimulator simulator, Clock clock, ApprovalBrowserAdapter browser,
+      BooleanSupplier readiness) throws IOException {
+    if (address.getAddress() == null || !"127.0.0.1".equals(address.getAddress().getHostAddress())) {
+      throw new IllegalArgumentException("The approval foundation must bind to IPv4 loopback.");
+    }
+    return new SimulatorApprovalServer(address, verifier, memberships, state, policy, permits,
+        simulator, clock, browser, ApprovalAdmissionExecutors.DEFAULT_ACTIVE_LANES,
+        ApprovalAdmissionExecutors.DEFAULT_PENDING_BOUND, readiness);
   }
 
   static SimulatorApprovalServer start(
@@ -96,7 +111,7 @@ public final class SimulatorApprovalServer implements AutoCloseable {
     }
     ApprovalAdmissionExecutors.validate(activeLanes, pendingBound);
     return new SimulatorApprovalServer(address, verifier, memberships, state, policy, permits,
-        simulator, clock, null, activeLanes, pendingBound);
+        simulator, clock, null, activeLanes, pendingBound, () -> true);
   }
 
   public static SimulatorApprovalServer start(
@@ -121,19 +136,20 @@ public final class SimulatorApprovalServer implements AutoCloseable {
     }
     return new SimulatorApprovalServer(address, verifier, memberships, state, policyStore, workspaceId,
         policyId, permits, simulator, clock, browser, ApprovalAdmissionExecutors.DEFAULT_ACTIVE_LANES,
-        ApprovalAdmissionExecutors.DEFAULT_PENDING_BOUND);
+        ApprovalAdmissionExecutors.DEFAULT_PENDING_BOUND, () -> true);
   }
 
   private SimulatorApprovalServer(
       InetSocketAddress address, OidcAccessTokenVerifier verifier, ApprovalMemberships memberships,
       PostgresDurableEnforcementState state, JsonNode policy, ExecutionPermitAuthority permits,
       StatefulTargetSimulator simulator, Clock clock, ApprovalBrowserAdapter browser,
-      int activeLanes, int pendingBound) throws IOException {
+      int activeLanes, int pendingBound, BooleanSupplier readiness) throws IOException {
     this.browser = browser;
     this.verifier = java.util.Objects.requireNonNull(verifier);
     this.memberships = java.util.Objects.requireNonNull(memberships);
     this.state = java.util.Objects.requireNonNull(state);
     this.clock = java.util.Objects.requireNonNull(clock);
+    this.readiness = java.util.Objects.requireNonNull(readiness);
     this.approvals = new HumanApprovalService(new PolicyEvaluator(), policy, permits, state, state,
         simulator, () -> SecurityReadiness.allReady(clock.instant()), clock,
         () -> UUID.randomUUID().toString(), "urn:tracepermit:approval-api:simulator", "simulator", 300);
@@ -149,12 +165,14 @@ public final class SimulatorApprovalServer implements AutoCloseable {
       InetSocketAddress address, OidcAccessTokenVerifier verifier, ApprovalMemberships memberships,
       PostgresDurableEnforcementState state, PolicyLifecycleStore policyStore, String workspaceId,
       String policyId, ExecutionPermitAuthority permits, StatefulTargetSimulator simulator, Clock clock,
-      ApprovalBrowserAdapter browser, int activeLanes, int pendingBound) throws IOException {
+      ApprovalBrowserAdapter browser, int activeLanes, int pendingBound, BooleanSupplier readiness)
+      throws IOException {
     this.browser = browser;
     this.verifier = java.util.Objects.requireNonNull(verifier);
     this.memberships = java.util.Objects.requireNonNull(memberships);
     this.state = java.util.Objects.requireNonNull(state);
     this.clock = java.util.Objects.requireNonNull(clock);
+    this.readiness = java.util.Objects.requireNonNull(readiness);
     this.approvals = new HumanApprovalService(new PolicyEvaluator(), policyStore, workspaceId, policyId,
         permits, state, state, simulator, () -> SecurityReadiness.allReady(clock.instant()), clock,
         () -> UUID.randomUUID().toString(), "urn:tracepermit:approval-api:simulator", "simulator", 300);
@@ -227,8 +245,12 @@ public final class SimulatorApprovalServer implements AutoCloseable {
   }
 
   private void dispatch(HttpExchange exchange, Headers headers, URI uri) throws IOException {
-    if (browser != null && browser.handle(exchange, port())) return;
     String path = uri.getRawPath();
+    if ("/health".equals(path) || "/ready".equals(path)) {
+      status(exchange, headers, uri, path);
+      return;
+    }
+    if (browser != null && browser.handle(exchange, port())) return;
     boolean browserRequest = browser != null && (ApprovalBrowserAdapter.API.equals(path)
         || path.startsWith(ApprovalBrowserAdapter.API + "/"));
     AuthenticatedConnector connector;
@@ -347,6 +369,31 @@ public final class SimulatorApprovalServer implements AutoCloseable {
             body(exchange, Set.of("requestHash")), false));
       } else throw failure(405, "METHOD_NOT_ALLOWED");
     } else throw failure(404, "NOT_FOUND");
+  }
+
+  private void status(HttpExchange exchange, Headers headers, URI uri, String path)
+      throws IOException {
+    if (!"GET".equals(exchange.getRequestMethod())) throw failure(405, "METHOD_NOT_ALLOWED");
+    if (uri.getRawQuery() != null || headers.containsKey("Authorization")
+        || headers.containsKey("Cookie") || headers.containsKey("Origin")) {
+      throw failure(400, "INVALID_REQUEST");
+    }
+    ObjectNode response = JsonSupport.MAPPER.createObjectNode()
+        .put("schemaVersion", "1.0")
+        .put("service", "tracepermit-simulator-approval");
+    if ("/health".equals(path)) {
+      response.put("status", "live");
+      send(exchange, 200, response);
+      return;
+    }
+    boolean ready;
+    try {
+      ready = readiness.getAsBoolean();
+    } catch (RuntimeException failure) {
+      ready = false;
+    }
+    response.put("status", ready ? "ready" : "not_ready");
+    send(exchange, ready ? 200 : 503, response);
   }
 
   // Both ingress adapters converge here before any approval/permit/execution operation.

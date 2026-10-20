@@ -286,6 +286,37 @@ final class SimulatorApprovalServerTest {
     assertThat(rules()).isZero();
   }
 
+  @Test void healthAndReadinessAreBoundedUnauthenticatedLocalProjections() throws Exception {
+    var health = call("GET", "/health", null, null);
+    assertStatus(health, 200);
+    assertThat(json(health)).isEqualTo(JsonSupport.MAPPER.readTree("""
+        {"schemaVersion":"1.0","service":"tracepermit-simulator-approval","status":"live"}
+        """));
+    var ready = call("GET", "/ready", null, null);
+    assertStatus(ready, 200);
+    assertThat(json(ready).path("status").asText()).isEqualTo("ready");
+    assertStatus(call("POST", "/health", null, "{}"), 405);
+    assertStatus(call("GET", "/health?detail=true", null, null), 400);
+    assertStatus(call("GET", "/ready", token("alice"), null), 400);
+    assertStatus(call("GET", "/ready", null, null, "Cookie", "session=forged"), 400);
+    assertThat(health.body()).doesNotContain(ISSUER, AUDIENCE, "jdbc", "credential");
+  }
+
+  @Test void readinessFailsClosedWithoutLeakingDependencyDetails() throws Exception {
+    server.close();
+    var permits = new ExecutionPermitAuthority(ExecutionPermitAuthority.DEFAULT_ISSUER,
+        "fixture-ed25519", permitKey, 30, clock, () -> UUID.randomUUID().toString(),
+        new PostgresPermitConsumptionStore(dataSource));
+    server = SimulatorApprovalServer.start(new InetSocketAddress("127.0.0.1", 0), verifier,
+        memberships, state, policy, permits, simulator, clock, null,
+        () -> { throw new IllegalStateException("secret dependency detail"); });
+    var response = call("GET", "/ready", null, null);
+    assertStatus(response, 503);
+    assertThat(response.body()).contains("not_ready")
+        .doesNotContain("secret dependency detail", "jdbc", "credential");
+    assertThat(rules()).isZero();
+  }
+
   @Test void exactReviewRejectsWrongHashAndUnknownDecisionOrCallerFields() throws Exception {
     JsonNode pending = create(token("alice"));
     assertStatus(call("POST", path(pending) + "/decision", token("bob"), "{\"decision\":\"approve\",\"requestHash\":\"wrong\"}"), 409);

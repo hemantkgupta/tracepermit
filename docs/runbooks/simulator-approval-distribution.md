@@ -5,6 +5,10 @@ simulator approval application (`tracepermit-simulator-approval`).
 This archive bundles the authenticated Java backend and built React inbox
 without requiring Node.js, pnpm, Gradle, or a source checkout on the host.
 
+For the separate Linux Docker Engine packaging of this same archive, use the
+[container install profile](container-install-profile.md). That profile retains
+numeric-loopback binding and is not a Docker Desktop/public-edge qualification.
+
 > [!IMPORTANT]
 > This distribution is a **simulator-alpha qualification foundation**, not a
 > production deployment, cloud target gateway, or external IdP qualification.
