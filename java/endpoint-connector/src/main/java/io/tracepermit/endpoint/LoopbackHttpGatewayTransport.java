@@ -156,7 +156,7 @@ public final class LoopbackHttpGatewayTransport implements GatewayTransport {
     return new ConnectorException(gatewayCode, "The gateway rejected the request.");
   }
 
-  private static URI validateGatewayUri(URI uri) {
+  static URI validateGatewayUri(URI uri) {
     if (!"http".equals(uri.getScheme())
         || !LOOPBACK_HOST.equals(uri.getHost())
         || uri.getPort() < 1
