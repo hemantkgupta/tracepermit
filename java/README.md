@@ -23,6 +23,9 @@ Modules:
   enforcement composition;
 - `endpoint-connector`: bounded MCP stdio, endpoint observation, source-proof
   signing ports, and loopback gateway transport; and
+- `executor-simulator`: strict one-shot stdio execution with operator-owned
+  Ed25519 verifier trust, PostgreSQL permit consumption, fixed simulator routes,
+  and bounded receipts; and
 - `persistence-postgres`: Flyway/JDBC durable permit claims, attempts,
   transitions, evidence streams, leased outbox identities, and immutable
   external-anchor receipts; and
@@ -57,6 +60,13 @@ separate hosted OAuth demo has its own loopback main. PostgreSQL qualifications
 use disposable real Testcontainers and never fall back to memory. Default local
 stores and symmetric execution-permit test signing are not production-grade
 custody or multi-replica state.
+
+The separate `executor-simulator` application accepts only a compact permit and
+exact canonical action. It holds no permit-signing key, performs no schema
+migration, exposes no listener and includes no provider SDK/credential. Its
+standalone permit claim is intentionally not described as the approval path's
+atomic execution/evidence transaction. See the
+[verifier-only executor runbook](../docs/runbooks/verifier-only-simulator-executor.md).
 
 Scenario 3 uses that test-runtime composition to start disposable PostgreSQL
 and exercise the real request-bound approval, permit, evidence, and simulator

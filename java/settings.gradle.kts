@@ -11,6 +11,7 @@ include(
   "adapters-http",
   "adapters-remote",
   "endpoint-connector",
+  "executor-simulator",
   "persistence-postgres",
   "observability-otel",
   "conformance",

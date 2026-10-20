@@ -1,0 +1,26 @@
+{
+  "schemaVersion": "1.0",
+  "postgres": {
+    "host": "127.0.0.1",
+    "port": 5432,
+    "database": "tracepermit",
+    "user": "tracepermit_executor",
+    "passwordFile": "database.secret"
+  },
+  "permit": {
+    "issuer": "https://execution-permits.tracepermit.invalid",
+    "audience": "tracepermit://simulator-executor",
+    "keyId": "replace-with-enrolled-public-key-id",
+    "publicKeyFile": "permit.spki"
+  },
+  "adapter": {
+    "routes": [
+      {
+        "toolName": "aws.ec2.update_security_group",
+        "targetSystem": "aws",
+        "targetEnvironment": "prod",
+        "targetAccountId": "simulated-123"
+      }
+    ]
+  }
+}

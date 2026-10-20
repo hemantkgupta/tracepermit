@@ -31,6 +31,7 @@ No database migration or real target is introduced. See
 | `adapters-http`        | Loopback MCP, read-only projections, and separate authenticated approval/browser adapter                                           |
 | `adapters-remote`      | Authenticated MCP edge and SSRF-safe JWKS HTTPS                                                                                    |
 | `endpoint-connector`   | MCP stdio origin observation and loopback forwarding                                                                               |
+| `executor-simulator`   | One-shot verifier-only stdio executor, strict operator trust/route configuration, bounded receipts                                 |
 | `persistence-postgres` | Durable claims, approvals, policy revisions/lifecycle, evidence, outbox, reconciliation                                            |
 | `observability-otel`   | Bounded telemetry projection                                                                                                       |
 | `conformance`          | Checked-in schema, vector, and invariant tests                                                                                     |
@@ -39,6 +40,15 @@ Transport code stays in adapters. All origins converge on the canonical
 action contract before classification or policy. Application and domain code
 receive trusted identity context from adapters; they do not infer it from tool
 arguments. The executor has no route to a real AWS or Jira service.
+
+`executor-simulator` is deliberately separate from the HTTP adapter. It accepts
+one bounded document, constructs an Ed25519 public-key-only permit authority,
+uses the existing non-migrating PostgreSQL consumption store, rechecks its fixed
+route immediately before `StatefulTargetSimulator`, and exits. Request fields
+cannot select issuer, audience, algorithm, key, database or allowlist. Its
+result hash is a correlation value; raw simulator arguments/results stay inside
+the process. The control plane does not yet dispatch to this runtime, and the
+standalone claim is not the durable attempt/evidence composition.
 
 ## OIDC refresh and transport resource boundaries
 

@@ -123,6 +123,12 @@ and model-driven rehearsal are separate from protocol tests.
   It uses host networking with **no published ports** so both services retain
   numeric-loopback binding. It is not qualified on Docker Desktop and does not
   add TLS, a public edge, external IdP compatibility or a real target.
+- A separate [verifier-only simulator executor](docs/runbooks/verifier-only-simulator-executor.md)
+  runs as a one-shot Java process with only an Ed25519 public key and an
+  operator-owned route allowlist. PostgreSQL contention/restart tests prove one
+  permit winner across JVMs, and responses omit raw arguments/results. It is
+  not wired into the current launchers and does not establish OS/container
+  isolation, provider credential custody or egress enforcement.
 
 The [current-state capability matrix](docs/specs/03-current-state-baseline.md)
 distinguishes implemented code, local demonstrations, live-client

@@ -54,18 +54,25 @@ shutdown must stop children and remove the local endpoint key and session.
 
 ## Behavior acceptance
 
-| Boundary         | Required evidence                                                                                                                       |
-| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Authentication   | Invalid, expired, wrong-issuer/audience, replayed, or sender-mismatched credentials stop before protected dispatch                      |
-| Canonicalization | Unknown tools/schemas and client-asserted security fields do not become trusted action context                                          |
-| Policy           | Allow, block, sanitize, and approval each have positive and negative tests; block and unresolved states never invoke the simulator      |
-| Sequence         | History is gateway-owned and tenant/subject scoped; injected client history cannot create authority                                     |
-| Approval         | Independently authenticated reviewer, exact request binding, expiry, and atomic single-use claim; self-approval and mutation fail       |
-| Permit           | Signature, audience, canonical hash, time, and one-time claim checked before simulated effect                                           |
-| Delegation       | Parent-linked scope, resource, audience, and lifetime narrowing; broadening fails                                                       |
-| Evidence         | Credentials are redacted; integrity/outbox/receipt checks and observer failures cannot turn a denial into an allow                      |
-| Recovery         | Unknown outcome remains unknown until confirmed by read-only lookup; no automatic re-execution                                          |
-| Console          | Default demo is read-only; separate authenticated browser inbox requests/reviews/executes only through shared simulator approval checks |
+| Boundary         | Required evidence                                                                                                                                   |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Authentication   | Invalid, expired, wrong-issuer/audience, replayed, or sender-mismatched credentials stop before protected dispatch                                  |
+| Canonicalization | Unknown tools/schemas and client-asserted security fields do not become trusted action context                                                      |
+| Policy           | Allow, block, sanitize, and approval each have positive and negative tests; block and unresolved states never invoke the simulator                  |
+| Sequence         | History is gateway-owned and tenant/subject scoped; injected client history cannot create authority                                                 |
+| Approval         | Independently authenticated reviewer, exact request binding, expiry, and atomic single-use claim; self-approval and mutation fail                   |
+| Permit           | Signature, audience, canonical hash, time, and one-time claim checked before simulated effect                                                       |
+| Executor         | Verifier trust cannot come from the request; no signing key/raw result; mutation, expiry, replay, wrong trust and concurrent JVM claims fail closed |
+| Delegation       | Parent-linked scope, resource, audience, and lifetime narrowing; broadening fails                                                                   |
+| Evidence         | Credentials are redacted; integrity/outbox/receipt checks and observer failures cannot turn a denial into an allow                                  |
+| Recovery         | Unknown outcome remains unknown until confirmed by read-only lookup; no automatic re-execution                                                      |
+| Console          | Default demo is read-only; separate authenticated browser inbox requests/reviews/executes only through shared simulator approval checks             |
+
+The verifier-only executor acceptance is simulator-scoped. Runtime-generated
+Ed25519 keys and disposable PostgreSQL must prove one winner across independent
+JVMs and replay refusal after restart. Distribution/configuration scans must not
+find a private key or provider SDK. This does not replace deployment-isolation,
+credential-custody or egress qualification.
 
 The hosted-client profile has a separately documented single-composition
 Auth0/ChatGPT/private-tunnel qualification. It does not establish general

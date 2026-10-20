@@ -39,3 +39,9 @@ withdrawal qualification remains separate.
 [container runbook](../runbooks/container-install-profile.md) define the Linux
 numeric-loopback container install foundation. It is partial TP-MVP-05 evidence,
 not a public-edge, external-IdP or production-readiness claim.
+
+[ADR 0064](../architecture/0064-verifier-only-simulator-executor-foundation.md)
+and the [executor runbook](../runbooks/verifier-only-simulator-executor.md)
+define the simulator-only verifier/process-separation foundation. It is partial
+TP-MVP-11 evidence, not a real-target, credential-custody, managed-egress or
+deployment-isolation claim.

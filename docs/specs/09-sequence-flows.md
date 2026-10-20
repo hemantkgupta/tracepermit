@@ -431,6 +431,36 @@ sequenceDiagram
   E-->>R1: result
 ```
 
+### Verifier-only one-shot executor
+
+```mermaid
+sequenceDiagram
+  participant G as Trusted permit issuer
+  participant P as One-shot executor process
+  participant D as PostgreSQL permit store
+  participant S as Stateful simulator
+
+  G->>P: exact canonical action + signed permit
+  P->>P: load operator public key/issuer/audience/route
+  P->>P: strict parse; verify signature/time/audience/action hash
+  P->>D: tenant + permit ID + action hash claim
+  alt first committed claim
+    D-->>P: claimed
+    P->>P: recheck operator route
+    P->>S: invoke canonical simulated action
+    S-->>P: raw simulator result (process-internal)
+    P-->>G: bounded receipt + result hash
+  else duplicate, unavailable or ambiguous claim
+    D-->>P: reject/fail
+    P-->>G: bounded failure; no dispatch
+  end
+```
+
+Issuer/audience/key/route values never come from the request. Concurrent JVMs
+share the PostgreSQL unique claim, so only the winner reaches the simulator.
+The standalone claim does not atomically create an execution attempt/evidence
+record; a crash after claim does not restore authority or prove failure.
+
 ### Process-local capacity refusal
 
 The in-memory source/workload replay and permit-consumption stores serialize

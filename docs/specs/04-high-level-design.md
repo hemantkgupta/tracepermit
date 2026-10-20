@@ -136,7 +136,7 @@ flowchart TB
 | Sanitizer                    | Create one reviewed narrower canonical action for full re-evaluation              | Mutate the original, widen authority, or issue execution authority |
 | Approval service             | Bind reviewer decision to exact request and consume approval                      | Issue broad reusable approval                                      |
 | Permit issuer                | Turn allow/approval into short-lived executor capability                          | Issue on block, pending, or unresolved sanitize                    |
-| Executor                     | Verify permit, apply adapter allowlist, invoke target with constrained credential | Trust gateway control flow without verification                    |
+| Executor                     | Verify permit, apply operator-owned allowlist, claim one use, invoke target       | Trust request control flow or retain permit-signing authority      |
 | Evidence service             | Append correlated facts and lifecycle events                                      | Store reusable secrets or rewrite history                          |
 | Control plane                | Manage policy, approval, keys, tenants, and visibility                            | Sit in the synchronous target path unnecessarily                   |
 
@@ -163,7 +163,7 @@ plane outage must not silently create new authority.
 | Sanitization         | Proposed transformer identity/output              | Recompute reviewed transform; bind new event/hash; re-evaluate             |
 | Approval             | Approval ID, UI state, reviewer claims            | Authenticate/authorize reviewer and bind exact request                     |
 | Permit               | Mutable in-process request                        | Bind exact allowed request under signature                                 |
-| Executor             | Gateway message and permit                        | Re-verify authority and target allowlist                                   |
+| Executor             | Gateway message, permit and action                | Use operator verifier trust; re-verify authority and target allowlist      |
 | Target               | External system response                          | Record only observed outcome; use idempotency                              |
 | Evidence             | Application-produced events                       | Append, redact, anchor, and reconcile                                      |
 

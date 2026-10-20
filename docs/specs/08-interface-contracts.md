@@ -460,7 +460,31 @@ clientClaims
 Adapters construct trusted fields. Policy and executors consume the canonical
 contract and do not reinterpret raw transport input.
 
-## 3A. Java development control-plane reads
+## 3A. Verifier-only simulator executor stdio
+
+The separate one-shot executor accepts exactly one JSON document on stdin:
+
+```text
+schemaVersion = 1.0
+permit = compact signed execution permit
+action = exact canonical action object
+```
+
+No other field is accepted. In particular, issuer, audience, algorithm, key,
+allowlist, credentials and verified/approved state cannot be supplied by the
+request. Operator configuration owns the Ed25519 public key and exact trust
+context. Duplicate keys, trailing documents, more than 65,536 input bytes,
+more than 16,384 permit characters, unknown fields and any action that changes
+during canonical normalization fail closed.
+
+Success returns `schemaVersion`, `status`, `mode`, `eventId`, `permitId`,
+`system`, `operation` and `resultHash`. It never returns the compact permit,
+raw arguments or raw simulator result. Public failures contain only a stable
+code. `--check` is offline; `--execute` opens an existing compatible PostgreSQL
+schema and exposes no listener. See
+[ADR 0064](../architecture/0064-verifier-only-simulator-executor-foundation.md).
+
+## 3B. Java development control-plane reads
 
 The Java development adapter exposes these loopback-only reads:
 
