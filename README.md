@@ -75,6 +75,20 @@ Follow the [Codex approval runbook](docs/runbooks/codex-durable-approvals.md);
 no personal IdP login or real target is required. Native client qualification
 and model-driven rehearsal are separate from protocol tests.
 
+## Preview documentation locally
+
+With Node 22.9.0 or newer, run from the repository root:
+
+```bash
+pnpm site:install
+pnpm site:dev
+```
+
+No Java service, Docker or IdP is needed to browse the documentation. Both the
+dev server and `pnpm site:preview` (after `pnpm site:build`) default to numeric
+loopback. See the [site maintenance runbook](docs/runbooks/site-dependency-maintenance.md)
+for the separate npm/pnpm boundaries, audit and Corepack troubleshooting.
+
 ## What is qualified
 
 - Java 21 is the sole backend. The React/TypeScript console is a

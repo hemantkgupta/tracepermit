@@ -49,8 +49,9 @@ jobs:
 
       - name: Install and build static documentation site
         run: |
-          npm --prefix site ci
-          npm --prefix site audit --audit-level=low
+          corepack enable npm
+          pnpm site:install
+          pnpm site:audit
           pnpm site:build
           node --test scripts/site-search-compatibility.test.mjs
           node --test scripts/site-verification.test.mjs
@@ -122,7 +123,8 @@ jobs:
 
       - name: Verify built documentation onboarding and responsive navigation
         run: |
-          npm --prefix site ci
+          corepack enable npm
+          pnpm site:install
           pnpm site:build
           node --test scripts/site-onboarding-browser.test.mjs
           node --test scripts/site-verification-browser.test.mjs

@@ -646,6 +646,14 @@ See the [latency runbook](../runbooks/simulator-approval-latency-qualification.m
 
 ## Maintenance rule
 
+Documentation tooling contributes bounded OPS-002/004 developer-workflow
+evidence: the root pnpm workspace and separately locked npm site declare their
+own versions; root `site:*` commands enter the site before invoking npm. The
+`site-package-manager.test.mjs` command-execution regressions cover directory,
+argument forwarding, retained audit severity and labelled manager-check negative
+controls. They do not qualify an origin adapter, an installed backend, external
+IdP interoperability or production operations; no requirement status changes.
+
 Every implementation pull request citing a requirement must update the
 corresponding row when status or evidence changes. “Implemented” requires a
 linked enforcement point and a test capable of failing when the behavior is

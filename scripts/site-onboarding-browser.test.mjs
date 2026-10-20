@@ -188,6 +188,67 @@ test(
       }
 
       await t.test(
+        "local documentation commands render on desktop and mobile without implying backend deployment",
+        async () => {
+          for (const width of [1440, 390]) {
+            await page.setViewportSize({ width, height: 1000 });
+            await page.goto(`${origin}/guide/deployment`, {
+              waitUntil: "networkidle",
+            });
+            assert.match(await page.title(), /Deployment status/);
+            assert.match(
+              await page.locator(".vp-doc h1").innerText(),
+              /Deployment status and production design/,
+            );
+            const body = await page.locator(".vp-doc").innerText();
+            for (const text of [
+              "pnpm site:install",
+              "pnpm site:build",
+              "pnpm site:dev",
+              "pnpm site:preview",
+              "Node 22.9.0 or newer",
+              "does not expose or deploy the Java gateway",
+            ])
+              assert.ok(body.includes(text), text);
+            assert.equal(body.includes("npm --prefix site ci"), false);
+            assert.equal(await page.locator("vite-error-overlay").count(), 0);
+            assert.equal(
+              await page.evaluate(
+                () => document.documentElement.scrollWidth <= innerWidth,
+              ),
+              true,
+            );
+            if (screenshots) {
+              await page
+                .locator(".vp-doc div.language-bash")
+                .first()
+                .scrollIntoViewIfNeeded();
+              await page.screenshot({
+                path: join(
+                  screenshots,
+                  `${width === 390 ? "mobile" : "desktop"}-site-commands.png`,
+                ),
+              });
+            }
+            await page
+              .locator(".vp-doc")
+              .getByRole("link", {
+                name: "fresh MacBook checklist",
+                exact: true,
+              })
+              .click();
+            await page.waitForURL(`${origin}/guide/fresh-macbook-evaluation`);
+            await page
+              .locator(".vp-doc h1")
+              .filter({
+                hasText: "Fresh MacBook evaluation",
+              })
+              .waitFor();
+          }
+        },
+      );
+
+      await t.test(
         "home workflow links and approval cards survive reconciliation",
         async () => {
           await page.setViewportSize({ width: 1440, height: 1000 });
