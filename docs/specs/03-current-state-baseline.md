@@ -1,6 +1,6 @@
 # Current-state capability matrix
 
-**As of:** 2026-10-20
+**As of:** 2026-10-21
 **Scope:** public Java-backend/React-console proof of concept
 
 This is the authoritative boundary between running POC behavior and product
@@ -32,6 +32,20 @@ requirement-to-test mapping is in the [traceability matrix](12-traceability-matr
 | Evidence and recovery       | Java adds a bounded credential/pattern redaction library and applies its default profile to approval-response action projections (ADR 0043), preserving original request hashes and exact action snapshots. It appends redacted, hash-linked evidence; PostgreSQL outbox publication, independently verified signed receipt, and lookup-only unknown-outcome reconciliation have tests.                                                                                                                                                       | No global log/export or before-persistence redaction hook; unkeyed hashes are not secret confidentiality. The development stream is process-local. No production external sink, external target lookup, retention program, or independent audit account is configured.                                                                                                  |
 | Read console                | React displays bounded Java action, evidence, lineage, and policy projections over loopback.                                                                                                                                                                                                                                                                                                                                                                                                                                                  | It cannot authorize, approve, execute, or mutate policy. It is not remotely authenticated or tenant-authorized.                                                                                                                                                                                                                                                         |
 | Downstream targets          | Deterministic, stateful AWS/Jira simulators support the numbered scenarios.                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | No real AWS/Jira SDK, cloud credential, or production side-effect route is present.                                                                                                                                                                                                                                                                                     |
+
+## Public-client browser candidate
+
+Schema1.1 explicitly selects `none` for a native/public client, with code/S256
+PKCE, no secret or Authorization header, exact loopback redirect and configured
+organization binding in both signed tokens. Baseline API read scope is required;
+`openid` is requested for OIDC and need not be echoed into API-token scope.
+Schema1.0 confidential behavior remains compatible. Synthetic protocol,
+local-TLS and PostgreSQL tests exercise these boundaries. **Actual Auth0 native
+login remains pending**, including native organization support, exact `at+jwt`
+and RFC9207 callback `iss`. A missing/unsupported response fails closed.
+The [local-Mac procedure](../runbooks/auth0-native-oidc-qualification.md) records
+the remaining gate. This does not qualify the container preparation profile,
+a public edge, arbitrary OIDC providers or production identity.
 
 ## OIDC refresh isolation
 

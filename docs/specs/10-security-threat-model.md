@@ -300,6 +300,25 @@ revocation, managed token storage, shared sessions/abuse controls and independen
 security review remain release gates. See
 [ADR 0036](../architecture/0036-local-browser-approval-boundary.md).
 
+### Public-client downgrade and organization confusion
+
+Schema1.1 explicitly selects `none`; missing confidential secrets never trigger
+fallback. Closed configuration/form schemas reject secret injection and redirect
+substitution. S256 PKCE binds the code to its initiating flow; atomic state
+consumption and signed nonce checks constrain concurrent/replayed callbacks.
+The public profile sends configured organization and requires its exact signed
+`org_id` in both tokens. Client ID, authorization parameters and token roles
+cannot create operator enrollment. API permissions, not an echoed `openid`,
+gate use; a separate ID token remains mandatory. Local-TLS tests verify the
+public POST omits Authorization while destination/redirect controls remain.
+See [ADR0063](../architecture/0063-explicit-public-browser-code-pkce.md).
+
+Native Auth0 organization availability, `at+jwt` and RFC9207 issuer-response
+compatibility remain pending. Unsupported provider output denies login, with
+no broader compatibility claim or weakened parser. Same-UID compromise, local
+HTTP cookie limits, provider revocation and shared session state remain outside
+this qualification. No public tunnel, Management API or real target is added.
+
 - Mutation and property-based tests for schemas and canonicalization
 - Forged, expired, future, wrong-issuer, wrong-audience, and wrong-type tokens
 - Identity, tenant, target, approval, and policy injection attempts

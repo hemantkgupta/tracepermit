@@ -110,6 +110,26 @@ and a real JVM SIGTERM/port-release test. These run in `pnpm test:approval-api`
 and the aggregate suite. Existing numbered demos remain separate development
 compositions; bootstrap qualification is not a live external-IdP test.
 
+## Public-client browser acceptance
+
+Schema1.1 `none` requires successful code/S256 exchange without Authorization or
+secret, strict configuration/method rejection, exact redirect and independent
+ID/API-token organization bindings. `BrowserCodeExchangeTest` and
+`SimulatorApprovalConfigurationTest` cover form/configuration boundaries;
+`SimulatorApprovalPublicClientTest` covers signed HTTP login without API-token
+`openid`, required `approvals.read`, mandatory ID token, wrong credentials,
+claims/keys/times, verifier mutation, browser/code/nonce substitution and
+concurrent callback replay. ID-token and local-TLS suites retain separate
+cryptographic and transport controls; existing confidential/synthetic browser
+and durable API tests must remain green.
+
+This is automatically tested behavior, not actual Auth0 login. The
+[local-Mac gate](../runbooks/auth0-native-oidc-qualification.md) still requires
+native organization support, exact token type and callback `iss`, distinct
+review and explicit one-use simulator execution. Missing live variables or an
+unreachable cloud loopback browser cannot be relabeled a pass. OPS-005 remains
+partial; no public deployment or container-version qualification is inferred.
+
 ## Endpoint connector I/O deadline acceptance
 
 FR-016/017, SEC-003/011/014, REL-001/002/005/009 and OPS-004 require bounded

@@ -271,6 +271,12 @@ and owns same-origin OIDC code/PKCE login and cookie/CSRF-protected browser APIs
 Server-held sessions converge with bearer API requests before the same current
 role/scope/tenant/owner and exact approval checks. This browser profile is numeric
 loopback HTTP only, separate from the default read console and hosted MCP tunnel.
+An explicit schema1.1 public-client candidate adds method `none`, code/S256
+PKCE and configured organization binding in both signed tokens. It shares the
+same server-session and durable approval boundary; it creates no new ingress.
+The client ID is identification, not authentication or enrollment authority.
+Schema1.0 confidential Basic behavior is retained. See
+[ADR0063](../architecture/0063-explicit-public-browser-code-pkce.md).
 Its synthetic IdP qualifier is test-classpath-only; an external browser provider
 and a public TLS deployment are not qualified. See
 [ADR 0036](../architecture/0036-local-browser-approval-boundary.md).

@@ -54,6 +54,32 @@ sequenceDiagram
   G-->>C: MCP tool result
 ```
 
+### Public-client browser login (synthetic qualification)
+
+```mermaid
+sequenceDiagram
+  participant B as Same-Mac browser
+  participant J as Loopback Java adapter
+  participant I as Configured test IdP
+  B->>J: GET /auth/login
+  J-->>B: Binder cookie and code/S256 authorization redirect
+  B->>I: client_id, exact redirect, configured organization, state, nonce, challenge
+  I-->>B: code, state, exact iss
+  B->>J: Callback plus binder cookie
+  J->>J: Atomically consume state, verify binder/state/issuer
+  J->>I: code + verifier + exact redirect + client_id; no secret/header
+  I-->>J: Signed API and ID tokens
+  J->>J: Independently verify keys, claims, organization and nonce
+  J->>J: Require API approvals.read and current human enrollment
+  J-->>B: Opaque expiring local session; tokens stay in Java
+```
+
+Callback replay or concurrent loss stops before another exchange. ID-token
+nonce substitution prevents replay into a new flow. `openid` requests OIDC,
+not API authority. Schema1.0 uses confidential Basic on the same PKCE path.
+The synthetic fixture does not prove Auth0 emits `iss` or compatible tokens;
+see [ADR0063](../architecture/0063-explicit-public-browser-code-pkce.md).
+
 ## 1A. Production OAuth/JWKS verification foundation
 
 The Java verification flow is implemented through the verified-identity

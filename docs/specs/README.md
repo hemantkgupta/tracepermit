@@ -39,3 +39,7 @@ withdrawal qualification remains separate.
 [container runbook](../runbooks/container-install-profile.md) define the Linux
 numeric-loopback container install foundation. It is partial TP-MVP-05 evidence,
 not a public-edge, external-IdP or production-readiness claim.
+
+[ADR0063](../architecture/0063-explicit-public-browser-code-pkce.md) adds the
+explicit native/public browser candidate. Synthetic tests do not close the
+[pending live Auth0 gate](../runbooks/auth0-native-oidc-qualification.md).

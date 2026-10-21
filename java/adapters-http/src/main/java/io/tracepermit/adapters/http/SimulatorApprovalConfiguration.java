@@ -74,7 +74,9 @@ final class SimulatorApprovalConfiguration {
       fields(root, root.has("browser")
           ? Set.of("schemaVersion", "port", "postgres", "oidc", "memberships", "permit", "browser")
           : Set.of("schemaVersion", "port", "postgres", "oidc", "memberships", "permit"));
-      require("1.0".equals(text(root, "schemaVersion", 8)));
+      String version = text(root, "schemaVersion", 8);
+      require(Set.of("1.0", "1.1").contains(version));
+      require(!"1.1".equals(version) || root.has("browser"));
       int port = integer(root, "port", 1, 65_535);
       JsonNode oidc = root.path("oidc");
       fields(oidc, Set.of("issuer", "audience", "jwksUri", "clientId", "tenantClaim", "tenantValue", "tenantId"));
@@ -129,17 +131,36 @@ final class SimulatorApprovalConfiguration {
       BrowserConfiguration browser = null;
       if (root.has("browser")) {
         JsonNode web = root.path("browser");
-        fields(web, Set.of("authorizationUri", "tokenUri", "clientSecretFile", "consoleDirectory"));
+        String method = "1.0".equals(version) ? "client_secret_basic"
+            : text(web, "tokenEndpointAuthMethod", 32);
+        require(Set.of("none", "client_secret_basic").contains(method));
+        Set<String> webFields = new HashSet<>(Set.of("authorizationUri", "tokenUri", "consoleDirectory"));
+        if ("1.1".equals(version)) webFields.add("tokenEndpointAuthMethod");
+        if ("client_secret_basic".equals(method)) webFields.add("clientSecretFile");
+        fields(web, webFields);
         URI authorizationUri = URI.create(text(web, "authorizationUri", 768));
         URI tokenUri = URI.create(text(web, "tokenUri", 768));
         new SsrfSafeHttpsJwkSetSource(Set.of(authorizationUri, tokenUri),
             Duration.ofSeconds(3), Duration.ofSeconds(5));
-        String secret = utf8(readPrivateFile(reference(config, web, "clientSecretFile"), 4096));
-        if (secret.endsWith("\n")) secret = secret.substring(0, secret.length() - 1);
-        require(operatorSecret(secret));
+        String secret = null;
+        String organization = null;
+        if ("client_secret_basic".equals(method)) {
+          secret = utf8(readPrivateFile(reference(config, web, "clientSecretFile"), 4096));
+          if (secret.endsWith("\n")) secret = secret.substring(0, secret.length() - 1);
+          require(operatorSecret(secret));
+        } else {
+          // Narrow native Auth0 candidate: exact same-issuer endpoints and signed organization.
+          require("org_id".equals(provider.tenantClaim()));
+          organization = tokenIdentifier(oidc, "tenantValue", false);
+          require(organization.matches("org_[A-Za-z0-9]{1,128}"));
+          require(issuer.toString().equals("https://" + issuer.getRawAuthority() + "/"));
+          require(authorizationUri.toString().equals(issuer + "authorize")
+              && tokenUri.toString().equals(issuer + "oauth/token")
+              && provider.jwksUri().toString().equals(issuer + ".well-known/jwks.json"));
+        }
         Path console = reference(config, web, "consoleDirectory").toRealPath();
         require(Files.isDirectory(console) && Files.isRegularFile(console.resolve("index.html")));
-        browser = new BrowserConfiguration(authorizationUri, tokenUri, secret, console);
+        browser = new BrowserConfiguration(authorizationUri, tokenUri, secret, console, method, organization);
       }
       return new SimulatorApprovalConfiguration(port, provider, memberships, database,
           new KeyPair(publicKey, privateKey), keyId, browser);
@@ -258,11 +279,16 @@ final class SimulatorApprovalConfiguration {
     final URI tokenUri;
     final String clientSecret;
     final Path consoleDirectory;
-    BrowserConfiguration(URI authorizationUri, URI tokenUri, String clientSecret, Path consoleDirectory) {
+    final String tokenEndpointAuthMethod;
+    final String organization;
+    BrowserConfiguration(URI authorizationUri, URI tokenUri, String clientSecret, Path consoleDirectory,
+        String tokenEndpointAuthMethod, String organization) {
       this.authorizationUri = authorizationUri;
       this.tokenUri = tokenUri;
       this.clientSecret = clientSecret;
       this.consoleDirectory = consoleDirectory;
+      this.tokenEndpointAuthMethod = tokenEndpointAuthMethod;
+      this.organization = organization;
     }
   }
 }
