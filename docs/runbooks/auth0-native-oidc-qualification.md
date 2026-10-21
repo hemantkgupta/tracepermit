@@ -33,6 +33,11 @@ and durable approval coverage. The public HTTP fixture injects a synthetic
 token peer; separate real local-TLS tests qualify the transport. Neither
 is a live Auth0 test or rendered-browser qualification.
 
+`BrowserLoginDiagnosticsTest` and the public-client HTTP tests additionally
+qualify fixed local rejection stages, the closed access-token reason allowlist,
+generic browser errors, secret/canary exclusion and a failing diagnostic sink.
+These diagnostics do not inspect or export provider tokens.
+
 ### Automated run on 2026-10-21
 
 On branch `codex/auth0-native-oidc-qualification`, based on main
@@ -150,6 +155,20 @@ do not publish it, add a tunnel, use port forwarding or bind a wildcard.
    failed/incompatible and stop**. Do not append `iss`, rewrite a token, loosen
    validation or call the run passed. Automated negative tests are separate
    evidence for mutation/replay controls, not live-provider observations.
+   When the browser returns only `BROWSER_LOGIN_FAILED`, read the local Java
+   process stderr for exactly one line shaped as:
+
+   ```text
+   BROWSER_LOGIN_DIAGNOSTIC stage=<FIXED_STAGE> reason=<FIXED_REASON>
+   ```
+
+   Use the stage to locate the compatibility boundary. `ACCESS_TOKEN` may add
+   an allowlisted token-profile reason; every other unclassified failure is
+   `REJECTED`. Do not enable stack traces, print exception messages, decode
+   tokens, export a HAR or copy a complete callback URL. Make at most one fresh
+   interactive retry after correcting a confirmed operator/provider mismatch.
+   A diagnostic line records a rejection only; it is never a passing result.
+
 9. Check local logout and service restart invalidate sessions while durable
    requests remain. Stop with Ctrl+C and verify the loopback port is released.
    Keep the test database/configuration private; retire synthetic users and
