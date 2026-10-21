@@ -43,11 +43,25 @@ val endpointDistributionArchive = layout.projectDirectory.file(
 )
 
 val repoRootDir = rootDir.parentFile
+
+// Installed-archive provenance is resolved at the real provider boundary and must fail
+// closed: the git probe is bounded by a finite deadline (the POSIX alarm survives exec
+// and kills a stalled probe), a non-zero probe exit — including missing or refused git —
+// fails configuration, and only a single full-match hex commit authorizes an
+// expected-head value. The exec-backed provider remains tracked by Gradle's
+// configuration cache, so a commit-only change still invalidates caches.
 val gitHeadProvider = providers.exec {
   workingDir(repoRootDir)
-  commandLine("git", "rev-parse", "HEAD")
-  isIgnoreExitValue = true
-}.standardOutput.asText.map { it.trim() }
+  commandLine("perl", "-e", "alarm 10; exec @ARGV or exit 127", "git", "rev-parse", "HEAD")
+}.standardOutput.asText.map { output ->
+  val commit = output.trim()
+  if (!commit.matches(Regex("[0-9a-f]{40}|[0-9a-f]{64}"))) {
+    throw GradleException(
+      "Endpoint connector installed-archive provenance is unavailable, ambiguous, or malformed; refusing to authorize an expected-head value.",
+    )
+  }
+  commit
+}
 
 val requireInstalledArchiveProperty = providers.systemProperty("tracepermit.endpointConnector.requireInstalledArchive")
   .orElse(providers.environmentVariable("TRACEPERMIT_REQUIRE_INSTALLED_ARCHIVE"))
@@ -71,6 +85,16 @@ tasks.test {
 
   testLogging {
     exceptionFormat = TestExceptionFormat.FULL
+  }
+}
+
+tasks.register("printEndpointConnectorExpectedHead") {
+  group = "verification"
+  description =
+    "Prints the expected-head commit value injected into the endpoint connector qualification test JVM."
+  val resolvedExpectedHead = expectedHeadCommitProperty.get()
+  doLast {
+    println("TRACEPERMIT_ENDPOINT_CONNECTOR_EXPECTED_HEAD=$resolvedExpectedHead")
   }
 }
 
