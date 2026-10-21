@@ -20,6 +20,25 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 final class SsrfSafeHttpsJwkSetSourceTest {
+  @Test void publicTokenPostOmitsAuthorizationAndRefusesRedirects() throws Exception {
+    var tls = RemoteTestSupport.tlsMaterial();
+    try (MockWebServer server = tlsServer(tls)) {
+      URI uri = server.url("/token").uri();
+      var source = source(uri, tls);
+      server.enqueue(new MockResponse().setHeader("Content-Type", "application/json").setBody("{}"));
+      assertThat(source.postForm(uri, java.util.Map.of("client_id", "synthetic-client",
+          "code", "synthetic+code", "code_verifier", "synthetic-verifier"), null)).isEqualTo("{}");
+      var request = server.takeRequest(2, TimeUnit.SECONDS);
+      assertThat(request).isNotNull();
+      assertThat(request.getMethod()).isEqualTo("POST");
+      assertThat(request.getHeader("Authorization") == null).isTrue();
+      assertThat(request.getBody().readUtf8()).contains("client_id=synthetic-client", "code=synthetic%2Bcode")
+          .doesNotContain("client_secret");
+      server.enqueue(new MockResponse().setResponseCode(302).setHeader("Location", "https://attacker.invalid/token"));
+      assertSafeFailure(() -> source.postForm(uri, java.util.Map.of("code", "synthetic"), null));
+      assertThat(server.getRequestCount()).isEqualTo(2);
+    }
+  }
   @Test void tokenPostUsesSamePinnedTlsAndNeverFollowsRedirectWithCredentials() throws Exception {
     var tls = RemoteTestSupport.tlsMaterial();
     try (MockWebServer server = tlsServer(tls)) {

@@ -28,6 +28,62 @@ final class SimulatorApprovalConfigurationTest {
 
   @BeforeEach void setup() throws Exception { fixture = new SimulatorApprovalFixture(directory); }
 
+  private ObjectNode nativeBrowser() throws Exception {
+    Files.createDirectories(directory.resolve("console"));
+    Files.writeString(directory.resolve("console/index.html"), "<html></html>");
+    fixture.json.put("schemaVersion", "1.1");
+    fixture.json.withObject("/oidc").put("issuer", "https://idp.example.invalid/")
+        .put("jwksUri", "https://idp.example.invalid/.well-known/jwks.json").put("tenantValue", "org_synthetic");
+    return fixture.json.putObject("browser").put("authorizationUri", "https://idp.example.invalid/authorize")
+        .put("tokenUri", "https://idp.example.invalid/oauth/token").put("tokenEndpointAuthMethod", "none")
+        .put("consoleDirectory", "console");
+  }
+
+  @Test void nativePublicConfigurationRequiresNoSecretAndExplicitConfidentialRemainsAvailable() throws Exception {
+    var web = nativeBrowser();
+    var publicConfig = fixture.load();
+    assertThat(publicConfig.browser().tokenEndpointAuthMethod).isEqualTo("none");
+    assertThat(publicConfig.browser().clientSecret == null).isTrue();
+    assertThat(publicConfig.browser().organization).isEqualTo("org_synthetic");
+    String secret = java.util.UUID.randomUUID().toString();
+    fixture.write("client.secret", secret.getBytes(StandardCharsets.UTF_8));
+    web.put("tokenEndpointAuthMethod", "client_secret_basic").put("clientSecretFile", "client.secret");
+    var confidential = fixture.load();
+    assertThat(confidential.browser().tokenEndpointAuthMethod).isEqualTo("client_secret_basic");
+    assertThat(secret.equals(confidential.browser().clientSecret)).isTrue();
+    assertThat(confidential.browser().organization).isNull();
+    assertThat(confidential.browser().toString().contains(secret)).isFalse();
+  }
+
+  @ParameterizedTest @ValueSource(strings = {"method", "missing_method", "secret_file", "secret_value", "organization_override",
+      "authorization_host", "authorization_query", "token_path", "jwks_host", "issuer_path", "issuer_slash",
+      "tenant_claim", "tenant_value", "legacy_version", "future_version", "missing_browser", "bind"})
+  void nativeConfigurationRejectsUnqualifiedCombinationsOffline(String change) throws Exception {
+    var web = nativeBrowser();
+    var oidc = fixture.json.withObject("/oidc");
+    switch (change) {
+      case "method" -> web.put("tokenEndpointAuthMethod", "client_secret_post");
+      case "missing_method" -> web.remove("tokenEndpointAuthMethod");
+      case "secret_file" -> web.put("clientSecretFile", "missing.secret");
+      case "secret_value" -> web.put("clientSecret", java.util.UUID.randomUUID().toString());
+      case "organization_override" -> web.put("organization", "org_attacker");
+      case "authorization_host" -> web.put("authorizationUri", "https://other.example.invalid/authorize");
+      case "authorization_query" -> web.put("authorizationUri", "https://idp.example.invalid/authorize?organization=org_other");
+      case "token_path" -> web.put("tokenUri", "https://idp.example.invalid/token");
+      case "jwks_host" -> oidc.put("jwksUri", "https://other.example.invalid/.well-known/jwks.json");
+      case "issuer_path" -> oidc.put("issuer", "https://idp.example.invalid/other/");
+      case "issuer_slash" -> oidc.put("issuer", "https://idp.example.invalid");
+      case "tenant_claim" -> oidc.put("tenantClaim", "tenant");
+      case "tenant_value" -> oidc.put("tenantValue", "synthetic");
+      case "legacy_version" -> fixture.json.put("schemaVersion", "1.0");
+      case "future_version" -> fixture.json.put("schemaVersion", "1.2");
+      case "missing_browser" -> fixture.json.remove("browser");
+      case "bind" -> fixture.json.put("host", "0.0.0.0");
+      default -> throw new AssertionError();
+    }
+    fixture.save(); rejected();
+  }
+
   @Test void optionalBrowserConfigurationIsExplicitPrivateAndValidatedOffline() throws Exception {
     Files.createDirectories(directory.resolve("console"));
     Files.writeString(directory.resolve("console/index.html"), "<html></html>");

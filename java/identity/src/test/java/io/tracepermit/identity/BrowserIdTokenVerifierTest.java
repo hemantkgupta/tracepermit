@@ -21,6 +21,37 @@ final class BrowserIdTokenVerifierTest {
       new StaticOidcProviderRegistry(java.util.List.of(OidcTestSupport.provider())), resolver, clock);
   private final BrowserIdTokenVerifier verifier = new BrowserIdTokenVerifier(OidcTestSupport.provider(), resolver, clock);
 
+  @Test void independentlyBindsSignedIdTokenOrganizationAndRejectsUnmappedConfiguration() {
+    var organizationVerifier = new BrowserIdTokenVerifier(OidcTestSupport.provider(), resolver, clock, "enterprise-acme");
+    String bearer = OidcTestSupport.token(KEY);
+    var connector = access.authenticate("Bearer " + bearer);
+    assertThat(organizationVerifier.verify(id(h -> {}, c -> {}), "chatgpt-connector", "nonce", bearer, connector))
+        .isEqualTo(OidcTestSupport.NOW.plusSeconds(270));
+    for (String organization : new String[] {null, "enterprise-other", ""}) {
+      String token = id(h -> {}, c -> { if (organization == null) c.remove("org_id"); else c.put("org_id", organization); });
+      assertThatThrownBy(() -> organizationVerifier.verify(token, "chatgpt-connector", "nonce", bearer, connector))
+          .hasMessage("INVALID_BROWSER_ID_TOKEN").hasNoCause();
+    }
+    assertThatThrownBy(() -> new BrowserIdTokenVerifier(OidcTestSupport.provider(), resolver, clock, "enterprise-other"))
+        .hasMessage("INVALID_BROWSER_ORGANIZATION");
+  }
+
+  @Test void nonceAndAccessTokenSubstitutionAndUnknownKeyCannotVerify() {
+    String bearer = OidcTestSupport.token(KEY);
+    var connector = access.authenticate("Bearer " + bearer);
+    String token = id(h -> {}, c -> {});
+    assertThatThrownBy(() -> verifier.verify(token, "chatgpt-connector", "another-login", bearer, connector))
+        .hasMessage("INVALID_BROWSER_ID_TOKEN");
+    String anotherBearer = OidcTestSupport.token(KEY, h -> {}, c -> c.put("sub", "user:bob@example.invalid"));
+    assertThatThrownBy(() -> verifier.verify(token, "chatgpt-connector", "nonce", anotherBearer,
+        access.authenticate("Bearer " + anotherBearer))).hasMessage("INVALID_BROWSER_ID_TOKEN");
+    var unknownKey = new BrowserIdTokenVerifier(OidcTestSupport.provider(), (p, k, a, n) -> {
+      throw new SecurityException("SYNTHETIC_UNKNOWN_KEY");
+    }, clock);
+    assertThatThrownBy(() -> unknownKey.verify(token, "chatgpt-connector", "nonce", bearer, connector))
+        .hasMessage("INVALID_BROWSER_ID_TOKEN").hasNoCause();
+  }
+
   @Test void verifiesSignedIdTokenAndOptionalAccessHashWithoutTreatingItAsApiToken() throws Exception {
     String bearer = OidcTestSupport.token(KEY);
     byte[] digest = MessageDigest.getInstance("SHA-256").digest(bearer.getBytes(java.nio.charset.StandardCharsets.US_ASCII));

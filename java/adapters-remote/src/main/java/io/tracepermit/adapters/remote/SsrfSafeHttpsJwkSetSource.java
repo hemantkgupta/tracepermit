@@ -172,7 +172,10 @@ public final class SsrfSafeHttpsJwkSetSource implements OidcJwkSetSource {
             .header("Accept", "application/jwk-set+json, application/json")
             .header("Cache-Control", "no-store");
     if (form == null) requestBuilder.get();
-    else requestBuilder.post(form).header("Authorization", authorization);
+    else {
+      requestBuilder.post(form);
+      if (authorization != null) requestBuilder.header("Authorization", authorization);
+    }
     Request request = requestBuilder.build();
     try (Response response = clientBuilder.build().newCall(request).execute()) {
       if (response.code() != 200 || response.handshake() == null || response.body() == null) {

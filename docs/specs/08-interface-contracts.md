@@ -114,8 +114,19 @@ separate authenticated route. See [ADR 0062](../architecture/0062-loopback-conta
 
 ### Optional local browser approval boundary
 
-`SimulatorApprovalMain` accepts an optional strict `browser` object with
-`authorizationUri`, `tokenUri`, `clientSecretFile` and `consoleDirectory`.
+`SimulatorApprovalMain` schema1.0 accepts an optional strict `browser` object
+with `authorizationUri`, `tokenUri`, `clientSecretFile` and `consoleDirectory`.
+Schema1.1 requires a browser object and explicit `tokenEndpointAuthMethod`:
+`client_secret_basic` retains that private secret file; `none` forbids every
+secret field and sends configured `client_id` without an Authorization header.
+Both require code/S256 PKCE and the exact derived numeric-loopback callback.
+The public candidate requires an HTTPS-origin issuer ending `/`, same-issuer
+`/authorize`, `/oauth/token`, `/.well-known/jwks.json`, and one configured
+`org_id` with an `org_` identifier. Both signed tokens must bind to that
+organization. Login requires API scope `approvals.read`; `openid` is requested
+for OIDC but need not occur in the API-token scope. The signed ID token remains
+mandatory. Unknown methods, fields or combinations fail offline validation.
+See [ADR0063](../architecture/0063-explicit-public-browser-code-pkce.md).
 Java serves the built React inbox at `/approvals`. `GET /auth/login` starts
 code/S256 PKCE with state, nonce and a browser-binding cookie;
 `GET /auth/callback?code=...&state=...&iss=...` consumes the login state and

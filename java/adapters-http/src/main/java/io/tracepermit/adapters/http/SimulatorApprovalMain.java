@@ -120,14 +120,12 @@ public final class SimulatorApprovalMain {
       var transport = new SsrfSafeHttpsJwkSetSource(Set.of(web.tokenUri),
           Duration.ofSeconds(3), Duration.ofSeconds(5));
       String clientId = configuration.provider().clientNames().keySet().iterator().next();
-      String credentials = java.net.URLEncoder.encode(clientId, java.nio.charset.StandardCharsets.UTF_8)
-          + ":" + java.net.URLEncoder.encode(web.clientSecret, java.nio.charset.StandardCharsets.UTF_8);
-      String basic = "Basic " + java.util.Base64.getEncoder()
-          .encodeToString(credentials.getBytes(java.nio.charset.StandardCharsets.UTF_8));
       browser = new ApprovalBrowserAdapter(web.authorizationUri, configuration.provider().issuer().toString(),
           configuration.provider().resourceAudience(), clientId, web.consoleDirectory,
-          form -> transport.postForm(web.tokenUri, form, basic), verifier,
-          new BrowserIdTokenVerifier(configuration.provider(), resolver, clock), configuration.memberships(), clock);
+          new BrowserCodeExchange(web.tokenUri, configuration.port(), clientId,
+              web.tokenEndpointAuthMethod, web.clientSecret, transport::postForm), verifier,
+          new BrowserIdTokenVerifier(configuration.provider(), resolver, clock, web.organization),
+          configuration.memberships(), clock, web.organization);
     }
     return SimulatorApprovalServer.start(
         new InetSocketAddress(InetAddress.getByName("127.0.0.1"), configuration.port()),

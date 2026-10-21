@@ -39,7 +39,7 @@ flowchart TD
 
 - One explicit HTTPS issuer/client and exact operator-configured authorization,
   token and JWKS URLs. No dynamic discovery, registration or user-selected issuer.
-- Confidential client, `client_secret_basic`, authorization code plus S256 PKCE.
+- Schema1.0 uses a confidential client, `client_secret_basic`, authorization code plus S256 PKCE.
   Callback is exactly `http://127.0.0.1:<port>/auth/callback`.
 - Random 256-bit login binder cookie, state, nonce, verifier and session/CSRF
   values. Login state expires after 120 seconds and is consumed before code exchange.
@@ -129,3 +129,9 @@ Stored status is never rewritten merely because the browser labels it expired.
 - [OIDC Core code flow](https://openid.net/specs/openid-connect-core-1_0.html#CodeFlowAuth)
 - [Issuer identification, RFC 9207](https://www.rfc-editor.org/rfc/rfc9207.html)
 - [OWASP session guidance](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html)
+
+## Explicit public-client extension
+
+[ADR0063](0063-explicit-public-browser-code-pkce.md) adds schema1.1 explicit
+`none` without a secret, preserving this confidential profile. It adds exact
+organization binding in both tokens; actual Auth0 qualification remains pending.

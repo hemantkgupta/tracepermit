@@ -117,12 +117,17 @@ chmod 600 database.secret
 
 ### 3. Configure browser client secret (optional)
 
-If using the browser approval inbox, similarly create `browser.secret` with the
+For a schema1.0/confidential browser client, create `browser.secret` with the
 OIDC client secret in your private editor. Do not overwrite it on subsequent starts:
 
 ```bash
 chmod 600 browser.secret
 ```
+
+Schema1.1 public method `none` forbids a client-secret file. Its synthetic
+qualification does not establish actual Auth0 compatibility; follow the
+[public-client procedure](https://github.com/hemantkgupta/tracepermit/blob/main/docs/runbooks/auth0-native-oidc-qualification.md)
+for the separate pending local-Mac gate. Do not create a secret for a native app.
 
 ### 4. Create operator configuration
 
