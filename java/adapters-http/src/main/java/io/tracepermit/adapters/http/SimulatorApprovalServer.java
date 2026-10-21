@@ -325,6 +325,21 @@ public final class SimulatorApprovalServer implements AutoCloseable {
       if ("GET".equals(method) && parts.length == 1) {
         requireRead(connector, member);
         send(exchange, 200, projection(visible(member, parts[0]), member));
+      } else if ("GET".equals(method) && parts.length == 2 && "export".equals(parts[1])) {
+        requireRead(connector, member);
+        String length = headers.getFirst("Content-Length");
+        if (headers.getOrDefault("Content-Length", java.util.List.of()).size() > 1
+            || (length != null && !"0".equals(length)) || headers.containsKey("Transfer-Encoding")) {
+          throw failure(400, "INVALID_REQUEST");
+        }
+        // Resolve visibility before reading any snapshot; an export grants no additional authority.
+        ApprovalRequestState approval = visible(member, parts[0]);
+        JsonNode event = exactAction(approval);
+        var report = ApprovalReviewExport.create(
+            metadata(approval, member, event), event.path("action").path("toolName").asText(), clock.instant());
+        exchange.getResponseHeaders().set("Content-Disposition",
+            "attachment; filename=\"tracepermit-approval-" + parts[0] + ".json\"");
+        send(exchange, 200, report);
       } else if ("POST".equals(method) && parts.length == 2
           && "decision".equals(parts[1])) {
         require(connector, member, ApprovalMemberships.Role.REVIEWER, "approvals.decide");
@@ -469,6 +484,12 @@ public final class SimulatorApprovalServer implements AutoCloseable {
 
   private ObjectNode projection(ApprovalRequestState approval, ApprovalMemberships.Entry member) {
     JsonNode event = exactAction(approval);
+    ObjectNode result = metadata(approval, member, event);
+    result.set("action", EvidenceRedactor.enterpriseDefault().redact(event.path("action")));
+    return result;
+  }
+
+  private ObjectNode metadata(ApprovalRequestState approval, ApprovalMemberships.Entry member, JsonNode event) {
     ObjectNode result = JsonSupport.MAPPER.createObjectNode();
     result.put("mode", "simulated");
     result.put("approvalRequestId", approval.binding().approvalRequestId());
@@ -481,7 +502,6 @@ public final class SimulatorApprovalServer implements AutoCloseable {
     result.put("policyId", approval.binding().policyId());
     result.put("policyVersion", approval.binding().policyVersion());
     result.put("originalPolicyOutcome", approval.binding().originalDecision());
-    result.set("action", EvidenceRedactor.enterpriseDefault().redact(event.path("action")));
     if (approval.reviewerSubjectId() != null) result.put("reviewerId", approval.reviewerSubjectId());
     if (approval.consumedAttemptId() != null) {
       var attempt = state.findByIdempotencyKey(member.tenant(), "simulator",

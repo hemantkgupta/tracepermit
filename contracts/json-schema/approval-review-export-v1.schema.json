@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.tracepermit.invalid/approval-review-export-v1.schema.json",
+  "title": "Unsigned simulator approval review metadata export",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "kind", "canonicalization", "payload", "payloadHash"],
+  "properties": {
+    "schemaVersion": { "const": "1.0" },
+    "kind": { "const": "tracepermit-approval-review" },
+    "canonicalization": { "const": "tracepermit-canonical-json-v1" },
+    "payloadHash": { "$ref": "#/$defs/hash" },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["generatedAt", "mode", "assurance", "approval"],
+      "properties": {
+        "generatedAt": { "type": "string", "format": "date-time", "maxLength": 40 },
+        "mode": { "const": "simulated" },
+        "assurance": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["signed", "completeHistory", "transactionalSnapshot", "independentAnchor", "authorizesExecution", "argumentsIncluded"],
+          "properties": {
+            "signed": { "const": false },
+            "completeHistory": { "const": false },
+            "transactionalSnapshot": { "const": false },
+            "independentAnchor": { "const": false },
+            "authorizesExecution": { "const": false },
+            "argumentsIncluded": { "const": false }
+          }
+        },
+        "approval": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "approvalRequestId", "requestHash", "requesterId", "status", "createdAt", "expiresAt", "expired", "policyId", "policyVersion", "originalPolicyOutcome", "executionStatus", "toolName"],
+          "properties": {
+            "mode": { "const": "simulated" },
+            "approvalRequestId": { "type": "string", "pattern": "^[a-f0-9-]{36}$" },
+            "requestHash": { "$ref": "#/$defs/hash" },
+            "requesterId": { "$ref": "#/$defs/principal" },
+            "reviewerId": { "$ref": "#/$defs/principal" },
+            "status": { "enum": ["pending", "approved", "denied", "expired", "consumed", "cancelled"] },
+            "createdAt": { "type": "string", "format": "date-time", "maxLength": 40 },
+            "expiresAt": { "type": "string", "format": "date-time", "maxLength": 40 },
+            "expired": { "type": "boolean" },
+            "policyId": { "type": "string", "minLength": 1, "maxLength": 256 },
+            "policyVersion": { "type": "integer", "minimum": 1, "maximum": 2147483647 },
+            "originalPolicyOutcome": { "const": "require_approval" },
+            "executionStatus": { "enum": ["not_executed", "executing", "succeeded", "failed", "unknown"] },
+            "toolName": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$" }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "hash": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "principal": { "type": "string", "pattern": "^principal:[a-f0-9]{64}$" }
+  }
+}
