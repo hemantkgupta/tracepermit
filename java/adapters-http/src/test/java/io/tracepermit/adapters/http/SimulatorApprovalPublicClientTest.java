@@ -55,6 +55,7 @@ final class SimulatorApprovalPublicClientTest {
 
   @Test void publicLoginWithoutOpenidInAccessScopeStillRequiresIndependentReviewAndOneUseExecution() throws Exception {
     Login alice = login("alice"), bob = login("bob");
+    assertThat(fixture.loginDiagnosticLines).isEmpty();
     assertThat(alice.session.path("scopes").toString().contains("openid")).isFalse();
     var created = json(mutate(alice, "", SimulatorApprovalBrowserFixture.ACTION, 201));
     String path = "/" + created.path("approvalRequestId").asText();
@@ -65,6 +66,73 @@ final class SimulatorApprovalPublicClientTest {
     assertThat(json(mutate(alice, path + "/execute", hash, 200)).path("executionStatus").asText()).isEqualTo("succeeded");
     mutate(alice, path + "/execute", hash, 409);
     assertThat(fixture.tokenPosts).hasValue(2);
+  }
+
+  @Test void rejectedLoginReportsOnlyTheFixedFailureStageAndReason() throws Exception {
+    Flow binding = flow("alice");
+    var query = new HashMap<>(SimulatorApprovalBrowserFixture.parse(URI.create(binding.callback).getRawQuery()));
+    query.put("state", "wrong");
+    binding.callback = fixture.origin() + "/auth/callback?" + ApprovalBrowserAdapter.form(query);
+    assertThat(call(binding.callback, binding.binder).statusCode()).isEqualTo(401);
+    assertThat(fixture.loginDiagnosticLines).containsExactly(
+        "BROWSER_LOGIN_DIAGNOSTIC stage=CALLBACK_BINDING reason=REJECTED");
+
+    fixture.loginDiagnosticLines.clear();
+    fixture.accessHeader = header -> header.put("typ", "JWT");
+    rejected(flow("alice"));
+    assertThat(fixture.loginDiagnosticLines.getFirst()).isEqualTo(
+        "BROWSER_LOGIN_DIAGNOSTIC stage=ACCESS_TOKEN reason=HEADER_PROFILE");
+  }
+
+  @Test void tokenScopeMembershipHumanAndIdentityStagesStayDistinct() throws Exception {
+    fixture.accessClaims = claims -> claims.put("scope", "approvals.request");
+    rejected(flow("alice"));
+    assertThat(fixture.loginDiagnosticLines.getFirst()).isEqualTo(
+        "BROWSER_LOGIN_DIAGNOSTIC stage=API_SCOPE reason=REJECTED");
+
+    fixture.loginDiagnosticLines.clear(); fixture.accessClaims = claims -> {};
+    rejected(flow("outsider"));
+    assertThat(fixture.loginDiagnosticLines.getFirst()).isEqualTo(
+        "BROWSER_LOGIN_DIAGNOSTIC stage=MEMBERSHIP reason=REJECTED");
+
+    fixture.loginDiagnosticLines.clear();
+    rejected(flow("robot"));
+    assertThat(fixture.loginDiagnosticLines.getFirst()).isEqualTo(
+        "BROWSER_LOGIN_DIAGNOSTIC stage=HUMAN_IDENTITY reason=REJECTED");
+
+    fixture.loginDiagnosticLines.clear(); fixture.idClaims = claims -> claims.put("nonce", "wrong");
+    rejected(flow("alice"));
+    assertThat(fixture.loginDiagnosticLines.getFirst()).isEqualTo(
+        "BROWSER_LOGIN_DIAGNOSTIC stage=ID_TOKEN reason=REJECTED");
+  }
+
+  @Test void exchangeAndTokenResponseFailuresCannotExposeCanaries() throws Exception {
+    String canary = "CANARY_" + java.util.UUID.randomUUID();
+    fixture.exchangeForm = form -> { throw new IllegalStateException(canary); };
+    rejected(flow("alice"));
+    assertThat(fixture.loginDiagnosticLines).containsExactly(
+        "BROWSER_LOGIN_DIAGNOSTIC stage=CODE_EXCHANGE reason=REJECTED",
+        "BROWSER_LOGIN_DIAGNOSTIC stage=CALLBACK_BINDING reason=REJECTED");
+    assertThat(fixture.loginDiagnosticLines).allMatch(line -> !line.contains(canary));
+
+    fixture.loginDiagnosticLines.clear(); fixture.exchangeForm = form -> {};
+    fixture.tokenResponse = "{\"canary\":\"" + canary + "\"}";
+    rejected(flow("alice"));
+    assertThat(fixture.loginDiagnosticLines.getFirst()).isEqualTo(
+        "BROWSER_LOGIN_DIAGNOSTIC stage=TOKEN_RESPONSE reason=REJECTED");
+    assertThat(fixture.loginDiagnosticLines).allMatch(line -> !line.contains(canary));
+  }
+
+  @Test void diagnosticSinkFailureCannotChangeTheGenericDenial() throws Exception {
+    fixture.accessHeader = header -> header.put("typ", "JWT");
+    fixture.loginDiagnostics = line -> { throw new IllegalStateException("CANARY_DIAGNOSTIC_SINK"); };
+    Flow flow = flow("alice");
+    var response = call(flow.callback, flow.binder);
+    assertThat(response.statusCode()).isEqualTo(401);
+    assertThat(response.body()).isEqualTo("{\"error\":{\"code\":\"BROWSER_LOGIN_FAILED\"}}");
+    assertThat(response.headers().allValues("Set-Cookie").stream()
+        .anyMatch(cookie -> cookie.startsWith("tp_local_session="))).isFalse();
+    noAuthority();
   }
 
   @ParameterizedTest @ValueSource(strings = {"iss", "aud", "client_id", "org_id", "missing_org", "sub", "scope", "unknown_scope", "exp", "iat", "nbf", "alg", "kid", "typ", "default_typ", "signature"})
@@ -185,6 +253,9 @@ final class SimulatorApprovalPublicClientTest {
     assertThat(response.statusCode()).isEqualTo(401);
     String projected = response.body() + response.headers() + output + errors;
     assertThat(canaries.stream().noneMatch(projected::contains)).isTrue();
+    assertThat(fixture.loginDiagnosticLines.getFirst()).isEqualTo(
+        "BROWSER_LOGIN_DIAGNOSTIC stage=CODE_EXCHANGE reason=REJECTED");
+    assertThat(canaries.stream().noneMatch(fixture.loginDiagnosticLines.toString()::contains)).isTrue();
     noAuthority();
   }
 

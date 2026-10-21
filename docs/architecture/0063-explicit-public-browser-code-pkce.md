@@ -44,6 +44,24 @@ removed before exchange, so concurrent or replayed callbacks cannot create
 another session. Sessions, CSRF, exact Host/Origin, server-held tokens and the
 shared durable simulator approval checks retain ADR0036's boundaries.
 
+### Local rejection diagnostics
+
+The installed process writes one bounded line to local stderr when a callback
+passes HTTP parsing but browser login is rejected. The line contains only a
+closed stage (`CALLBACK_BINDING`, `CODE_EXCHANGE`, `TOKEN_RESPONSE`,
+`ACCESS_TOKEN`, `API_SCOPE`, `SENDER_CONSTRAINT`, `MEMBERSHIP`,
+`HUMAN_IDENTITY`, `ID_TOKEN` or `SESSION_CAPACITY`) and either an explicitly
+allowlisted access-token reason or `REJECTED`. Unknown reason strings are never
+forwarded, even when they match the identity layer's diagnostic-code syntax.
+
+The browser still receives only `BROWSER_LOGIN_FAILED`. Exception messages,
+causes, stack traces, callback URLs, codes, verifiers, tokens, claims, cookies,
+tenant/subject/client identifiers and token fingerprints are excluded. A
+missing or failing diagnostic sink cannot change the rejection, create a
+session or grant authority. Diagnostics do not relax or reorder any callback,
+token, organization, enrollment or identity validation and are not evidence
+that a provider profile is compatible.
+
 ### OIDC authentication and API authorization are separate
 
 `openid` is mandatory in the authorization request to request OIDC identity.
