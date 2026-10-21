@@ -1,5 +1,6 @@
 import java.security.MessageDigest
 import java.time.Instant
+import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.bundling.Compression
 import org.gradle.api.tasks.bundling.Tar
 import org.gradle.api.tasks.testing.logging.TestExceptionFormat
@@ -37,8 +38,37 @@ tasks.register<JavaExec>("runSimulatorApprovals") {
   mainClass = "io.tracepermit.adapters.http.SimulatorApprovalMain"
 }
 
+val endpointDistributionArchive = layout.projectDirectory.file(
+  "../endpoint-connector/build/distributions/tracepermit-endpoint-connector-0.1.0.tar.gz"
+)
+
+val repoRootDir = rootDir.parentFile
+val gitHeadProvider = providers.exec {
+  workingDir(repoRootDir)
+  commandLine("git", "rev-parse", "HEAD")
+  isIgnoreExitValue = true
+}.standardOutput.asText.map { it.trim() }
+
+val requireInstalledArchiveProperty = providers.systemProperty("tracepermit.endpointConnector.requireInstalledArchive")
+  .orElse(providers.environmentVariable("TRACEPERMIT_REQUIRE_INSTALLED_ARCHIVE"))
+  .orElse("false")
+
+val expectedHeadCommitProperty = providers.systemProperty("tracepermit.endpointConnector.expectedHeadCommit")
+  .orElse(providers.environmentVariable("TRACEPERMIT_EXPECTED_HEAD_COMMIT"))
+  .orElse(gitHeadProvider)
+  .orElse("")
+
 tasks.test {
   systemProperty("tracepermit.approvalRuntimeClasspath", sourceSets["main"].runtimeClasspath.asPath)
+  systemProperty("tracepermit.endpointConnector.requireInstalledArchive", requireInstalledArchiveProperty.get())
+  systemProperty("tracepermit.endpointConnector.expectedHeadCommit", expectedHeadCommitProperty.get())
+
+  inputs.files(endpointDistributionArchive)
+    .withPropertyName("endpointConnectorArchive")
+    .withPathSensitivity(PathSensitivity.NONE)
+  inputs.property("endpointConnectorRequireInstalledArchive", requireInstalledArchiveProperty)
+  inputs.property("endpointConnectorExpectedHeadCommit", expectedHeadCommitProperty)
+
   testLogging {
     exceptionFormat = TestExceptionFormat.FULL
   }
