@@ -1,9 +1,16 @@
 package io.tracepermit.adapters.http;
 
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Objects;
 import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -41,6 +48,75 @@ final class ApprovalAdmissionExecutors {
           return thread;
         },
         new ThreadPoolExecutor.AbortPolicy());
+  }
+
+  /**
+   * Establishes a bounded test/qualification barrier behind every exchange already
+   * accepted by this fixed dispatch pool. Each lane must reach and hold one barrier
+   * task before the barrier is released, which proves that all earlier active and
+   * queued handler tasks have returned. This does not retry an exchange, alter the
+   * admission bounds, or expose a runtime endpoint.
+   */
+  static boolean awaitQuiescence(ExecutorService executor, int activeLanes, Duration timeout) {
+    Objects.requireNonNull(executor, "Executor must not be null.");
+    Objects.requireNonNull(timeout, "Timeout must not be null.");
+    if (activeLanes < 1 || activeLanes > MAX_ACTIVE_LANES) {
+      throw new IllegalArgumentException("Active lanes must stay within the configured bounds.");
+    }
+    if (timeout.isNegative() || timeout.isZero()) {
+      throw new IllegalArgumentException("Quiescence timeout must be positive.");
+    }
+
+    long timeoutNanos;
+    try {
+      timeoutNanos = timeout.toNanos();
+    } catch (ArithmeticException overflow) {
+      timeoutNanos = Long.MAX_VALUE;
+    }
+    long start = System.nanoTime();
+    long deadline = timeoutNanos == Long.MAX_VALUE || Long.MAX_VALUE - start < timeoutNanos
+        ? Long.MAX_VALUE
+        : start + timeoutNanos;
+
+    var entered = new java.util.concurrent.CountDownLatch(activeLanes);
+    var release = new java.util.concurrent.CountDownLatch(1);
+    var barriers = new ArrayList<Future<?>>(activeLanes);
+    try {
+      for (int i = 0; i < activeLanes; i++) {
+        barriers.add(executor.submit(() -> {
+          entered.countDown();
+          try {
+            release.await();
+          } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+          }
+        }));
+      }
+
+      if (!entered.await(remainingNanos(deadline), TimeUnit.NANOSECONDS)) {
+        return false;
+      }
+      release.countDown();
+      for (Future<?> barrier : barriers) {
+        barrier.get(remainingNanos(deadline), TimeUnit.NANOSECONDS);
+      }
+      return true;
+    } catch (RejectedExecutionException | ExecutionException | TimeoutException failure) {
+      return false;
+    } catch (InterruptedException interrupted) {
+      Thread.currentThread().interrupt();
+      return false;
+    } finally {
+      release.countDown();
+      for (Future<?> barrier : barriers) {
+        if (!barrier.isDone()) barrier.cancel(true);
+      }
+    }
+  }
+
+  private static long remainingNanos(long deadline) {
+    if (deadline == Long.MAX_VALUE) return Long.MAX_VALUE;
+    return Math.max(0L, deadline - System.nanoTime());
   }
 
   static void validate(int activeLanes, int pendingBound) {

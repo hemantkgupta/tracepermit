@@ -391,6 +391,11 @@ public final class ApprovalLatencyMeasurements {
     void execute(ApprovalItem item) throws Exception;
   }
 
+  @FunctionalInterface
+  interface PhaseBoundary {
+    boolean awaitQuiescence();
+  }
+
   /**
    * Executes a bounded concurrent batch of operations with exact accounting.
    * Every planned operation is accounted for exactly once in the terminal outcomes:
@@ -535,12 +540,24 @@ public final class ApprovalLatencyMeasurements {
       List<ApprovalItem> measuredItems,
       ItemOperation operation,
       List<String> failures) {
+    return runPhase(phaseName, concurrency, warmupItems, measuredItems, operation, () -> true, failures);
+  }
+
+  static PhaseMetrics runPhase(
+      String phaseName,
+      int concurrency,
+      List<ApprovalItem> warmupItems,
+      List<ApprovalItem> measuredItems,
+      ItemOperation operation,
+      PhaseBoundary phaseBoundary,
+      List<String> failures) {
 
     Duration phaseTimeout = Duration.ofSeconds(30);
 
     // 1. Warm-up operations (exercise exact code path; fail closed on warmup error)
     if (!warmupItems.isEmpty()) {
       BatchExecution warmupBatch = runConcurrent(concurrency, warmupItems, operation, phaseTimeout);
+      requirePhaseQuiescence(phaseName, "warmup", phaseBoundary);
       if (warmupBatch.failureCount() > 0 || warmupBatch.timeoutCount() > 0 || warmupBatch.cancelledCount() > 0) {
         failures.add(String.format("Phase %s (concurrency=%d) warmup had unexpected failures: %d failed, %d timed out, %d cancelled out of %d operations.",
             phaseName, concurrency, warmupBatch.failureCount(), warmupBatch.timeoutCount(), warmupBatch.cancelledCount(), warmupItems.size())
@@ -561,6 +578,7 @@ public final class ApprovalLatencyMeasurements {
     // 2. Measured steady-state operations
     int measuredCount = measuredItems.size();
     BatchExecution measuredBatch = runConcurrent(concurrency, measuredItems, operation, phaseTimeout);
+    requirePhaseQuiescence(phaseName, "measured", phaseBoundary);
     int successes = measuredBatch.successCount();
     int failed = measuredBatch.failureCount();
     int timeouts = measuredBatch.timeoutCount();
@@ -586,6 +604,14 @@ public final class ApprovalLatencyMeasurements {
         timeouts,
         measuredBatch.wallElapsedNanos(),
         percentiles);
+  }
+
+  private static void requirePhaseQuiescence(
+      String phaseName, String population, PhaseBoundary phaseBoundary) {
+    if (!phaseBoundary.awaitQuiescence()) {
+      throw new IllegalStateException(
+          "PHASE_" + sanitizeCode(phaseName) + "_" + sanitizeCode(population) + "_QUIESCENCE_TIMEOUT");
+    }
   }
 
   /**
@@ -780,6 +806,7 @@ public final class ApprovalLatencyMeasurements {
             warmupItems,
             measuredItems,
             (item) -> executeMcpRequest(currentServer.port(), requesterToken, item, currentClient),
+            () -> currentServer.awaitDispatchQuiescence(Duration.ofSeconds(5)),
             failures);
         phaseMetricsMap.put("mcp_request", reqMetrics);
         assertZeroStateDeltas("mcp_request", simulator, dataSource, sweepStartRules, sweepStartPermits, sweepStartAttempts, failures);
@@ -791,6 +818,7 @@ public final class ApprovalLatencyMeasurements {
             warmupItems,
             measuredItems,
             (item) -> executeMcpStatus(currentServer.port(), requesterToken, item, currentClient),
+            () -> currentServer.awaitDispatchQuiescence(Duration.ofSeconds(5)),
             failures);
         phaseMetricsMap.put("mcp_status", statusMetrics);
         assertZeroStateDeltas("mcp_status", simulator, dataSource, sweepStartRules, sweepStartPermits, sweepStartAttempts, failures);
@@ -802,6 +830,7 @@ public final class ApprovalLatencyMeasurements {
             warmupItems,
             measuredItems,
             (item) -> executeHttpReview(currentServer.port(), reviewerToken, item, currentClient),
+            () -> currentServer.awaitDispatchQuiescence(Duration.ofSeconds(5)),
             failures);
         phaseMetricsMap.put("http_review", reviewMetrics);
         assertZeroStateDeltas("http_review", simulator, dataSource, sweepStartRules, sweepStartPermits, sweepStartAttempts, failures);
@@ -813,6 +842,7 @@ public final class ApprovalLatencyMeasurements {
             warmupItems,
             measuredItems,
             (item) -> executeMcpResume(currentServer.port(), requesterToken, item, currentClient),
+            () -> currentServer.awaitDispatchQuiescence(Duration.ofSeconds(5)),
             failures);
         phaseMetricsMap.put("mcp_resume", resumeMetrics);
 
