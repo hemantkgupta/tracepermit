@@ -12,9 +12,11 @@ import {
   exportFilename,
   fetchApprovalReviewExport,
   isExportResponseValid,
+  isValidDateTime,
   triggerDownload,
   validateApprovalReviewExport,
 } from "./approval-export.js";
+import { authorityContext } from "./approval-history-state.js";
 
 const GOLDEN_RECORD: ApprovalReviewExport = {
   schemaVersion: "1.0",
@@ -240,6 +242,84 @@ describe("validateApprovalReviewExport", () => {
     expect(() => validateApprovalReviewExport(clone)).toThrow(ApprovalApiError);
   });
 
+  it("rejects non-ISO shorthand timestamps such as '1'", () => {
+    const clone = JSON.parse(JSON.stringify(GOLDEN_RECORD));
+    clone.payload.generatedAt = "1";
+    expect(() => validateApprovalReviewExport(clone)).toThrow(ApprovalApiError);
+  });
+
+  it("rejects impossible calendar dates", () => {
+    const clone = JSON.parse(JSON.stringify(GOLDEN_RECORD));
+    clone.payload.generatedAt = "2026-02-29T12:00:00Z"; // 2026 is non-leap year
+    expect(() => validateApprovalReviewExport(clone)).toThrow(ApprovalApiError);
+
+    const clone2 = JSON.parse(JSON.stringify(GOLDEN_RECORD));
+    clone2.payload.approval.createdAt = "2026-04-31T12:00:00Z"; // April has 30 days
+    expect(() => validateApprovalReviewExport(clone2)).toThrow(
+      ApprovalApiError,
+    );
+  });
+
+  it("rejects timestamps without timezone offset", () => {
+    const clone = JSON.parse(JSON.stringify(GOLDEN_RECORD));
+    clone.payload.approval.expiresAt = "2026-10-21T12:00:00";
+    expect(() => validateApprovalReviewExport(clone)).toThrow(ApprovalApiError);
+  });
+
+  it("accepts valid producer timestamps with fractional seconds and timezone offsets", () => {
+    const clone = JSON.parse(JSON.stringify(GOLDEN_RECORD));
+    clone.payload.generatedAt = "2026-10-21T12:00:00.123456Z";
+    clone.payload.approval.createdAt = "2026-10-21T11:00:00+05:30";
+    clone.payload.approval.expiresAt = "2026-10-21T13:00:00-04:00";
+    const validated = validateApprovalReviewExport(clone);
+    expect(validated.payload.generatedAt).toBe("2026-10-21T12:00:00.123456Z");
+  });
+});
+
+describe("isValidDateTime", () => {
+  it("accepts calendar-valid RFC 3339 timestamps", () => {
+    expect(isValidDateTime("1970-01-01T00:00:00Z")).toBe(true);
+    expect(isValidDateTime("2026-10-21T11:00:00Z")).toBe(true);
+    expect(isValidDateTime("2024-02-29T12:00:00Z")).toBe(true); // leap year
+    expect(isValidDateTime("2026-10-21T11:00:00.123Z")).toBe(true); // fractional
+    expect(isValidDateTime("2026-10-21T11:00:00.999999Z")).toBe(true);
+    expect(isValidDateTime("2026-10-21T16:30:00+05:30")).toBe(true); // positive offset
+    expect(isValidDateTime("2026-10-21T07:00:00-04:00")).toBe(true); // negative offset
+  });
+
+  it("rejects non-ISO shorthand and non-string inputs", () => {
+    expect(isValidDateTime("1")).toBe(false);
+    expect(isValidDateTime("today")).toBe(false);
+    expect(isValidDateTime("2026-10-21")).toBe(false);
+    expect(isValidDateTime("")).toBe(false);
+    expect(isValidDateTime(null)).toBe(false);
+    expect(isValidDateTime(undefined)).toBe(false);
+    expect(isValidDateTime(123456789)).toBe(false);
+  });
+
+  it("rejects absent timezone offsets", () => {
+    expect(isValidDateTime("2026-10-21T12:00:00")).toBe(false);
+    expect(isValidDateTime("1970-01-01T00:00:00")).toBe(false);
+  });
+
+  it("rejects impossible calendar dates", () => {
+    expect(isValidDateTime("2026-02-29T12:00:00Z")).toBe(false); // 2026 non-leap
+    expect(isValidDateTime("2026-04-31T12:00:00Z")).toBe(false); // April 31
+    expect(isValidDateTime("2026-06-31T12:00:00Z")).toBe(false); // June 31
+    expect(isValidDateTime("2026-09-31T12:00:00Z")).toBe(false); // Sept 31
+    expect(isValidDateTime("2026-11-31T12:00:00Z")).toBe(false); // Nov 31
+    expect(isValidDateTime("2026-13-01T00:00:00Z")).toBe(false); // Month 13
+    expect(isValidDateTime("2026-00-10T00:00:00Z")).toBe(false); // Month 00
+    expect(isValidDateTime("2026-10-32T00:00:00Z")).toBe(false); // Day 32
+    expect(isValidDateTime("2026-10-00T00:00:00Z")).toBe(false); // Day 00
+  });
+
+  it("rejects strings exceeding 40 characters limit", () => {
+    expect(
+      isValidDateTime("2026-10-21T11:00:00.12345678901234567890123456789Z"),
+    ).toBe(false);
+  });
+
   it("rejects extra fields on approval object", () => {
     const clone = JSON.parse(JSON.stringify(GOLDEN_RECORD));
     clone.payload.approval.actionArguments = { secret: "leak" };
@@ -399,8 +479,7 @@ describe("fetchApprovalReviewExport", () => {
 describe("isExportResponseValid (in-flight race and invalidation guards)", () => {
   const baseInFlight = {
     generation: 1,
-    authority:
-      "principal:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:tenant:local:REQUESTER,REVIEWER:approvals.decide,approvals.read,approvals.request",
+    authority: authorityContext(SAMPLE_SESSION),
     approvalRequestId: "00000000-0000-0000-0000-000000000001",
     requestHash:
       "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -416,7 +495,7 @@ describe("isExportResponseValid (in-flight race and invalidation guards)", () =>
     now: Date.now(),
   };
 
-  it("validates when all in-flight conditions match current state", () => {
+  it("validates when all in-flight conditions match current state using shared authorityContext", () => {
     expect(isExportResponseValid(baseInFlight, baseCurrent)).toBe(true);
   });
 
@@ -470,6 +549,72 @@ describe("isExportResponseValid (in-flight race and invalidation guards)", () =>
     const alteredSession: ApprovalSession = {
       ...SAMPLE_SESSION,
       roles: ["VIEWER"],
+    };
+    expect(
+      isExportResponseValid(baseInFlight, {
+        ...baseCurrent,
+        session: alteredSession,
+      }),
+    ).toBe(false);
+  });
+
+  it("invalidates when session CSRF token changes", () => {
+    const alteredSession: ApprovalSession = {
+      ...SAMPLE_SESSION,
+      csrfToken: "different-csrf-token",
+    };
+    expect(
+      isExportResponseValid(baseInFlight, {
+        ...baseCurrent,
+        session: alteredSession,
+      }),
+    ).toBe(false);
+  });
+
+  it("invalidates when session human flag changes", () => {
+    const alteredSession: ApprovalSession = {
+      ...SAMPLE_SESSION,
+      human: false,
+    };
+    expect(
+      isExportResponseValid(baseInFlight, {
+        ...baseCurrent,
+        session: alteredSession,
+      }),
+    ).toBe(false);
+  });
+
+  it("invalidates when session scopes change", () => {
+    const alteredSession: ApprovalSession = {
+      ...SAMPLE_SESSION,
+      scopes: ["approvals.read"],
+    };
+    expect(
+      isExportResponseValid(baseInFlight, {
+        ...baseCurrent,
+        session: alteredSession,
+      }),
+    ).toBe(false);
+  });
+
+  it("invalidates when tenant changes", () => {
+    const alteredSession: ApprovalSession = {
+      ...SAMPLE_SESSION,
+      tenantId: "tenant:remote",
+    };
+    expect(
+      isExportResponseValid(baseInFlight, {
+        ...baseCurrent,
+        session: alteredSession,
+      }),
+    ).toBe(false);
+  });
+
+  it("invalidates when principal changes", () => {
+    const alteredSession: ApprovalSession = {
+      ...SAMPLE_SESSION,
+      principalId:
+        "principal:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     };
     expect(
       isExportResponseValid(baseInFlight, {

@@ -50,7 +50,7 @@ When an approval request is selected in the inbox, an explicit "Review record" s
 Before creating a browser `Blob` or prompting a file save, the parsed response is strictly validated against the closed v1 schema contract:
 
 1. **Closed Root Envelope**: Exactly `schemaVersion` (`"1.0"`), `kind` (`"tracepermit-approval-review"`), `canonicalization` (`"tracepermit-canonical-json-v1"`), `payload`, and `payloadHash` (`^sha256:[a-f0-9]{64}$`). No extra properties are permitted.
-2. **Payload Envelope**: Exactly `generatedAt` (ISO date-time ≤40 chars), `mode` (`"simulated"`), `assurance`, and `approval`.
+2. **Payload Envelope**: Exactly `generatedAt` (calendar-valid RFC 3339 date-time with timezone offset, ≤40 chars), `mode` (`"simulated"`), `assurance`, and `approval`.
 3. **Assurance Flags Invariant**: All six assurance properties must be strictly `false`:
    - `signed: false`
    - `completeHistory: false`
@@ -63,6 +63,7 @@ Before creating a browser `Blob` or prompting a file save, the parsed response i
    - `approval.approvalRequestId`: Must match the selected request ID pattern (`^[a-f0-9-]{36}$`) and exact selected ID.
    - `approval.requestHash`: Must match the selected request hash pattern (`^sha256:[a-f0-9]{64}$`) and exact selected hash.
    - `approval.requesterId` & optional `approval.reviewerId`: Valid `^principal:[a-f0-9]{64}$`.
+   - `approval.createdAt` & `approval.expiresAt`: Calendar-valid RFC 3339 date-times with timezone offset (≤40 chars).
    - `approval.originalPolicyOutcome`: `"require_approval"`.
    - `approval.policyVersion`: Safe integer between 1 and 2,147,483,647.
    - `approval.toolName`: Valid pattern `^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$`.
@@ -76,7 +77,7 @@ No browser-side cryptographic verification of payload hash is claimed; strict sc
 When the user initiates a download, the client captures the current operational context:
 
 - `clickGeneration`: The current search/history generation counter.
-- `clickSessionAuth`: The session authority fingerprint (`principal:tenant:roles:scopes`).
+- `clickSessionAuth`: The shared session authority fingerprint derived from `authorityContext` (tenant, principal, human, sorted roles/scopes, CSRF context).
 - `clickRequestId`: The selected approval request ID.
 - `clickRequestHash`: The selected request binding hash.
 - `clickSessionExpiresAt`: The session expiration timestamp.

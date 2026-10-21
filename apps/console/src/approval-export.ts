@@ -3,6 +3,7 @@ import {
   type Approval,
   type ApprovalSession,
 } from "./approval-api.js";
+import { authorityContext } from "./approval-history-state.js";
 
 export const EXPORT_MAX_BYTES = 32_768;
 export const EXPORT_TIMEOUT_MS = 15_000;
@@ -73,6 +74,29 @@ const HASH_REGEX = /^sha256:[a-f0-9]{64}$/;
 const PRINCIPAL_REGEX = /^principal:[a-f0-9]{64}$/;
 const UUID_REGEX = /^[a-f0-9-]{36}$/;
 const TOOL_NAME_REGEX = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/;
+const DATE_TIME_REGEX =
+  /^(\d{4})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])T([01]\d|2[0-3]):([0-5]\d):([0-5]\d)(\.\d+)?(Z|[+-]([01]\d|2[0-3]):[0-5]\d)$/;
+
+export function isValidDateTime(value: unknown): value is string {
+  if (typeof value !== "string" || value.length > 40) return false;
+  const match = DATE_TIME_REGEX.exec(value);
+  if (!match) return false;
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+
+  // Calendar validation
+  if (month === 2) {
+    const isLeapYear = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+    if (day > (isLeapYear ? 29 : 28)) return false;
+  } else if (month === 4 || month === 6 || month === 9 || month === 11) {
+    if (day > 30) return false;
+  }
+
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp);
+}
 
 const ROOT_REQUIRED_KEYS = [
   "canonicalization",
@@ -138,11 +162,7 @@ export function validateApprovalReviewExport(
   }
   const payload = value.payload;
   if (payload.mode !== "simulated") throw new ApprovalApiError(502);
-  if (
-    typeof payload.generatedAt !== "string" ||
-    payload.generatedAt.length > 40 ||
-    !Number.isFinite(Date.parse(payload.generatedAt))
-  ) {
+  if (!isValidDateTime(payload.generatedAt)) {
     throw new ApprovalApiError(502);
   }
 
@@ -227,19 +247,11 @@ export function validateApprovalReviewExport(
     throw new ApprovalApiError(502);
   }
 
-  if (
-    typeof app.createdAt !== "string" ||
-    app.createdAt.length > 40 ||
-    !Number.isFinite(Date.parse(app.createdAt))
-  ) {
+  if (!isValidDateTime(app.createdAt)) {
     throw new ApprovalApiError(502);
   }
 
-  if (
-    typeof app.expiresAt !== "string" ||
-    app.expiresAt.length > 40 ||
-    !Number.isFinite(Date.parse(app.expiresAt))
-  ) {
+  if (!isValidDateTime(app.expiresAt)) {
     throw new ApprovalApiError(502);
   }
 
@@ -323,11 +335,7 @@ export function isExportResponseValid(
   if (now >= inFlight.sessionExpiresAt) return false;
   if (current.selectedId !== inFlight.approvalRequestId) return false;
   if (current.currentHash !== inFlight.requestHash) return false;
-  const sessionAuth = `${current.session.principalId}:${current.session.tenantId}:${current.session.roles
-    .slice()
-    .sort()
-    .join(",")}:${current.session.scopes.slice().sort().join(",")}`;
-  if (sessionAuth !== inFlight.authority) return false;
+  if (authorityContext(current.session) !== inFlight.authority) return false;
   return true;
 }
 

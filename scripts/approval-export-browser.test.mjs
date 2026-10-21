@@ -286,7 +286,7 @@ test(
       };
 
       const ensureRow = async (page) => {
-        await seed(page);
+        const item = await seed(page);
         await page.reload();
         await page
           .getByRole("form", { name: "Filter approvals", exact: true })
@@ -294,7 +294,7 @@ test(
         const firstRow = page.locator("button.approval-row").first();
         await firstRow.waitFor({ timeout: UI_TIMEOUT });
         await firstRow.click();
-        return firstRow;
+        return item;
       };
 
       await step(
@@ -468,8 +468,110 @@ test(
       );
 
       await step(
+        "verify successful browser download and saved JSON file with synthetic transport response",
+        async () => {
+          const page = await pageFor("alice");
+          const seeded = await ensureRow(page);
+          assert.ok(seeded.approvalRequestId);
+          assert.ok(seeded.requestHash);
+
+          const exportSection = page.locator("div.approval-export-section");
+          await exportSection.waitFor({ timeout: UI_TIMEOUT });
+
+          const syntheticExport = {
+            schemaVersion: "1.0",
+            kind: "tracepermit-approval-review",
+            canonicalization: "tracepermit-canonical-json-v1",
+            payload: {
+              generatedAt: "2026-10-21T12:00:00Z",
+              mode: "simulated",
+              assurance: {
+                signed: false,
+                completeHistory: false,
+                transactionalSnapshot: false,
+                independentAnchor: false,
+                authorizesExecution: false,
+                argumentsIncluded: false,
+              },
+              approval: {
+                mode: "simulated",
+                approvalRequestId: seeded.approvalRequestId,
+                requestHash: seeded.requestHash,
+                requesterId:
+                  "principal:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                status: "pending",
+                createdAt: "2026-10-21T11:00:00Z",
+                expiresAt: "2026-10-21T13:00:00Z",
+                expired: false,
+                policyId: "pol-local-simulator-approval",
+                policyVersion: 2,
+                originalPolicyOutcome: "require_approval",
+                executionStatus: "not_executed",
+                toolName: "aws.ec2.update_security_group",
+              },
+            },
+            payloadHash:
+              "sha256:b906a41995ff346f31fe1a94331e60a44afb72c381d3343bc014602ac4742dae",
+          };
+
+          await page.route(
+            `**/browser/api/v1/approvals/${encodeURIComponent(seeded.approvalRequestId)}/export`,
+            async (route) => {
+              await route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: JSON.stringify(syntheticExport),
+              });
+            },
+          );
+
+          const downloadPromise = page.waitForEvent("download", {
+            timeout: UI_TIMEOUT,
+          });
+          const downloadButton = exportSection.getByRole("button", {
+            name: "Download review JSON",
+            exact: true,
+          });
+          await downloadButton.click();
+
+          const download = await downloadPromise;
+          const filename = download.suggestedFilename();
+          assert.equal(
+            filename,
+            `tracepermit-approval-${seeded.approvalRequestId}.json`,
+          );
+
+          const savePath = join(evidenceDirectory, filename);
+          await download.saveAs(savePath);
+
+          const contents = JSON.parse(await readFile(savePath, "utf8"));
+          assert.equal(contents.schemaVersion, "1.0");
+          assert.equal(contents.kind, "tracepermit-approval-review");
+          assert.equal(
+            contents.canonicalization,
+            "tracepermit-canonical-json-v1",
+          );
+          assert.equal(contents.payload.mode, "simulated");
+          assert.equal(
+            contents.payload.approval.approvalRequestId,
+            seeded.approvalRequestId,
+          );
+          assert.equal(
+            contents.payload.approval.requestHash,
+            seeded.requestHash,
+          );
+          assert.equal(contents.payload.assurance.signed, false);
+          assert.equal(contents.payload.assurance.authorizesExecution, false);
+
+          await page.context().close();
+        },
+      );
+
+      await step(
         "integrated download against Java backend route",
         async (subtest) => {
+          const requireIntegrated =
+            process.env.TRACEPERMIT_REQUIRE_INTEGRATED_EXPORT === "1";
           const page = await pageFor("alice");
           await ensureRow(page);
 
@@ -485,7 +587,14 @@ test(
           const firstItem = listData.items?.[0];
 
           if (!firstItem) {
-            subtest.skip("No approval items found in live fixture");
+            if (requireIntegrated) {
+              assert.fail(
+                "INTEGRATED_EXPORT_SETUP_FAILED: No approval items found in live fixture",
+              );
+            }
+            t.diagnostic(
+              "No approval items found in live fixture; skipping integrated check.",
+            );
             await page.context().close();
             return;
           }
@@ -498,6 +607,11 @@ test(
             liveExportResponse.status() === 404 ||
             liveExportResponse.status() === 405
           ) {
+            if (requireIntegrated) {
+              assert.fail(
+                `INTEGRATED_EXPORT_ROUTE_MISSING: Java export route returned status ${liveExportResponse.status()}`,
+              );
+            }
             t.diagnostic(
               `Java export route returned ${liveExportResponse.status()} on current main base (PR #70 unmerged); integrated saved-file check left pending.`,
             );
