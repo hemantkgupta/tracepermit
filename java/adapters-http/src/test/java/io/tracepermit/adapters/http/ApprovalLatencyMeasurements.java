@@ -530,6 +530,88 @@ public final class ApprovalLatencyMeasurements {
   }
 
   /**
+   * Executes one client-concurrency wave at a time and proves that the server has
+   * returned every accepted handler lane before offering the next wave. The
+   * operation timeout remains one budget across all waves; barrier time is bounded
+   * separately and is not counted as operation wall time. This is qualification
+   * coordination only: it never retries an item or changes server admission bounds.
+   */
+  static BatchExecution runConcurrentWaves(
+      int concurrency,
+      List<ApprovalItem> items,
+      ItemOperation operation,
+      Duration timeout,
+      String phaseName,
+      String population,
+      PhaseBoundary phaseBoundary) {
+
+    if (items.isEmpty()) {
+      return new BatchExecution(0, 0, 0, 0, 0, new long[0], 0L, List.of());
+    }
+
+    int waveSize = Math.max(1, Math.min(concurrency, MAX_CONCURRENCY));
+    long remainingBudgetNanos;
+    try {
+      remainingBudgetNanos = timeout.toNanos();
+    } catch (ArithmeticException overflow) {
+      remainingBudgetNanos = Long.MAX_VALUE;
+    }
+
+    int successes = 0;
+    int failures = 0;
+    int timeouts = 0;
+    int cancelled = 0;
+    long operationWallNanos = 0L;
+    var successDurations = new ArrayList<Long>();
+    var failureCodes = new ArrayList<String>();
+
+    for (int from = 0; from < items.size(); from += waveSize) {
+      int to = Math.min(items.size(), from + waveSize);
+      if (remainingBudgetNanos <= 0L) {
+        cancelled += items.size() - from;
+        break;
+      }
+
+      BatchExecution wave = runConcurrent(
+          waveSize,
+          items.subList(from, to),
+          operation,
+          Duration.ofNanos(remainingBudgetNanos));
+      successes += wave.successCount();
+      failures += wave.failureCount();
+      timeouts += wave.timeoutCount();
+      cancelled += wave.cancelledCount();
+      operationWallNanos = saturatedAdd(operationWallNanos, wave.wallElapsedNanos());
+      remainingBudgetNanos = Math.max(0L, remainingBudgetNanos - wave.wallElapsedNanos());
+      for (long duration : wave.successDurationsNanos()) {
+        successDurations.add(duration);
+      }
+      failureCodes.addAll(wave.failureCodes());
+
+      requirePhaseQuiescence(phaseName, population + " wave " + ((from / waveSize) + 1), phaseBoundary);
+    }
+
+    long[] durationArray = new long[successDurations.size()];
+    for (int i = 0; i < successDurations.size(); i++) {
+      durationArray[i] = successDurations.get(i);
+    }
+    return new BatchExecution(
+        items.size(),
+        successes,
+        failures,
+        timeouts,
+        cancelled,
+        durationArray,
+        operationWallNanos,
+        List.copyOf(failureCodes));
+  }
+
+  private static long saturatedAdd(long left, long right) {
+    if (right > 0L && left > Long.MAX_VALUE - right) return Long.MAX_VALUE;
+    return left + right;
+  }
+
+  /**
    * Executes a workflow phase with separate warmup and measured operations.
    * Any unexpected failure in warm-up or measured batches records an explicit failure.
    */
@@ -556,8 +638,8 @@ public final class ApprovalLatencyMeasurements {
 
     // 1. Warm-up operations (exercise exact code path; fail closed on warmup error)
     if (!warmupItems.isEmpty()) {
-      BatchExecution warmupBatch = runConcurrent(concurrency, warmupItems, operation, phaseTimeout);
-      requirePhaseQuiescence(phaseName, "warmup", phaseBoundary);
+      BatchExecution warmupBatch = runConcurrentWaves(
+          concurrency, warmupItems, operation, phaseTimeout, phaseName, "warmup", phaseBoundary);
       if (warmupBatch.failureCount() > 0 || warmupBatch.timeoutCount() > 0 || warmupBatch.cancelledCount() > 0) {
         failures.add(String.format("Phase %s (concurrency=%d) warmup had unexpected failures: %d failed, %d timed out, %d cancelled out of %d operations.",
             phaseName, concurrency, warmupBatch.failureCount(), warmupBatch.timeoutCount(), warmupBatch.cancelledCount(), warmupItems.size())
@@ -577,8 +659,8 @@ public final class ApprovalLatencyMeasurements {
 
     // 2. Measured steady-state operations
     int measuredCount = measuredItems.size();
-    BatchExecution measuredBatch = runConcurrent(concurrency, measuredItems, operation, phaseTimeout);
-    requirePhaseQuiescence(phaseName, "measured", phaseBoundary);
+    BatchExecution measuredBatch = runConcurrentWaves(
+        concurrency, measuredItems, operation, phaseTimeout, phaseName, "measured", phaseBoundary);
     int successes = measuredBatch.successCount();
     int failed = measuredBatch.failureCount();
     int timeouts = measuredBatch.timeoutCount();

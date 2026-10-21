@@ -159,10 +159,12 @@ injected-failure test. Its assertion includes up to 4096 characters of the
 runner's existing safe stderr; HTTP-module test failures log full exception
 context so CI retains that diagnostic. All default benchmark sweeps, success
 assertions, request/phase budgets, and production behavior remain unchanged.
-The harness now places a bounded executor barrier after every warmup and
-measured batch so all previously admitted handlers return before the next batch
-is offered. This is test coordination, not a retry or a larger admission bound;
-the default eight active lanes and sixteen pending exchanges remain unchanged.
+The harness now offers each warmup and measured population in waves no larger
+than the reported client concurrency and places a bounded executor barrier after
+every wave. All previously admitted handlers therefore return before the next
+wave is offered. This is test coordination, not a retry or a larger admission
+bound; the default eight active lanes and sixteen pending exchanges remain
+unchanged.
 Diagnostic context is not a latency fix or permission to accept a failed
 qualification; a local success does not override a failed required CI check.
 

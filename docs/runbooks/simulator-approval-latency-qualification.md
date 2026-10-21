@@ -60,12 +60,14 @@ Synthetic access tokens, review lifetimes, and execution permits require tempora
 - **Population Isolation**: Percentiles reflect `success_only` steady-state samples. Failures and timeouts are never manufactured as 0.0 ms observations; any failure or timeout immediately records an error and invalidates the PASS status of the qualification.
 - **Warmup Correctness**: Warmup operations exercise JIT compilation, classloading, and initial TCP handshakes. Warmup counts are excluded from steady-state latency percentiles, but any warmup failure immediately invalidates qualification and prevents dependent phases from executing with incomplete IDs.
 - **Closed-Loop Phase Throughput**: $\text{Throughput} = \frac{\text{Success Count}}{\text{Elapsed Wall Seconds}}$. This represents bounded closed-loop phase operations per second, not open-loop system capacity or end-to-end workflows per second.
-- **Deterministic Phase Quiescence**: After each warmup and measured batch, one
+- **Deterministic Phase Quiescence**: Warmup and measured populations are offered
+  in waves no larger than the reported client concurrency. After each wave, one
   bounded barrier task per server lane waits behind every previously admitted
-  exchange. The next batch starts only after all eight lanes reach and leave that
-  barrier. Barrier time is excluded from per-phase samples, performs no HTTP retry,
-  and prevents response-delivery/handler-return overlap from being misclassified as
-  admission overflow at the next phase boundary.
+  exchange. The next wave starts only after all eight lanes reach and leave that
+  barrier. Barrier time is excluded from operation wall time and per-request
+  samples, performs no HTTP retry, and prevents response-delivery/handler-return
+  overlap from being misclassified as admission overflow within a population or
+  at the next phase boundary.
 
 ### Inclusions and Exclusions
 
