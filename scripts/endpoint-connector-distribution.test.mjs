@@ -3021,6 +3021,67 @@ test("adapters-http Gradle wiring fails closed on unhealthy git provenance and f
     stalledElapsed < 75_000,
     `Stalled probe must hit the finite deadline promptly; elapsed ${stalledElapsed}ms`,
   );
+
+  // The deadline must cover complete output collection, not just git's own exit.
+  // A healthy git exiting 0 while a descendant inherits the probe's stdout and
+  // stderr and outlives it must not authorize provenance: the supervisor cannot
+  // prove collection is complete, so it fails closed at the finite deadline
+  // (intentional red control proving bounded collection, not real git behavior).
+  const collectionStart = Date.now();
+  const collection = runWiredPrint(
+    `${realGitPath} rev-parse HEAD; sleep 120 &\nexit 0`,
+    { timeoutMs: 150_000 },
+  );
+  const collectionElapsed = Date.now() - collectionStart;
+  assert.notEqual(
+    collection.status,
+    0,
+    "Exit-0 probe with a lingering inherited-pipe descendant must fail closed",
+  );
+  assert.match(
+    collection.stderr + collection.stdout,
+    /non-zero exit value 124/,
+    `Collection-bounded supervisor must kill the whole probe group at the deadline:\n${collection.stdout}\n${collection.stderr}`,
+  );
+  assert.ok(
+    !(collection.stderr + collection.stdout).includes(
+      "TRACEPERMIT_ENDPOINT_CONNECTOR_EXPECTED_HEAD=",
+    ),
+    "No expected-head value may be printed when collection cannot be proven complete",
+  );
+  assert.ok(
+    collectionElapsed < 75_000,
+    `Collection deadline must bound a lingering descendant; elapsed ${collectionElapsed}ms`,
+  );
+
+  // A sabotaged git (valid-format stale SHA, exit 73) that leaves a descendant
+  // holding the inherited streams must still fail closed and promptly: the
+  // supervisor kills the whole group and relays nothing on a non-zero exit.
+  const sabotageStart = Date.now();
+  const sabotage = runWiredPrint(`echo '${staleSha}'; sleep 120 &\nexit 73`, {
+    timeoutMs: 150_000,
+  });
+  const sabotageElapsed = Date.now() - sabotageStart;
+  assert.notEqual(
+    sabotage.status,
+    0,
+    "Exit-73 probe with a lingering inherited-pipe descendant must fail closed",
+  );
+  assert.match(
+    sabotage.stderr + sabotage.stdout,
+    /non-zero exit value 73/,
+    `Non-zero exit must fail promptly even with a lingering descendant:\n${sabotage.stdout}\n${sabotage.stderr}`,
+  );
+  assert.ok(
+    !(sabotage.stderr + sabotage.stdout).includes(
+      "TRACEPERMIT_ENDPOINT_CONNECTOR_EXPECTED_HEAD=",
+    ),
+    "No expected-head value may be printed when the git probe fails",
+  );
+  assert.ok(
+    sabotageElapsed < 75_000,
+    `Exit-73 with a lingering descendant must fail promptly; elapsed ${sabotageElapsed}ms`,
+  );
 });
 
 test("adapters-http provenance wiring re-resolves git head after commit-only advance in isolated clone", (t) => {

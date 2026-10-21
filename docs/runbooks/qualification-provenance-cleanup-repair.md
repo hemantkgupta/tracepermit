@@ -34,15 +34,28 @@ property is unset, which never happens under the Gradle wiring.
 
 The provider now:
 
-- bounds the git probe with a finite deadline: a supervising `perl` process
-  forks, execs `git rev-parse HEAD` in the child, and enforces a 10-second
-  bound from the parent (`alarm` + process-group `SIGKILL`), exiting `124` on
-  timeout. The child leads its own process group, so the timeout reaps the
-  entire probe tree; without the group kill, an orphaned grandchild holding
-  the output pipe delays failure detection well past the deadline (observed
-  120 s with a nested `sleep` model before the group kill was added). The
-  parent never execs, so the deadline does not depend on alarm-across-exec
-  behavior; a failed `exec` (missing provenance tooling) exits `127`;
+- bounds the git probe's **complete output collection**, not just the direct
+  child's exit: a supervising `perl` process creates an internal pipe and
+  forks a child that dups that pipe over its own stdout **and** stderr, leads
+  its own process group, and execs `git rev-parse HEAD`. No descendant of the
+  probe ever holds a Gradle-owned stream, so the parent can prove collection
+  is complete: output is relayed only after the internal stream reaches EOF
+  (no writer remains) or the reap proved the child gone after EOF. The parent
+  arms a 10-second deadline spanning its select/read loop, the reap, and the
+  final drain, SIGKILLs the whole process group on timeout, and exits `124`.
+  The parent never execs, so the deadline does not depend on
+  alarm-across-exec behavior. The earlier revision's deadline ended at
+  `waitpid` and did not cover collection: a descendant that inherits the
+  probe's stdout/stderr and outlives git (for example a wrapper's background
+  `sleep` holding the inherited pipe write end) delays Gradle's read-to-EOF
+  indefinitely, because pipe EOF requires every write end closed;
+- relays at most 1 MiB of collected output — a larger stream kills the group
+  and exits `124` — and on any non-zero child exit kills the group promptly,
+  relays nothing, and fails configuration with the mapped exit code (a signal
+  death becomes `128 + signal`, otherwise the error code). A failed `exec`
+  (missing provenance tooling) exits `127`; a failed stream dup exits `126`;
+- merges probe stderr into the validated stream, so any probe stderr noise
+  fails the fixed malformed-output check rather than being discarded;
 - drops `isIgnoreExitValue`, so any non-zero probe exit — including exit 73 —
   fails configuration (Gradle `ExecException` with the exit value);
 - accepts only a single full-match hex commit (`[0-9a-f]{40}` or
@@ -84,6 +97,14 @@ In `scripts/endpoint-connector-distribution.test.mjs`:
   the child is killed by the build-side alarm and the test bounds the parent
   (`spawnSync` timeout, elapsed assertion). The wrapper models a stalled git;
   this proves the deadline behavior, not real git behavior.
+- Collection-boundedness (round 2): a healthy real git exiting `0` while a
+  descendant inherits the probe streams and outlives it
+  (`real-git rev-parse HEAD; sleep 120 &`) fails closed at the finite
+  deadline (`non-zero exit value 124`) with no expected-head value printed,
+  within the parent elapsed bound — the deadline covers complete output
+  collection, not just git's own exit. A sabotaged git (valid-format stale
+  SHA, exit `73`) that leaves such a descendant behind fails promptly
+  (`non-zero exit value 73`), relays nothing, and leaves no stray process.
 - Isolated clone (`git clone -s -l`) with the live build file overlaid: a
   commit-only advance re-resolves provenance (printed head changes from commit
   A to commit B), proving configuration/task caches are invalidated for the
@@ -165,10 +186,13 @@ java/gradlew -p java --no-daemon :adapters-http:test --tests "io.tracepermit.ada
 - Strict tests and documentation were not weakened; the stale-archive strict
   qualification and its existing sensitivity controls are unchanged.
 - The git probe depends on `/usr/bin/perl` as a supervising parent that forks
-  the child and bounds the probe's whole process group from the parent; the
-  parent never execs, so the deadline does not rely on alarm-across-exec
-  behavior (verified absent on the qualification host). If perl is absent the
-  probe fails closed (non-zero), never open.
+  the child, owns the probe's output stream (the child dups a supervisor pipe
+  over its stdout and stderr, so no descendant holds a Gradle-owned stream),
+  and bounds the probe's whole process group and its complete output
+  collection with a single parent-held deadline; the parent never execs, so
+  the deadline does not rely on alarm-across-exec behavior (verified absent
+  on the qualification host). If perl is absent the probe fails closed
+  (non-zero), never open.
 - The bounded probe does not provide production code-signing attestation or
   external artifact custody guarantees; OPS-002 scope remains deterministic
   simulator qualification provenance.
