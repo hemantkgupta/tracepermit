@@ -5,6 +5,26 @@
 
 Status values: **Implemented**, **Partial**, **Target**, or **Proposed**.
 
+## Explicit native/public browser candidate
+
+[ADR0063](../architecture/0063-explicit-public-browser-code-pkce.md), the
+[qualification runbook](../runbooks/auth0-native-oidc-qualification.md) and
+[learning note](../learning/native-oidc-public-client.md) distinguish the
+implemented synthetic slice from pending Auth0 qualification. These mappings
+refine the corresponding rows below without promoting whole-ID status.
+
+| Requirements                             | Enforcement point and automated evidence                                                                                                                                                                                                   | Remaining boundary                                                                          |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------- |
+| FR-003/007; SEC-002/004/009; REL-001/004 | Schema1.1 explicit method, `BrowserCodeExchange`, independent `BrowserIdTokenVerifier` organization check; config/exchange/public HTTP tests exercise scope, state/nonce, code/browser substitution, claims/time/key and concurrent replay | Actual Auth0 native organization, token type and callback issuer pending                    |
+| FR-012; SEC-003/011/012/015              | Exact numeric-loopback callback; no-secret public form and omitted Authorization; local-TLS destination/redirect regressions and existing browser/API simulator tests                                                                      | Same-UID custody, public edge, real targets and container-version qualification unsupported |
+| OPS-001/004/005                          | Offline config failures stay code-only; exact local-Mac procedure and compatibility stop conditions documented                                                                                                                             | Local DB readiness is not an IdP probe or production readiness; no live status promoted     |
+
+Schema1.0 confidential Basic remains supported. `openid` selects OIDC in the
+authorization request; API-token `approvals.read` is required for public login,
+with operation-specific scopes independently enforced. ID tokens remain
+mandatory. No Notion task completion or generic Auth0/OIDC compatibility is
+claimed by these automated tests.
+
 ## Bounded OIDC/JWKS refresh isolation
 
 Requirements: SEC-002/003/004/015/017; REL-001/009; OPS-001/005.

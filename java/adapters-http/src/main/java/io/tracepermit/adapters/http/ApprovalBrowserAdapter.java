@@ -58,14 +58,22 @@ final class ApprovalBrowserAdapter {
   private final BrowserIdTokenVerifier identity;
   private final ApprovalMemberships memberships;
   private final Clock clock;
+  private final String organization;
 
   ApprovalBrowserAdapter(URI authorizationUri, String issuer, String audience, String clientId,
       Path console, CodeExchange exchange, OidcAccessTokenVerifier access,
       BrowserIdTokenVerifier identity, ApprovalMemberships memberships, Clock clock) {
+    this(authorizationUri, issuer, audience, clientId, console, exchange, access, identity, memberships, clock, null);
+  }
+
+  ApprovalBrowserAdapter(URI authorizationUri, String issuer, String audience, String clientId,
+      Path console, CodeExchange exchange, OidcAccessTokenVerifier access,
+      BrowserIdTokenVerifier identity, ApprovalMemberships memberships, Clock clock, String organization) {
     this.authorizationUri = authorizationUri; this.issuer = issuer; this.audience = audience;
     this.clientId = clientId; this.console = console.toAbsolutePath().normalize();
     this.exchange = exchange; this.access = access; this.identity = identity;
     this.memberships = memberships; this.clock = clock;
+    this.organization = organization;
   }
 
   /** Returns true when this is a browser non-action route, including static assets. */
@@ -87,11 +95,13 @@ final class ApprovalBrowserAdapter {
           flows.put(binder, flow);
         }
         cookie(request, FLOW_COOKIE, binder, 120);
-        redirect(request, authorizationUri + "?" + form(Map.of(
+        var parameters = new HashMap<>(Map.of(
             "response_type", "code", "client_id", clientId, "redirect_uri", callback(port),
             "scope", "openid approvals.read approvals.request approvals.decide approvals.execute approvals.cancel",
             "audience", audience, "state", flow.state(), "nonce", flow.nonce(),
-            "code_challenge", challenge(flow.verifier()), "code_challenge_method", "S256")));
+            "code_challenge", challenge(flow.verifier()), "code_challenge_method", "S256"));
+        if (organization != null) parameters.put("organization", organization);
+        redirect(request, authorizationUri + "?" + form(parameters));
       }
       case "/auth/callback" -> callback(request, port);
       case "/browser/session" -> {
@@ -174,6 +184,9 @@ final class ApprovalBrowserAdapter {
       }
       String bearer = tokens.path("access_token").textValue();
       AuthenticatedConnector connector = access.authenticate("Bearer " + bearer);
+      // openid selects OIDC at authorization time; it is not an API permission.
+      if (organization != null && !connector.scopes().contains(
+          io.tracepermit.identity.ConnectorScope.of("approvals.read"))) throw new SecurityException();
       if (connector.senderConstraint().isPresent()) throw new SecurityException();
       var member = memberships.resolve(connector);
       if (!member.human()) throw new SecurityException();

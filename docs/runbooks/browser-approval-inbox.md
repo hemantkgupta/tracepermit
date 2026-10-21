@@ -53,6 +53,14 @@ executes a target or automatically reloads a request. Local clock checks are
 advisory, may be delayed in background tabs, and do not replace Java checks;
 focus/visibility changes resample time. Refresh explicitly to inspect server state.
 
+## Public/native candidate
+
+Schema1.1 explicitly supports method `none` with no client secret. Follow the
+[Auth0 local-Mac qualification procedure](auth0-native-oidc-qualification.md);
+actual Auth0 token/callback/organization compatibility remains pending.
+`openid` is requested for OIDC and need not appear in API-token scope.
+The configuration below retains the legacy confidential schema1.0 profile.
+
 ## Operator-owned IdP configuration
 
 The existing [approval API setup](authenticated-approval-api-foundation.md)

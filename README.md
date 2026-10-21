@@ -116,7 +116,9 @@ and model-driven rehearsal are separate from protocol tests.
   a role-scoped React inbox; tokens stay in Java session memory. Try the
   test-classpath-only synthetic profile with `pnpm demo:approvals:browser`.
   See the [browser inbox runbook](docs/runbooks/browser-approval-inbox.md).
-  External browser IdP compatibility is not yet live-qualified.
+  External browser IdP compatibility is not yet live-qualified. An explicit
+  schema1.1 native/public code-PKCE candidate is tested synthetically; see the
+  [pending Auth0 local-Mac qualification](docs/runbooks/auth0-native-oidc-qualification.md).
 - A separate [Linux container install profile](docs/runbooks/container-install-profile.md)
   packages that source-free Java/React runtime with digest-pinned PostgreSQL,
   explicit private preparation and initialization, and bounded health/readiness.
