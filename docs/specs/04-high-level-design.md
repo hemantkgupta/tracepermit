@@ -173,6 +173,14 @@ The recommended starting point is a modular Java service with clearly separated
 ports and schemas, backed by PostgreSQL. It can later split into control-plane
 and data-plane services when scaling or isolation requires it.
 
+The implemented Linux container-install foundation does not change that logical
+shape or create a remote edge. Java/React and PostgreSQL share the host network
+without port publishing and independently retain numeric-loopback binds. A
+non-root read-only application container consumes an operator-prepared private
+volume; database initialization remains a separate one-shot command. This is a
+repeatable local simulator installation, not one of the enterprise deployment
+models below. See [ADR 0062](../architecture/0062-loopback-container-install-profile.md).
+
 Enterprise deployment should support one or more of:
 
 - vendor-hosted control and data plane;

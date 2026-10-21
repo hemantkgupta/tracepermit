@@ -5,6 +5,10 @@ simulator approval application (`tracepermit-simulator-approval`).
 This archive bundles the authenticated Java backend and built React inbox
 without requiring Node.js, pnpm, Gradle, or a source checkout on the host.
 
+For the separate Linux Docker Engine packaging of this same archive, use the
+[container install profile](container-install-profile.md). That profile retains
+numeric-loopback binding and is not a Docker Desktop/public-edge qualification.
+
 > [!IMPORTANT]
 > This distribution is a **simulator-alpha qualification foundation**, not a
 > production deployment, cloud target gateway, or external IdP qualification.
@@ -229,10 +233,31 @@ started; not recovery authorization.` and exits 0. It validates exactly the
    incident-affected DB remains disconnected under the recovery runbook; this
    command never grants safe-resume authority.
 
-V10 recognizes terminal cancelled storage records but exposes **no cancellation
-API, scope, tool or button**. Reported inspection format is now2.0 (adds the
-cancelled count); API projections remain1.0. Details and limits:
-[ADR 0059](../architecture/0059-explicit-v9-v10-simulator-upgrade.md).
+The V10 **schema upgrade itself** adds cancelled storage records and requester
+provenance; it does not enroll a requester, grant a scope or authorize a
+withdrawal. [ADR 0059](../architecture/0059-explicit-v9-v10-simulator-upgrade.md)
+describes that storage-only foundation, not the current application's entire
+feature set.
+
+The current Java API and React inbox implement owner withdrawal of a live
+pending request. Use the [withdrawal runbook](pending-approval-withdrawal.md)
+for the separately verified identity/client/tenant enrollment, REQUESTER role
+and provider-granted `approvals.cancel` scope. Upgrading an older database or
+passing `--check` establishes none of those prerequisites. There is no new MCP
+withdrawal tool, revocation of approved work or automatic rollback.
+
+Keep these version boundaries distinct:
+
+| Surface                            | Current version | Meaning                                                                  |
+| ---------------------------------- | --------------- | ------------------------------------------------------------------------ |
+| Database contract                  | 10              | Storage/consumer compatibility, not authentication authority             |
+| Owner recovery-inspection report   | 2.0             | Adds the cancelled count; inspection does not permit resume              |
+| Approval API projection            | 1.0             | Existing response contract remains unchanged                             |
+| New cancellation lifecycle payload | 3.0             | Bounded requester-derived cancellation evidence, not execution authority |
+
+Authenticated source-free installed withdrawal and external-IdP interoperability
+remain separate qualification gates. The source-based synthetic browser demo,
+schema-upgrade checks and older-binary refusal checks do not close them.
 
 ## Running the application (`--run`)
 

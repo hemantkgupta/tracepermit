@@ -131,7 +131,9 @@ public final class SimulatorApprovalMain {
     }
     return SimulatorApprovalServer.start(
         new InetSocketAddress(InetAddress.getByName("127.0.0.1"), configuration.port()),
-        verifier, configuration.memberships(), state, policy(), permits, new StatefulTargetSimulator(), clock, browser);
+        verifier, configuration.memberships(), state, policy(), permits, new StatefulTargetSimulator(),
+        clock, browser, () -> "ready".equals(
+            PostgresRecoveryQuarantine.status(configuration.database()).mode()));
   }
 
   static JsonNode policy() {

@@ -13,7 +13,7 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     # Includes two PostgreSQL passes and source-free provenance/installation probes.
-    timeout-minutes: 15
+    timeout-minutes: 22
 
     steps:
       - name: Check out repository
@@ -70,6 +70,11 @@ jobs:
         run: |
           pnpm build:distribution
           pnpm test:distribution
+
+      - name: Verify simulator-only container install profile
+        run: |
+          pnpm build:container-profile
+          pnpm test:container-profile
 
       - name: Verify source-free endpoint connector distribution
         run: |

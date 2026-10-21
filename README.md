@@ -117,6 +117,12 @@ and model-driven rehearsal are separate from protocol tests.
   test-classpath-only synthetic profile with `pnpm demo:approvals:browser`.
   See the [browser inbox runbook](docs/runbooks/browser-approval-inbox.md).
   External browser IdP compatibility is not yet live-qualified.
+- A separate [Linux container install profile](docs/runbooks/container-install-profile.md)
+  packages that source-free Java/React runtime with digest-pinned PostgreSQL,
+  explicit private preparation and initialization, and bounded health/readiness.
+  It uses host networking with **no published ports** so both services retain
+  numeric-loopback binding. It is not qualified on Docker Desktop and does not
+  add TLS, a public edge, external IdP compatibility or a real target.
 
 The [current-state capability matrix](docs/specs/03-current-state-baseline.md)
 distinguishes implemented code, local demonstrations, live-client

@@ -15,6 +15,8 @@ pnpm docs:links
 pnpm portability:check
 pnpm test:endpoint-connector-e2e
 pnpm test:approval-api --rerun-tasks
+pnpm build:container-profile
+pnpm test:container-profile
 npm --prefix site ci
 npm --prefix site audit --audit-level=low
 pnpm site:build
@@ -27,6 +29,15 @@ Node/Java environment, and runs the Java aggregate test and coverage gates.
 PostgreSQL integration tests use disposable Testcontainers; Docker is needed
 for those checks. Runtime-affecting changes also need the closest numbered
 simulator scenario or an equivalent protocol smoke test.
+
+The Linux container install profile has a separate destructive-to-owned-fixture
+gate. It builds from the clean source-free archive, generates synthetic secrets
+and Ed25519 keys at runtime, creates a random Compose project, explicitly prepares
+and initializes disposable state, checks React/health/readiness and numeric
+loopback sockets, then removes only its own containers and volumes. It must also
+reject retained-key replacement, default secrets, wildcard/public binding and
+database-outage readiness. Passing it does not qualify Docker Desktop, an
+external IdP, TLS/reverse proxy, sender constraint or production deployment.
 
 The site uses a separate npm lockfile. CI installs it with `npm ci`, rejects
 reported dependency advisories at low severity or higher, and builds the static

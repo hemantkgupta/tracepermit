@@ -1,6 +1,6 @@
 # Current-state capability matrix
 
-**As of:** 2026-10-17
+**As of:** 2026-10-20
 **Scope:** public Java-backend/React-console proof of concept
 
 This is the authoritative boundary between running POC behavior and product
@@ -28,6 +28,7 @@ requirement-to-test mapping is in the [traceability matrix](12-traceability-matr
 | Hardened remote edge        | Direct-TLS sender-constraint, Host/Origin checks, independent pre/post-auth rate-limit ports, readiness, and bounded telemetry have automated tests.                                                                                                                                                                                                                                                                                                                                                                                          | The hosted loopback demo does not turn these ports into a managed distributed edge. Shared abuse state, certificate lifecycle, exporter, and deployment bootstrap remain target work.                                                                                                                                                                                   |
 | Permit and execution        | Request-bound permits guard simulator dispatch. Existing PostgreSQL execution/approval atomically claims permit, idempotency, attempt and evidence. A separate standalone consumption adapter has verified-tenant routing, explicit action hashes and commit-before-success tests. Per-principal lock striping and linearized authorization timestamps in `SecureExecutionService` protect sequence and policy evaluation across distinct principals without global serialization. Dispatcher admission bounds concurrent execution attempts. | Default local stores are process-local. Standalone consumption is not the composed execution transaction; production signing keys, target credentials and anti-bypass remain absent. Striping and admission control are process-local; they do not provide distributed concurrency guarantees, per-tenant fair queuing, or an end-to-end throughput SLA.                |
 | Human approval              | Separate authenticated loopback API plus optional same-origin browser sign-in/React inbox share operator roles, exact PostgreSQL snapshots, distinct review and atomic simulator execution. An opt-in Java factory additionally binds approvals to durable active-policy generations.                                                                                                                                                                                                                                                         | Default launchers and the host-native source-free distribution use static policies, not the opt-in lifecycle composition. Generation-bound stale claims cannot dispatch; later activation does not cancel a committed claim. Synthetic browser profile qualified; no live external browser IdP, public reviewer edge or real target. Default console remains read-only. |
+| Container install profile   | A Linux Docker Engine profile packages the source-free Java/React distribution with digest-pinned PostgreSQL, explicit prepare/check/init/run phases, non-root read-only application runtime, numeric-loopback host networking, safe health/readiness and disposable qualification.                                                                                                                                                                                                                                                           | TP-MVP-05 foundation only. Linux host networking, external IdP, TLS/reverse proxy, sender constraint, shared abuse state, signed provenance, backup/restore and public/production deployment remain unqualified.                                                                                                                                                        |
 | Evidence and recovery       | Java adds a bounded credential/pattern redaction library and applies its default profile to approval-response action projections (ADR 0043), preserving original request hashes and exact action snapshots. It appends redacted, hash-linked evidence; PostgreSQL outbox publication, independently verified signed receipt, and lookup-only unknown-outcome reconciliation have tests.                                                                                                                                                       | No global log/export or before-persistence redaction hook; unkeyed hashes are not secret confidentiality. The development stream is process-local. No production external sink, external target lookup, retention program, or independent audit account is configured.                                                                                                  |
 | Read console                | React displays bounded Java action, evidence, lineage, and policy projections over loopback.                                                                                                                                                                                                                                                                                                                                                                                                                                                  | It cannot authorize, approve, execute, or mutate policy. It is not remotely authenticated or tenant-authorized.                                                                                                                                                                                                                                                         |
 | Downstream targets          | Deterministic, stateful AWS/Jira simulators support the numbered scenarios.                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | No real AWS/Jira SDK, cloud credential, or production side-effect route is present.                                                                                                                                                                                                                                                                                     |
@@ -186,6 +187,27 @@ redacted fail-closed errors, clean SIGTERM shutdown with port release, commit-on
 cache invalidation, exact file/JAR inventories and repeated staging stability.
 See [ADR 0040](../architecture/0040-source-free-simulator-approval-distribution.md) and
 the [distribution runbook](../runbooks/simulator-approval-distribution.md).
+
+### Loopback container install profile foundation
+
+`deploy/container/compose.yaml` assembles the same source-free Java/React archive
+with digest-pinned PostgreSQL 16 for a Linux Docker Engine host. Application and
+database use host networking without published ports and retain their exact
+`127.0.0.1` binds. The app runs non-root with a read-only root filesystem, no
+capabilities and a read-only private configuration volume. A separate one-shot
+setup container copies only named private files and refuses changed retained
+keys/secrets. Setup, offline check, empty-only initialization and run remain
+explicit operator steps.
+
+The approval listener now exposes bounded local `/health` and `/ready` documents.
+Readiness validates the exact PostgreSQL schema and requires non-quarantined
+recovery state; it does not contact or qualify an IdP. The container qualification
+generates keys/secrets at runtime, verifies source/build-tool exclusion, Compose
+hardening, React serving, loopback-only sockets, no remote bind and database-outage
+readiness behavior. No target is invoked. See [ADR 0062](../architecture/0062-loopback-container-install-profile.md)
+and the [container runbook](../runbooks/container-install-profile.md). Docker
+Desktop, bridge/public ingress, TLS/reverse proxy, sender constraint, shared
+abuse state, external IdP compatibility and production readiness remain target work.
 
 - `pnpm demo` starts the combined loopback Java backend and read-only React
   console. [Scenarios 0–11](../demo-scenarios/README.md) cover source proof,
