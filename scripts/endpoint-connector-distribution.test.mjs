@@ -162,29 +162,36 @@ export async function gracefulTerminate(
     });
   }
 
-  // 1. Graceful SIGTERM
+  // 1. Graceful SIGTERM. Delivery diagnostics use fixed phase categories only;
+  // kill-failure error text is never embedded in public error messages.
   let termSent = false;
-  let termError = null;
+  let termPhase = "SKIPPED";
   try {
-    termSent = proc.kill ? Boolean(proc.kill("SIGTERM")) : false;
-  } catch (err) {
-    termError = err;
+    if (proc.kill) {
+      termSent = Boolean(proc.kill("SIGTERM"));
+      termPhase = termSent ? "DELIVERED" : "REJECTED";
+    }
+  } catch {
+    termPhase = "FAILED";
   }
 
   let exited = await waitForExit(gracefulTimeout);
 
   // 2. Escalation to SIGKILL if exit not confirmed
   let killSent = false;
-  let killError = null;
+  let killPhase = "SKIPPED";
   if (!exited && !isExited()) {
     const elapsedMs = Number(
       (process.hrtime.bigint() - startNano) / 1_000_000n,
     );
     const remainingMs = Math.max(25, boundedTimeout - elapsedMs);
     try {
-      killSent = proc.kill ? Boolean(proc.kill("SIGKILL")) : false;
-    } catch (err) {
-      killError = err;
+      if (proc.kill) {
+        killSent = Boolean(proc.kill("SIGKILL"));
+        killPhase = killSent ? "DELIVERED" : "REJECTED";
+      }
+    } catch {
+      killPhase = "FAILED";
     }
     exited = await waitForExit(remainingMs);
   }
@@ -192,7 +199,7 @@ export async function gracefulTerminate(
   const confirmed = exited || isExited();
   if (!confirmed) {
     const cleanupErr = new Error(
-      `[ERR_CLEANUP_UNCONFIRMED] Failed to confirm exit of child process "${name}" [pid: ${proc.pid ?? "unknown"}] within ${timeoutMs}ms (termSent: ${termSent}, killSent: ${killSent}${termError ? `, termError: ${termError.message}` : ""}${killError ? `, killError: ${killError.message}` : ""})`,
+      `[ERR_CLEANUP_UNCONFIRMED] Failed to confirm exit of child process "${name}" [pid: ${proc.pid ?? "unknown"}] within ${timeoutMs}ms (termSent: ${termSent}, termPhase: ${termPhase}, killSent: ${killSent}, killPhase: ${killPhase})`,
     );
     cleanupErr.code = "ERR_CLEANUP_UNCONFIRMED";
     cleanupErr.name = "CleanupUnconfirmedError";
@@ -1986,6 +1993,13 @@ test("fixture failure bounds and graceful termination: silent child, early exit,
         err.message.includes("pid: 99901"),
         `Error must include bounded PID metadata: ${err.message}`,
       );
+      assert.ok(
+        err.message.includes("termSent: false") &&
+          err.message.includes("termPhase: REJECTED") &&
+          err.message.includes("killSent: false") &&
+          err.message.includes("killPhase: REJECTED"),
+        `Error must carry fixed safe phase categories: ${err.message}`,
+      );
       return true;
     },
     "Model with kill=false and no exit must reject with ERR_CLEANUP_UNCONFIRMED",
@@ -2018,6 +2032,20 @@ test("fixture failure bounds and graceful termination: silent child, early exit,
       assert.ok(
         err.message.includes("[ERR_CLEANUP_UNCONFIRMED]"),
         `Error must contain stable code: ${err.message}`,
+      );
+      assert.ok(
+        err.message.includes("termPhase: FAILED") &&
+          err.message.includes("killPhase: FAILED"),
+        `Error must carry fixed safe phase categories: ${err.message}`,
+      );
+      assert.ok(
+        !err.message.includes("simulated ESRCH"),
+        "Kill error text must never be embedded in public cleanup diagnostics",
+      );
+      assert.equal(
+        err.cause,
+        undefined,
+        "Cleanup error must not attach a raw kill-error cause",
       );
       return true;
     },
@@ -2404,6 +2432,168 @@ test("fixture failure bounds and graceful termination: silent child, early exit,
   );
 });
 
+test("unconfirmed cleanup diagnostics expose only fixed safe phase categories and never kill-error text", async () => {
+  // Synthetic kill-throw models; these prove diagnostic hygiene, not OS unkillability.
+  const killCanaryPrimaryAbsent =
+    "CLEANUP_KILL_ERROR_CANARY_PRIMARY_ABSENT_1234567890";
+  const modelThrowPrimaryAbsent = new EventEmitter();
+  modelThrowPrimaryAbsent.exitCode = null;
+  modelThrowPrimaryAbsent.signalCode = null;
+  modelThrowPrimaryAbsent.pid = 99906;
+  modelThrowPrimaryAbsent.kill = () => {
+    throw new Error(`internal delivery fault: ${killCanaryPrimaryAbsent}`);
+  };
+
+  await assert.rejects(
+    gracefulTerminate(modelThrowPrimaryAbsent, "modelThrowPrimaryAbsent", 100),
+    (err) => {
+      assert.equal(err.code, "ERR_CLEANUP_UNCONFIRMED");
+      assert.ok(
+        !err.message.includes(killCanaryPrimaryAbsent),
+        "Unconfirmed cleanup message must not embed kill-error text (primary absent)",
+      );
+      assert.ok(
+        !err.stack.includes(killCanaryPrimaryAbsent),
+        "Unconfirmed cleanup stack must not embed kill-error text (primary absent)",
+      );
+      assert.equal(
+        err.cause,
+        undefined,
+        "Cleanup error must not attach a raw kill-error cause",
+      );
+      assert.ok(
+        err.message.includes("termSent: false") &&
+          err.message.includes("termPhase: FAILED") &&
+          err.message.includes("killSent: false") &&
+          err.message.includes("killPhase: FAILED"),
+        `Error must carry fixed safe phase categories: ${err.message}`,
+      );
+      return true;
+    },
+    "Throwing kill with primary absent must reject canary-free with fixed phases",
+  );
+  assert.equal(
+    modelThrowPrimaryAbsent.listenerCount("exit"),
+    0,
+    "Exit listener must be cleaned up on canary rejection (primary absent)",
+  );
+  assert.equal(
+    modelThrowPrimaryAbsent.listenerCount("close"),
+    0,
+    "Close listener must be cleaned up on canary rejection (primary absent)",
+  );
+
+  const killCanaryPrimaryPresent =
+    "CLEANUP_KILL_ERROR_CANARY_PRIMARY_PRESENT_0987654321";
+  const primaryFailure = new Error("primary test assertion failure");
+  const modelThrowPrimaryPresent = new EventEmitter();
+  modelThrowPrimaryPresent.exitCode = null;
+  modelThrowPrimaryPresent.signalCode = null;
+  modelThrowPrimaryPresent.pid = 99907;
+  modelThrowPrimaryPresent.kill = () => {
+    throw new Error(`internal delivery fault: ${killCanaryPrimaryPresent}`);
+  };
+
+  await assert.rejects(
+    gracefulTerminate(
+      modelThrowPrimaryPresent,
+      "modelThrowPrimaryPresent",
+      100,
+      primaryFailure,
+    ),
+    (err) => {
+      assert.equal(err, primaryFailure, "Must rethrow primary error");
+      const cleanupErr = err.suppressed?.[0] || err.cause;
+      assert.ok(
+        cleanupErr,
+        "Cleanup error must stay attached to the primary error",
+      );
+      assert.equal(cleanupErr.code, "ERR_CLEANUP_UNCONFIRMED");
+      const publicText = `${err.message}\n${err.stack}\n${cleanupErr.message}\n${cleanupErr.stack}`;
+      assert.ok(
+        !publicText.includes(killCanaryPrimaryPresent),
+        "Primary-preserved diagnostics must not embed kill-error text",
+      );
+      assert.ok(
+        cleanupErr.message.includes("termPhase: FAILED") &&
+          cleanupErr.message.includes("killPhase: FAILED"),
+        `Attached cleanup error must carry fixed safe phase categories: ${cleanupErr.message}`,
+      );
+      return true;
+    },
+    "Throwing kill with primary present must preserve primary and attach canary-free cleanup error",
+  );
+  assert.equal(
+    modelThrowPrimaryPresent.listenerCount("exit"),
+    0,
+    "Exit listener must be cleaned up on canary rejection (primary present)",
+  );
+  assert.equal(
+    modelThrowPrimaryPresent.listenerCount("close"),
+    0,
+    "Close listener must be cleaned up on canary rejection (primary present)",
+  );
+
+  const modelTermDeliveredKillRejected = new EventEmitter();
+  modelTermDeliveredKillRejected.exitCode = null;
+  modelTermDeliveredKillRejected.signalCode = null;
+  modelTermDeliveredKillRejected.pid = 99908;
+  modelTermDeliveredKillRejected.kill = (sig) => sig === "SIGTERM";
+
+  await assert.rejects(
+    gracefulTerminate(
+      modelTermDeliveredKillRejected,
+      "modelTermDeliveredKillRejected",
+      100,
+    ),
+    (err) => {
+      assert.equal(err.code, "ERR_CLEANUP_UNCONFIRMED");
+      assert.ok(
+        err.message.includes("termSent: true") &&
+          err.message.includes("termPhase: DELIVERED") &&
+          err.message.includes("killSent: false") &&
+          err.message.includes("killPhase: REJECTED"),
+        `Escalation path must carry per-phase categories: ${err.message}`,
+      );
+      return true;
+    },
+    "Delivered TERM with rejected KILL escalation must carry per-phase categories",
+  );
+  assert.equal(
+    modelTermDeliveredKillRejected.listenerCount("exit"),
+    0,
+    "Exit listener must be cleaned up on escalation rejection",
+  );
+  assert.equal(
+    modelTermDeliveredKillRejected.listenerCount("close"),
+    0,
+    "Close listener must be cleaned up on escalation rejection",
+  );
+
+  const modelCooperative = new EventEmitter();
+  modelCooperative.exitCode = null;
+  modelCooperative.signalCode = null;
+  modelCooperative.pid = 99909;
+  modelCooperative.kill = (sig) => {
+    setTimeout(() => {
+      modelCooperative.signalCode = sig;
+      modelCooperative.emit("exit", null, sig);
+    }, 10);
+    return true;
+  };
+  await gracefulTerminate(modelCooperative, "modelCooperative", 500);
+  assert.equal(
+    modelCooperative.listenerCount("exit"),
+    0,
+    "Exit listener must be cleaned up on cooperative success",
+  );
+  assert.equal(
+    modelCooperative.listenerCount("close"),
+    0,
+    "Close listener must be cleaned up on cooperative success",
+  );
+});
+
 test("process parentage verification helper detects PPID and command mismatches", () => {
   function verifyParentage(psOutput, expectedPpid) {
     if (!psOutput) throw new Error("OS inspection unavailable");
@@ -2667,5 +2857,304 @@ test("isolated temporary repo proves ordinary Gradle target cannot be UP-TO-DATE
   assert.ok(
     sensOut.includes("0000000000000000000000000000000000000000"),
     `Sensitivity control failure must reflect forced expected commit:\n${sensOut}`,
+  );
+});
+
+test("adapters-http Gradle wiring fails closed on unhealthy git provenance and forwards only validated output", (t) => {
+  const wrapperDir = mkdtempSync(join(tmpdir(), "tp-git-wrapper-"));
+  t.after(() => rmSync(wrapperDir, { recursive: true, force: true }));
+
+  const writeGitWrapper = (body) => {
+    const wrapper = join(wrapperDir, "git");
+    writeFileSync(wrapper, `#!/bin/sh\n${body}\n`);
+    chmodSync(wrapper, 0o755);
+  };
+
+  const gradleArgs = [
+    "-p",
+    join(repoRoot, "java"),
+    "--no-daemon",
+    ":adapters-http:printEndpointConnectorExpectedHead",
+  ];
+  const runWiredPrint = (wrapperBody, { timeoutMs = 150_000 } = {}) => {
+    const env = { ...process.env };
+    if (wrapperBody !== null) {
+      writeGitWrapper(wrapperBody);
+      env.PATH = `${wrapperDir}:${env.PATH ?? ""}`;
+    }
+    return spawnSync(join(repoRoot, "java/gradlew"), gradleArgs, {
+      cwd: repoRoot,
+      encoding: "utf8",
+      timeout: timeoutMs,
+      env,
+    });
+  };
+
+  const printedHead = (result, label) => {
+    assert.equal(
+      result.status,
+      0,
+      `${label} must succeed:\n${result.stdout}\n${result.stderr}`,
+    );
+    const line = result.stdout
+      .split("\n")
+      .find((candidate) =>
+        candidate.startsWith("TRACEPERMIT_ENDPOINT_CONNECTOR_EXPECTED_HEAD="),
+      );
+    assert.ok(
+      line,
+      `Wiring must print the resolved expected head (${label}):\n${result.stdout}`,
+    );
+    return line.split("=")[1];
+  };
+
+  // Positive control 1: healthy real git resolves exactly the current HEAD.
+  const actualHead = command("git", ["rev-parse", "HEAD"], repoRoot);
+  assert.equal(
+    printedHead(runWiredPrint(null), "healthy real git"),
+    actualHead,
+    "Wiring must forward exactly the validated git HEAD",
+  );
+
+  // Positive control 2: wrapper forwarding to the real git yields the same value,
+  // proving the wiring consults git via PATH at the provider boundary. The wrapper
+  // embeds the absolute real-git path resolved before any PATH poisoning; a
+  // `command -v git` self-reference would loop instead of forwarding.
+  const realGitPath = command("sh", ["-c", "command -v git"], repoRoot);
+  assert.equal(
+    printedHead(
+      runWiredPrint(`exec '${realGitPath}' rev-parse HEAD`),
+      "wrapper-forwarded git",
+    ),
+    actualHead,
+    "PATH-forwarded git output must reach the injected value unchanged",
+  );
+
+  const staleSha = "1234567890abcdef1234567890abcdef12345678";
+
+  // Exploit sensitivity: a private git wrapper printing a valid stale SHA then exiting 73
+  // must fail configuration closed; the stale value must never be authorized or printed.
+  const exploit = runWiredPrint(`echo '${staleSha}'; exit 73`);
+  assert.notEqual(
+    exploit.status,
+    0,
+    "Non-zero git probe exit (73) with a stale valid-format SHA must fail the build",
+  );
+  const exploitOut = `${exploit.stdout}\n${exploit.stderr}`;
+  assert.match(
+    exploitOut,
+    /non-zero exit value 73/,
+    `Failure must identify the failed git probe exit code:\n${exploitOut}`,
+  );
+  assert.ok(
+    !exploitOut.includes("TRACEPERMIT_ENDPOINT_CONNECTOR_EXPECTED_HEAD="),
+    "No expected-head value may be printed when the git probe fails",
+  );
+
+  // Empty probe output must fail closed (never authorize an empty expectation).
+  const empty = runWiredPrint("exit 0");
+  assert.notEqual(
+    empty.status,
+    0,
+    "Empty git probe output must fail the build",
+  );
+  assert.match(
+    empty.stderr + empty.stdout,
+    /provenance is unavailable, ambiguous, or malformed/,
+    `Empty output must produce the fixed fail-closed message:\n${empty.stdout}\n${empty.stderr}`,
+  );
+
+  // Malformed probe output must fail closed.
+  const malformed = runWiredPrint("echo 'not-a-commit-value'; exit 0");
+  assert.notEqual(
+    malformed.status,
+    0,
+    "Malformed git probe output must fail the build",
+  );
+  assert.match(
+    malformed.stderr + malformed.stdout,
+    /provenance is unavailable, ambiguous, or malformed/,
+    `Malformed output must produce the fixed fail-closed message:\n${malformed.stdout}\n${malformed.stderr}`,
+  );
+
+  // Ambiguous multi-line probe output must fail closed.
+  const ambiguous = runWiredPrint(
+    `echo '${staleSha}'; echo 'warning: ambiguous refname'; exit 0`,
+  );
+  assert.notEqual(
+    ambiguous.status,
+    0,
+    "Ambiguous git probe output must fail the build",
+  );
+  assert.match(
+    ambiguous.stderr + ambiguous.stdout,
+    /provenance is unavailable, ambiguous, or malformed/,
+    `Ambiguous output must produce the fixed fail-closed message:\n${ambiguous.stdout}\n${ambiguous.stderr}`,
+  );
+
+  // Unusable git models missing provenance tooling and must fail closed. At the
+  // supervising-perl boundary a failed exec (tooling absent) exits 127, so an
+  // executable stub exiting 127 exercises the same fail-closed exit path. A
+  // non-executable PATH entry is not a faithful model here: execvp skips it and
+  // resolves real git further down PATH, which returns true provenance.
+  const missing = runWiredPrint("exit 127");
+  assert.notEqual(
+    missing.status,
+    0,
+    "Unusable git probe (models missing provenance tooling, exit 127) must fail the build",
+  );
+
+  // Stalled probe: the build wiring's supervising perl bounds the child (kills it at
+  // the 10s deadline from the parent process, which never execs) and this test bounds
+  // the parent (spawnSync timeout). The wrapper models a stalled git; this proves the
+  // finite-deadline fail-closed behavior, not real git behavior.
+  const stalledStart = Date.now();
+  const stalled = runWiredPrint("sleep 120", { timeoutMs: 150_000 });
+  const stalledElapsed = Date.now() - stalledStart;
+  assert.notEqual(stalled.status, 0, "Stalled git probe must fail closed");
+  assert.match(
+    stalled.stderr + stalled.stdout,
+    /non-zero exit value 124/,
+    `Stalled probe must be killed by the supervisor at the finite deadline:\n${stalled.stdout}\n${stalled.stderr}`,
+  );
+  assert.ok(
+    stalledElapsed < 75_000,
+    `Stalled probe must hit the finite deadline promptly; elapsed ${stalledElapsed}ms`,
+  );
+
+  // The deadline must cover complete output collection, not just git's own exit.
+  // A healthy git exiting 0 while a descendant inherits the probe's stdout and
+  // stderr and outlives it must not authorize provenance: the supervisor cannot
+  // prove collection is complete, so it fails closed at the finite deadline
+  // (intentional red control proving bounded collection, not real git behavior).
+  const collectionStart = Date.now();
+  const collection = runWiredPrint(
+    `${realGitPath} rev-parse HEAD; sleep 120 &\nexit 0`,
+    { timeoutMs: 150_000 },
+  );
+  const collectionElapsed = Date.now() - collectionStart;
+  assert.notEqual(
+    collection.status,
+    0,
+    "Exit-0 probe with a lingering inherited-pipe descendant must fail closed",
+  );
+  assert.match(
+    collection.stderr + collection.stdout,
+    /non-zero exit value 124/,
+    `Collection-bounded supervisor must kill the whole probe group at the deadline:\n${collection.stdout}\n${collection.stderr}`,
+  );
+  assert.ok(
+    !(collection.stderr + collection.stdout).includes(
+      "TRACEPERMIT_ENDPOINT_CONNECTOR_EXPECTED_HEAD=",
+    ),
+    "No expected-head value may be printed when collection cannot be proven complete",
+  );
+  assert.ok(
+    collectionElapsed < 75_000,
+    `Collection deadline must bound a lingering descendant; elapsed ${collectionElapsed}ms`,
+  );
+
+  // A sabotaged git (valid-format stale SHA, exit 73) that leaves a descendant
+  // holding the inherited streams must still fail closed and promptly: the
+  // supervisor kills the whole group and relays nothing on a non-zero exit.
+  const sabotageStart = Date.now();
+  const sabotage = runWiredPrint(`echo '${staleSha}'; sleep 120 &\nexit 73`, {
+    timeoutMs: 150_000,
+  });
+  const sabotageElapsed = Date.now() - sabotageStart;
+  assert.notEqual(
+    sabotage.status,
+    0,
+    "Exit-73 probe with a lingering inherited-pipe descendant must fail closed",
+  );
+  assert.match(
+    sabotage.stderr + sabotage.stdout,
+    /non-zero exit value 73/,
+    `Non-zero exit must fail promptly even with a lingering descendant:\n${sabotage.stdout}\n${sabotage.stderr}`,
+  );
+  assert.ok(
+    !(sabotage.stderr + sabotage.stdout).includes(
+      "TRACEPERMIT_ENDPOINT_CONNECTOR_EXPECTED_HEAD=",
+    ),
+    "No expected-head value may be printed when the git probe fails",
+  );
+  assert.ok(
+    sabotageElapsed < 75_000,
+    `Exit-73 with a lingering descendant must fail promptly; elapsed ${sabotageElapsed}ms`,
+  );
+});
+
+test("adapters-http provenance wiring re-resolves git head after commit-only advance in isolated clone", (t) => {
+  const tempRepo = mkdtempSync(join(tmpdir(), "tp-adapters-provenance-clone-"));
+  t.after(() => rmSync(tempRepo, { recursive: true, force: true }));
+  command("git", ["clone", "-s", "-l", repoRoot, tempRepo], repoRoot);
+
+  // The clone carries committed HEAD state only; overlay the live wiring under
+  // qualification so the test exercises the current build script, not HEAD's.
+  copyFileSync(
+    join(repoRoot, "java/adapters-http/build.gradle.kts"),
+    join(tempRepo, "java/adapters-http/build.gradle.kts"),
+  );
+
+  const printWiredHead = () =>
+    spawnSync(
+      join(tempRepo, "java/gradlew"),
+      [
+        "-p",
+        join(tempRepo, "java"),
+        "--no-daemon",
+        ":adapters-http:printEndpointConnectorExpectedHead",
+      ],
+      { cwd: tempRepo, encoding: "utf8", timeout: 180_000 },
+    );
+  const printedHead = (result, label) => {
+    assert.equal(
+      result.status,
+      0,
+      `${label} must succeed:\n${result.stdout}\n${result.stderr}`,
+    );
+    const line = result.stdout
+      .split("\n")
+      .find((candidate) =>
+        candidate.startsWith("TRACEPERMIT_ENDPOINT_CONNECTOR_EXPECTED_HEAD="),
+      );
+    assert.ok(
+      line,
+      `Wiring must print the resolved expected head (${label}):\n${result.stdout}`,
+    );
+    return line.split("=")[1];
+  };
+
+  const runA = printWiredHead();
+  const headA = printedHead(runA, "commit A");
+  assert.equal(
+    headA,
+    command("git", ["rev-parse", "HEAD"], tempRepo),
+    "Wiring must resolve the isolated clone's HEAD at commit A",
+  );
+
+  command(
+    "git",
+    [
+      "-c",
+      "user.name=Test Runner",
+      "-c",
+      "user.email=test@example.com",
+      "commit",
+      "--allow-empty",
+      "--quiet",
+      "-m",
+      "Commit B advancing adapters-http provenance wiring",
+    ],
+    tempRepo,
+  );
+  const headB = command("git", ["rev-parse", "HEAD"], tempRepo);
+  assert.notEqual(headA, headB);
+
+  const resolvedB = printedHead(printWiredHead(), "commit B");
+  assert.equal(
+    resolvedB,
+    headB,
+    "Commit-only advance must re-resolve provenance (configuration and task caches invalidated)",
   );
 });
