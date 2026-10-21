@@ -45,14 +45,26 @@ val endpointDistributionArchive = layout.projectDirectory.file(
 val repoRootDir = rootDir.parentFile
 
 // Installed-archive provenance is resolved at the real provider boundary and must fail
-// closed: the git probe is bounded by a finite deadline (the POSIX alarm survives exec
-// and kills a stalled probe), a non-zero probe exit — including missing or refused git —
-// fails configuration, and only a single full-match hex commit authorizes an
-// expected-head value. The exec-backed provider remains tracked by Gradle's
+// closed. The git probe runs under a supervising perl process that forks, execs git in
+// the child, and bounds it with a finite deadline: the child leads its own process
+// group, and on timeout the supervisor SIGKILLs that whole group and exits 124, so
+// grandchildren holding the output pipe cannot delay failure detection past the
+// deadline. A failed exec (missing provenance tooling) exits 127, and any non-zero
+// probe exit — including a refused or sabotaged git — fails configuration. The
+// deadline lives in the parent, which never execs, so it does not depend on alarm
+// semantics surviving exec on the host. Only a single full-match hex commit authorizes
+// an expected-head value. The exec-backed provider remains tracked by Gradle's
 // configuration cache, so a commit-only change still invalidates caches.
 val gitHeadProvider = providers.exec {
   workingDir(repoRootDir)
-  commandLine("perl", "-e", "alarm 10; exec @ARGV or exit 127", "git", "rev-parse", "HEAD")
+  commandLine(
+    "perl",
+    "-e",
+    "my \$pid = fork(); die \"provenance probe fork failed\" unless defined \$pid; if (\$pid == 0) { setpgrp(0, 0) or die \"provenance probe setpgrp failed\"; exec(@ARGV) or exit 127; } \$SIG{ALRM} = sub { kill \"KILL\", -\$pid; waitpid(\$pid, 0); exit 124; }; alarm 10; waitpid(\$pid, 0); alarm 0; my \$status = \$?; exit((\$status & 127) ? 128 + (\$status & 127) : (\$status >> 8));",
+    "git",
+    "rev-parse",
+    "HEAD",
+  )
 }.standardOutput.asText.map { output ->
   val commit = output.trim()
   if (!commit.matches(Regex("[0-9a-f]{40}|[0-9a-f]{64}"))) {

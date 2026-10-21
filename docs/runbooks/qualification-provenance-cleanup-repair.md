@@ -34,10 +34,15 @@ property is unset, which never happens under the Gradle wiring.
 
 The provider now:
 
-- bounds the git probe with a finite deadline: `perl -e 'alarm 10; exec @ARGV
-or exit 127' git rev-parse HEAD`. The POSIX alarm survives `exec`, so a
-  stalled probe is killed at 10 seconds (exit 142); a failed `exec` (missing
-  provenance tooling) exits 127;
+- bounds the git probe with a finite deadline: a supervising `perl` process
+  forks, execs `git rev-parse HEAD` in the child, and enforces a 10-second
+  bound from the parent (`alarm` + process-group `SIGKILL`), exiting `124` on
+  timeout. The child leads its own process group, so the timeout reaps the
+  entire probe tree; without the group kill, an orphaned grandchild holding
+  the output pipe delays failure detection well past the deadline (observed
+  120 s with a nested `sleep` model before the group kill was added). The
+  parent never execs, so the deadline does not depend on alarm-across-exec
+  behavior; a failed `exec` (missing provenance tooling) exits `127`;
 - drops `isIgnoreExitValue`, so any non-zero probe exit — including exit 73 —
   fails configuration (Gradle `ExecException` with the exit value);
 - accepts only a single full-match hex commit (`[0-9a-f]{40}` or
@@ -69,7 +74,12 @@ In `scripts/endpoint-connector-distribution.test.mjs`:
   printed.
 - Empty, malformed, and ambiguous multi-line probe output each fail the build
   with the fixed fail-closed message.
-- Unrunnable git (models missing provenance tooling) fails the build.
+- Unusable git (executable stub exiting `127`, modeling missing provenance
+  tooling) fails the build. At the supervising-perl boundary a failed `exec`
+  also exits `127`, so the wired control exercises the same fail-closed exit
+  path. A non-executable `git` PATH entry is not a faithful model here:
+  `execvp` skips it and resolves real git further down `PATH`, which returns
+  true provenance and legitimately succeeds.
 - Stalled probe (`sleep 120` wrapper) fails closed at the finite deadline:
   the child is killed by the build-side alarm and the test bounds the parent
   (`spawnSync` timeout, elapsed assertion). The wrapper models a stalled git;
@@ -154,8 +164,11 @@ java/gradlew -p java --no-daemon :adapters-http:test --tests "io.tracepermit.ada
   migration/dependency, or security-rule behavior changed.
 - Strict tests and documentation were not weakened; the stale-archive strict
   qualification and its existing sensitivity controls are unchanged.
-- The git probe depends on `/usr/bin/perl` (POSIX alarm across `exec`); if the
-  alarm host is absent the probe fails closed (exit 127), never open.
+- The git probe depends on `/usr/bin/perl` as a supervising parent that forks
+  the child and bounds the probe's whole process group from the parent; the
+  parent never execs, so the deadline does not rely on alarm-across-exec
+  behavior (verified absent on the qualification host). If perl is absent the
+  probe fails closed (non-zero), never open.
 - The bounded probe does not provide production code-signing attestation or
   external artifact custody guarantees; OPS-002 scope remains deterministic
   simulator qualification provenance.

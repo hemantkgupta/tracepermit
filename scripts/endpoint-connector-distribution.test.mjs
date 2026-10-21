@@ -2864,10 +2864,10 @@ test("adapters-http Gradle wiring fails closed on unhealthy git provenance and f
   const wrapperDir = mkdtempSync(join(tmpdir(), "tp-git-wrapper-"));
   t.after(() => rmSync(wrapperDir, { recursive: true, force: true }));
 
-  const writeGitWrapper = (body, executable = true) => {
+  const writeGitWrapper = (body) => {
     const wrapper = join(wrapperDir, "git");
     writeFileSync(wrapper, `#!/bin/sh\n${body}\n`);
-    chmodSync(wrapper, executable ? 0o755 : 0o644);
+    chmodSync(wrapper, 0o755);
   };
 
   const gradleArgs = [
@@ -2876,13 +2876,10 @@ test("adapters-http Gradle wiring fails closed on unhealthy git provenance and f
     "--no-daemon",
     ":adapters-http:printEndpointConnectorExpectedHead",
   ];
-  const runWiredPrint = (
-    wrapperBody,
-    { executable = true, timeoutMs = 150_000 } = {},
-  ) => {
+  const runWiredPrint = (wrapperBody, { timeoutMs = 150_000 } = {}) => {
     const env = { ...process.env };
     if (wrapperBody !== null) {
-      writeGitWrapper(wrapperBody, executable);
+      writeGitWrapper(wrapperBody);
       env.PATH = `${wrapperDir}:${env.PATH ?? ""}`;
     }
     return spawnSync(join(repoRoot, "java/gradlew"), gradleArgs, {
@@ -2920,10 +2917,13 @@ test("adapters-http Gradle wiring fails closed on unhealthy git provenance and f
   );
 
   // Positive control 2: wrapper forwarding to the real git yields the same value,
-  // proving the wiring consults git via PATH at the provider boundary.
+  // proving the wiring consults git via PATH at the provider boundary. The wrapper
+  // embeds the absolute real-git path resolved before any PATH poisoning; a
+  // `command -v git` self-reference would loop instead of forwarding.
+  const realGitPath = command("sh", ["-c", "command -v git"], repoRoot);
   assert.equal(
     printedHead(
-      runWiredPrint('exec "$(command -v git)" rev-parse HEAD'),
+      runWiredPrint(`exec '${realGitPath}' rev-parse HEAD`),
       "wrapper-forwarded git",
     ),
     actualHead,
@@ -2992,15 +2992,20 @@ test("adapters-http Gradle wiring fails closed on unhealthy git provenance and f
     `Ambiguous output must produce the fixed fail-closed message:\n${ambiguous.stdout}\n${ambiguous.stderr}`,
   );
 
-  // Unrunnable git models missing provenance tooling and must fail closed.
-  const missing = runWiredPrint("# probe never runs", { executable: false });
+  // Unusable git models missing provenance tooling and must fail closed. At the
+  // supervising-perl boundary a failed exec (tooling absent) exits 127, so an
+  // executable stub exiting 127 exercises the same fail-closed exit path. A
+  // non-executable PATH entry is not a faithful model here: execvp skips it and
+  // resolves real git further down PATH, which returns true provenance.
+  const missing = runWiredPrint("exit 127");
   assert.notEqual(
     missing.status,
     0,
-    "Unrunnable git probe (missing provenance tooling) must fail the build",
+    "Unusable git probe (models missing provenance tooling, exit 127) must fail the build",
   );
 
-  // Stalled probe: the build wiring bounds the child (POSIX alarm) and this test bounds
+  // Stalled probe: the build wiring's supervising perl bounds the child (kills it at
+  // the 10s deadline from the parent process, which never execs) and this test bounds
   // the parent (spawnSync timeout). The wrapper models a stalled git; this proves the
   // finite-deadline fail-closed behavior, not real git behavior.
   const stalledStart = Date.now();
@@ -3009,8 +3014,8 @@ test("adapters-http Gradle wiring fails closed on unhealthy git provenance and f
   assert.notEqual(stalled.status, 0, "Stalled git probe must fail closed");
   assert.match(
     stalled.stderr + stalled.stdout,
-    /non-zero exit value (142|127)/,
-    `Stalled probe must be killed at the finite deadline:\n${stalled.stdout}\n${stalled.stderr}`,
+    /non-zero exit value 124/,
+    `Stalled probe must be killed by the supervisor at the finite deadline:\n${stalled.stdout}\n${stalled.stderr}`,
   );
   assert.ok(
     stalledElapsed < 75_000,
