@@ -67,6 +67,13 @@ OPS-001/004/005 do not turn offline validation or local DB readiness into live
 IdP or production readiness. Auth0 `at+jwt`, callback `iss` and native
 organization interoperability remain pending qualification.
 
+Rejected browser login callbacks SHALL keep the HTTP response generic while
+the local operator process MAY emit one fixed stage and one allowlisted reason.
+That diagnostic MUST NOT include exception text, URLs, identifiers, claims,
+credentials or sensitive payloads; a diagnostic-sink failure MUST NOT change
+the authentication result. These local signals are troubleshooting evidence,
+not an authorization input or a successful IdP qualification.
+
 ## Reliability requirements
 
 | ID      | Requirement                                                                                                                                         |
