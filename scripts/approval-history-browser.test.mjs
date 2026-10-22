@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { chmod, mkdtemp } from "node:fs/promises";
 import { createConnection } from "node:net";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import { chromium } from "playwright";
@@ -217,9 +218,19 @@ test(
     const contexts = [];
     let evidenceDirectory;
     const channel = process.env.TRACEPERMIT_BROWSER_CHANNEL;
+    const executablePath = process.env.TRACEPERMIT_BROWSER_EXECUTABLE;
     assert.ok(
       !channel || channel === "chrome",
       "Only the explicit chrome channel override is supported",
+    );
+    assert.ok(
+      !executablePath ||
+        (isAbsolute(executablePath) && existsSync(executablePath)),
+      "BROWSER_EXECUTABLE_REJECTED",
+    );
+    assert.ok(
+      !(channel && executablePath),
+      "BROWSER_LAUNCH_CONFIGURATION_REJECTED",
     );
     let currentStep = "prerequisites";
     let failedBeforeCleanup = false;
@@ -229,6 +240,8 @@ test(
       try {
         browser = await chromium.launch({
           channel,
+          executablePath,
+          env: fixtureEnvironment(),
           headless: true,
           timeout: 15_000,
         });

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { access } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import { chromium } from "playwright";
@@ -8,6 +8,7 @@ import { preview } from "../site/node_modules/vite/dist/node/index.js";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const screenshots = process.env.TRACEPERMIT_SITE_QA_OUTPUT;
+const browserExecutable = process.env.TRACEPERMIT_SITE_BROWSER_EXECUTABLE;
 
 async function within(promise, milliseconds) {
   let timer;
@@ -31,6 +32,14 @@ test(
   { timeout: 120_000 },
   async (t) => {
     await access(join(root, "site/.vitepress/dist/index.html"));
+    if (browserExecutable) {
+      assert.ok(
+        isAbsolute(browserExecutable),
+        "Explicit browser path must be absolute",
+      );
+      assert.equal(process.env.TRACEPERMIT_SITE_BROWSER_CHANNEL, undefined);
+      await access(browserExecutable);
+    }
     let server;
     let browser;
     try {
@@ -46,6 +55,7 @@ test(
       const origin = `http://127.0.0.1:${address.port}`;
       browser = await chromium.launch({
         headless: true,
+        ...(browserExecutable ? { executablePath: browserExecutable } : {}),
         ...(process.env.TRACEPERMIT_SITE_BROWSER_CHANNEL
           ? { channel: process.env.TRACEPERMIT_SITE_BROWSER_CHANNEL }
           : {}),
@@ -186,6 +196,78 @@ test(
           },
         );
       }
+
+      await t.test(
+        "fresh Mac renders all three paths and exact operator commands at phone and desktop widths",
+        async () => {
+          for (const width of [390, 1440]) {
+            await page.setViewportSize({ width, height: 1000 });
+            await page.goto(`${origin}/guide/fresh-macbook-evaluation`, {
+              waitUntil: "networkidle",
+            });
+            assert.match(await page.title(), /Fresh MacBook evaluation/);
+            const document = page.locator(".vp-doc");
+            for (const name of [
+              "Path A — source-based synthetic evaluation",
+              "Path B — source-free operator installation",
+              "Path C — live external-IdP and manual qualification",
+              "What to report back",
+            ]) {
+              const heading = document.getByRole("heading", {
+                name: new RegExp(`^${name}`),
+              });
+              await heading.scrollIntoViewIfNeeded();
+              assert.equal(await heading.isVisible(), true);
+            }
+            const text = await document.innerText();
+            for (const fact of [
+              'corepack enable --install-directory "$HOME/.local/bin" pnpm',
+              "pnpm install --frozen-lockfile",
+              "./bin/tracepermit-simulator-approval --check",
+              "./bin/tracepermit-simulator-approval --init-db",
+              "./bin/tracepermit-simulator-approval --run",
+              "verified-empty dedicated schema",
+              "PORT_RELEASED",
+              "not a signature",
+              "UNCLASSIFIED_PRIVATE_ERROR",
+            ])
+              assert.ok(
+                text.includes(fact),
+                `Missing rendered instruction: ${fact}`,
+              );
+            assert.match(text, /Day 3 remains\s+pending/);
+            assert.equal(await page.locator("vite-error-overlay").count(), 0);
+            assert.equal(
+              await page.evaluate(
+                () => document.documentElement.scrollWidth <= innerWidth,
+              ),
+              true,
+            );
+            // The canonical operator deep link retains its built heading target.
+            const operatorHeading = document.getByRole("heading", {
+              name: /^Path B — source-free operator installation/,
+            });
+            const operatorAnchor = await operatorHeading
+              .locator("a.header-anchor")
+              .getAttribute("href");
+            assert.equal(
+              operatorAnchor,
+              `#${await operatorHeading.getAttribute("id")}`,
+            );
+            await page.goto(
+              `${origin}/guide/fresh-macbook-evaluation${operatorAnchor}`,
+            );
+            assert.equal(decodeURI(new URL(page.url()).hash), operatorAnchor);
+            assert.match(await operatorHeading.innerText(), /^Path B/);
+            await operatorHeading.scrollIntoViewIfNeeded();
+            if (screenshots) {
+              await page.screenshot({
+                path: join(screenshots, `${width}px-fresh-mac-operator.png`),
+              });
+            }
+          }
+        },
+      );
 
       await t.test(
         "home workflow links and approval cards survive reconciliation",

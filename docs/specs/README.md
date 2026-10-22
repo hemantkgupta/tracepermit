@@ -41,8 +41,9 @@ numeric-loopback container install foundation. It is partial TP-MVP-05 evidence,
 not a public-edge, external-IdP or production-readiness claim.
 
 [ADR0063](../architecture/0063-explicit-public-browser-code-pkce.md) adds the
-explicit native/public browser candidate. Synthetic tests do not close the
-[pending live Auth0 gate](../runbooks/auth0-native-oidc-qualification.md).
+explicit native/public browser candidate. Synthetic tests provide the mutation
+matrix; the [2026-10-22 live record](../demo-scenarios/evidence/installed-auth0-approval-2026-10-22.md)
+qualifies one named Auth0/native/same-Mac composition only.
 
 [ADR0064](../architecture/0064-unsigned-approval-review-export.md) adds the
 authenticated per-request metadata export. It is unsigned and intentionally

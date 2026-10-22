@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { spawnSync } from "node:child_process";
 import test from "node:test";
 import {
   generatedFiles,
@@ -283,4 +284,133 @@ test("fresh Mac page includes one canonical checklist with supported scripts and
   }
   assert.ok(guide.includes("source-based fresh-machine evaluation"));
   assert.ok(guide.includes("not** a completed qualification"));
+});
+
+test("fresh Mac commands keep source builds separate from installed lifecycle and match shipped output", async () => {
+  const read = (name) => readFile(path.join(repositoryRoot, name), "utf8");
+  const [guide, main, launcher, build, fixture, configuration] =
+    await Promise.all([
+      read("docs/runbooks/fresh-macbook-evaluation.md"),
+      read(
+        "java/adapters-http/src/main/java/io/tracepermit/adapters/http/SimulatorApprovalMain.java",
+      ),
+      read(
+        "java/adapters-http/src/main/scripts/tracepermit-simulator-approval",
+      ),
+      read("java/adapters-http/build.gradle.kts"),
+      read(
+        "java/adapters-http/src/test/java/io/tracepermit/adapters/http/SimulatorApprovalBrowserFixture.java",
+      ),
+      read("config/simulator-approvals.example.json"),
+    ]);
+  const installed = guide
+    .split("### 4. Check offline, initialize once, then run")[1]
+    .split("## Path C")[0];
+  const commands = [...installed.matchAll(/```bash\n([\s\S]*?)```/g)]
+    .map((match) => match[1])
+    .join("\n");
+  const modes = [
+    ...commands.matchAll(
+      /\.\/bin\/tracepermit-simulator-approval (--[a-z-]+)/g,
+    ),
+  ].map((match) => match[1]);
+  assert.deepEqual(modes, ["--check", "--init-db", "--run"]);
+  for (const mode of modes) {
+    assert.ok(main.includes(`"${mode}"`));
+    assert.ok(launcher.includes(`"${mode}"`));
+  }
+  assert.doesNotMatch(commands, /\b(?:pnpm|node|gradlew|gradle|git)\b/);
+  for (const marker of [
+    "APPROVAL_CONFIGURATION_VALID: offline only; no database, IdP or listener checked.",
+    "APPROVAL_DATABASE_INITIALIZED: fresh simulator schema only; no listener or target started.",
+    "TracePermit simulator approval API listening on http://127.0.0.1:",
+  ]) {
+    assert.ok(main.includes(marker));
+    assert.ok(guide.replaceAll(/\s+/g, " ").includes(marker));
+  }
+  assert.equal(JSON.parse(configuration).browser, undefined);
+  assert.match(guide, /has \*\*no\n?browser object\*\*/);
+  assert.ok(
+    build.includes('archiveBaseName.set("tracepermit-simulator-approval")'),
+  );
+  assert.ok(build.includes('archiveVersion.set("0.1.0")'));
+  assert.ok(build.includes('buildDirectory.dir("distributions")'));
+  assert.ok(build.includes('docsDir.resolve("setup-runbook.md")'));
+  assert.ok(guide.includes("docs/setup-runbook.md"));
+  assert.match(
+    guide,
+    /java\/adapters-http\/build\/distributions\/tracepermit-simulator-approval-0\.1\.0\.tar\.gz/,
+  );
+  assert.ok(build.includes(String.raw`\"schemaVersion\": \"1.2\"`));
+  assert.match(guide, /manifest schema `1\.2`/);
+  assert.ok(fixture.includes('.put("exp", now + 290)'));
+  assert.match(guide, /\*\*290 seconds\*\*/);
+  assert.match(
+    guide,
+    /Existing compatible\ninstallations \*\*skip --init-db\*\*/,
+  );
+  assert.match(guide, /in-memory target is reconstructed on process restart/);
+});
+
+test("fresh Mac documentation retains safe commands, finite observation and private fact-only evidence", async () => {
+  const guide = await readFile(
+    path.join(repositoryRoot, "docs/runbooks/fresh-macbook-evaluation.md"),
+    "utf8",
+  );
+  const blocks = [...guide.matchAll(/```bash\n([\s\S]*?)```/g)].map(
+    (match) => match[1],
+  );
+  for (const block of blocks) {
+    const syntax = spawnSync("bash", ["-n"], {
+      input: block,
+      encoding: "utf8",
+      timeout: 2_000,
+    });
+    assert.equal(
+      syntax.status,
+      0,
+      "Documented Bash must parse without executing it",
+    );
+    assert.doesNotMatch(
+      block,
+      /\bsudo\b|curl[^\n]*\|\s*(?:ba)?sh|--no-frozen-lockfile|\b(?:env|printenv)\s*$/m,
+    );
+    for (const line of block
+      .split("\n")
+      .filter((line) => line.startsWith("curl "))) {
+      assert.match(line, /--connect-timeout 2 --max-time 5/);
+      assert.match(line, /--noproxy '\*'/);
+    }
+  }
+  assert.match(
+    guide,
+    /corepack enable --install-directory "\$HOME\/\.local\/bin" pnpm/,
+  );
+  assert.match(
+    guide,
+    /npm install --global --prefix "\$HOME\/\.local" corepack@0\.34\.6/,
+  );
+  assert.match(guide, /\{1\.\.10\}/);
+  assert.match(guide, /Require `PORT_RELEASED` \*\*and\*\* launcher return/);
+  assert.match(guide, /verified-empty dedicated schema/);
+  assert.match(guide, /\*\*not a signature\*\*/);
+  assert.match(guide, /Day 3 remains\n\*\*pending\*\*/);
+  const record = guide.split("## What to report back")[1];
+  assert.ok(record);
+  const template = record.match(/```text\n([\s\S]*?)```/)[1];
+  assert.ok(template.length < 1_500);
+  assert.doesNotMatch(
+    template,
+    /(?:token|cookie|password|operator JSON|provider ID|subject|callback|serial|email)\s*:/i,
+  );
+  for (const forbidden of [
+    "PKCE material",
+    "provider IDs",
+    "environment dumps",
+    "personal\naccount data",
+  ]) {
+    assert.ok(record.includes(forbidden));
+  }
+  assert.match(record, /Do not attach raw logs/);
+  assert.match(guide, /Path C — live external-IdP and manual qualification/);
 });

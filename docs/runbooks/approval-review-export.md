@@ -4,7 +4,8 @@ This backend adds an unsigned, simulator-only JSON review record for one request
 It is useful for a controlled demo, support review or design-partner evaluation,
 not a compliance certificate or independently verified audit trail.
 
-Requirements: FR-007/010/012; SEC-003/005/009/012; DATA-001/003; REL-002.
+Requirements: FR-007/010/012; SEC-003/005/009/012; DATA-001/003;
+REL-001/002/009; OPS-002/004.
 See [ADR0064](../architecture/0064-unsigned-approval-review-export.md) and the
 [closed v1 schema](../../contracts/json-schema/approval-review-export-v1.schema.json).
 
@@ -35,6 +36,10 @@ The payload hash is `CanonicalJson.sha256(payload)` (UTF-8 canonical JSON), not
 the file-byte hash. JSON key ordering and whitespace may change without changing
 it. This export contains only positive 32-bit policy integers, strings and
 booleans; do not alter the existing v1 numeric/canonicalization profile.
+
+The browser qualification separately records a SHA-256 digest over the exact
+downloaded file bytes. That qualification digest is an ephemeral test
+observation, not a field added to the export and not an integrity signature.
 
 ## What the record means
 
@@ -68,8 +73,26 @@ These tests use signed synthetic tokens, disposable PostgreSQL and the synthetic
 browser protocol. They cover visibility/scope/enrollment/expiry, checksum
 sensitivity, terminal states, restart, original binding, no read-side authority
 or simulator changes, attachment/cache headers and canary exclusion. The required
-browser gate exercises the rendered download against the real Java route and
-passes the saved file to the source-free installed checker. These tests do not
-claim live Auth0, fresh-laptop installation, retention/deletion or full MVP
-completion. The milestone boundaries are in the
+browser gate first runs the focused Java authorization/export tests and installed
+verifier tests. It then fixes the synthetic clock and action, creates a real
+PostgreSQL-backed approval, clicks the rendered React control, captures exactly
+one Playwright download and saves those browser-provided bytes in an owned private
+temporary directory. The gate hashes that file, passes that exact saved path to
+the installed Java 21 launcher with a credential-free environment, checks the
+fixed success result, hashes the file again and requires the digests to match. It
+never recreates or substitutes a positive fixture. Opaque identifiers and runtime
+test signing keys remain freshly generated, so the per-run file digest is recorded
+rather than hard-coded.
+
+The same permanent gate checks malformed/oversized documents, unsupported
+versions, extra fields, mode/assurance changes, missing evidence, checksum and
+payload mutation, stale refresh/filter/logout state, stale sessions, cross-owner
+visibility, controlled API/download/verifier failures, one-request/one-download
+bounds, fixed diagnostics and deterministic cleanup. It fails if its listener,
+process, browser context, container or temporary qualification directory remains.
+
+Successful verification still does not prove current authorization. The export
+is unsigned and is not a signed attestation, and all targets remain simulated.
+These tests do not claim live Auth0, fresh-laptop installation,
+retention/deletion or full MVP completion. The milestone boundaries are in the
 [delivery plan](../planning/audit-ready-approval-workspace.md).

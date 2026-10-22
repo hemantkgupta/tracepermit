@@ -103,12 +103,72 @@ request, viewer, independent review and owner execution qualification without
 a personal account. Neither this synthetic profile nor offline validation
 qualifies external provider compatibility, production cookies or a public edge.
 
+## Approval review export round-trip acceptance
+
+Requirements: FR-007/010/012; SEC-003/005/009/012; DATA-001/003;
+REL-001/002/009; OPS-002/004.
+
+`pnpm test:approval-export:browser` is the permanent source-to-file qualification.
+Its wrapper runs the focused Java HTTP authorization/export tests and the
+installed verifier/distribution tests before starting the rendered browser. The
+positive path uses a fixed synthetic clock/action, disposable PostgreSQL and
+runtime-generated signing keys. Exactly one React-initiated request reaches the
+real Java browser export route, exactly one Playwright download is saved to a
+private owned temporary directory, and the exact saved path is passed to the
+installed Java 21 launcher. A file-byte SHA-256 is recorded before execution and
+must be identical afterward. The successful input is never regenerated,
+normalized or replaced with an equivalent fixture.
+
+The gate also requires single-shot fail-closed results for malformed JSON,
+oversize, unsupported schema, extra root fields, wrong mode/assurance, wrong
+checksum, mutated downloaded payload, missing evidence, denied scope/enrollment
+and cross-owner visibility, stale session, refresh/filter/logout invalidation,
+and controlled API/download/verifier failure. Each applicable browser control
+asserts no retry, no second download, no false success and no canary-bearing
+diagnostic. The Java test supplies the role/scope/workspace and missing-snapshot
+boundary cases that cannot be safely manufactured through the rendered console.
+The gate also fails on an owned listener, process, browser context, container or
+temporary artifact that survives cleanup.
+
+This is simulator-only test evidence. The export remains unsigned and is not a
+signed attestation. Successful verification is not current authorization and
+does not establish original action contents, history completeness, independent
+anchoring or a real target effect.
+
 Operator bootstrap acceptance also requires strict private-file/configuration
 rejection, matching persistent keys, offline check with unreachable dependencies,
 DB failure before listening, pending/consumed state across reconstructed startup,
 and a real JVM SIGTERM/port-release test. These run in `pnpm test:approval-api`
 and the aggregate suite. Existing numbered demos remain separate development
 compositions; bootstrap qualification is not a live external-IdP test.
+
+## Fresh-Mac evaluation preparation (Day 3 pending)
+
+The [canonical fresh-Mac checklist](../runbooks/fresh-macbook-evaluation.md)
+separates source/synthetic evaluation, source-free operator installation and
+live-provider/installed-requester manual gates. Documentation acceptance for
+FR-007/012; SEC-003/011/012; REL-002; OPS-002/004 requires supported Corepack
+owner-writable shims pinned by `packageManager`, clean recorded source or a
+trusted outer checksum/manifest commit, extraction into a new directory, private
+operator files, offline `--check` before empty-only `--init-db`/`--run`, bounded
+observation, loopback/port-release checks, distinct disposable versus retained
+restart behavior and a bounded private fact-only record.
+
+`scripts/flow-diagrams.test.mjs` checks documented modes/results/archive naming
+against the shipped Java main, launcher/build inputs, synthetic account/session
+fixture and canonical site include; it parses Bash without executing operator
+commands and rejects unsafe install/probe/evidence regressions.
+`scripts/site-onboarding-browser.test.mjs` checks the built canonical page,
+three paths, critical commands, pending status, anchor navigation and responsive
+rendering at phone/desktop widths. An explicit absolute
+`TRACEPERMIT_SITE_BROWSER_EXECUTABLE` can select an available local browser for
+this documentation test; CI retains the pinned Playwright browser by default.
+
+Run `pnpm docs:flows:check`, `pnpm docs:links`, `npm --prefix site ci`,
+`pnpm site:build`, `node --test scripts/site-onboarding-browser.test.mjs`,
+`pnpm check`, `pnpm format:check` and `git diff --check`. Passing these gates is
+documentation evidence only. It does not complete Day 3, a second-Mac installation,
+an archive runtime trial or live external-IdP/installed-Codex qualification.
 
 ## Public-client browser acceptance
 
@@ -159,3 +219,20 @@ alerting, rollback, and representative client/load tests.
 For a change to a security boundary, update requirement IDs in the
 [traceability matrix](12-traceability-matrix.md), the relevant
 [ADR](../architecture/), and the public architecture/contract documentation.
+
+## Installed requester sign-in acceptance
+
+Automated acceptance requires closed offline configuration; one-shot numeric
+loopback callback; exact public authorization/token shapes; independent signed
+access/ID-token validation; requester-only qualification with zero authority or
+target mutation; owner-only no-replace publication including a simultaneous
+publisher race; and a fixed child launch whose argv/output omit secret sentinels.
+The source-free archive must include executable requester and approval launchers,
+example configs, runbooks, manifest entries and complete checksums, without test
+fixtures, source, provider IDs, keys or credentials.
+
+Live provider and installed-Codex acceptance remains manual: use the exact clean
+archive commit, dedicated requester/reviewer identities, numeric loopback only,
+and show request → distinct review → explicit resume → one simulated effect plus
+expiry/re-login and replay rejection. A missing variable, provider mismatch or
+unavailable interactive browser is pending/failed, never an automated pass.

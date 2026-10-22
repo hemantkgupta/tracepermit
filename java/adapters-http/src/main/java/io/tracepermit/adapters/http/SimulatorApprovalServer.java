@@ -52,6 +52,13 @@ import java.util.function.BooleanSupplier;
  */
 public final class SimulatorApprovalServer implements AutoCloseable {
   private static final String ROOT = "/api/v1/approvals";
+  private static final String REQUESTER_QUALIFICATION = "/api/v1/requester-qualification";
+  private static final Set<ConnectorScope> REQUESTER_QUALIFICATION_SCOPES = Set.of(
+      ConnectorScope.of("approvals.read"), ConnectorScope.of("approvals.request"),
+      ConnectorScope.of("approvals.execute"));
+  private static final Set<ConnectorScope> REQUESTER_QUALIFICATION_ALLOWED_SCOPES = Set.of(
+      ConnectorScope.of("openid"), ConnectorScope.of("approvals.read"),
+      ConnectorScope.of("approvals.request"), ConnectorScope.of("approvals.execute"));
   private static final ObjectMapper JSON = new ObjectMapper(JsonFactory.builder()
       .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION).build())
       .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
@@ -276,13 +283,23 @@ public final class SimulatorApprovalServer implements AutoCloseable {
     }
     // A cnf claim is not proof of possession; this bearer-only local adapter cannot verify it.
     if (connector.senderConstraint().isPresent()) throw failure(401, "SENDER_PROOF_NOT_SUPPORTED");
-    ApprovalMemberships.Entry member = memberships.resolve(connector);
+    ApprovalMemberships.Entry member;
+    try {
+      member = memberships.resolve(connector);
+    } catch (SecurityException failure) {
+      if (REQUESTER_QUALIFICATION.equals(path)) {
+        throw failure(403, "REQUESTER_ENROLLMENT_REQUIRED");
+      }
+      throw failure;
+    }
     if (uri.getRawQuery() != null
         && !(ROOT.equals(path) && "GET".equals(exchange.getRequestMethod()))) {
       throw failure(400, "INVALID_REQUEST");
     }
     String method = exchange.getRequestMethod();
-    if ("/mcp".equals(path)) {
+    if (REQUESTER_QUALIFICATION.equals(path)) {
+      requesterQualification(exchange, headers, uri, connector, member);
+    } else if ("/mcp".equals(path)) {
       if (!"POST".equals(method)) throw failure(405, "METHOD_NOT_ALLOWED");
       if (headers.containsKey("tracepermit-source-attestation")) {
         throw failure(403, "SOURCE_PROOF_NOT_SUPPORTED");
@@ -392,6 +409,33 @@ public final class SimulatorApprovalServer implements AutoCloseable {
             body(exchange, Set.of("requestHash")), false));
       } else throw failure(405, "METHOD_NOT_ALLOWED");
     } else throw failure(404, "NOT_FOUND");
+  }
+
+  /**
+   * Read-only pre-storage proof for the installed requester helper. This does not create a
+   * session or replace authorization on any later MCP call.
+   */
+  private void requesterQualification(HttpExchange exchange, Headers headers, URI uri,
+      AuthenticatedConnector connector, ApprovalMemberships.Entry member) throws IOException {
+    String length = headers.getFirst("Content-Length");
+    if (!"GET".equals(exchange.getRequestMethod())) throw failure(405, "METHOD_NOT_ALLOWED");
+    if (uri.getRawQuery() != null || headers.containsKey("Cookie") || headers.containsKey("Origin")
+        || headers.containsKey("Transfer-Encoding")
+        || headers.containsKey("tracepermit-source-attestation")
+        || headers.getOrDefault("Content-Length", java.util.List.of()).size() > 1
+        || (length != null && !"0".equals(length))) {
+      throw failure(400, "INVALID_REQUEST");
+    }
+    Set<ConnectorScope> scopes = Set.copyOf(connector.scopes());
+    if (!member.human()
+        || !member.roles().equals(Set.of(ApprovalMemberships.Role.REQUESTER))
+        || !scopes.containsAll(REQUESTER_QUALIFICATION_SCOPES)
+        || !REQUESTER_QUALIFICATION_ALLOWED_SCOPES.containsAll(scopes)
+        || !connector.expiresAt().isAfter(clock.instant().plusSeconds(59))) {
+      throw failure(403, "REQUESTER_ENROLLMENT_REQUIRED");
+    }
+    exchange.getResponseHeaders().set("Cache-Control", "no-store");
+    exchange.sendResponseHeaders(204, -1);
   }
 
   private void status(HttpExchange exchange, Headers headers, URI uri, String path)

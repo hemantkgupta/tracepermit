@@ -729,3 +729,22 @@ The tunnel runtime key authenticates `tunnel-client` to the provider transport.
 The local development bearer authenticates a fixed simulated web profile to
 Java. Neither establishes who is signed into ChatGPT; production attribution
 requires application OAuth/OIDC claims independently verified by TracePermit.
+
+## 13. Installed requester login and one-use Codex launch
+
+1. The owner runs the offline helper check against a closed `0600` config and
+   existing `0700` credential directory; no network or file is created.
+2. Login binds the exact `127.0.0.1` callback before opening the browser and sends
+   one Code + S256 request with state, nonce, organization and exact requester
+   scopes.
+3. One callback attempt must match method, path, Host, state and issuer. The
+   helper exchanges the code without a secret, then independently verifies both
+   signed tokens and exact subject/client/org/scope/time.
+4. A bodyless bearer qualification call rechecks current requester-only
+   enrollment. Only then is one short-lived no-replace credential published.
+5. Explicit `--codex` revalidates and unlinks the credential before launching the
+   pinned child. The bearer exists only in its environment; the HTTP MCP route
+   continues to authenticate and authorize every method.
+6. Expiry or any uncertainty stops. A human may explicitly re-login as the same
+   identity, check the saved ID/hash and resume once; no request is recreated or
+   retried automatically.

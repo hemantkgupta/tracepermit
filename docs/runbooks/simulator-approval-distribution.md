@@ -45,7 +45,7 @@ cd tracepermit-simulator-approval-0.1.0
 shasum -a 256 -c SHA256SUMS
 ```
 
-Inspect `manifest.json`: schema `1.1` records `sourceCommit`,
+Inspect `manifest.json`: schema `1.2` records `sourceCommit`,
 `sourceCommitTimestamp` (the commit time, not the packaging time), `sourceTree: "clean"`,
 and an exact runtime JAR inventory. Compare the commit to the release you intended
 to install. These fields identify a trusted local build; they are not signed
@@ -56,16 +56,19 @@ The extracted archive layout:
 ```text
 tracepermit-simulator-approval-0.1.0/
 ├── bin/
-│   └── tracepermit-simulator-approval
+│   ├── tracepermit-simulator-approval
+│   └── tracepermit-requester-auth
 ├── lib/
 │   └── *.jar
 ├── console/
 │   ├── index.html
 │   └── assets/
 ├── examples/
-│   └── simulator-approvals.example.json
+│   ├── simulator-approvals.example.json
+│   └── installed-requester-sign-in.example.json
 ├── docs/
 │   ├── setup-runbook.md
+│   ├── requester-sign-in-runbook.md
 │   ├── LICENSE
 │   └── NOTICE
 ├── manifest.json
@@ -169,6 +172,10 @@ APPROVAL_CONFIGURATION_VALID: offline only; no database, IdP or listener checked
 
 and exits with status `0`.
 
+The separate installed requester helper has its own closed private config and
+offline check. Follow `docs/requester-sign-in-runbook.md`; do not put requester
+tokens or provider credentials in the approval-service config.
+
 ### Offline check guarantees
 
 - **Zero network traffic:** No network sockets are opened, no DNS resolution is made, and no IdP endpoints are contacted.
@@ -260,9 +267,12 @@ Keep these version boundaries distinct:
 | Approval API projection            | 1.0             | Existing response contract remains unchanged                             |
 | New cancellation lifecycle payload | 3.0             | Bounded requester-derived cancellation evidence, not execution authority |
 
-Authenticated source-free installed withdrawal and external-IdP interoperability
-remain separate qualification gates. The source-based synthetic browser demo,
-schema-upgrade checks and older-binary refusal checks do not close them.
+One authenticated source-free same-Mac Auth0 profile exercised owner withdrawal
+on 2026-10-21. That named simulator composition does not establish arbitrary
+external-IdP interoperability, public ingress or production identity. The
+source-based synthetic browser demo, schema-upgrade checks and older-binary
+refusal checks do not close those broader gates. See the
+[installed qualification record](../demo-scenarios/evidence/installed-auth0-approval-2026-10-22.md).
 
 ## Running the application (`--run`)
 
@@ -335,6 +345,11 @@ and releases the port immediately.
 6. **Redaction scope:** Launcher validation and Java bootstrap handlers omit private
    paths and secret values. Damaged archives or JVM/OS errors can produce diagnostics
    outside those handlers; preserve logs privately and verify integrity first.
+7. **Requester credential boundary:** The optional requester helper uses a separate
+   one-shot numeric-loopback public-client flow, exact requester-only enrollment
+   and one-use child environment. It is not an issuer, reviewer, endpoint
+   attestation mechanism, refresh service or production identity profile. See the
+   packaged requester sign-in runbook.
 
 ## Building and qualifying from source (maintainers only)
 
@@ -360,4 +375,6 @@ cross-host/JDK bit-for-bit reproducibility and signed release publication are no
 - [ADR 0035: Explicit operator bootstrap](../architecture/0035-local-approval-operator-bootstrap.md)
 - [ADR 0036: Local browser sign-in and inbox](../architecture/0036-local-browser-approval-boundary.md)
 - [ADR 0040: Source-free simulator approval distribution](../architecture/0040-source-free-simulator-approval-distribution.md)
+- [ADR 0065: Installed requester public sign-in](../architecture/0065-installed-requester-public-sign-in.md)
 - [Authenticated approval API runbook](authenticated-approval-api-foundation.md)
+- [Installed requester public sign-in](installed-requester-public-sign-in.md)
