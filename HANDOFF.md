@@ -6,22 +6,22 @@ client secrets, private keys or local private paths.
 
 TRACEPERMIT HANDOFF
 
-- Task: Permanently qualify the approval-review browser export to installed-verifier round trip.
+- Task: Keep the browser-downloaded approval-review qualification artifact owner-only.
 - Repository: https://github.com/hemantkgupta/tracepermit
-- Branch: codex/day2-browser-export-verifier-qualification
-- Base commit: e37aa3212fb7119965e5c8819e927ffe34b746a9
-- Latest pushed commit: implementation checkpoint `b8a7c03`; this handoff update follows it
-- PR URL: https://github.com/hemantkgupta/tracepermit/pull/87
-- Branch owner now: unassigned; the draft PR is the coordination point
-- Working tree status: clean implementation checkpoint; final PR-link handoff update pending
-- Completed: real Java route to rendered React download qualification; exact Playwright-saved file hash/verifier/hash proof; installed verifier and browser negative matrices; export-only fixed clock; authorization, stale-state, failure and deterministic cleanup controls; requirements/runbook/test/traceability updates
-- Remaining: fresh CI confirmation after the scoped-clock repair and independent review; leave the draft PR open and unmerged
-- Files materially changed: browser export qualification/wrapper; shared browser launcher cleanup and local-browser override; export-only synthetic clock; approval export/checker/UI runbooks; quality acceptance; traceability matrix; this handoff
-- Tests passed: focused Java approval export and verifier tests; 56 focused and 124 aggregate React tests; all 35 existing rendered approval tests; final real Java/Chromium/installed-verifier export qualification with all negative controls and cleanup; `pnpm format:check`; `pnpm docs:links`; isolated pre-existing process cleanup and latency qualifications; GitHub `verify` and Cloudflare Pages on the prior pushed head
-- Tests failed/not run: local `pnpm check` runs hit managed-host process-zombie and high-concurrency latency flakes, while each exact failure and GitHub `verify` passed; the first GitHub browser job exposed the shared fixed-clock regression, which is repaired and locally qualified, with fresh CI pending
-- Exact next command: gh pr checks 87 --watch
+- Branch: codex/day2-export-owner-only-permissions
+- Base commit: 087ba21343f2e555e62b79c32bf8f44dd95fd230
+- Latest pushed commit: implementation checkpoint `4934c90d4965daed34490dddab944b193e12599d`; this handoff update follows it
+- PR URL: https://github.com/hemantkgupta/tracepermit/pull/88
+- Branch owner now: unassigned after this handoff push; draft PR #88 is the coordination point
+- Working tree status: clean after the final handoff commit and push
+- Completed: immediately restrict the real Playwright-saved approval-review export to POSIX mode `0600`; assert the owner-only mode before reading, hashing or invoking the installed verifier; preserve the existing `0700` qualification directory and deterministic cleanup
+- Remaining: independent exact-head review, Gemini Phase 2 audit, GitHub CI and human review; leave draft PR #88 open and unmerged
+- Files materially changed: `scripts/approval-export-browser.test.mjs`; this handoff
+- Tests passed: exact Java-route/browser-download/installed-verifier qualification with all negative controls and cleanup; all 35 existing rendered approval tests; `pnpm check` including 124 React tests and Java `checkAll`; `pnpm format:check`; `git diff --check`
+- Tests failed/not run: GitHub CI and Gemini Phase 2 exact-head audit are pending
+- Exact next command: gh pr checks 88 --watch
 - Required environment: Node 22+, pnpm 11.25.0, Java 21, Docker/PostgreSQL and Playwright Chromium
 - Local-only/manual steps: none for the automated simulator gate; live IdP/real-target qualification remains out of scope
-- Security constraints: Java remains the sole backend; React is browser-only; simulator targets only; no secrets or raw arguments/results; no retry, mutation control or authority inference
+- Security constraints: Java remains the sole backend; React is browser-only; simulator targets only; owner-only temporary export; no secrets or raw arguments/results; no retry, mutation control or authority inference
 - Known limitations: unsigned export is not a signed attestation; structural/checksum success is not current authorization, history completeness, independent anchoring or proof of a real target effect
-- Safe for another environment to continue: yes, after the final handoff push and explicit branch ownership transfer
+- Safe for another environment to continue: yes, after explicit branch ownership transfer
