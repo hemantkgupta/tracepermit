@@ -76,10 +76,13 @@ export default defineConfig({
     siteTitle: "TracePermit",
 
     nav: [
-      { text: "Learn", link: "/learn/securing-mcp-tool-execution" },
       {
         text: "Guide",
         items: [
+          {
+            text: "Agent Security Foundations",
+            link: "/learn/securing-mcp-tool-execution",
+          },
           { text: "What is TracePermit?", link: "/guide/what-is-tracepermit" },
           { text: "What Works Today", link: "/guide/working-today" },
           { text: "Verification & Compatibility", link: "/guide/verification" },
