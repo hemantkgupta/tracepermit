@@ -125,6 +125,9 @@ jobs:
       - name: Verify the rendered simulator approval inbox
         run: pnpm test:approvals:browser
 
+      - name: Verify browser approval review download against Java export route
+        run: pnpm test:approval-export:browser
+
       - name: Verify built documentation onboarding and responsive navigation
         run: |
           npm --prefix site ci
