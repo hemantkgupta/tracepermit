@@ -43,11 +43,45 @@ val endpointDistributionArchive = layout.projectDirectory.file(
 )
 
 val repoRootDir = rootDir.parentFile
+
+// Installed-archive provenance is resolved at the real provider boundary and must fail
+// closed, and the finite deadline must cover complete output collection — not just the
+// direct child's exit. The supervising perl process forks; the child leads its own
+// process group, dups a supervisor-owned internal pipe over its stdout and stderr, and
+// execs git, so no descendant of the probe ever holds a Gradle-owned stream. The parent
+// arms a 10-second deadline spanning its select/read loop, the reap, and the final
+// drain to EOF; on timeout it SIGKILLs the whole group and exits 124, so a descendant
+// that inherits the probe streams and outlives git can neither delay failure detection
+// nor inject bytes after authorization. A failed exec (missing provenance tooling)
+// exits 127; any non-zero probe exit — including a refused or sabotaged git — kills
+// the group and fails configuration promptly, and nothing is relayed on that path.
+// Output is only relayed after the internal stream reaches EOF (no writer remains) or
+// the reap proved the child gone after EOF, is bounded in size, and is drained with
+// the same parent-held deadline, which never execs and therefore does not depend on
+// alarm-across-exec semantics on the host. Any probe stderr noise merges into the
+// validated stream and fails the fixed malformed-output check rather than being
+// discarded. Only a single full-match hex commit authorizes an expected-head value.
+// The exec-backed provider remains tracked by Gradle's configuration cache, so a
+// commit-only change still invalidates caches.
 val gitHeadProvider = providers.exec {
   workingDir(repoRootDir)
-  commandLine("git", "rev-parse", "HEAD")
-  isIgnoreExitValue = true
-}.standardOutput.asText.map { it.trim() }
+  commandLine(
+    "perl",
+    "-e",
+    "use POSIX \":sys_wait_h\"; pipe(my \$rh, my \$wh) or die \"provenance probe pipe failed\"; my \$pid = fork(); die \"provenance probe fork failed\" unless defined \$pid; if (\$pid == 0) { close \$rh; open(STDOUT, \">&\", \$wh) or exit 126; open(STDERR, \">&\", \$wh) or exit 126; close \$wh; setpgrp(0, 0) or die \"provenance probe setpgrp failed\"; exec(@ARGV) or exit 127; } close \$wh; \$SIG{ALRM} = sub { kill \"KILL\", -\$pid; waitpid(\$pid, 0); exit 124; }; alarm 10; my \$out = \"\"; my \$reaped = 0; while (!\$reaped) { my \$rin = \"\"; vec(\$rin, fileno(\$rh), 1) = 1; my \$rout = \$rin; my \$nf = select(\$rout, undef, undef, 1); if (\$nf > 0) { my \$n = sysread(\$rh, my \$buf, 65536); if (!defined \$n || \$n == 0) { \$reaped = -2; last; } \$out .= \$buf; if (length(\$out) > 1048576) { kill \"KILL\", -\$pid; waitpid(\$pid, 0); exit 124; } } my \$r = waitpid(\$pid, WNOHANG); \$reaped = 1 if \$r == \$pid; \$reaped = -1 if \$r == -1; } if (\$reaped == 1) { my \$sig = \$? & 127; my \$err = \$? >> 8; if (\$sig || \$err) { kill \"KILL\", -\$pid; exit(\$sig ? 128 + \$sig : \$err); } while (defined(my \$n = sysread(\$rh, my \$b, 65536))) { last if \$n == 0; \$out .= \$b; if (length(\$out) > 1048576) { kill \"KILL\", -\$pid; exit 124; } } binmode(STDOUT); print \$out; exit 0; } if (\$reaped == -2) { my \$r2 = waitpid(\$pid, 0); if (\$r2 == \$pid) { my \$sig2 = \$? & 127; my \$err2 = \$? >> 8; if (\$sig2 || \$err2) { kill \"KILL\", -\$pid; exit(\$sig2 ? 128 + \$sig2 : \$err2); } binmode(STDOUT); print \$out; exit 0; } } kill \"KILL\", -\$pid; exit 124;",
+    "git",
+    "rev-parse",
+    "HEAD",
+  )
+}.standardOutput.asText.map { output ->
+  val commit = output.trim()
+  if (!commit.matches(Regex("[0-9a-f]{40}|[0-9a-f]{64}"))) {
+    throw GradleException(
+      "Endpoint connector installed-archive provenance is unavailable, ambiguous, or malformed; refusing to authorize an expected-head value.",
+    )
+  }
+  commit
+}
 
 val requireInstalledArchiveProperty = providers.systemProperty("tracepermit.endpointConnector.requireInstalledArchive")
   .orElse(providers.environmentVariable("TRACEPERMIT_REQUIRE_INSTALLED_ARCHIVE"))
@@ -71,6 +105,16 @@ tasks.test {
 
   testLogging {
     exceptionFormat = TestExceptionFormat.FULL
+  }
+}
+
+tasks.register("printEndpointConnectorExpectedHead") {
+  group = "verification"
+  description =
+    "Prints the expected-head commit value injected into the endpoint connector qualification test JVM."
+  val resolvedExpectedHead = expectedHeadCommitProperty.get()
+  doLast {
+    println("TRACEPERMIT_ENDPOINT_CONNECTOR_EXPECTED_HEAD=$resolvedExpectedHead")
   }
 }
 

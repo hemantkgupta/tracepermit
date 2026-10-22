@@ -1,0 +1,33 @@
+{
+  "schemaVersion": "1.0",
+  "kind": "tracepermit-approval-review",
+  "canonicalization": "tracepermit-canonical-json-v1",
+  "payload": {
+    "generatedAt": "1970-01-01T00:00:00Z",
+    "mode": "simulated",
+    "approval": {
+      "mode": "simulated",
+      "approvalRequestId": "00000000-0000-0000-0000-000000000001",
+      "requestHash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "requesterId": "principal:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "status": "pending",
+      "createdAt": "1970-01-01T00:00:00Z",
+      "expiresAt": "1970-01-01T00:05:00Z",
+      "expired": false,
+      "policyId": "pol-local-simulator-approval",
+      "policyVersion": 2,
+      "originalPolicyOutcome": "require_approval",
+      "executionStatus": "not_executed",
+      "toolName": "aws.ec2.update_security_group"
+    },
+    "assurance": {
+      "signed": false,
+      "completeHistory": false,
+      "transactionalSnapshot": false,
+      "independentAnchor": false,
+      "authorizesExecution": false,
+      "argumentsIncluded": false
+    }
+  },
+  "payloadHash": "sha256:b906a41995ff346f31fe1a94331e60a44afb72c381d3343bc014602ac4742dae"
+}

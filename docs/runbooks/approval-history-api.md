@@ -6,7 +6,8 @@ DATA-003; OPS-002. See [ADR 0046](../architecture/0046-authenticated-approval-hi
 This adds metadata filtering and keyset pagination to the **authenticated local
 approval service**, not the unauthenticated development action feed. All targets
 remain simulated. No retention, export, full-text payload search or public edge
-is provided. The [React history inbox](browser-approval-history.md) consumes this
+is provided by the collection. A separate [per-request metadata export](approval-review-export.md)
+does not include raw actions or complete history. The [React history inbox](browser-approval-history.md) consumes this
 contract with explicit filters and bounded continuation; it does not infer
 authority from a cursor or cached rows.
 
