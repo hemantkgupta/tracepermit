@@ -1,6 +1,8 @@
 package io.tracepermit.adapters.http;
 
 import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.Instant;
 import org.testcontainers.containers.PostgreSQLContainer;
 
 /** Interactive rendered-UI qualification ONLY. Not part of the normal application classpath. */
@@ -11,11 +13,18 @@ public final class SimulatorApprovalBrowserQualificationMain {
       throw new IllegalArgumentException("Only --codex qualification is supported.");
     }
     boolean codex = args.length == 1;
-    var directory = Files.createTempDirectory("tracepermit-browser-qualification-");
+    String configuredParent = System.getenv("TRACEPERMIT_BROWSER_QUALIFICATION_TEMP");
+    Path directory = configuredParent == null
+        ? Files.createTempDirectory("tracepermit-browser-qualification-")
+        : Files.createTempDirectory(Path.of(configuredParent).toRealPath(),
+            "tracepermit-browser-qualification-");
     try (var postgres = new PostgreSQLContainer<>("postgres:16.4-alpine")
         .withPassword("synthetic-browser-qualification-password")) {
       postgres.start();
       try (var fixture = new SimulatorApprovalBrowserFixture(directory, postgres)) {
+        if ("1".equals(System.getenv("TRACEPERMIT_BROWSER_EXPORT_QUALIFICATION"))) {
+          fixture.clock.now = Instant.parse("2030-01-01T00:00:00Z");
+        }
         System.out.println("SYNTHETIC BROWSER QUALIFICATION ONLY - not a real IdP or target.");
         System.out.println("Approval inbox: " + fixture.origin() + "/approvals");
         System.out.println("Accounts: alice=requester, bob=reviewer, carol=viewer, dave=requester+reviewer.");

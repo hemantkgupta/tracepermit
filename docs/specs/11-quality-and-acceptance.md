@@ -103,6 +103,38 @@ request, viewer, independent review and owner execution qualification without
 a personal account. Neither this synthetic profile nor offline validation
 qualifies external provider compatibility, production cookies or a public edge.
 
+## Approval review export round-trip acceptance
+
+Requirements: FR-007/010/012; SEC-003/005/009/012; DATA-001/003;
+REL-001/002/009; OPS-002/004.
+
+`pnpm test:approval-export:browser` is the permanent source-to-file qualification.
+Its wrapper runs the focused Java HTTP authorization/export tests and the
+installed verifier/distribution tests before starting the rendered browser. The
+positive path uses a fixed synthetic clock/action, disposable PostgreSQL and
+runtime-generated signing keys. Exactly one React-initiated request reaches the
+real Java browser export route, exactly one Playwright download is saved to a
+private owned temporary directory, and the exact saved path is passed to the
+installed Java 21 launcher. A file-byte SHA-256 is recorded before execution and
+must be identical afterward. The successful input is never regenerated,
+normalized or replaced with an equivalent fixture.
+
+The gate also requires single-shot fail-closed results for malformed JSON,
+oversize, unsupported schema, extra root fields, wrong mode/assurance, wrong
+checksum, mutated downloaded payload, missing evidence, denied scope/enrollment
+and cross-owner visibility, stale session, refresh/filter/logout invalidation,
+and controlled API/download/verifier failure. Each applicable browser control
+asserts no retry, no second download, no false success and no canary-bearing
+diagnostic. The Java test supplies the role/scope/workspace and missing-snapshot
+boundary cases that cannot be safely manufactured through the rendered console.
+The gate also fails on an owned listener, process, browser context, container or
+temporary artifact that survives cleanup.
+
+This is simulator-only test evidence. The export remains unsigned and is not a
+signed attestation. Successful verification is not current authorization and
+does not establish original action contents, history completeness, independent
+anchoring or a real target effect.
+
 Operator bootstrap acceptance also requires strict private-file/configuration
 rejection, matching persistent keys, offline check with unreachable dependencies,
 DB failure before listening, pending/consumed state across reconstructed startup,

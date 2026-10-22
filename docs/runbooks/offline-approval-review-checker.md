@@ -66,6 +66,12 @@ A true assurance flag is rejected even when its checksum is recomputed. The
 export can contain correlatable pseudonymous identifiers and policy metadata;
 keep downloaded copies private. Do not use this checker as an authorization
 gate, compliance certificate or retry signal. The required browser CI gate
-downloads through the real Java route and passes that saved file to this
-installed launcher with a credential-free environment. Live-provider and
-fresh-host qualification remain separate reviewed gates.
+downloads through the real Java route, records a file-byte SHA-256, passes that
+exact Playwright-saved path to this installed launcher with a credential-free
+environment, and requires an unchanged digest afterward. Its mutation controls
+are derived from the downloaded record only for negative checks; no regenerated
+fixture substitutes for the successful input. The success wording remains a
+bounded structural/checksum result: the unsigned export is not a signed
+attestation and successful verification does not establish current
+authorization. Targets remain simulator-only. Live-provider and fresh-host
+qualification remain separate reviewed gates.
