@@ -59,7 +59,11 @@ Current packages require V1–V10. Preserve a verified backup and stop all clien
 before upgrading an existing V9 simulator database with the new binary; ordinary
 run never migrates. Failed or uncertain upgrades require private inspection with
 services stopped, not blind retry or reset. V10 prepares cancelled storage and
-report-format2 inspection counts; requester withdrawal is **not exposed yet**.
+report-format2 inspection counts. The installed inbox now exposes owner-only
+pending withdrawal, and one named Auth0/same-Mac profile exercised it on
+2026-10-21. That result is simulator-only and does not make withdrawal an
+emergency stop or qualify arbitrary providers. See the
+[installed qualification record](https://github.com/hemantkgupta/tracepermit/blob/main/docs/demo-scenarios/evidence/installed-auth0-approval-2026-10-22.md).
 See the [upgrade procedure and limits](https://github.com/hemantkgupta/tracepermit/blob/main/docs/runbooks/simulator-approval-distribution.md#explicit-stopped-service-upgrade-v9-to-v10).
 
 ## Bounded local failure controls

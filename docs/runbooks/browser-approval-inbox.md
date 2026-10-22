@@ -57,7 +57,8 @@ focus/visibility changes resample time. Refresh explicitly to inspect server sta
 
 Schema1.1 explicitly supports method `none` with no client secret. Follow the
 [Auth0 local-Mac qualification procedure](auth0-native-oidc-qualification.md);
-actual Auth0 token/callback/organization compatibility remains pending.
+one exact Auth0 token/callback/organization composition was live-qualified on
+2026-10-22. Other tenants and providers remain pending.
 `openid` is requested for OIDC and need not appear in API-token scope.
 The configuration below retains the legacy confidential schema1.0 profile.
 

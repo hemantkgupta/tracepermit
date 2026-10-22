@@ -267,9 +267,12 @@ Keep these version boundaries distinct:
 | Approval API projection            | 1.0             | Existing response contract remains unchanged                             |
 | New cancellation lifecycle payload | 3.0             | Bounded requester-derived cancellation evidence, not execution authority |
 
-Authenticated source-free installed withdrawal and external-IdP interoperability
-remain separate qualification gates. The source-based synthetic browser demo,
-schema-upgrade checks and older-binary refusal checks do not close them.
+One authenticated source-free same-Mac Auth0 profile exercised owner withdrawal
+on 2026-10-21. That named simulator composition does not establish arbitrary
+external-IdP interoperability, public ingress or production identity. The
+source-based synthetic browser demo, schema-upgrade checks and older-binary
+refusal checks do not close those broader gates. See the
+[installed qualification record](../demo-scenarios/evidence/installed-auth0-approval-2026-10-22.md).
 
 ## Running the application (`--run`)
 

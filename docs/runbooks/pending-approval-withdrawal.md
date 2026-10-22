@@ -100,5 +100,8 @@ authority; the [quarantine/recovery rules](operator-recovery-quarantine.md) rema
 
 Membership revocation and the authority database are not one transaction; removal
 affects new ingress checks, not guaranteed instantaneous in-flight revocation.
-This local simulator API does not establish external-IdP interoperability,
-installed withdrawal qualification, production target control or safe rollback.
+One named same-Mac Auth0/source-free composition exercised installed withdrawal
+on 2026-10-21. This local simulator API still does not establish arbitrary
+external-IdP interoperability, public ingress, production target control or
+safe rollback. See the
+[installed qualification record](../demo-scenarios/evidence/installed-auth0-approval-2026-10-22.md).
