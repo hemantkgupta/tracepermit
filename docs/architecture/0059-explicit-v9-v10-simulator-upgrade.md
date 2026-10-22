@@ -89,7 +89,7 @@ authenticated review/execute/replay and restore regressions remain controls.
 
 Operator steps and uncertainty handling:
 [distribution runbook](../runbooks/simulator-approval-distribution.md#explicit-stopped-service-upgrade-v9-to-v10).
-Flyway behavior is checked against the pinned11.8.2 implementation; upstream
+Flyway behavior is checked against the pinned 13.10.3 implementation (qualified from 11.8.2); upstream
 [validation](https://documentation.red-gate.com/flyway/reference/commands/validate)
 and [target documentation](https://documentation.red-gate.com/flyway/reference/configuration/flyway-namespace/flyway-target-setting)
 describe the mechanisms, not an independently qualified release claim.

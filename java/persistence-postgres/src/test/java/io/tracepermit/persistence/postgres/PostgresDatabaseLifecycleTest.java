@@ -59,6 +59,24 @@ final class PostgresDatabaseLifecycleTest {
     assertThat(history()).isEqualTo(before);
   }
 
+  @Test void migrationDiscoveryAndChecksumsAreOrderedAndDeterministic() throws Exception {
+    PostgresDatabaseLifecycle.initializeEmpty(source);
+    try (var c = source.getConnection(); var s = c.createStatement();
+         var r = s.executeQuery(
+             "SELECT installed_rank, version, description, type, script, checksum, success " +
+             "FROM public.flyway_schema_history ORDER BY installed_rank")) {
+      int count = 0;
+      while (r.next()) {
+        count++;
+        assertThat(r.getInt("installed_rank")).isEqualTo(count);
+        assertThat(r.getString("version")).isEqualTo(String.valueOf(count));
+        assertThat(r.getInt("checksum")).isNotZero();
+        assertThat(r.getBoolean("success")).isTrue();
+      }
+      assertThat(count).isEqualTo(PostgresDatabaseLifecycle.CURRENT_VERSION);
+    }
+  }
+
   @ParameterizedTest
   @ValueSource(strings = {
       "CREATE TABLE public.unrelated (id int)",
@@ -91,7 +109,11 @@ final class PostgresDatabaseLifecycleTest {
       "UPDATE public.flyway_schema_history SET checksum = checksum + 1 WHERE version = '1'",
       "DELETE FROM public.flyway_schema_history WHERE version = '8'",
       "UPDATE public.flyway_schema_history SET version = '99' WHERE version = '8'",
-      "UPDATE public.flyway_schema_history SET success = FALSE WHERE version = '8'"
+      "UPDATE public.flyway_schema_history SET success = FALSE WHERE version = '8'",
+      "UPDATE public.flyway_schema_history SET checksum = checksum + 1 WHERE version = '10'",
+      "DELETE FROM public.flyway_schema_history WHERE version = '10'",
+      "UPDATE public.flyway_schema_history SET version = '99' WHERE version = '10'",
+      "UPDATE public.flyway_schema_history SET success = FALSE WHERE version = '10'"
   })
   void strictValidationRejectsInconsistentStateWithoutRepair(String change) throws Exception {
     PostgresDatabaseLifecycle.initializeEmpty(source);

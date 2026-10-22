@@ -141,7 +141,7 @@ org.postgresql:postgresql:42.7.14
 ### Component Compatibility
 
 - **Single Driver Resolution**: `org.postgresql:postgresql:42.7.14` resolves uniquely across compile, runtime, test, and downstream module configurations without evictions or conflicts.
-- **Flyway Core & PostgreSQL Extension**: `11.8.2` operates without deprecation or schema introspection warnings against `42.7.14`.
+- **Flyway Core & PostgreSQL Extension**: `13.10.3` (qualified from `11.8.2` under PR #79) operates without deprecation or schema introspection warnings against `42.7.14`.
 - **Testcontainers PostgreSQL**: `org.testcontainers:postgresql:1.21.4` manages the `postgres:16.4-alpine` test container fixture cleanly.
 - **Java Runtime**: Tested against OpenJDK 21.0.12.1 (build 21.0.12.1 Homebrew) on macOS; CI builds on GitHub Actions Ubuntu `setup-java` 21.
 
