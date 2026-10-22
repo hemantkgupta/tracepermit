@@ -68,6 +68,13 @@ Synthetic access tokens, review lifetimes, and execution permits require tempora
   samples, performs no HTTP retry, and prevents response-delivery/handler-return
   overlap from being misclassified as admission overflow within a population or
   at the next phase boundary.
+- **Sweep Transport Isolation**: After the last phase in a concurrency sweep has
+  quiesced, the harness retires that sweep's Java HTTP client within a fixed
+  five-second graceful bound (plus a fixed five-second forced bound) and creates
+  a fresh client for the next sweep. This prevents a loopback connection that
+  became idle during a slower sweep from being reused after the server closed it.
+  It does not retry an operation, lower the reported client concurrency, enlarge
+  server admission, or convert a transport failure into success.
 
 ### Inclusions and Exclusions
 

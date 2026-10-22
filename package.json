@@ -20,7 +20,7 @@
     "dev:approvals": "scripts/run-java-simulator-approvals.sh",
     "demo:approvals:browser": "bash scripts/run-approval-browser-qualification.sh",
     "test:approvals:browser": "node --test scripts/approval-history-browser.test.mjs",
-    "test:approval-export:browser": "node --test scripts/approval-export-browser.test.mjs",
+    "test:approval-export:browser": "bash scripts/run-approval-export-browser-test.sh",
     "demo:approvals:codex": "bash scripts/run-approval-codex-qualification.sh",
     "site:dev": "npm --prefix site run dev",
     "site:build": "npm --prefix site run build",
