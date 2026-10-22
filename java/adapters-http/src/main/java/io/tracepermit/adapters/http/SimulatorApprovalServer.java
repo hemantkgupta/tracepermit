@@ -37,6 +37,7 @@ import java.nio.ByteBuffer;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
+import java.time.Duration;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -56,6 +57,7 @@ public final class SimulatorApprovalServer implements AutoCloseable {
       .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
   private final HttpServer server;
   private final ExecutorService workers;
+  private final int activeLanes;
   private final OidcAccessTokenVerifier verifier;
   private final ApprovalMemberships memberships;
   private final PostgresDurableEnforcementState state;
@@ -150,6 +152,7 @@ public final class SimulatorApprovalServer implements AutoCloseable {
     this.state = java.util.Objects.requireNonNull(state);
     this.clock = java.util.Objects.requireNonNull(clock);
     this.readiness = java.util.Objects.requireNonNull(readiness);
+    this.activeLanes = activeLanes;
     this.approvals = new HumanApprovalService(new PolicyEvaluator(), policy, permits, state, state,
         simulator, () -> SecurityReadiness.allReady(clock.instant()), clock,
         () -> UUID.randomUUID().toString(), "urn:tracepermit:approval-api:simulator", "simulator", 300);
@@ -173,6 +176,7 @@ public final class SimulatorApprovalServer implements AutoCloseable {
     this.state = java.util.Objects.requireNonNull(state);
     this.clock = java.util.Objects.requireNonNull(clock);
     this.readiness = java.util.Objects.requireNonNull(readiness);
+    this.activeLanes = activeLanes;
     this.approvals = new HumanApprovalService(new PolicyEvaluator(), policyStore, workspaceId, policyId,
         permits, state, state, simulator, () -> SecurityReadiness.allReady(clock.instant()), clock,
         () -> UUID.randomUUID().toString(), "urn:tracepermit:approval-api:simulator", "simulator", 300);
@@ -185,6 +189,10 @@ public final class SimulatorApprovalServer implements AutoCloseable {
   }
 
   public int port() { return server.getAddress().getPort(); }
+
+  boolean awaitDispatchQuiescence(Duration timeout) {
+    return ApprovalAdmissionExecutors.awaitQuiescence(workers, activeLanes, timeout);
+  }
 
   @Override public void close() {
     if (closed.compareAndSet(false, true)) {

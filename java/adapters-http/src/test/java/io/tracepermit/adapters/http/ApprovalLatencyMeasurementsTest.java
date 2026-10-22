@@ -340,6 +340,43 @@ final class ApprovalLatencyMeasurementsTest {
   }
 
   @Test
+  void qualificationQuiescesAfterEveryBoundedConcurrencyWave() {
+    List<ApprovalLatencyMeasurements.ApprovalItem> items = List.of(
+        new ApprovalLatencyMeasurements.ApprovalItem(110),
+        new ApprovalLatencyMeasurements.ApprovalItem(111),
+        new ApprovalLatencyMeasurements.ApprovalItem(112),
+        new ApprovalLatencyMeasurements.ApprovalItem(113),
+        new ApprovalLatencyMeasurements.ApprovalItem(114));
+    var completed = new java.util.concurrent.atomic.AtomicInteger();
+    var boundaries = new java.util.concurrent.atomic.AtomicInteger();
+
+    ApprovalLatencyMeasurements.BatchExecution batch =
+        ApprovalLatencyMeasurements.runConcurrentWaves(
+            2,
+            items,
+            item -> {
+              int wave = (item.port - 110) / 2;
+              assertThat(boundaries.get()).isEqualTo(wave);
+              completed.incrementAndGet();
+            },
+            Duration.ofSeconds(5),
+            "probe",
+            "measured",
+            () -> {
+              int boundary = boundaries.incrementAndGet();
+              assertThat(completed.get()).isEqualTo(Math.min(items.size(), boundary * 2));
+              return true;
+            });
+
+    assertThat(batch.plannedCount()).isEqualTo(5);
+    assertThat(batch.successCount()).isEqualTo(5);
+    assertThat(batch.failureCount()).isZero();
+    assertThat(batch.timeoutCount()).isZero();
+    assertThat(batch.cancelledCount()).isZero();
+    assertThat(boundaries.get()).isEqualTo(3);
+  }
+
+  @Test
   void batchDeadlineTerminatesAndReconcilesRemainingOperations() {
     List<ApprovalLatencyMeasurements.ApprovalItem> items = List.of(
         new ApprovalLatencyMeasurements.ApprovalItem(200),
