@@ -26,12 +26,21 @@ properties; it is not a turnkey production deployment.
 The VitePress documentation site can be built independently:
 
 ```bash
-npm --prefix site ci
+pnpm site:install
 pnpm site:build
 ```
 
 The generated static files are under `site/.vitepress/dist/`. Hosting those
 files on `tracepermit.org` does not expose or deploy the Java gateway.
+
+To read the site locally without a Java backend, use `pnpm site:dev`, or run
+`pnpm site:preview` after the build. Both default to `127.0.0.1`; stop the local
+server with Ctrl+C. Preview refuses an occupied port; select another with
+`pnpm site:preview -- --port 4174`.
+The root workspace uses pnpm 11.25.0; these wrappers run npm in the separately
+locked `site/` project, which pins npm 11.9.0 and requires Node 22.9.0 or newer.
+If a Corepack npm shim reports “configured to use pnpm,” use these root commands,
+not root-CWD `npm --prefix site` calls. Do not disable the package-manager guard.
 
 ## Buildable source-free approval application
 

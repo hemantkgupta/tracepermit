@@ -24,3 +24,19 @@ Explain in the PR what was verified, what remains unqualified, and how you
 know a denied action did not reach the simulator. CI must pass before merge.
 As this is currently a solo-maintained repository, a separate approving
 review is not required; PR and required CI are mandatory.
+
+## Preview the documentation
+
+With Node 22.9.0 or newer and the root pnpm setup ready, run from the repository
+root:
+
+```bash
+pnpm site:install
+pnpm site:dev
+```
+
+The static documentation needs no Java service or IdP. To inspect production
+output, run `pnpm site:build` followed by `pnpm site:preview`. These commands use
+the separate npm-pinned site without replacing either lockfile. See the
+[site maintenance runbook](docs/runbooks/site-dependency-maintenance.md) for
+Corepack troubleshooting, dependency audits and validation scope.
