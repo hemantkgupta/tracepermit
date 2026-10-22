@@ -142,6 +142,34 @@ and a real JVM SIGTERM/port-release test. These run in `pnpm test:approval-api`
 and the aggregate suite. Existing numbered demos remain separate development
 compositions; bootstrap qualification is not a live external-IdP test.
 
+## Fresh-Mac evaluation preparation (Day 3 pending)
+
+The [canonical fresh-Mac checklist](../runbooks/fresh-macbook-evaluation.md)
+separates source/synthetic evaluation, source-free operator installation and
+live-provider/installed-requester manual gates. Documentation acceptance for
+FR-007/012; SEC-003/011/012; REL-002; OPS-002/004 requires supported Corepack
+owner-writable shims pinned by `packageManager`, clean recorded source or a
+trusted outer checksum/manifest commit, extraction into a new directory, private
+operator files, offline `--check` before empty-only `--init-db`/`--run`, bounded
+observation, loopback/port-release checks, distinct disposable versus retained
+restart behavior and a bounded private fact-only record.
+
+`scripts/flow-diagrams.test.mjs` checks documented modes/results/archive naming
+against the shipped Java main, launcher/build inputs, synthetic account/session
+fixture and canonical site include; it parses Bash without executing operator
+commands and rejects unsafe install/probe/evidence regressions.
+`scripts/site-onboarding-browser.test.mjs` checks the built canonical page,
+three paths, critical commands, pending status, anchor navigation and responsive
+rendering at phone/desktop widths. An explicit absolute
+`TRACEPERMIT_SITE_BROWSER_EXECUTABLE` can select an available local browser for
+this documentation test; CI retains the pinned Playwright browser by default.
+
+Run `pnpm docs:flows:check`, `pnpm docs:links`, `npm --prefix site ci`,
+`pnpm site:build`, `node --test scripts/site-onboarding-browser.test.mjs`,
+`pnpm check`, `pnpm format:check` and `git diff --check`. Passing these gates is
+documentation evidence only. It does not complete Day 3, a second-Mac installation,
+an archive runtime trial or live external-IdP/installed-Codex qualification.
+
 ## Public-client browser acceptance
 
 Schema1.1 `none` requires successful code/S256 exchange without Authorization or
