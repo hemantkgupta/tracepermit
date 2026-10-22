@@ -65,5 +65,7 @@ NOT_AUTHORITY` limitations. A matching checksum proves none of the following:
 A true assurance flag is rejected even when its checksum is recomputed. The
 export can contain correlatable pseudonymous identifiers and policy metadata;
 keep downloaded copies private. Do not use this checker as an authorization
-gate, compliance certificate or retry signal. Final backend-to-console-to-file
-integration and live-provider qualification remain separate reviewed gates.
+gate, compliance certificate or retry signal. The required browser CI gate
+downloads through the real Java route and passes that saved file to this
+installed launcher with a credential-free environment. Live-provider and
+fresh-host qualification remain separate reviewed gates.

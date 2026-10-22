@@ -5,7 +5,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -23,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 final class ApprovalReviewVerifierDistributionTest {
   private static Path installDirectory;
   private static String runtimeClasspath;
+  private static Path approvalReviewVector;
 
   @TempDir
   Path temporaryDirectory;
@@ -31,6 +31,7 @@ final class ApprovalReviewVerifierDistributionTest {
   static void locateBuiltArtifacts() {
     installDirectory = Path.of(requiredProperty("tracepermit.reviewVerifierInstallDirectory"));
     runtimeClasspath = requiredProperty("tracepermit.reviewVerifierRuntimeClasspath");
+    approvalReviewVector = Path.of(requiredProperty("tracepermit.approvalReviewVector"));
   }
 
   @Test
@@ -68,6 +69,16 @@ final class ApprovalReviewVerifierDistributionTest {
   }
 
   @Test
+  void generatedLauncherNeedsOnlyJavaOnPath() throws Exception {
+    Path input = copyGolden(temporaryDirectory.resolve("path-only review.json"));
+    Path launcher = installDirectory.resolve("bin/review-verifier");
+
+    ProcessResult result = run(List.of(launcher.toString(), input.toString()), false);
+
+    assertSuccess(result);
+  }
+
+  @Test
   void installDistContainsNoSourcesTestsCredentialsOrGradleRuntime() throws Exception {
     assertThat(installDirectory).isDirectory();
     List<Path> files;
@@ -93,10 +104,16 @@ final class ApprovalReviewVerifierDistributionTest {
   }
 
   private ProcessResult run(List<String> command) throws Exception {
+    return run(command, true);
+  }
+
+  private ProcessResult run(List<String> command, boolean includeJavaHome) throws Exception {
     ProcessBuilder builder = new ProcessBuilder(new ArrayList<>(command));
     Map<String, String> environment = builder.environment();
     environment.clear();
-    environment.put("JAVA_HOME", Path.of(System.getProperty("java.home")).toString());
+    if (includeJavaHome) {
+      environment.put("JAVA_HOME", Path.of(System.getProperty("java.home")).toString());
+    }
     environment.put("PATH", javaExecutable().getParent() + ":/usr/bin:/bin");
     environment.put("LANG", "C.UTF-8");
     Process process = builder.start();
@@ -112,11 +129,7 @@ final class ApprovalReviewVerifierDistributionTest {
   }
 
   private Path copyGolden(Path target) throws IOException {
-    try (InputStream input = getClass().getResourceAsStream(
-        "/io/tracepermit/review/approval-review-export-v1.json")) {
-      if (input == null) throw new IOException("Test vector resource is unavailable");
-      Files.copy(input, target);
-    }
+    Files.copy(approvalReviewVector, target);
     return target;
   }
 

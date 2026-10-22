@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { chmod, mkdtemp, readFile } from "node:fs/promises";
 import { createConnection } from "node:net";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import { chromium } from "playwright";
@@ -14,6 +15,47 @@ const START_TIMEOUT = 240_000;
 const OUTPUT_LIMIT = 1_048_576;
 const CANARY = "synthetic-private-diagnostic-must-not-render";
 const signInHeading = "Sign in to your approval workspace";
+const REVIEW_VERIFIER_SUCCESS =
+  "STRUCTURE_AND_CHECKSUM_VALID UNSIGNED SIMULATOR_ONLY NOT_AUTHORITY\n";
+
+function verifySavedReviewRecord(path, workingDirectory) {
+  const launcher = process.env.TRACEPERMIT_REVIEW_VERIFIER_PATH;
+  const javaHome = process.env.JAVA_HOME;
+  assert.ok(
+    typeof launcher === "string" && launcher.length > 0,
+    "REVIEW_VERIFIER_LAUNCHER_UNAVAILABLE",
+  );
+  const javaDirectory =
+    typeof javaHome === "string" && javaHome.length > 0
+      ? join(javaHome, "bin")
+      : (process.env.PATH ?? "")
+          .split(delimiter)
+          .find((entry) => existsSync(join(entry, "java")));
+  assert.ok(
+    typeof javaDirectory === "string" && javaDirectory.length > 0,
+    "REVIEW_VERIFIER_JAVA_UNAVAILABLE",
+  );
+
+  const environment = {
+    PATH: `${javaDirectory}:/usr/bin:/bin`,
+    LANG: "C.UTF-8",
+  };
+  if (typeof javaHome === "string" && javaHome.length > 0) {
+    environment.JAVA_HOME = javaHome;
+  }
+  const result = spawnSync(launcher, [path], {
+    cwd: workingDirectory,
+    env: environment,
+    encoding: "utf8",
+    timeout: 15_000,
+    maxBuffer: 65_536,
+  });
+
+  assert.equal(result.error, undefined, "REVIEW_VERIFIER_LAUNCH_FAILED");
+  assert.equal(result.status, 0, "REVIEW_VERIFIER_REJECTED_EXPORTED_FILE");
+  assert.equal(result.stdout, REVIEW_VERIFIER_SUCCESS);
+  assert.equal(result.stderr, "");
+}
 
 function numericLoopback(value) {
   if (!/^http:\/\/127\.0\.0\.1:[1-9][0-9]{0,4}$/.test(value))
@@ -628,6 +670,7 @@ test(
         assert.equal(contents.payload.approval.mode, "simulated");
         assert.equal(contents.payload.assurance.signed, false);
         assert.equal(contents.payload.assurance.authorizesExecution, false);
+        verifySavedReviewRecord(savePath, evidenceDirectory);
 
         await page.context().close();
       });

@@ -78,12 +78,14 @@ final class ApprovalReviewVerifierMainTest {
 
   private Path copyGolden(String name) throws IOException {
     Path path = temporaryDirectory.resolve(name);
-    try (var input = getClass().getResourceAsStream(
-        "/io/tracepermit/review/approval-review-export-v1.json")) {
-      if (input == null) throw new IOException("Test vector resource is unavailable");
-      Files.copy(input, path);
-    }
+    Files.copy(Path.of(requiredProperty("tracepermit.approvalReviewVector")), path);
     return path;
+  }
+
+  private static String requiredProperty(String name) {
+    String value = System.getProperty(name);
+    if (value == null || value.isBlank()) throw new IllegalStateException("Missing test property");
+    return value;
   }
 
   private static void assertFailure(Result result, int exitCode, String category) {

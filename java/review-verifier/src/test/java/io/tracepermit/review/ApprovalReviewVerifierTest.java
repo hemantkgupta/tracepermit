@@ -11,7 +11,6 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -353,10 +352,8 @@ final class ApprovalReviewVerifierTest {
   }
 
   private static String goldenText() throws IOException {
-    try (InputStream input = ApprovalReviewVerifierTest.class.getResourceAsStream(
-        "/io/tracepermit/review/approval-review-export-v1.json")) {
-      if (input == null) throw new IOException("Test vector resource is unavailable");
-      return new String(input.readAllBytes(), StandardCharsets.UTF_8);
-    }
+    return Files.readString(
+        Path.of(System.getProperty("tracepermit.approvalReviewVector")),
+        StandardCharsets.UTF_8);
   }
 }
