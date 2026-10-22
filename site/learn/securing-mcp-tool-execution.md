@@ -1,6 +1,6 @@
 ---
 title: Securing MCP Tool Execution
-description: Understand identity, authority, and the confused deputy at the MCP tool boundary, with an offline exercise and design review questions.
+description: Understand identity, authority, and the confused deputy at the MCP tool boundary, with security concepts and design review questions.
 outline: [2, 3]
 ---
 
@@ -197,33 +197,6 @@ authorization relationship. [Token
 passthrough](https://modelcontextprotocol.io/docs/2026-07-28/tutorials/security/security_best_practices#token-passthrough)
 can break audience and accountability boundaries; do not treat forwarding an
 arbitrary inbound token as preserving authorization.
-
-## Try the boundary offline
-
-<a href="/examples/mcp-authority-demo.py" download>Download the offline Python exercise</a>.
-It uses fictional tools and synthetic caller fixtures. Run the downloaded file:
-
-```bash
-python3 mcp-authority-demo.py
-```
-
-It needs Python 3.10 or newer and only the standard library. It makes no network
-requests and has no executor, credentials, OAuth verifier, or approval service.
-Its decisions describe whether a proposal could proceed to a later authority
-step; even `allow` performs no operation.
-
-| Proposal                                                 | Result in the exercise |
-| -------------------------------------------------------- | ---------------------- |
-| Read a small window from an allowed log group            | `allow`                |
-| Request an unknown tool                                  | `block`                |
-| Read a log group outside the fixture's resources         | `block`                |
-| Request a simulated instance stop without its scope      | `block`                |
-| Add `approved: true` to a large read proposal's metadata | `require_approval`     |
-| Use a caller fixture with the stop scope                 | `require_approval`     |
-
-The toy's scopes and decisions are not TracePermit's OAuth or policy contract.
-Try changing the metadata without changing the synthetic trusted context. It
-cannot turn a missing scope or pending approval into permission.
 
 ## How TracePermit applies the pattern
 
