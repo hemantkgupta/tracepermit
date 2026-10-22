@@ -34,12 +34,13 @@ not a production security gateway or public enforcement service.
 
 These reuse components but are **not one interchangeable installation**.
 
-| Profile                         | Working capability                                                                                       | Qualification boundary                                                                                                |
-| ------------------------------- | -------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| Synthetic browser walkthrough   | Requester, reviewer and viewer roles; exact-action confirmation; filtered/paged history                  | Java/PostgreSQL/browser tests and rendered UI checks, using a test-only IdP                                           |
-| Codex approval rehearsal        | Authenticated MCP request/status/explicit-resume plus separate browser review                            | Named Codex 0.162.1 / `gpt-5.6-sol` rehearsal on 2026-10-15, not arbitrary clients or models                          |
-| Native endpoint read/block demo | Request-bound source proof and policy before simulated read or destructive denial                        | A separate named CLI profile, not the bearer-only approval MCP profile                                                |
-| Buildable operator archive      | Java runtime libraries and built inbox, private configuration, offline check and strict database startup | Needs Java 21, local PostgreSQL and approved OIDC configuration; no universal external-provider or fresh-laptop claim |
+| Profile                         | Working capability                                                                                               | Qualification boundary                                                                                                  |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Synthetic browser walkthrough   | Requester, reviewer and viewer roles; exact-action confirmation; filtered/paged history                          | Java/PostgreSQL/browser tests and rendered UI checks, using a test-only IdP                                             |
+| Codex approval rehearsal        | Authenticated MCP request/status/explicit-resume plus separate browser review                                    | Named Codex 0.162.1 / `gpt-5.6-sol` rehearsal on 2026-10-15, not arbitrary clients or models                            |
+| Native endpoint read/block demo | Request-bound source proof and policy before simulated read or destructive denial                                | A separate named CLI profile, not the bearer-only approval MCP profile                                                  |
+| Buildable operator archive      | Java runtime libraries and built inbox, private configuration, offline check and strict database startup         | Needs Java 21, local PostgreSQL and approved OIDC configuration; no universal external-provider or fresh-laptop claim   |
+| Installed Auth0 approval        | Native/public requester sign-in, distinct reviewer approval, explicit simulator execution and restart durability | One same-Mac synthetic Auth0 registration on 2026-10-22; not arbitrary providers, public ingress or production identity |
 
 Start with the [clean Mac walkthrough](/guide/fresh-macbook-evaluation), or read the
 [recorded model-driven approval proof](https://github.com/hemantkgupta/tracepermit/blob/main/docs/demo-scenarios/evidence/codex-model-driven-approval-2026-10-15.md).
@@ -67,5 +68,7 @@ live qualification and future scope. Passing one profile does not qualify anothe
 No real AWS/Jira executor, universal agent interception, host-wide anti-bypass,
 public production gateway, independently signed release, production latency SLO
 or complete recovery/upgrade product is shipped by this preview. A fresh machine
-and a selected external provider still need their own recorded qualification.
+and every provider/profile beyond the named Auth0 composition still need their
+own recorded qualification. Read the
+[installed live record](https://github.com/hemantkgupta/tracepermit/blob/main/docs/demo-scenarios/evidence/installed-auth0-approval-2026-10-22.md).
 See [deployment and operations](/guide/deployment) before choosing a profile.

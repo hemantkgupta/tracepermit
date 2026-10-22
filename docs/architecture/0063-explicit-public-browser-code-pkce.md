@@ -1,6 +1,6 @@
 # ADR 0063: Explicit public-client code/PKCE browser profile
 
-- Status: Accepted for synthetic local qualification; live Auth0 pending
+- Status: Accepted; synthetic coverage and one named live Auth0 composition qualified
 - Requirements: FR-003/007/012; SEC-002/003/004/009/011/012/015;
   REL-001/004; OPS-001/004/005
 
@@ -86,16 +86,17 @@ There is no fallback to `JWT` access tokens, `azp` instead of `client_id`,
 missing callback issuer, opaque tokens, other algorithms or federated logout.
 
 Auth0 [documents separate default and RFC 9068 token profiles](https://auth0.com/docs/secure/tokens/access-tokens/access-token-profiles).
-That documentation is not evidence that this selected native app, organization,
-token header and callback profile actually work together. Native organization
-availability and RFC 9207 behavior remain live gates. A provider that omits
+That documentation alone is not evidence that a selected native app,
+organization, token header and callback profile work together. The
+[2026-10-22 live record](../demo-scenarios/evidence/installed-auth0-approval-2026-10-22.md)
+closed those gates for one named test composition only. A provider that omits
 `iss` or emits an unsupported token fails sign-in; do not manufacture claims.
 
 Automated tests use runtime-generated keys, local HTTP/TLS peers, synthetic
 identities and disposable PostgreSQL. No Auth0 tenant, management API, real
 target or public ingress is used. No general Auth0/OIDC compatibility or
 production readiness is claimed. The [local-Mac runbook](../runbooks/auth0-native-oidc-qualification.md)
-records the pending interactive gate. Container preparation is a separate
+records the procedure and dated named-profile result. Container preparation is a separate
 fixed-file profile and is not qualified for this new operator version here.
 
 The connected tracker labels TP-MVP-04 as a broader pilot-contract task with

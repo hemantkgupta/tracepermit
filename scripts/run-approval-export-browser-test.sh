@@ -6,6 +6,11 @@ source "$tracepermit_repo_root/scripts/configure-java-environment.sh"
 
 "$tracepermit_repo_root/java/gradlew" \
   -p "$tracepermit_repo_root/java" \
+  :adapters-http:test \
+  --tests '*ApprovalReviewExportTest' \
+  --tests '*SimulatorApprovalExportTest' \
+  --tests '*SimulatorApprovalRedactionBoundaryTest' \
+  :review-verifier:test \
   :review-verifier:installDist
 
 tracepermit_review_verifier="$tracepermit_repo_root/java/review-verifier/build/install/review-verifier/bin/review-verifier"

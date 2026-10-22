@@ -298,3 +298,17 @@ keys, independent reviewer authentication, shared edge state, target credential
 custody and egress enforcement, an external evidence sink, operations, and
 client qualification. See the [current-state baseline](03-current-state-baseline.md)
 and [threat model](10-security-threat-model.md).
+
+## 10. Installed requester helper
+
+One optional source-free helper runs beside the numeric-loopback approval
+service. It owns a one-shot public-client callback and short-lived local
+credential, while the approval service remains authoritative for signed token,
+tenant, membership, role, scope and request checks. A pre-storage qualification
+route is read-only and grants no session or execution authority. An explicit
+one-use launcher consumes the requester credential before starting only the
+pinned Codex executable; the separate browser reviewer remains independent.
+
+This composition introduces no public listener, provider secret, refresh token,
+real target, automatic approval/request retry or endpoint-attestation claim. See
+[ADR0065](../architecture/0065-installed-requester-public-sign-in.md).

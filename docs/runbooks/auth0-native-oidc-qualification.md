@@ -1,9 +1,12 @@
 # Auth0 native/public-client qualification
 
-Status: **live interactive qualification pending**. Automated tests qualify a
-synthetic local protocol composition, not an Auth0 tenant. The earlier hosted
+Status: **one named live interactive composition qualified on 2026-10-22**.
+The result covers a dedicated synthetic Auth0 organization, native/public app,
+same-Mac source-free approval archive and numeric-loopback browser inbox only.
+Automated tests retain the broader mutation matrix. The earlier hosted
 Auth0/ChatGPT tunnel evidence is a different profile and cannot qualify this
-browser inbox. See [ADR 0063](../architecture/0063-explicit-public-browser-code-pkce.md).
+browser inbox. See [ADR 0063](../architecture/0063-explicit-public-browser-code-pkce.md)
+and the [sanitized live record](../demo-scenarios/evidence/installed-auth0-approval-2026-10-22.md).
 
 Requirements: FR-003/007/012; SEC-002/003/004/009/011/012/015;
 REL-001/004; OPS-001/004/005. Local readiness checks the database/recovery
@@ -52,11 +55,26 @@ The PR identifies the final committed tree.
 The environment used Java/Javac21.0.2, Node24.19.0 and pnpm11.25.0. A JDK was
 extracted outside the repository under `/workspace/.local`; no JDK/build output
 is part of the change. The four `TRACEPERMIT_AUTH0_*` identifiers were absent.
-No Auth0 account, tenant network request or interactive login was used, so live
-compatibility remains **pending**, including native organization support,
-`at+jwt` output and callback `iss`.
+No Auth0 account, tenant network request or interactive login was used in that
+automated run. The separate 2026-10-22 live run closed those gates for one
+named test composition without broadening compatibility claims.
 
-## Exact local-Mac procedure: pending
+### Named live run on 2026-10-22
+
+The source-free archive built from clean commit
+`79c95770990d54d3bc01cc68b710d86794795cf5` passed installed `--check`, explicit
+empty-database initialization, native/public requester sign-in, distinct
+reviewer approval, explicit requester execution and restart durability. The
+terminal exact-action state was `consumed / succeeded`; the listener remained
+numeric-loopback and every target effect was simulated. A stopped/restarted
+process invalidated the old browser session while retaining durable state.
+
+The sanitized record contains the exact archive size/hash, host/runtime facts,
+failure note and untested boundaries. It contains no raw identity material.
+This qualifies only the named registration and operator configuration; it is
+not general Auth0/OIDC support, public ingress or production readiness.
+
+## Exact local-Mac procedure
 
 Run the browser and Java service on the **same Mac**. A phone browser cannot
 reach `127.0.0.1` inside a cloud sandbox. Keep the service on numeric loopback;
@@ -177,6 +195,8 @@ do not publish it, add a tunnel, use port forwarding or bind a wildcard.
 Record date, exact TracePermit commit, OS/JDK/browser versions, native method,
 token profile, each role/status outcome and failures as sanitized facts.
 Record only reviewed identifiers or redacted configuration shape, never tenant
-dumps or credentials. A successful future run qualifies **only that named
-test composition**. Until then, native Auth0 login, organization availability,
-`at+jwt` output and RFC9207 callback compatibility remain pending.
+dumps or credentials. A successful run qualifies **only that named test
+composition**. The 2026-10-22 record qualified native Auth0 login,
+organization binding, the strict access-token profile and RFC9207 callback
+compatibility for its exact registration. Other tenants, providers, client
+types and deployment profiles remain unqualified until separately recorded.

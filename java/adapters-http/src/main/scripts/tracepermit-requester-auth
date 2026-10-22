@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# TracePermit installed requester launcher.
+# The bearer is never accepted in argv and is injected only by the Java child launcher.
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DIST_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+if [ "$#" -ne 1 ] || { [ "$1" != "--help" ] && [ "$1" != "--check" ] && [ "$1" != "--login" ] && [ "$1" != "--codex" ] && [ "$1" != "--cleanup" ]; }; then
+  echo "REQUESTER_AUTH_FAILED: REQUESTER_MODE_REQUIRED" >&2
+  exit 2
+fi
+
+if [ "$1" != "--help" ] && [ -z "${TRACEPERMIT_REQUESTER_CONFIG:-}" ]; then
+  echo "REQUESTER_AUTH_FAILED: REQUESTER_CONFIGURATION_INVALID" >&2
+  exit 2
+fi
+
+# No Java process, including the version probe, may inherit diagnostic option injection.
+unset JAVA_TOOL_OPTIONS JDK_JAVA_OPTIONS _JAVA_OPTIONS
+
+if ! command -v java >/dev/null 2>&1; then
+  echo "REQUESTER_AUTH_FAILED: JAVA_21_REQUIRED" >&2
+  exit 2
+fi
+
+JAVA_VERSION_OUTPUT="$(java -version 2>&1 || true)"
+JAVA_MAJOR="$(echo "$JAVA_VERSION_OUTPUT" | sed -n 's/.*version "\([0-9]*\).*/\1/p' | head -n 1)"
+if [ "$JAVA_MAJOR" != "21" ]; then
+  echo "REQUESTER_AUTH_FAILED: JAVA_21_REQUIRED" >&2
+  exit 2
+fi
+
+if [ ! -d "$DIST_DIR/lib" ]; then
+  echo "REQUESTER_AUTH_FAILED: REQUESTER_PACKAGE_INVALID" >&2
+  exit 2
+fi
+
+exec java -cp "$DIST_DIR/lib/*" io.tracepermit.adapters.http.requester.InstalledRequesterAuthMain "$1"

@@ -134,4 +134,5 @@ Stored status is never rewritten merely because the browser labels it expired.
 
 [ADR0063](0063-explicit-public-browser-code-pkce.md) adds schema1.1 explicit
 `none` without a secret, preserving this confidential profile. It adds exact
-organization binding in both tokens; actual Auth0 qualification remains pending.
+organization binding in both tokens. One named native/public Auth0 composition
+was live-qualified on 2026-10-22; broader provider compatibility remains pending.
