@@ -348,3 +348,20 @@ trusted adapter. Its schema cannot turn a client-provided `verified` flag into
 proof. The supported local composition binds development HTTP surfaces to
 loopback; authenticated remote MCP is the external trust boundary. The read
 API is also loopback-only and has no remote tenant authorization.
+
+## Installed requester sign-in and Codex handoff
+
+The Java approval runtime has a read-only, bearer-authenticated requester
+qualification route, and the source-free archive packages a separate requester
+helper. It validates an exact owner-only configuration offline, performs one
+public Code + S256 login through a fixed numeric-loopback callback, verifies
+access and ID tokens, confirms exact requester-only enrollment, publishes one
+short-lived no-replace credential and consumes it before starting the pinned
+Codex executable with an environment-variable-referenced MCP bearer.
+
+Automated tests cover closed configuration, callback/state/issuer parsing,
+public authorization/token shape, role/scope/expiry rejection, credential
+permission/link/concurrency behavior, no-body qualification and token-free child
+argv. Live provider registration, browser selection, installed Codex catalog,
+expiry/re-login continuity and replay remain a separate Mac gate. This is a
+same-UID simulator boundary, not production identity or endpoint attestation.

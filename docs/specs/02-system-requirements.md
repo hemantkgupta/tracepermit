@@ -127,3 +127,18 @@ The following are proposed initial objectives and require product confirmation:
 | PORT-002 | Canonicalization SHALL be versioned and backed by deterministic golden vectors.                                |
 | PORT-003 | Java conformance tests SHALL validate checked-in contract artifacts and behavior.                              |
 | PORT-004 | Supported origin adapters SHALL preserve the canonical action and enforcement behavior through contract tests. |
+
+## Installed requester public-client interpretation
+
+The source-free requester helper applies FR-003/007/012,
+SEC-002/003/004/009/011/012/015, REL-001/004/006/009 and
+OPS-001/002/004/005 to one same-Mac simulator profile. It SHALL use a fixed
+numeric-loopback callback, public Code + S256, independently verified tokens,
+exact requester-only enrollment and a no-replace owner-only credential. The
+bearer SHALL be consumed before a fixed Codex child starts and SHALL appear only
+in a child environment variable, never argv, persistent configuration, output or
+evidence. No refresh, retry, replacement request or automatic resume is allowed.
+
+Automated qualification does not establish live provider interoperability,
+prompt/executable identity, endpoint posture, production isolation or a public
+deployment. See [ADR0065](../architecture/0065-installed-requester-public-sign-in.md).

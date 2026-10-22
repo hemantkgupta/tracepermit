@@ -176,6 +176,9 @@ abstract class StageSimulatorApprovalDistribution : DefaultTask() {
   @get:InputFile
   abstract val launcherScript: RegularFileProperty
 
+  @get:InputFile
+  abstract val requesterLauncherScript: RegularFileProperty
+
   @get:InputDirectory
   abstract val consoleDir: DirectoryProperty
 
@@ -183,7 +186,13 @@ abstract class StageSimulatorApprovalDistribution : DefaultTask() {
   abstract val exampleConfig: RegularFileProperty
 
   @get:InputFile
+  abstract val requesterExampleConfig: RegularFileProperty
+
+  @get:InputFile
   abstract val runbook: RegularFileProperty
+
+  @get:InputFile
+  abstract val requesterRunbook: RegularFileProperty
 
   @get:InputFile
   abstract val license: RegularFileProperty
@@ -222,6 +231,9 @@ abstract class StageSimulatorApprovalDistribution : DefaultTask() {
     val launcherDest = binDir.resolve("tracepermit-simulator-approval")
     launcherScript.get().asFile.copyTo(launcherDest, overwrite = true)
     launcherDest.setExecutable(true, false)
+    val requesterLauncherDest = binDir.resolve("tracepermit-requester-auth")
+    requesterLauncherScript.get().asFile.copyTo(requesterLauncherDest, overwrite = true)
+    requesterLauncherDest.setExecutable(true, false)
 
     // 2. Copy JARs
     val mainJarFile = mainJar.get().asFile
@@ -242,6 +254,10 @@ abstract class StageSimulatorApprovalDistribution : DefaultTask() {
 
     // 4. Copy Examples
     exampleConfig.get().asFile.copyTo(examplesDir.resolve("simulator-approvals.example.json"), overwrite = true)
+    requesterExampleConfig.get().asFile.copyTo(
+      examplesDir.resolve("installed-requester-sign-in.example.json"),
+      overwrite = true,
+    )
 
     // 5. Copy Docs & Legal
     // The installed runbook is relocated: its repository-relative links would otherwise break.
@@ -251,6 +267,10 @@ abstract class StageSimulatorApprovalDistribution : DefaultTask() {
       .replace("](authenticated-approval-api-foundation.md)", "]($sourceDocs/runbooks/authenticated-approval-api-foundation.md)")
       .replace("](operator-recovery-quarantine.md)", "]($sourceDocs/runbooks/operator-recovery-quarantine.md)")
     docsDir.resolve("setup-runbook.md").writeText(installedRunbook)
+    requesterRunbook.get().asFile.copyTo(
+      docsDir.resolve("requester-sign-in-runbook.md"),
+      overwrite = true,
+    )
     license.get().asFile.copyTo(docsDir.resolve("LICENSE"), overwrite = true)
     notice.get().asFile.copyTo(docsDir.resolve("NOTICE"), overwrite = true)
 
@@ -272,7 +292,7 @@ abstract class StageSimulatorApprovalDistribution : DefaultTask() {
 
     val manifestJson = buildString {
       append("{\n")
-      append("  \"schemaVersion\": \"1.1\",\n")
+      append("  \"schemaVersion\": \"1.2\",\n")
       append("  \"packageName\": \"tracepermit-simulator-approval\",\n")
       append("  \"packageVersion\": \"0.1.0\",\n")
       append("  \"sourceCommit\": \"${sourceCommit.get()}\",\n")
@@ -282,6 +302,8 @@ abstract class StageSimulatorApprovalDistribution : DefaultTask() {
       append("  \"supportedPlatforms\": [\n    \"macOS\",\n    \"Linux\"\n  ],\n")
       append("  \"entryPoint\": \"io.tracepermit.adapters.http.SimulatorApprovalMain\",\n")
       append("  \"launcher\": \"bin/tracepermit-simulator-approval\",\n")
+      append("  \"requesterEntryPoint\": \"io.tracepermit.adapters.http.requester.InstalledRequesterAuthMain\",\n")
+      append("  \"requesterLauncher\": \"bin/tracepermit-requester-auth\",\n")
       append("  \"integrityNotice\": \"Artifact checksums verify transmission and storage integrity. They do not constitute an independent cryptographic code signature or third-party provenance attestation.\",\n")
       append("  \"dependencyInventory\": [\n")
       jars.forEachIndexed { index, jar ->
@@ -371,9 +393,12 @@ val stageSimulatorApprovalDistribution = tasks.register<StageSimulatorApprovalDi
   runtimeClasspath.from(configurations["runtimeClasspath"])
   mainJar.set(tasks.named<Jar>("jar").flatMap { it.archiveFile })
   launcherScript.set(layout.projectDirectory.file("src/main/scripts/tracepermit-simulator-approval"))
+  requesterLauncherScript.set(layout.projectDirectory.file("src/main/scripts/tracepermit-requester-auth"))
   consoleDir.set(layout.projectDirectory.dir("../../apps/console/dist"))
   exampleConfig.set(layout.projectDirectory.file("../../config/simulator-approvals.example.json"))
+  requesterExampleConfig.set(layout.projectDirectory.file("../../config/installed-requester-sign-in.example.json"))
   runbook.set(layout.projectDirectory.file("../../docs/runbooks/simulator-approval-distribution.md"))
+  requesterRunbook.set(layout.projectDirectory.file("../../docs/runbooks/installed-requester-public-sign-in.md"))
   license.set(layout.projectDirectory.file("../../LICENSE"))
   notice.set(layout.projectDirectory.file("../../NOTICE"))
   sourceCommit.set(distributionCommit)
@@ -399,7 +424,7 @@ val archiveSimulatorApprovalDistribution = tasks.register<Tar>("archiveSimulator
     into("tracepermit-simulator-approval-0.1.0")
   }
   eachFile {
-    if (name == "tracepermit-simulator-approval") {
+    if (name == "tracepermit-simulator-approval" || name == "tracepermit-requester-auth") {
       permissions { unix("0755") }
     }
   }

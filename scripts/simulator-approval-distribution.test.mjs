@@ -10,6 +10,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
   statSync,
@@ -98,8 +99,11 @@ test("packaging refreshes commit-only provenance and rejects dirty or unavailabl
   copyFileSync(join(repoRoot, buildFile), join(fixture, buildFile));
   for (const file of [
     "java/adapters-http/src/main/scripts/tracepermit-simulator-approval",
+    "java/adapters-http/src/main/scripts/tracepermit-requester-auth",
     "config/simulator-approvals.example.json",
+    "config/installed-requester-sign-in.example.json",
     "docs/runbooks/simulator-approval-distribution.md",
+    "docs/runbooks/installed-requester-public-sign-in.md",
     "LICENSE",
     "NOTICE",
   ]) {
@@ -376,6 +380,13 @@ test("distribution archive layout, permissions, and clean dependency inventory",
     0o755,
     "Launcher must have mode 0755",
   );
+  const requesterLauncher = join(distDir, "bin/tracepermit-requester-auth");
+  assert.ok(existsSync(requesterLauncher), "Requester launcher must exist");
+  assert.equal(
+    statSync(requesterLauncher).mode & 0o777,
+    0o755,
+    "Requester launcher must have mode 0755",
+  );
 
   assert.ok(
     existsSync(join(distDir, "console/index.html")),
@@ -390,6 +401,10 @@ test("distribution archive layout, permissions, and clean dependency inventory",
     "docs/setup-runbook.md must exist",
   );
   assert.ok(
+    existsSync(join(distDir, "docs/requester-sign-in-runbook.md")),
+    "docs/requester-sign-in-runbook.md must exist",
+  );
+  assert.ok(
     existsSync(join(distDir, "docs/LICENSE")),
     "docs/LICENSE must exist",
   );
@@ -398,13 +413,19 @@ test("distribution archive layout, permissions, and clean dependency inventory",
     existsSync(join(distDir, "examples/simulator-approvals.example.json")),
     "examples/simulator-approvals.example.json must exist",
   );
+  assert.ok(
+    existsSync(
+      join(distDir, "examples/installed-requester-sign-in.example.json"),
+    ),
+    "examples/installed-requester-sign-in.example.json must exist",
+  );
 
   // Verify manifest.json
   const manifestPath = join(distDir, "manifest.json");
   assert.ok(existsSync(manifestPath), "manifest.json must exist");
   assert.equal(statSync(manifestPath).mode & 0o777, 0o644);
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
-  assert.equal(manifest.schemaVersion, "1.1");
+  assert.equal(manifest.schemaVersion, "1.2");
   const installedRunbook = readFileSync(
     join(distDir, "docs/setup-runbook.md"),
     "utf8",
@@ -439,6 +460,11 @@ test("distribution archive layout, permissions, and clean dependency inventory",
     "io.tracepermit.adapters.http.SimulatorApprovalMain",
   );
   assert.equal(manifest.launcher, "bin/tracepermit-simulator-approval");
+  assert.equal(
+    manifest.requesterEntryPoint,
+    "io.tracepermit.adapters.http.requester.InstalledRequesterAuthMain",
+  );
+  assert.equal(manifest.requesterLauncher, "bin/tracepermit-requester-auth");
   assert.ok(Array.isArray(manifest.dependencyInventory));
   assert.ok(manifest.dependencyInventory.length >= 10);
   assert.ok(manifest.integrityNotice.includes("checksums verify"));
@@ -537,6 +563,93 @@ test("distribution archive layout, permissions, and clean dependency inventory",
     !launcherContent.includes("SimulatorApprovalBrowserQualificationMain"),
     "Launcher must not expose test-classpath IdP fixture",
   );
+  const requesterLauncherContent = readFileSync(requesterLauncher, "utf8");
+  assert.ok(
+    requesterLauncherContent.includes(
+      "io.tracepermit.adapters.http.requester.InstalledRequesterAuthMain",
+    ),
+  );
+  assert.ok(!requesterLauncherContent.includes("DevelopmentBackendMain"));
+  assert.ok(
+    !requesterLauncherContent.includes("TRACEPERMIT_REQUESTER_BEARER="),
+  );
+});
+
+test("installed requester offline --check is source-free and creates no credential", (t) => {
+  ensureDistributionBuilt();
+  const extractRoot = realpathSync(
+    mkdtempSync(join(tmpdir(), "tp requester dist test spaces ")),
+  );
+  const unrelatedCwd = realpathSync(
+    mkdtempSync(join(tmpdir(), "tp requester unrelated cwd ")),
+  );
+  t.after(() => {
+    rmSync(extractRoot, { recursive: true, force: true });
+    rmSync(unrelatedCwd, { recursive: true, force: true });
+  });
+  execSync(`tar -xzf "${distArchive}" -C "${extractRoot}"`);
+  const distDir = join(extractRoot, "tracepermit-simulator-approval-0.1.0");
+  const launcher = join(distDir, "bin/tracepermit-requester-auth");
+  const privateDir = join(extractRoot, "requester-private");
+  mkdirSync(privateDir, { mode: 0o700 });
+  chmodSync(privateDir, 0o700);
+  const fakeCodex = join(privateDir, "codex-fixture");
+  writeFileSync(fakeCodex, "#!/bin/sh\nexit 0\n");
+  chmodSync(fakeCodex, 0o700);
+  const credential = join(privateDir, "credential.json");
+  const config = join(privateDir, "requester.json");
+  writeFileSync(
+    config,
+    JSON.stringify(
+      {
+        schemaVersion: "1.0",
+        profile: "installed-requester-public-sign-in",
+        oidc: {
+          issuer: "https://idp.example.invalid/",
+          authorizationUri: "https://idp.example.invalid/authorize",
+          tokenUri: "https://idp.example.invalid/oauth/token",
+          jwksUri: "https://idp.example.invalid/.well-known/jwks.json",
+          audience: "https://approval-api.example.invalid",
+          clientId: "native-client.example.invalid",
+          organization: "org_exampleinvalid",
+          expectedSubject: "provider|requester.example.invalid",
+        },
+        local: {
+          callbackUri: "http://127.0.0.1:41837/requester/callback",
+          qualificationUri:
+            "http://127.0.0.1:8085/api/v1/requester-qualification",
+          mcpUri: "http://127.0.0.1:8085/mcp",
+          credentialFile: credential,
+          codexExecutable: fakeCodex,
+        },
+      },
+      null,
+      2,
+    ),
+  );
+  chmodSync(config, 0o600);
+
+  const result = spawnSync(launcher, ["--check"], {
+    cwd: unrelatedCwd,
+    env: {
+      PATH: createSanitizedPath(),
+      TRACEPERMIT_REQUESTER_CONFIG: config,
+      JAVA_TOOL_OPTIONS: "-Dsentinel.must.not.run=true",
+      JDK_JAVA_OPTIONS: "-Dsentinel.must.not.run=true",
+      _JAVA_OPTIONS: "-Dsentinel.must.not.run=true",
+    },
+    encoding: "utf8",
+    timeout: 30_000,
+  });
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  assert.match(result.stdout, /REQUESTER_CONFIGURATION_VALID/);
+  assert.equal(result.stderr, "");
+  assert.ok(
+    !existsSync(credential),
+    "Offline check must not create a credential",
+  );
+  assert.ok(!result.stdout.includes("sentinel.must.not.run"));
+  assert.ok(!result.stdout.includes(config));
 });
 
 test("offline --check succeeds from unrelated working directory without Node/pnpm/Gradle", (t) => {
