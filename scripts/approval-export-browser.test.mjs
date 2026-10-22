@@ -1,10 +1,18 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { chmod, mkdtemp, readFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { createConnection } from "node:net";
 import { tmpdir } from "node:os";
-import { delimiter, dirname, join } from "node:path";
+import { basename, delimiter, dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import { chromium } from "playwright";
@@ -15,16 +23,14 @@ const START_TIMEOUT = 240_000;
 const OUTPUT_LIMIT = 1_048_576;
 const CANARY = "synthetic-private-diagnostic-must-not-render";
 const signInHeading = "Sign in to your approval workspace";
+const invalidRecordNotice =
+  "The review export record was invalid or could not be verified. Server state remains authoritative.";
 const REVIEW_VERIFIER_SUCCESS =
   "STRUCTURE_AND_CHECKSUM_VALID UNSIGNED SIMULATOR_ONLY NOT_AUTHORITY\n";
+const REVIEW_VERIFIER_PREFIX = "TRACEPERMIT_APPROVAL_REVIEW_CHECK: ";
 
-function verifySavedReviewRecord(path, workingDirectory) {
-  const launcher = process.env.TRACEPERMIT_REVIEW_VERIFIER_PATH;
+function verifierEnvironment() {
   const javaHome = process.env.JAVA_HOME;
-  assert.ok(
-    typeof launcher === "string" && launcher.length > 0,
-    "REVIEW_VERIFIER_LAUNCHER_UNAVAILABLE",
-  );
   const javaDirectory =
     typeof javaHome === "string" && javaHome.length > 0
       ? join(javaHome, "bin")
@@ -35,7 +41,6 @@ function verifySavedReviewRecord(path, workingDirectory) {
     typeof javaDirectory === "string" && javaDirectory.length > 0,
     "REVIEW_VERIFIER_JAVA_UNAVAILABLE",
   );
-
   const environment = {
     PATH: `${javaDirectory}:/usr/bin:/bin`,
     LANG: "C.UTF-8",
@@ -43,18 +48,72 @@ function verifySavedReviewRecord(path, workingDirectory) {
   if (typeof javaHome === "string" && javaHome.length > 0) {
     environment.JAVA_HOME = javaHome;
   }
-  const result = spawnSync(launcher, [path], {
-    cwd: workingDirectory,
+  const version = spawnSync(join(javaDirectory, "java"), ["-version"], {
     env: environment,
+    encoding: "utf8",
+    timeout: 5_000,
+    maxBuffer: 16_384,
+  });
+  assert.equal(version.error, undefined, "REVIEW_VERIFIER_JAVA_UNAVAILABLE");
+  assert.equal(version.status, 0, "REVIEW_VERIFIER_JAVA_UNAVAILABLE");
+  assert.match(
+    `${version.stdout}${version.stderr}`,
+    /version "21(?:\.|\")/,
+    "REVIEW_VERIFIER_REQUIRES_JAVA_21",
+  );
+  return environment;
+}
+
+function runInstalledVerifier(path, workingDirectory) {
+  const launcher = process.env.TRACEPERMIT_REVIEW_VERIFIER_PATH;
+  assert.ok(
+    typeof launcher === "string" && launcher.length > 0,
+    "REVIEW_VERIFIER_LAUNCHER_UNAVAILABLE",
+  );
+  assert.match(
+    launcher,
+    /[/\\]build[/\\]install[/\\]review-verifier[/\\]bin[/\\]review-verifier$/,
+    "REVIEW_VERIFIER_INSTALLED_LAUNCHER_REQUIRED",
+  );
+  return spawnSync(launcher, [path], {
+    cwd: workingDirectory,
+    env: verifierEnvironment(),
     encoding: "utf8",
     timeout: 15_000,
     maxBuffer: 65_536,
   });
+}
 
+function assertVerifierOutcome(
+  path,
+  workingDirectory,
+  expectedStatus,
+  expectedCategory,
+) {
+  const result = runInstalledVerifier(path, workingDirectory);
   assert.equal(result.error, undefined, "REVIEW_VERIFIER_LAUNCH_FAILED");
-  assert.equal(result.status, 0, "REVIEW_VERIFIER_REJECTED_EXPORTED_FILE");
-  assert.equal(result.stdout, REVIEW_VERIFIER_SUCCESS);
-  assert.equal(result.stderr, "");
+  assert.equal(result.status, expectedStatus, "REVIEW_VERIFIER_EXIT_MISMATCH");
+  if (expectedStatus === 0) {
+    assert.equal(result.stdout, REVIEW_VERIFIER_SUCCESS);
+    assert.equal(result.stderr, "");
+  } else {
+    assert.equal(result.stdout, "");
+    assert.equal(
+      result.stderr,
+      `${REVIEW_VERIFIER_PREFIX}${expectedCategory}\n`,
+    );
+  }
+  const boundedOutput = `${result.stdout}${result.stderr}`;
+  assert.ok(Buffer.byteLength(boundedOutput) <= 256);
+  assert.ok(!boundedOutput.includes(CANARY));
+  assert.ok(!boundedOutput.includes(path));
+  assert.ok(!boundedOutput.includes(basename(path)));
+}
+
+async function fileSha256(path) {
+  return createHash("sha256")
+    .update(await readFile(path))
+    .digest("hex");
 }
 
 function numericLoopback(value) {
@@ -80,6 +139,44 @@ function fixtureEnvironment() {
         ),
     ),
   );
+}
+
+function dockerContainerIds() {
+  const result = spawnSync("docker", ["ps", "--all", "--format", "{{.ID}}"], {
+    timeout: 15_000,
+    maxBuffer: 65_536,
+    encoding: "utf8",
+    env: fixtureEnvironment(),
+  });
+  assert.equal(result.status, 0, "BROWSER_FIXTURE_DOCKER_UNAVAILABLE");
+  return new Set(
+    result.stdout
+      .split("\n")
+      .map((value) => value.trim())
+      .filter(Boolean),
+  );
+}
+
+async function fixtureDirectoryNames() {
+  return new Set(
+    (await readdir(tmpdir(), { withFileTypes: true }))
+      .filter(
+        (entry) =>
+          entry.isDirectory() &&
+          (entry.name.startsWith("tracepermit-browser-qualification-") ||
+            entry.name.startsWith("tracepermit-browser-run.")),
+      )
+      .map((entry) => entry.name),
+  );
+}
+
+async function assertNoNewContainers(baseline) {
+  for (let attempt = 0; attempt < 40; attempt++) {
+    const current = dockerContainerIds();
+    if ([...current].every((id) => baseline.has(id))) return;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error("BROWSER_FIXTURE_CONTAINER_LINGERING");
 }
 
 async function portIsOpen(origin) {
@@ -142,9 +239,9 @@ async function startFixture() {
       rejectReady(new Error("BROWSER_FIXTURE_SPAWN_FAILED"));
       resolve({ code: null });
     });
-    child.once("exit", (code) => {
+    child.once("exit", (code, signal) => {
       rejectReady(new Error("BROWSER_FIXTURE_EXITED_BEFORE_READY"));
-      resolve({ code });
+      resolve({ code, signal });
     });
   });
   for (const stream of [child.stdout, child.stderr]) {
@@ -191,20 +288,37 @@ async function startFixture() {
       }
     };
     killOwnedGroup("SIGTERM");
-    const result = await Promise.race([
+    let result = await Promise.race([
       exited,
-      new Promise((resolve) => setTimeout(resolve, 5_000)),
+      new Promise((resolve) => setTimeout(() => resolve(null), 5_000)),
     ]);
-    if (!result || result.code === null) {
+    if (result === null) {
       killOwnedGroup("SIGKILL");
-      await exited;
+      result = await within(exited, 5_000, "BROWSER_FIXTURE_PROCESS_LINGERING");
     }
+    assert.ok(result, "BROWSER_FIXTURE_PROCESS_LINGERING");
+    let portReleased = !origin;
     if (origin) {
-      for (let i = 0; i < 40; i++) {
-        if (!(await portIsOpen(origin))) return;
+      for (let attempt = 0; attempt < 40; attempt++) {
+        if (!(await portIsOpen(origin))) {
+          portReleased = true;
+          break;
+        }
         await new Promise((resolve) => setTimeout(resolve, 250));
       }
-      throw new Error("BROWSER_FIXTURE_PORT_LINGERING");
+    }
+    if (!portReleased) throw new Error("BROWSER_FIXTURE_PORT_LINGERING");
+    if (child.pid) {
+      for (let attempt = 0; attempt < 40; attempt++) {
+        try {
+          process.kill(-child.pid, 0);
+        } catch (failure) {
+          if (failure.code === "ESRCH") return;
+          throw failure;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+      throw new Error("BROWSER_FIXTURE_PROCESS_GROUP_LINGERING");
     }
   }
   try {
@@ -220,46 +334,64 @@ async function startFixture() {
   }
 }
 
+function isExportUrl(url) {
+  return /\/browser\/api\/v1\/approvals\/[a-f0-9-]{36}\/export$/.test(
+    new URL(url).pathname,
+  );
+}
+
 test(
-  "approval review metadata export browser controls and download validation",
-  { timeout: 300_000 },
+  "approval review browser download is verified byte-for-byte by the installed checker",
+  { timeout: 480_000 },
   async (t) => {
     let fixture;
     let browser;
-    const contexts = [];
+    const contexts = new Set();
     let evidenceDirectory;
-    let failedBeforeCleanup = false;
-    let currentStep = "init";
+    let baselineContainers;
+    let baselineFixtureDirectories;
+    let positiveSavePath;
+    let positiveRecord;
+    let positiveDigest;
+    let currentStep = "initialization";
 
     const step = async (title, action) => {
       currentStep = title;
-      await t.test(title, action);
+      await action();
+      t.diagnostic(`PASS: ${title}`);
+    };
+
+    const closePage = async (page) => {
+      assert.ok(!(await page.locator("body").innerText()).includes(CANARY));
+      const context = page.context();
+      await within(context.close(), 5_000, "BROWSER_CONTEXT_CLOSE_TIMEOUT");
+      contexts.delete(context);
     };
 
     try {
-      const docker = spawnSync(
-        "docker",
-        ["info", "--format", "{{.ServerVersion}}"],
-        {
-          timeout: 10_000,
-          env: fixtureEnvironment(),
-        },
+      baselineContainers = dockerContainerIds();
+      baselineFixtureDirectories = await fixtureDirectoryNames();
+      evidenceDirectory = await mkdtemp(
+        join(tmpdir(), "tp-export-qualification-"),
       );
-      if (docker.status !== 0) {
-        t.skip("Docker is not available; skipping live browser export test");
-        return;
-      }
-
-      evidenceDirectory = await mkdtemp(join(tmpdir(), "tp-export-evidence-"));
       await chmod(evidenceDirectory, 0o700);
 
       const channel = process.env.TRACEPERMIT_BROWSER_CHANNEL;
+      const executablePath = process.env.TRACEPERMIT_BROWSER_EXECUTABLE;
+      assert.ok(!channel || channel === "chrome", "BROWSER_CHANNEL_REJECTED");
       assert.ok(
-        !channel || channel === "chrome",
-        "Only the explicit chrome channel override is supported",
+        !executablePath ||
+          (isAbsolute(executablePath) && existsSync(executablePath)),
+        "BROWSER_EXECUTABLE_REJECTED",
+      );
+      assert.ok(
+        !(channel && executablePath),
+        "BROWSER_LAUNCH_CONFIGURATION_REJECTED",
       );
       browser = await chromium.launch({
         channel,
+        executablePath,
+        env: fixtureEnvironment(),
         headless: true,
         timeout: 15_000,
       });
@@ -273,8 +405,25 @@ test(
           viewport: { width: 1280, height: 900 },
           acceptDownloads: true,
         });
-        contexts.push(context);
+        contexts.add(context);
         const page = await context.newPage();
+        const unsafeBrowserEvents = [];
+        page.on("pageerror", () => unsafeBrowserEvents.push("pageerror"));
+        page.on("console", (message) => {
+          if (
+            message.text().includes(CANARY) ||
+            (message.type() === "error" &&
+              !message
+                .text()
+                .startsWith(
+                  "Failed to load resource: the server responded with a status of",
+                ))
+          ) {
+            unsafeBrowserEvents.push("console");
+          }
+        });
+        page.assertHealthy = () =>
+          assert.deepEqual(unsafeBrowserEvents, [], "BROWSER_CONSOLE_FAILURE");
         await page.goto(`${fixture.origin}/approvals`);
         await page
           .getByRole("heading", { name: signInHeading, exact: true })
@@ -305,10 +454,10 @@ test(
 
       const seed = async (page, port = 4443) => {
         const result = await page.evaluate(async (targetPort) => {
-          const sessionRes = await fetch("/browser/session");
-          if (!sessionRes.ok) return null;
-          const session = await sessionRes.json();
-          const res = await fetch("/browser/api/v1/approvals", {
+          const sessionResponse = await fetch("/browser/session");
+          if (!sessionResponse.ok) return null;
+          const session = await sessionResponse.json();
+          const response = await fetch("/browser/api/v1/approvals", {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
@@ -320,401 +469,591 @@ test(
               cidr: "192.0.2.0/24",
             }),
           });
-          if (!res.ok) return null;
-          return await res.json();
+          return response.ok ? await response.json() : null;
         }, port);
-        assert.ok(result && result.approvalRequestId);
+        assert.ok(result?.approvalRequestId, "BROWSER_SEED_FAILED");
         return result;
       };
 
-      const ensureRow = async (page) => {
-        const item = await seed(page);
+      const selectSeededRow = async (page, port = 4443) => {
+        const item = await seed(page, port);
         await page.reload();
         await page
           .getByRole("form", { name: "Filter approvals", exact: true })
           .waitFor({ timeout: UI_TIMEOUT });
-        const firstRow = page.locator("button.approval-row").first();
-        await firstRow.waitFor({ timeout: UI_TIMEOUT });
-        await firstRow.click();
+        const row = page.locator("button.approval-row").filter({
+          hasText: item.approvalRequestId.slice(0, 8),
+        });
+        await row.waitFor({ timeout: UI_TIMEOUT });
+        await row.click();
         return item;
       };
 
-      await step(
-        "verify review export section explanation and button render on selection",
-        async () => {
-          const page = await pageFor("alice");
-          await ensureRow(page);
-
-          // Detail pane should render the review record section
-          const exportSection = page.locator("div.approval-export-section");
-          await exportSection.waitFor({ timeout: UI_TIMEOUT });
-
-          const heading = exportSection.getByRole("heading", {
-            name: "Review record",
-            exact: true,
-          });
-          assert.equal(await heading.isVisible(), true);
-
-          const explanation = exportSection.locator("p.approval-muted");
-          const text = await explanation.innerText();
-          assert.ok(text.includes("simulator-only"));
-          assert.ok(text.includes("metadata-only"));
-          assert.ok(text.includes("unsigned"));
-          assert.ok(text.includes("incomplete"));
-
-          const downloadButton = exportSection.getByRole("button", {
-            name: "Download review JSON",
-            exact: true,
-          });
-          assert.equal(await downloadButton.isVisible(), true);
-          assert.equal(await downloadButton.isEnabled(), true);
-
-          await page.context().close();
-        },
-      );
+      const exportButton = (page) =>
+        page.getByRole("button", {
+          name: "Download review JSON",
+          exact: true,
+        });
 
       await step(
-        "verify oversized export response is rejected without download",
+        "real Java route to browser download to exact installed-verifier file",
         async () => {
           const page = await pageFor("alice");
-          await ensureRow(page);
+          const seeded = await selectSeededRow(page);
+          assert.match(
+            seeded.approvalRequestId,
+            /^[a-f0-9-]{36}$/,
+            "BROWSER_APPROVAL_ID_INVALID",
+          );
 
           const exportSection = page.locator("div.approval-export-section");
           await exportSection.waitFor({ timeout: UI_TIMEOUT });
+          const explanation = await exportSection
+            .locator("p.approval-muted")
+            .innerText();
+          for (const limitation of [
+            "simulator-only",
+            "metadata-only",
+            "unsigned",
+            "incomplete",
+          ]) {
+            assert.ok(explanation.includes(limitation));
+          }
 
-          // Route the export endpoint with oversized body (>32KB)
-          await page.route(
-            "**/browser/api/v1/approvals/*/export",
-            async (route) => {
-              const hugeJson = JSON.stringify({
-                schemaVersion: "1.0",
-                kind: "tracepermit-approval-review",
-                padding: "X".repeat(40_000),
-              });
-              await route.fulfill({
-                status: 200,
-                contentType: "application/json",
-                body: hugeJson,
-              });
-            },
-          );
-
-          const downloadButton = exportSection.getByRole("button", {
-            name: "Download review JSON",
-            exact: true,
+          let requestCount = 0;
+          let downloadCount = 0;
+          page.on("request", (request) => {
+            if (isExportUrl(request.url())) requestCount++;
           });
-          await downloadButton.click();
-
-          // Should display fixed error notice, not download
-          const notice = page.locator("p.approval-notice");
-          await notice.waitFor({ timeout: UI_TIMEOUT });
-          const noticeText = await notice.innerText();
-          assert.ok(
-            noticeText.includes(
-              "The review export record was invalid or could not be verified",
-            ),
+          page.on("download", () => downloadCount++);
+          const responsePromise = page.waitForResponse(
+            (response) => isExportUrl(response.url()),
+            { timeout: UI_TIMEOUT },
           );
-
-          await page.context().close();
-        },
-      );
-
-      await step(
-        "verify in-flight export cancellation when user signs out",
-        async () => {
-          const page = await pageFor("alice");
-          await ensureRow(page);
-
-          let fulfillDelayedRoute;
-          const delayedPromise = new Promise((resolve) => {
-            fulfillDelayedRoute = resolve;
-          });
-
-          await page.route(
-            "**/browser/api/v1/approvals/*/export",
-            async (route) => {
-              await delayedPromise;
-              await route.fulfill({
-                status: 200,
-                contentType: "application/json",
-                body: JSON.stringify({
-                  schemaVersion: "1.0",
-                  kind: "tracepermit-approval-review",
-                  canonicalization: "tracepermit-canonical-json-v1",
-                  payload: {
-                    generatedAt: "2026-10-21T12:00:00Z",
-                    mode: "simulated",
-                    assurance: {
-                      signed: false,
-                      completeHistory: false,
-                      transactionalSnapshot: false,
-                      independentAnchor: false,
-                      authorizesExecution: false,
-                      argumentsIncluded: false,
-                    },
-                    approval: {
-                      mode: "simulated",
-                      approvalRequestId: "00000000-0000-0000-0000-000000000001",
-                      requestHash:
-                        "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                      requesterId:
-                        "principal:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                      status: "pending",
-                      createdAt: "2026-10-21T11:00:00Z",
-                      expiresAt: "2026-10-21T13:00:00Z",
-                      expired: false,
-                      policyId: "pol-local-simulator-approval",
-                      policyVersion: 2,
-                      originalPolicyOutcome: "require_approval",
-                      executionStatus: "not_executed",
-                      toolName: "aws.ec2.update_security_group",
-                    },
-                  },
-                  payloadHash:
-                    "sha256:b906a41995ff346f31fe1a94331e60a44afb72c381d3343bc014602ac4742dae",
-                }),
-              });
-            },
-          );
-
-          const downloadButton = page
-            .locator("div.approval-export-section")
-            .getByRole("button", {
-              name: "Download review JSON",
-              exact: true,
-            });
-          await downloadButton.click();
-
-          // While request is in-flight, sign out immediately
-          await page
-            .getByRole("button", { name: "Sign out", exact: true })
-            .click();
-          await page
-            .getByRole("heading", { name: signInHeading, exact: true })
-            .waitFor({ timeout: UI_TIMEOUT });
-
-          // Unblock delayed network response
-          fulfillDelayedRoute();
-
-          // Wait brief tick to confirm no crash or uncaught rejection
-          await page.waitForTimeout(500);
-          assert.equal(
-            await page
-              .getByRole("heading", { name: signInHeading, exact: true })
-              .isVisible(),
-            true,
-          );
-
-          await page.context().close();
-        },
-      );
-
-      await step(
-        "verify successful browser download and saved JSON file with synthetic transport response",
-        async () => {
-          const page = await pageFor("alice");
-          const seeded = await ensureRow(page);
-          assert.ok(seeded.approvalRequestId);
-          assert.ok(seeded.requestHash);
-
-          const exportSection = page.locator("div.approval-export-section");
-          await exportSection.waitFor({ timeout: UI_TIMEOUT });
-
-          const syntheticExport = {
-            schemaVersion: "1.0",
-            kind: "tracepermit-approval-review",
-            canonicalization: "tracepermit-canonical-json-v1",
-            payload: {
-              generatedAt: "2026-10-21T12:00:00Z",
-              mode: "simulated",
-              assurance: {
-                signed: false,
-                completeHistory: false,
-                transactionalSnapshot: false,
-                independentAnchor: false,
-                authorizesExecution: false,
-                argumentsIncluded: false,
-              },
-              approval: {
-                mode: "simulated",
-                approvalRequestId: seeded.approvalRequestId,
-                requestHash: seeded.requestHash,
-                requesterId:
-                  "principal:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-                status: "pending",
-                createdAt: "2026-10-21T11:00:00Z",
-                expiresAt: "2026-10-21T13:00:00Z",
-                expired: false,
-                policyId: "pol-local-simulator-approval",
-                policyVersion: 2,
-                originalPolicyOutcome: "require_approval",
-                executionStatus: "not_executed",
-                toolName: "aws.ec2.update_security_group",
-              },
-            },
-            payloadHash:
-              "sha256:b906a41995ff346f31fe1a94331e60a44afb72c381d3343bc014602ac4742dae",
-          };
-
-          await page.route(
-            `**/browser/api/v1/approvals/${encodeURIComponent(seeded.approvalRequestId)}/export`,
-            async (route) => {
-              await route.fulfill({
-                status: 200,
-                contentType: "application/json",
-                body: JSON.stringify(syntheticExport),
-              });
-            },
-          );
-
           const downloadPromise = page.waitForEvent("download", {
             timeout: UI_TIMEOUT,
           });
-          const downloadButton = exportSection.getByRole("button", {
-            name: "Download review JSON",
-            exact: true,
-          });
-          await downloadButton.click();
-
-          const download = await downloadPromise;
+          await exportButton(page).click();
+          const [response, download] = await Promise.all([
+            responsePromise,
+            downloadPromise,
+          ]);
+          assert.equal(response.status(), 200);
+          assert.equal(requestCount, 1, "EXPORT_ROUTE_RETRY_DETECTED");
+          assert.equal(downloadCount, 1, "SECOND_BROWSER_DOWNLOAD_DETECTED");
+          assert.equal(await download.failure(), null);
           const filename = download.suggestedFilename();
           assert.equal(
             filename,
             `tracepermit-approval-${seeded.approvalRequestId}.json`,
           );
 
-          const savePath = join(evidenceDirectory, filename);
-          await download.saveAs(savePath);
-
-          const contents = JSON.parse(await readFile(savePath, "utf8"));
-          assert.equal(contents.schemaVersion, "1.0");
-          assert.equal(contents.kind, "tracepermit-approval-review");
+          positiveSavePath = join(evidenceDirectory, filename);
+          await download.saveAs(positiveSavePath);
+          const downloadedBytes = await readFile(positiveSavePath);
+          positiveRecord = JSON.parse(downloadedBytes.toString("utf8"));
+          assert.equal(positiveRecord.schemaVersion, "1.0");
+          assert.equal(positiveRecord.kind, "tracepermit-approval-review");
           assert.equal(
-            contents.canonicalization,
+            positiveRecord.canonicalization,
             "tracepermit-canonical-json-v1",
           );
-          assert.equal(contents.payload.mode, "simulated");
           assert.equal(
-            contents.payload.approval.approvalRequestId,
+            positiveRecord.payload.generatedAt,
+            "2030-01-01T00:00:00Z",
+          );
+          assert.equal(positiveRecord.payload.mode, "simulated");
+          assert.equal(positiveRecord.payload.approval.mode, "simulated");
+          assert.equal(
+            positiveRecord.payload.approval.approvalRequestId,
             seeded.approvalRequestId,
           );
           assert.equal(
-            contents.payload.approval.requestHash,
+            positiveRecord.payload.approval.requestHash,
             seeded.requestHash,
           );
-          assert.equal(contents.payload.assurance.signed, false);
-          assert.equal(contents.payload.assurance.authorizesExecution, false);
+          assert.equal(positiveRecord.payload.assurance.signed, false);
+          assert.equal(
+            positiveRecord.payload.assurance.authorizesExecution,
+            false,
+          );
+          const serialized = downloadedBytes.toString("utf8");
+          for (const forbidden of [
+            '"arguments"',
+            '"target"',
+            "access_token",
+            "id_token",
+            "credential",
+            "privateKey",
+          ]) {
+            assert.ok(!serialized.includes(forbidden));
+          }
 
-          await page.context().close();
+          positiveDigest = await fileSha256(positiveSavePath);
+          assertVerifierOutcome(positiveSavePath, evidenceDirectory, 0);
+          assert.equal(
+            await fileSha256(positiveSavePath),
+            positiveDigest,
+            "DOWNLOADED_BYTES_CHANGED_DURING_VERIFICATION",
+          );
+          t.diagnostic(`Downloaded file SHA-256: ${positiveDigest}`);
+          page.assertHealthy();
+          await closePage(page);
         },
       );
 
-      await step("integrated download against Java backend route", async () => {
-        const page = await pageFor("alice");
-        await ensureRow(page);
+      await step(
+        "installed verifier rejects downloaded-byte negative controls once with bounded categories",
+        async () => {
+          assert.ok(positiveSavePath && positiveRecord && positiveDigest);
+          const clone = () => structuredClone(positiveRecord);
+          const cases = [
+            {
+              name: "malformed-json",
+              bytes: Buffer.from(`{"canary":"${CANARY}"`),
+              status: 5,
+              category: "MALFORMED_DOCUMENT",
+            },
+            {
+              name: "oversized-input",
+              bytes: Buffer.alloc(32_769, 0x58),
+              status: 4,
+              category: "INPUT_TOO_LARGE",
+            },
+            {
+              name: "unsupported-schema-version",
+              mutate(record) {
+                record.schemaVersion = "2.0";
+              },
+              status: 6,
+              category: "CONTRACT_INVALID",
+            },
+            {
+              name: "unknown-top-level-field",
+              mutate(record) {
+                record.untrusted = CANARY;
+              },
+              status: 6,
+              category: "CONTRACT_INVALID",
+            },
+            {
+              name: "incorrect-mode",
+              mutate(record) {
+                record.payload.mode = "production";
+              },
+              status: 6,
+              category: "CONTRACT_INVALID",
+            },
+            {
+              name: "incorrect-assurance",
+              mutate(record) {
+                record.payload.assurance.signed = true;
+              },
+              status: 6,
+              category: "CONTRACT_INVALID",
+            },
+            {
+              name: "wrong-checksum",
+              mutate(record) {
+                record.payloadHash = `sha256:${"0".repeat(64)}`;
+              },
+              status: 7,
+              category: "CHECKSUM_MISMATCH",
+            },
+            {
+              name: "mutated-downloaded-payload",
+              mutate(record) {
+                record.payload.approval.policyId = "mutated-policy";
+              },
+              status: 7,
+              category: "CHECKSUM_MISMATCH",
+            },
+            {
+              name: "missing-required-evidence",
+              mutate(record) {
+                delete record.payload.approval.requestHash;
+              },
+              status: 6,
+              category: "CONTRACT_INVALID",
+            },
+          ];
 
-        const exportSection = page.locator("div.approval-export-section");
-        await exportSection.waitFor({ timeout: UI_TIMEOUT });
+          for (const control of cases) {
+            const record = clone();
+            control.mutate?.(record);
+            const bytes = control.bytes ?? Buffer.from(JSON.stringify(record));
+            const path = join(evidenceDirectory, `${control.name}.json`);
+            await writeFile(path, bytes, { mode: 0o600, flag: "wx" });
+            const before = await fileSha256(path);
+            assertVerifierOutcome(
+              path,
+              evidenceDirectory,
+              control.status,
+              control.category,
+            );
+            assert.equal(
+              await fileSha256(path),
+              before,
+              "NEGATIVE_CONTROL_BYTES_CHANGED",
+            );
+          }
 
-        const checkResponse = await page.request.get(
-          `${fixture.origin}/browser/api/v1/approvals`,
-        );
-        const listData = await checkResponse.json();
-        const firstItem = listData.items?.[0];
-
-        if (!firstItem) {
-          assert.fail(
-            "INTEGRATED_EXPORT_SETUP_FAILED: No approval items found in live fixture",
+          const missingPath = join(
+            evidenceDirectory,
+            "absent-verifier-input.json",
           );
-        }
-
-        const liveExportResponse = await page.request.get(
-          `${fixture.origin}/browser/api/v1/approvals/${encodeURIComponent(firstItem.approvalRequestId)}/export`,
-        );
-
-        if (
-          liveExportResponse.status() === 404 ||
-          liveExportResponse.status() === 405
-        ) {
-          assert.fail(
-            `INTEGRATED_EXPORT_ROUTE_MISSING: Java export route returned status ${liveExportResponse.status()}`,
+          assertVerifierOutcome(
+            missingPath,
+            evidenceDirectory,
+            3,
+            "UNSUPPORTED_INPUT",
           );
-        }
-
-        assert.equal(liveExportResponse.status(), 200);
-
-        const downloadPromise = page.waitForEvent("download", {
-          timeout: UI_TIMEOUT,
-        });
-        const downloadButton = exportSection.getByRole("button", {
-          name: "Download review JSON",
-          exact: true,
-        });
-        await downloadButton.click();
-
-        const download = await downloadPromise;
-        const filename = download.suggestedFilename();
-        assert.match(filename, /^tracepermit-approval-[a-f0-9-]{36}\.json$/);
-
-        const savePath = join(evidenceDirectory, filename);
-        await download.saveAs(savePath);
-
-        const contents = JSON.parse(await readFile(savePath, "utf8"));
-        assert.equal(contents.schemaVersion, "1.0");
-        assert.equal(contents.kind, "tracepermit-approval-review");
-        assert.equal(
-          contents.canonicalization,
-          "tracepermit-canonical-json-v1",
-        );
-        assert.equal(contents.payload.mode, "simulated");
-        assert.equal(contents.payload.approval.mode, "simulated");
-        assert.equal(contents.payload.assurance.signed, false);
-        assert.equal(contents.payload.assurance.authorizesExecution, false);
-        verifySavedReviewRecord(savePath, evidenceDirectory);
-
-        await page.context().close();
-      });
+          assert.equal(await fileSha256(positiveSavePath), positiveDigest);
+        },
+      );
 
       await step(
-        "verify no canary text, no local storage, and clean console health",
+        "browser parser rejects malformed, oversized, version, shape, mode, assurance and evidence controls",
         async () => {
           const page = await pageFor("alice");
-          assert.match(await page.title(), /TracePermit/);
-          assert.equal(
-            await page.evaluate(
-              () => localStorage.length === 0 && sessionStorage.length === 0,
-            ),
-            true,
+          await selectSeededRow(page, 4444);
+          let totalDownloads = 0;
+          page.on("download", () => totalDownloads++);
+
+          const cases = [
+            {
+              name: "malformed JSON",
+              body: `{"canary":"${CANARY}"`,
+            },
+            {
+              name: "oversized input",
+              body: JSON.stringify({ padding: "X".repeat(40_000) }),
+            },
+            {
+              name: "unsupported schema version",
+              mutate(record) {
+                record.schemaVersion = "2.0";
+              },
+            },
+            {
+              name: "unknown top-level field",
+              mutate(record) {
+                record.untrusted = CANARY;
+              },
+            },
+            {
+              name: "incorrect mode",
+              mutate(record) {
+                record.payload.mode = "production";
+              },
+            },
+            {
+              name: "incorrect assurance metadata",
+              mutate(record) {
+                record.payload.assurance.authorizesExecution = true;
+              },
+            },
+            {
+              name: "missing required evidence",
+              mutate(record) {
+                delete record.payload.approval.requestHash;
+              },
+            },
+          ];
+
+          for (const control of cases) {
+            currentStep = `browser rejection: ${control.name}`;
+            let requests = 0;
+            let markRequestStarted;
+            const requestStarted = new Promise((resolve) => {
+              markRequestStarted = resolve;
+            });
+            const routeHandler = async (route) => {
+              requests++;
+              markRequestStarted();
+              let body = control.body;
+              if (body === undefined) {
+                const upstream = await route.fetch();
+                const record = await upstream.json();
+                control.mutate(record);
+                body = JSON.stringify(record);
+              }
+              await route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body,
+              });
+            };
+            await page.route(
+              "**/browser/api/v1/approvals/*/export",
+              routeHandler,
+            );
+            const downloadsBefore = totalDownloads;
+            await exportButton(page).waitFor({ timeout: UI_TIMEOUT });
+            assert.equal(await exportButton(page).isEnabled(), true);
+            await exportButton(page).click();
+            await within(
+              requestStarted,
+              UI_TIMEOUT,
+              "BROWSER_NEGATIVE_REQUEST_NOT_STARTED",
+            );
+            const notice = page.locator("p.approval-notice");
+            await notice.waitFor({ timeout: UI_TIMEOUT });
+            await exportButton(page).waitFor({ timeout: UI_TIMEOUT });
+            assert.equal(
+              await notice.innerText(),
+              invalidRecordNotice,
+              "BROWSER_NEGATIVE_NOTICE_MISMATCH",
+            );
+            assert.equal(requests, 1, "BROWSER_NEGATIVE_RETRY_DETECTED");
+            assert.equal(
+              totalDownloads,
+              downloadsBefore,
+              "BROWSER_NEGATIVE_FALSE_DOWNLOAD",
+            );
+            assert.ok(
+              !(await notice.innerText()).includes(CANARY),
+              "BROWSER_NEGATIVE_DIAGNOSTIC_LEAK",
+            );
+            await page.unrouteAll({ behavior: "wait" });
+            t.diagnostic(`PASS: browser rejection ${control.name}`);
+          }
+          page.assertHealthy();
+          await closePage(page);
+        },
+      );
+
+      await step(
+        "controlled API and browser download failures are single-shot and fail closed",
+        async () => {
+          const apiPage = await pageFor("alice");
+          await selectSeededRow(apiPage, 4445);
+          let apiRequests = 0;
+          let apiDownloads = 0;
+          apiPage.on("download", () => apiDownloads++);
+          const apiHandler = async (route) => {
+            apiRequests++;
+            await route.fulfill({
+              status: 503,
+              contentType: "application/json",
+              body: JSON.stringify({ error: { code: CANARY } }),
+            });
+          };
+          await apiPage.route(
+            "**/browser/api/v1/approvals/*/export",
+            apiHandler,
           );
-          assert.ok(!(await page.locator("body").innerText()).includes(CANARY));
-          await page.context().close();
+          await exportButton(apiPage).click();
+          const apiNotice = apiPage.locator("p.approval-notice");
+          await apiNotice.waitFor({ timeout: UI_TIMEOUT });
+          assert.equal(
+            await apiNotice.innerText(),
+            "The approval service could not complete this export. Check its state before retrying.",
+          );
+          assert.equal(apiRequests, 1);
+          assert.equal(apiDownloads, 0);
+          apiPage.assertHealthy();
+          await closePage(apiPage);
+
+          const downloadPage = await pageFor("alice");
+          await selectSeededRow(downloadPage, 4446);
+          let downloadRequests = 0;
+          let failedDownloads = 0;
+          downloadPage.on("request", (request) => {
+            if (isExportUrl(request.url())) downloadRequests++;
+          });
+          downloadPage.on("download", () => failedDownloads++);
+          await downloadPage.evaluate(() => {
+            URL.createObjectURL = () => {
+              throw new Error("controlled-browser-download-failure");
+            };
+          });
+          await exportButton(downloadPage).click();
+          const downloadNotice = downloadPage.locator("p.approval-notice");
+          await downloadNotice.waitFor({ timeout: UI_TIMEOUT });
+          assert.equal(await downloadNotice.innerText(), invalidRecordNotice);
+          assert.equal(downloadRequests, 1);
+          assert.equal(failedDownloads, 0);
+          downloadPage.assertHealthy();
+          await closePage(downloadPage);
+        },
+      );
+
+      await step(
+        "refresh, filter and logout invalidate one in-flight export without a download",
+        async () => {
+          for (const transition of ["refresh", "filter", "logout"]) {
+            const page = await pageFor("alice");
+            await selectSeededRow(
+              page,
+              transition === "refresh"
+                ? 4447
+                : transition === "filter"
+                  ? 4448
+                  : 4449,
+            );
+            let requests = 0;
+            let downloads = 0;
+            let release;
+            let started;
+            const startedPromise = new Promise((resolve) => {
+              started = resolve;
+            });
+            const releasePromise = new Promise((resolve) => {
+              release = resolve;
+            });
+            let handlerFinished;
+            const handlerFinishedPromise = new Promise((resolve) => {
+              handlerFinished = resolve;
+            });
+            page.on("download", () => downloads++);
+            const routeHandler = async (route) => {
+              requests++;
+              try {
+                const upstream = await route.fetch();
+                started();
+                await releasePromise;
+                await route.fulfill({ response: upstream });
+              } catch {
+                // An abort is the expected browser behavior for these invalidations.
+              } finally {
+                handlerFinished();
+              }
+            };
+            await page.route(
+              "**/browser/api/v1/approvals/*/export",
+              routeHandler,
+            );
+            await exportButton(page).click();
+            await within(
+              startedPromise,
+              UI_TIMEOUT,
+              "STALE_EXPORT_ROUTE_NOT_STARTED",
+            );
+
+            if (transition === "refresh") {
+              await page
+                .getByRole("button", { name: "Refresh", exact: true })
+                .click();
+            } else if (transition === "filter") {
+              await page.locator("#filter-status").selectOption("pending");
+              await page
+                .getByRole("button", { name: "Apply filters", exact: true })
+                .click();
+            } else {
+              await page
+                .getByRole("button", { name: "Sign out", exact: true })
+                .click();
+              await page
+                .getByRole("heading", { name: signInHeading, exact: true })
+                .waitFor({ timeout: UI_TIMEOUT });
+            }
+            release();
+            await within(
+              handlerFinishedPromise,
+              UI_TIMEOUT,
+              "STALE_EXPORT_ROUTE_LINGERING",
+            );
+            await page.waitForTimeout(250);
+            assert.equal(requests, 1, `${transition}: retry detected`);
+            assert.equal(
+              downloads,
+              0,
+              `${transition}: stale download occurred`,
+            );
+            page.assertHealthy();
+            await closePage(page);
+          }
+        },
+      );
+
+      await step(
+        "real Java boundary denies stale sessions and cross-workspace requester visibility",
+        async () => {
+          const ownerPage = await pageFor("dave");
+          const privateApproval = await seed(ownerPage, 4450);
+          ownerPage.assertHealthy();
+          await closePage(ownerPage);
+
+          const requesterPage = await pageFor("alice");
+          let requesterDownloads = 0;
+          requesterPage.on("download", () => requesterDownloads++);
+          const invisible = await requesterPage.request.get(
+            `${fixture.origin}/browser/api/v1/approvals/${encodeURIComponent(privateApproval.approvalRequestId)}/export`,
+          );
+          assert.equal(invisible.status(), 404);
+          assert.equal(requesterDownloads, 0);
+
+          const ownApproval = await seed(requesterPage, 4451);
+          await requesterPage
+            .getByRole("button", { name: "Sign out", exact: true })
+            .click();
+          await requesterPage
+            .getByRole("heading", { name: signInHeading, exact: true })
+            .waitFor({ timeout: UI_TIMEOUT });
+          const stale = await requesterPage.request.get(
+            `${fixture.origin}/browser/api/v1/approvals/${encodeURIComponent(ownApproval.approvalRequestId)}/export`,
+          );
+          assert.equal(stale.status(), 401);
+          assert.equal(requesterDownloads, 0);
+          requesterPage.assertHealthy();
+          await closePage(requesterPage);
+        },
+      );
+
+      await step(
+        "downloaded positive bytes remain unchanged until qualification cleanup",
+        async () => {
+          assert.equal(await fileSha256(positiveSavePath), positiveDigest);
         },
       );
     } catch (failure) {
-      failedBeforeCleanup = true;
-      if (failure.message?.startsWith("BROWSER_")) throw failure;
+      if (
+        typeof failure?.message === "string" &&
+        /^(BROWSER_|REVIEW_VERIFIER_|DOWNLOADED_|NEGATIVE_|EXPORT_|SECOND_|STALE_)/.test(
+          failure.message,
+        )
+      ) {
+        throw failure;
+      }
       throw new Error(
-        `BROWSER_EXPORT_SUITE_FAILED: ${currentStep}; sensitive details withheld`,
+        `BROWSER_EXPORT_QUALIFICATION_FAILED: ${currentStep}; sensitive details withheld`,
       );
     } finally {
-      for (const context of contexts) {
-        await within(
-          context.close(),
-          5_000,
-          "BROWSER_CONTEXT_CLOSE_TIMEOUT",
-        ).catch(() => {});
+      for (const context of [...contexts]) {
+        await within(context.close(), 5_000, "BROWSER_CONTEXT_CLOSE_TIMEOUT");
+        contexts.delete(context);
       }
+      assert.equal(contexts.size, 0, "BROWSER_CONTEXT_LINGERING");
       if (browser) {
-        await within(browser.close(), 10_000, "BROWSER_CLOSE_TIMEOUT").catch(
-          () => {},
-        );
+        await within(browser.close(), 10_000, "BROWSER_CLOSE_TIMEOUT");
       }
       if (fixture) {
         await fixture.stop();
-        t.diagnostic(
-          "Owned fixture exited cleanly and its listener port was released.",
+      }
+      if (baselineContainers) {
+        await assertNoNewContainers(baselineContainers);
+      }
+      if (baselineFixtureDirectories) {
+        const currentFixtureDirectories = await fixtureDirectoryNames();
+        assert.ok(
+          [...currentFixtureDirectories].every((name) =>
+            baselineFixtureDirectories.has(name),
+          ),
+          "BROWSER_FIXTURE_DIRECTORY_LINGERING",
         );
       }
+      if (evidenceDirectory) {
+        await rm(evidenceDirectory, { recursive: true });
+        assert.equal(
+          existsSync(evidenceDirectory),
+          false,
+          "BROWSER_EVIDENCE_DIRECTORY_LINGERING",
+        );
+      }
+      t.diagnostic(
+        "Owned server, browser, containers, processes and qualification artifacts were cleaned up.",
+      );
     }
   },
 );

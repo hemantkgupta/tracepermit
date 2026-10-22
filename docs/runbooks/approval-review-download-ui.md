@@ -1,6 +1,6 @@
 # Browser approval review metadata download
 
-Requirements: FR-007, FR-010, FR-012; SEC-003, SEC-005, SEC-009, SEC-012; DATA-001, DATA-003; REL-002.  
+Requirements: FR-007, FR-010, FR-012; SEC-003, SEC-005, SEC-009, SEC-012; DATA-001, DATA-003; REL-001, REL-002, REL-009; OPS-002, OPS-004.
 Decisions: [ADR 0036](../architecture/0036-local-browser-approval-boundary.md), ADR 0064 (Unsigned, role-scoped approval review export; see [PR #70](https://github.com/hemantkgupta/tracepermit/pull/70)).  
 Related runbooks: [Simulator approval-history API](approval-history-api.md), [Browser approval history](browser-approval-history.md).
 
@@ -143,6 +143,24 @@ The browser CI job runs this integration gate after installing its pinned
 Playwright Chromium. A missing Java route, missing seeded approval, invalid
 response, failed browser download, malformed saved JSON file, leaked listener,
 offline-checker rejection, or relevant console error fails the job. The wrapper
-builds the source-free checker distribution first and invokes its installed
-launcher with only Java and a credential-free environment. The integrated check
-is never skipped because another implementation slice is absent.
+also runs the focused Java export/authorization tests and installed-verifier
+tests, then builds the source-free checker distribution. The rendered UI must
+issue exactly one real Java export request and one browser download. Playwright
+saves those downloaded bytes in an owned private temporary directory; the gate
+records their SHA-256 before invoking the installed launcher with that exact path
+and requires the same digest afterward. It does not regenerate an equivalent
+JSON fixture for the successful check.
+
+The gate also exercises fixed fail-closed classifications for malformed and
+oversized input, unsupported schema, extra root fields, wrong mode/assurance,
+checksum/payload mutation, missing evidence, authorization/visibility, stale
+session and refresh/filter/logout state, controlled API/download/verifier
+failure, and resource cleanup. Negative controls make no automatic retry, never
+produce a second download or false success, and cannot render their canary.
+
+This qualification is simulator-only. An unsigned export is not a signed
+attestation, and a mechanically successful checksum verification does not prove
+current read, review or execution authorization. CI uses its pinned Playwright
+browser; an explicit absolute `TRACEPERMIT_BROWSER_EXECUTABLE` may be used for a
+local qualification when the managed browser download is unavailable. The
+integrated check is never skipped because another implementation slice is absent.
