@@ -46,5 +46,6 @@ explicit native/public browser candidate. Synthetic tests do not close the
 
 [ADR0064](../architecture/0064-unsigned-approval-review-export.md) adds the
 authenticated per-request metadata export. It is unsigned and intentionally
-incomplete; console download, standalone checking and live-provider qualification
-have separate gates in the [delivery plan](../planning/audit-ready-approval-workspace.md).
+incomplete. The console download is exercised against the real Java route by a
+required browser gate; standalone checking and live-provider qualification have
+separate gates in the [delivery plan](../planning/audit-ready-approval-workspace.md).

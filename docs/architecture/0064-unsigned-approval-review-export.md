@@ -1,6 +1,6 @@
 # ADR 0064: Unsigned, role-scoped approval review export
 
-Status: Implemented backend slice; console download and offline checker pending.
+Status: Implemented backend and console-download slices; offline checker pending.
 
 Requirements: FR-007/010/012; SEC-003/005/009/012; DATA-001/003; REL-002.
 
@@ -54,5 +54,7 @@ misrepresent a redacted payload as the original hash-chain input. Signed receipt
 and externally anchored complete streams require a separate reviewed contract.
 Bulk export, retention/deletion, durable export auditing, real targets and public
 ingress are not added. Existing database-admin and in-flight revocation limits
-remain. Browser UI and standalone checking have separate owners and acceptance
-gates; this backend does not claim them completed.
+remain. The browser download has a separate acceptance gate that exercises the
+real Java route and validates the saved file. Standalone checking retains a
+separate owner and acceptance gate; neither slice strengthens this record into
+authority.

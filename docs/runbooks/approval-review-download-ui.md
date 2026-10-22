@@ -129,11 +129,18 @@ pnpm --filter @tracepermit/console typecheck
 # Check build output
 pnpm --filter @tracepermit/console build
 
-# Run browser export test (Node test runner)
-node --test scripts/approval-export-browser.test.mjs
+# Run the required browser export integration test. This starts the real Java
+# simulator fixture and fails if its authenticated export route is unavailable.
+pnpm test:approval-export:browser
 
 # Run full project checks
 pnpm check
 pnpm format:check
 pnpm docs:links
 ```
+
+The browser CI job runs this integration gate after installing its pinned
+Playwright Chromium. A missing Java route, missing seeded approval, invalid
+response, failed browser download, malformed saved JSON file, leaked listener,
+or relevant console error fails the job; the integrated check is never skipped
+because another implementation slice is absent.

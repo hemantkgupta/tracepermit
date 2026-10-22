@@ -567,95 +567,70 @@ test(
         },
       );
 
-      await step(
-        "integrated download against Java backend route",
-        async (subtest) => {
-          const requireIntegrated =
-            process.env.TRACEPERMIT_REQUIRE_INTEGRATED_EXPORT === "1";
-          const page = await pageFor("alice");
-          await ensureRow(page);
+      await step("integrated download against Java backend route", async () => {
+        const page = await pageFor("alice");
+        await ensureRow(page);
 
-          // Check if the backend has merged the export route
-          const exportSection = page.locator("div.approval-export-section");
-          await exportSection.waitFor({ timeout: UI_TIMEOUT });
+        const exportSection = page.locator("div.approval-export-section");
+        await exportSection.waitFor({ timeout: UI_TIMEOUT });
 
-          // Query the live route to see if backend has merged PR #70
-          const checkResponse = await page.request.get(
-            `${fixture.origin}/browser/api/v1/approvals`,
+        const checkResponse = await page.request.get(
+          `${fixture.origin}/browser/api/v1/approvals`,
+        );
+        const listData = await checkResponse.json();
+        const firstItem = listData.items?.[0];
+
+        if (!firstItem) {
+          assert.fail(
+            "INTEGRATED_EXPORT_SETUP_FAILED: No approval items found in live fixture",
           );
-          const listData = await checkResponse.json();
-          const firstItem = listData.items?.[0];
+        }
 
-          if (!firstItem) {
-            if (requireIntegrated) {
-              assert.fail(
-                "INTEGRATED_EXPORT_SETUP_FAILED: No approval items found in live fixture",
-              );
-            }
-            t.diagnostic(
-              "No approval items found in live fixture; skipping integrated check.",
-            );
-            await page.context().close();
-            return;
-          }
+        const liveExportResponse = await page.request.get(
+          `${fixture.origin}/browser/api/v1/approvals/${encodeURIComponent(firstItem.approvalRequestId)}/export`,
+        );
 
-          const liveExportResponse = await page.request.get(
-            `${fixture.origin}/browser/api/v1/approvals/${encodeURIComponent(firstItem.approvalRequestId)}/export`,
+        if (
+          liveExportResponse.status() === 404 ||
+          liveExportResponse.status() === 405
+        ) {
+          assert.fail(
+            `INTEGRATED_EXPORT_ROUTE_MISSING: Java export route returned status ${liveExportResponse.status()}`,
           );
+        }
 
-          if (
-            liveExportResponse.status() === 404 ||
-            liveExportResponse.status() === 405
-          ) {
-            if (requireIntegrated) {
-              assert.fail(
-                `INTEGRATED_EXPORT_ROUTE_MISSING: Java export route returned status ${liveExportResponse.status()}`,
-              );
-            }
-            t.diagnostic(
-              `Java export route returned ${liveExportResponse.status()} on current main base (PR #70 unmerged); integrated saved-file check left pending.`,
-            );
-            subtest.skip(
-              "Integrated saved-file download pending Java backend merge (PR #70 not yet on main)",
-            );
-            await page.context().close();
-            return;
-          }
+        assert.equal(liveExportResponse.status(), 200);
 
-          assert.equal(liveExportResponse.status(), 200);
+        const downloadPromise = page.waitForEvent("download", {
+          timeout: UI_TIMEOUT,
+        });
+        const downloadButton = exportSection.getByRole("button", {
+          name: "Download review JSON",
+          exact: true,
+        });
+        await downloadButton.click();
 
-          // Backend export route is present! Test real browser download and save
-          const downloadPromise = page.waitForEvent("download", {
-            timeout: UI_TIMEOUT,
-          });
-          const downloadButton = exportSection.getByRole("button", {
-            name: "Download review JSON",
-            exact: true,
-          });
-          await downloadButton.click();
+        const download = await downloadPromise;
+        const filename = download.suggestedFilename();
+        assert.match(filename, /^tracepermit-approval-[a-f0-9-]{36}\.json$/);
 
-          const download = await downloadPromise;
-          const filename = download.suggestedFilename();
-          assert.match(filename, /^tracepermit-approval-[a-f0-9-]{36}\.json$/);
+        const savePath = join(evidenceDirectory, filename);
+        await download.saveAs(savePath);
 
-          const savePath = join(evidenceDirectory, filename);
-          await download.saveAs(savePath);
+        const contents = JSON.parse(await readFile(savePath, "utf8"));
+        assert.equal(contents.schemaVersion, "1.0");
+        assert.equal(contents.kind, "tracepermit-approval-review");
+        assert.equal(
+          contents.canonicalization,
+          "tracepermit-canonical-json-v1",
+        );
+        assert.equal(contents.payload.mode, "simulated");
+        assert.equal(contents.payload.approval.mode, "simulated");
+        assert.equal(contents.payload.assurance.signed, false);
+        assert.equal(contents.payload.assurance.authorizesExecution, false);
 
-          const contents = JSON.parse(await readFile(savePath, "utf8"));
-          assert.equal(contents.schemaVersion, "1.0");
-          assert.equal(contents.kind, "tracepermit-approval-review");
-          assert.equal(
-            contents.canonicalization,
-            "tracepermit-canonical-json-v1",
-          );
-          assert.equal(contents.payload.mode, "simulated");
-          assert.equal(contents.payload.approval.mode, "simulated");
-          assert.equal(contents.payload.assurance.signed, false);
-          assert.equal(contents.payload.assurance.authorizesExecution, false);
-
-          await page.context().close();
-        },
-      );
+        await page.context().close();
+      });
 
       await step(
         "verify no canary text, no local storage, and clean console health",

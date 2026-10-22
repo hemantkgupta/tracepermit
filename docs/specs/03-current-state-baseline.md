@@ -1,6 +1,6 @@
 # Current-state capability matrix
 
-**As of:** 2026-10-21
+**As of:** 2026-10-22
 **Scope:** public Java-backend/React-console proof of concept
 
 This is the authoritative boundary between running POC behavior and product
@@ -8,16 +8,18 @@ design. A passing test proves the named composition, not deployment to an
 enterprise network or control over arbitrary agent tools. The detailed
 requirement-to-test mapping is in the [traceability matrix](12-traceability-matrix.md).
 
-## Approval review export backend
+## Approval review export and browser download
 
 The local authenticated simulator approval API provides a bounded per-request
 [metadata export](../runbooks/approval-review-export.md), governed by current
 read scope/enrollment and the existing owner/workspace visibility rules. It omits
 arguments, raw evidence, credentials and target responses. The unsigned payload
 checksum is not an original-action, full-history, transactional-snapshot or
-authorship proof. It grants no execution authority. The console download and
-offline Java checker remain separate implementation/qualification slices. See
-[ADR0064](../architecture/0064-unsigned-approval-review-export.md).
+authorship proof. It grants no execution authority. The React inbox exposes an
+explicit, session-bound download after closed-schema and request-binding checks;
+a required browser gate saves and validates the file from the real Java route.
+The offline Java checker remains a separate implementation/qualification slice.
+See [ADR0064](../architecture/0064-unsigned-approval-review-export.md).
 
 ## Assurance vocabulary
 
