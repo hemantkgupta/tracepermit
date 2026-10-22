@@ -71,6 +71,9 @@ final class SimulatorApprovalRedactionBoundaryTest {
     Stored stored = seedCanaries();
     var evidence = fixture.state.readEvidence(TENANT);
     String bearer = fixture.accessToken("alice");
+    var exported = api("GET", API + "/" + stored.id() + "/export", bearer, null, 200);
+    assertNoCanaries(exported.body());
+    assertThat(json(exported).path("payload").path("approval").has("action")).isFalse();
     JsonNode detail = json(api("GET", API + "/" + stored.id(), bearer, null, 200));
     assertProjection(detail, stored);
     JsonNode page = json(api("GET", API, bearer, null, 200));
