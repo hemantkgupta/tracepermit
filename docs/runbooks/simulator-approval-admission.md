@@ -165,6 +165,12 @@ every wave. All previously admitted handlers therefore return before the next
 wave is offered. This is test coordination, not a retry or a larger admission
 bound; the default eight active lanes and sixteen pending exchanges remain
 unchanged.
+After each complete concurrency sweep, the qualification harness also retires
+its Java HTTP client within two fixed five-second shutdown bounds and creates a
+fresh client for the next sweep. That isolates idle loopback connections across
+sweeps without retrying any operation, reducing concurrency, or changing the
+server's admission capacity. A shutdown that cannot complete inside those
+bounds fails the qualification.
 Diagnostic context is not a latency fix or permission to accept a failed
 qualification; a local success does not override a failed required CI check.
 
