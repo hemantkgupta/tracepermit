@@ -8,6 +8,7 @@ import {
   readFile,
   readdir,
   rm,
+  stat,
   writeFile,
 } from "node:fs/promises";
 import { createConnection } from "node:net";
@@ -553,6 +554,12 @@ test(
 
           positiveSavePath = join(evidenceDirectory, filename);
           await download.saveAs(positiveSavePath);
+          await chmod(positiveSavePath, 0o600);
+          assert.equal(
+            (await stat(positiveSavePath)).mode & 0o777,
+            0o600,
+            "DOWNLOADED_FILE_PERMISSIONS_NOT_OWNER_ONLY",
+          );
           const downloadedBytes = await readFile(positiveSavePath);
           positiveRecord = JSON.parse(downloadedBytes.toString("utf8"));
           assert.equal(positiveRecord.schemaVersion, "1.0");
