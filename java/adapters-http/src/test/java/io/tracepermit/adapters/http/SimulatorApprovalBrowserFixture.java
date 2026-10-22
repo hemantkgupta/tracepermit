@@ -30,6 +30,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -48,6 +49,8 @@ final class SimulatorApprovalBrowserFixture implements AutoCloseable {
   final String issuer;
   final String organization;
   final AtomicInteger tokenPosts = new AtomicInteger();
+  final List<String> loginDiagnosticLines = new CopyOnWriteArrayList<>();
+  volatile Consumer<String> loginDiagnostics = loginDiagnosticLines::add;
   volatile KeyPair signingKey;
   volatile Consumer<ObjectNode> idHeader = header -> {};
   volatile Consumer<ObjectNode> accessHeader = header -> {};
@@ -142,7 +145,8 @@ final class SimulatorApprovalBrowserFixture implements AutoCloseable {
                 return exchange(body);
               }).exchange(changed);
         }, verifier, new BrowserIdTokenVerifier(config.provider(), resolver, clock, organization),
-        config.memberships(), clock, organization);
+        config.memberships(), clock, organization,
+        new BrowserLoginDiagnostics(line -> loginDiagnostics.accept(line)));
     var permits = new ExecutionPermitAuthority(ExecutionPermitAuthority.DEFAULT_ISSUER,
         config.keyId(), config.permitKey(), 30, clock, () -> UUID.randomUUID().toString(),
         new PostgresPermitConsumptionStore(config.database()));

@@ -43,3 +43,9 @@ not a public-edge, external-IdP or production-readiness claim.
 [ADR0063](../architecture/0063-explicit-public-browser-code-pkce.md) adds the
 explicit native/public browser candidate. Synthetic tests do not close the
 [pending live Auth0 gate](../runbooks/auth0-native-oidc-qualification.md).
+
+[ADR0064](../architecture/0064-unsigned-approval-review-export.md) adds the
+authenticated per-request metadata export. It is unsigned and intentionally
+incomplete. The console download is exercised against the real Java route by a
+required browser gate; standalone checking and live-provider qualification have
+separate gates in the [delivery plan](../planning/audit-ready-approval-workspace.md).

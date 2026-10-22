@@ -391,6 +391,11 @@ public final class ApprovalLatencyMeasurements {
     void execute(ApprovalItem item) throws Exception;
   }
 
+  @FunctionalInterface
+  interface PhaseBoundary {
+    boolean awaitQuiescence();
+  }
+
   /**
    * Executes a bounded concurrent batch of operations with exact accounting.
    * Every planned operation is accounted for exactly once in the terminal outcomes:
@@ -525,6 +530,88 @@ public final class ApprovalLatencyMeasurements {
   }
 
   /**
+   * Executes one client-concurrency wave at a time and proves that the server has
+   * returned every accepted handler lane before offering the next wave. The
+   * operation timeout remains one budget across all waves; barrier time is bounded
+   * separately and is not counted as operation wall time. This is qualification
+   * coordination only: it never retries an item or changes server admission bounds.
+   */
+  static BatchExecution runConcurrentWaves(
+      int concurrency,
+      List<ApprovalItem> items,
+      ItemOperation operation,
+      Duration timeout,
+      String phaseName,
+      String population,
+      PhaseBoundary phaseBoundary) {
+
+    if (items.isEmpty()) {
+      return new BatchExecution(0, 0, 0, 0, 0, new long[0], 0L, List.of());
+    }
+
+    int waveSize = Math.max(1, Math.min(concurrency, MAX_CONCURRENCY));
+    long remainingBudgetNanos;
+    try {
+      remainingBudgetNanos = timeout.toNanos();
+    } catch (ArithmeticException overflow) {
+      remainingBudgetNanos = Long.MAX_VALUE;
+    }
+
+    int successes = 0;
+    int failures = 0;
+    int timeouts = 0;
+    int cancelled = 0;
+    long operationWallNanos = 0L;
+    var successDurations = new ArrayList<Long>();
+    var failureCodes = new ArrayList<String>();
+
+    for (int from = 0; from < items.size(); from += waveSize) {
+      int to = Math.min(items.size(), from + waveSize);
+      if (remainingBudgetNanos <= 0L) {
+        cancelled += items.size() - from;
+        break;
+      }
+
+      BatchExecution wave = runConcurrent(
+          waveSize,
+          items.subList(from, to),
+          operation,
+          Duration.ofNanos(remainingBudgetNanos));
+      successes += wave.successCount();
+      failures += wave.failureCount();
+      timeouts += wave.timeoutCount();
+      cancelled += wave.cancelledCount();
+      operationWallNanos = saturatedAdd(operationWallNanos, wave.wallElapsedNanos());
+      remainingBudgetNanos = Math.max(0L, remainingBudgetNanos - wave.wallElapsedNanos());
+      for (long duration : wave.successDurationsNanos()) {
+        successDurations.add(duration);
+      }
+      failureCodes.addAll(wave.failureCodes());
+
+      requirePhaseQuiescence(phaseName, population + " wave " + ((from / waveSize) + 1), phaseBoundary);
+    }
+
+    long[] durationArray = new long[successDurations.size()];
+    for (int i = 0; i < successDurations.size(); i++) {
+      durationArray[i] = successDurations.get(i);
+    }
+    return new BatchExecution(
+        items.size(),
+        successes,
+        failures,
+        timeouts,
+        cancelled,
+        durationArray,
+        operationWallNanos,
+        List.copyOf(failureCodes));
+  }
+
+  private static long saturatedAdd(long left, long right) {
+    if (right > 0L && left > Long.MAX_VALUE - right) return Long.MAX_VALUE;
+    return left + right;
+  }
+
+  /**
    * Executes a workflow phase with separate warmup and measured operations.
    * Any unexpected failure in warm-up or measured batches records an explicit failure.
    */
@@ -535,12 +622,24 @@ public final class ApprovalLatencyMeasurements {
       List<ApprovalItem> measuredItems,
       ItemOperation operation,
       List<String> failures) {
+    return runPhase(phaseName, concurrency, warmupItems, measuredItems, operation, () -> true, failures);
+  }
+
+  static PhaseMetrics runPhase(
+      String phaseName,
+      int concurrency,
+      List<ApprovalItem> warmupItems,
+      List<ApprovalItem> measuredItems,
+      ItemOperation operation,
+      PhaseBoundary phaseBoundary,
+      List<String> failures) {
 
     Duration phaseTimeout = Duration.ofSeconds(30);
 
     // 1. Warm-up operations (exercise exact code path; fail closed on warmup error)
     if (!warmupItems.isEmpty()) {
-      BatchExecution warmupBatch = runConcurrent(concurrency, warmupItems, operation, phaseTimeout);
+      BatchExecution warmupBatch = runConcurrentWaves(
+          concurrency, warmupItems, operation, phaseTimeout, phaseName, "warmup", phaseBoundary);
       if (warmupBatch.failureCount() > 0 || warmupBatch.timeoutCount() > 0 || warmupBatch.cancelledCount() > 0) {
         failures.add(String.format("Phase %s (concurrency=%d) warmup had unexpected failures: %d failed, %d timed out, %d cancelled out of %d operations.",
             phaseName, concurrency, warmupBatch.failureCount(), warmupBatch.timeoutCount(), warmupBatch.cancelledCount(), warmupItems.size())
@@ -560,7 +659,8 @@ public final class ApprovalLatencyMeasurements {
 
     // 2. Measured steady-state operations
     int measuredCount = measuredItems.size();
-    BatchExecution measuredBatch = runConcurrent(concurrency, measuredItems, operation, phaseTimeout);
+    BatchExecution measuredBatch = runConcurrentWaves(
+        concurrency, measuredItems, operation, phaseTimeout, phaseName, "measured", phaseBoundary);
     int successes = measuredBatch.successCount();
     int failed = measuredBatch.failureCount();
     int timeouts = measuredBatch.timeoutCount();
@@ -586,6 +686,14 @@ public final class ApprovalLatencyMeasurements {
         timeouts,
         measuredBatch.wallElapsedNanos(),
         percentiles);
+  }
+
+  private static void requirePhaseQuiescence(
+      String phaseName, String population, PhaseBoundary phaseBoundary) {
+    if (!phaseBoundary.awaitQuiescence()) {
+      throw new IllegalStateException(
+          "PHASE_" + sanitizeCode(phaseName) + "_" + sanitizeCode(population) + "_QUIESCENCE_TIMEOUT");
+    }
   }
 
   /**
@@ -780,6 +888,7 @@ public final class ApprovalLatencyMeasurements {
             warmupItems,
             measuredItems,
             (item) -> executeMcpRequest(currentServer.port(), requesterToken, item, currentClient),
+            () -> currentServer.awaitDispatchQuiescence(Duration.ofSeconds(5)),
             failures);
         phaseMetricsMap.put("mcp_request", reqMetrics);
         assertZeroStateDeltas("mcp_request", simulator, dataSource, sweepStartRules, sweepStartPermits, sweepStartAttempts, failures);
@@ -791,6 +900,7 @@ public final class ApprovalLatencyMeasurements {
             warmupItems,
             measuredItems,
             (item) -> executeMcpStatus(currentServer.port(), requesterToken, item, currentClient),
+            () -> currentServer.awaitDispatchQuiescence(Duration.ofSeconds(5)),
             failures);
         phaseMetricsMap.put("mcp_status", statusMetrics);
         assertZeroStateDeltas("mcp_status", simulator, dataSource, sweepStartRules, sweepStartPermits, sweepStartAttempts, failures);
@@ -802,6 +912,7 @@ public final class ApprovalLatencyMeasurements {
             warmupItems,
             measuredItems,
             (item) -> executeHttpReview(currentServer.port(), reviewerToken, item, currentClient),
+            () -> currentServer.awaitDispatchQuiescence(Duration.ofSeconds(5)),
             failures);
         phaseMetricsMap.put("http_review", reviewMetrics);
         assertZeroStateDeltas("http_review", simulator, dataSource, sweepStartRules, sweepStartPermits, sweepStartAttempts, failures);
@@ -813,6 +924,7 @@ public final class ApprovalLatencyMeasurements {
             warmupItems,
             measuredItems,
             (item) -> executeMcpResume(currentServer.port(), requesterToken, item, currentClient),
+            () -> currentServer.awaitDispatchQuiescence(Duration.ofSeconds(5)),
             failures);
         phaseMetricsMap.put("mcp_resume", resumeMetrics);
 

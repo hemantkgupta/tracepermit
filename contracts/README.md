@@ -15,6 +15,8 @@ the Java backend.
 - `evidence-anchor-receipt-v1` — the exact secret-free, Ed25519-signed external
   checkpoint receipt structure
 - `errors/` — stable public error-code catalog
+- `approval-review-export-v1` — unsigned metadata-only simulator review schema
+  and a synthetic golden checksum vector; not an authorization or signed proof
 - `protocols/` — HTTP and MCP compatibility snapshots
 - `canonicalization/` — the exact byte-generation profile used before hashing
   or signing

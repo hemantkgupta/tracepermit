@@ -21,6 +21,12 @@ import {
   type ApprovalStatusFilter,
 } from "./approval-api.js";
 import {
+  canDownloadReviewExport,
+  downloadApprovalReviewExport,
+  fetchApprovalReviewExport,
+  isExportResponseValid,
+} from "./approval-export.js";
+import {
   MAX_ACCUMULATED_ROWS,
   authorityContext,
   historyAuthorityReady,
@@ -47,6 +53,7 @@ export function ApprovalInbox() {
   const [session, setSession] = useState<ApprovalSession | null>(null);
   const [state, setState] = useState<HistoryState>(initialHistoryState);
   const [busy, setBusy] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const submitting = useRef(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
@@ -59,6 +66,7 @@ export function ApprovalInbox() {
   const sessionRef = useRef(session);
   const generationRef = useRef(0);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const exportAbortRef = useRef<AbortController | null>(null);
   const selected = state.items.find(
     (item) => item.approvalRequestId === state.selectedId,
   );
@@ -96,6 +104,9 @@ export function ApprovalInbox() {
 
   function invalidate(status?: number, error?: string) {
     abortControllerRef.current?.abort();
+    exportAbortRef.current?.abort();
+    exportAbortRef.current = null;
+    setExporting(false);
     const cleared = sessionLoggedOut({
       ...stateRef.current,
       generation: generationRef.current,
@@ -121,6 +132,9 @@ export function ApprovalInbox() {
     isOlder: boolean,
   ) {
     abortControllerRef.current?.abort();
+    exportAbortRef.current?.abort();
+    exportAbortRef.current = null;
+    setExporting(false);
     const controller = new AbortController();
     abortControllerRef.current = controller;
     setConfirmation(null);
@@ -199,6 +213,7 @@ export function ApprovalInbox() {
     begin(startRefresh(stateRef.current));
     return () => {
       abortControllerRef.current?.abort();
+      exportAbortRef.current?.abort();
       generationRef.current++;
       stateRef.current = {
         ...stateRef.current,
@@ -356,6 +371,95 @@ export function ApprovalInbox() {
     } finally {
       submitting.current = false;
       setBusy(false);
+    }
+  }
+
+  async function handleDownloadExport() {
+    if (
+      busy ||
+      exporting ||
+      !sessionRef.current ||
+      !selected ||
+      !authorityReady ||
+      !canDownloadReviewExport(sessionRef.current, selected, observedNow)
+    ) {
+      return;
+    }
+
+    const clickGeneration = generationRef.current;
+    const clickSession = sessionRef.current;
+    const clickSessionAuth = authorityContext(clickSession);
+    const clickRequestId = selected.approvalRequestId;
+    const clickRequestHash = selected.requestHash;
+    const clickSessionExpiresAt = Date.parse(clickSession.expiresAt);
+
+    exportAbortRef.current?.abort();
+    const controller = new AbortController();
+    exportAbortRef.current = controller;
+    setExporting(true);
+
+    try {
+      const record = await fetchApprovalReviewExport(
+        clickRequestId,
+        clickRequestHash,
+        controller.signal,
+      );
+
+      // Verify in-flight guards:
+      // Logout, session expiry, changed authority, request selection/hash or later responses must invalidate an in-flight download
+      if (
+        controller.signal.aborted ||
+        !isExportResponseValid(
+          {
+            generation: clickGeneration,
+            authority: clickSessionAuth,
+            approvalRequestId: clickRequestId,
+            requestHash: clickRequestHash,
+            sessionExpiresAt: clickSessionExpiresAt,
+          },
+          {
+            generation: generationRef.current,
+            session: sessionRef.current,
+            selectedId: stateRef.current.selectedId,
+            currentHash: stateRef.current.items.find(
+              (i) => i.approvalRequestId === clickRequestId,
+            )?.requestHash,
+          },
+        )
+      ) {
+        return;
+      }
+
+      downloadApprovalReviewExport(record);
+      setNotice(null);
+    } catch (error) {
+      if (
+        controller.signal.aborted ||
+        generationRef.current !== clickGeneration ||
+        !sessionRef.current ||
+        authorityContext(sessionRef.current) !== clickSessionAuth ||
+        stateRef.current.selectedId !== clickRequestId
+      ) {
+        return;
+      }
+      const status = error instanceof ApprovalApiError ? error.status : 502;
+      if (status === 401) {
+        invalidate(401);
+        return;
+      }
+      setNotice(
+        status === 403
+          ? "This operation is not authorized. Refresh to check your current role."
+          : status === 404
+            ? "The requested approval was not found or is no longer visible. Refresh to update."
+            : status === 503
+              ? "The approval service could not complete this export. Check its state before retrying."
+              : "The review export record was invalid or could not be verified. Server state remains authoritative.",
+      );
+    } finally {
+      if (exportAbortRef.current === controller) {
+        setExporting(false);
+      }
     }
   }
 
@@ -647,6 +751,9 @@ export function ApprovalInbox() {
                     disabled={busy}
                     key={item.approvalRequestId}
                     onClick={() => {
+                      exportAbortRef.current?.abort();
+                      exportAbortRef.current = null;
+                      setExporting(false);
                       commit({
                         ...stateRef.current,
                         selectedId: item.approvalRequestId,
@@ -855,6 +962,29 @@ export function ApprovalInbox() {
                         Read-only access. No authorized mutation is available.
                       </p>
                     )}
+                  <div className="approval-export-section">
+                    <h3>Review record</h3>
+                    <p className="approval-muted">
+                      Review records are simulator-only, metadata-only,
+                      unsigned, and incomplete. Export inherits current read
+                      visibility, not review or execution authority, and cannot
+                      authorize actions.
+                    </p>
+                    <button
+                      type="button"
+                      disabled={
+                        busy ||
+                        exporting ||
+                        !authorityReady ||
+                        !canDownloadReviewExport(session, selected, observedNow)
+                      }
+                      onClick={handleDownloadExport}
+                    >
+                      {exporting
+                        ? "Downloading review JSON…"
+                        : "Download review JSON"}
+                    </button>
+                  </div>
                   {confirmation && authorityReady && !confirmationReady && (
                     <p role="status">
                       This confirmation is no longer available. Refresh the

@@ -59,6 +59,7 @@ final class ApprovalBrowserAdapter {
   private final ApprovalMemberships memberships;
   private final Clock clock;
   private final String organization;
+  private final BrowserLoginDiagnostics diagnostics;
 
   ApprovalBrowserAdapter(URI authorizationUri, String issuer, String audience, String clientId,
       Path console, CodeExchange exchange, OidcAccessTokenVerifier access,
@@ -69,11 +70,20 @@ final class ApprovalBrowserAdapter {
   ApprovalBrowserAdapter(URI authorizationUri, String issuer, String audience, String clientId,
       Path console, CodeExchange exchange, OidcAccessTokenVerifier access,
       BrowserIdTokenVerifier identity, ApprovalMemberships memberships, Clock clock, String organization) {
+    this(authorizationUri, issuer, audience, clientId, console, exchange, access, identity,
+        memberships, clock, organization, BrowserLoginDiagnostics.silent());
+  }
+
+  ApprovalBrowserAdapter(URI authorizationUri, String issuer, String audience, String clientId,
+      Path console, CodeExchange exchange, OidcAccessTokenVerifier access,
+      BrowserIdTokenVerifier identity, ApprovalMemberships memberships, Clock clock,
+      String organization, BrowserLoginDiagnostics diagnostics) {
     this.authorizationUri = authorizationUri; this.issuer = issuer; this.audience = audience;
     this.clientId = clientId; this.console = console.toAbsolutePath().normalize();
     this.exchange = exchange; this.access = access; this.identity = identity;
     this.memberships = memberships; this.clock = clock;
     this.organization = organization;
+    this.diagnostics = diagnostics;
   }
 
   /** Returns true when this is a browser non-action route, including static assets. */
@@ -170,12 +180,15 @@ final class ApprovalBrowserAdapter {
     cookie(request, FLOW_COOKIE, "", 0);
     if (flow == null || !Set.of("code", "state", "iss").equals(query.keySet())
         || !flow.state().equals(query.get("state")) || !issuer.equals(query.get("iss"))) {
+      diagnostics.rejected(BrowserLoginDiagnostics.Stage.CALLBACK_BINDING);
       fail(401, "BROWSER_LOGIN_FAILED");
     }
     // Code and all token response contents stay inside this trusted adapter; never log them.
+    BrowserLoginDiagnostics.Stage stage = BrowserLoginDiagnostics.Stage.CODE_EXCHANGE;
     try {
       String result = exchange.exchange(Map.of("grant_type", "authorization_code", "code", query.get("code"),
           "redirect_uri", callback(port), "code_verifier", flow.verifier()));
+      stage = BrowserLoginDiagnostics.Stage.TOKEN_RESPONSE;
       if (result == null || result.length() > 65_536) throw new IllegalArgumentException();
       JsonNode tokens = JSON.readTree(result);
       if (!tokens.isObject() || !tokens.path("access_token").isTextual()
@@ -183,17 +196,24 @@ final class ApprovalBrowserAdapter {
         throw new IllegalArgumentException();
       }
       String bearer = tokens.path("access_token").textValue();
+      stage = BrowserLoginDiagnostics.Stage.ACCESS_TOKEN;
       AuthenticatedConnector connector = access.authenticate("Bearer " + bearer);
       // openid selects OIDC at authorization time; it is not an API permission.
+      stage = BrowserLoginDiagnostics.Stage.API_SCOPE;
       if (organization != null && !connector.scopes().contains(
           io.tracepermit.identity.ConnectorScope.of("approvals.read"))) throw new SecurityException();
+      stage = BrowserLoginDiagnostics.Stage.SENDER_CONSTRAINT;
       if (connector.senderConstraint().isPresent()) throw new SecurityException();
+      stage = BrowserLoginDiagnostics.Stage.MEMBERSHIP;
       var member = memberships.resolve(connector);
+      stage = BrowserLoginDiagnostics.Stage.HUMAN_IDENTITY;
       if (!member.human()) throw new SecurityException();
+      stage = BrowserLoginDiagnostics.Stage.ID_TOKEN;
       Instant idExpiry = identity.verify(tokens.path("id_token").textValue(), clientId, flow.nonce(), bearer, connector);
       Instant expires = java.util.Collections.min(java.util.List.of(idExpiry,
           connector.expiresAt(), clock.instant().plusSeconds(600)));
       String id = token();
+      stage = BrowserLoginDiagnostics.Stage.SESSION_CAPACITY;
       synchronized (this) {
         purge();
         if (sessions.size() >= 1000) fail(503, "SESSION_CAPACITY_REACHED");
@@ -203,7 +223,10 @@ final class ApprovalBrowserAdapter {
       }
       cookie(request, COOKIE, id, (int) (expires.getEpochSecond() - clock.instant().getEpochSecond()));
       redirect(request, "/approvals");
-    } catch (Exception failure) { fail(401, "BROWSER_LOGIN_FAILED"); }
+    } catch (Exception failure) {
+      diagnostics.rejected(stage, failure);
+      fail(401, "BROWSER_LOGIN_FAILED");
+    }
   }
 
   private AuthenticatedConnector verified(Session session) {

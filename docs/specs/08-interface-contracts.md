@@ -66,7 +66,11 @@ bounded `limit` and unsigned `cursor` parameters. Responses add `pageSize`,
 nullable `nextCursor` and per-item `createdAt`. Every page re-derives tenant/owner
 authority before a bounded read-only PostgreSQL query and existing redacted
 projection. All other approval routes and MCP envelopes retain query rejection.
-This is approval history, not full action search or snapshot export. See the
+This is approval history, not full action search or snapshot export. The separate
+`GET /api/v1/approvals/{id}/export` and browser-equivalent route reuse current
+read visibility to return bounded, unsigned metadata only; see the
+[export contract](../runbooks/approval-review-export.md). No new execution or
+approval authority is granted. See the
 [history contract](../runbooks/approval-history-api.md) and
 [ADR 0046](../architecture/0046-authenticated-approval-history-pagination.md).
 
