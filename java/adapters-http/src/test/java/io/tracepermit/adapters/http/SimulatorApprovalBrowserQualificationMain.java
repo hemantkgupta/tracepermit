@@ -22,7 +22,9 @@ public final class SimulatorApprovalBrowserQualificationMain {
         .withPassword("synthetic-browser-qualification-password")) {
       postgres.start();
       try (var fixture = new SimulatorApprovalBrowserFixture(directory, postgres)) {
-        fixture.clock.now = Instant.parse("2030-01-01T00:00:00Z");
+        if ("1".equals(System.getenv("TRACEPERMIT_BROWSER_EXPORT_QUALIFICATION"))) {
+          fixture.clock.now = Instant.parse("2030-01-01T00:00:00Z");
+        }
         System.out.println("SYNTHETIC BROWSER QUALIFICATION ONLY - not a real IdP or target.");
         System.out.println("Approval inbox: " + fixture.origin() + "/approvals");
         System.out.println("Accounts: alice=requester, bob=reviewer, carol=viewer, dave=requester+reviewer.");

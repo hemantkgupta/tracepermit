@@ -14,11 +14,11 @@ TRACEPERMIT HANDOFF
 - PR URL: https://github.com/hemantkgupta/tracepermit/pull/87
 - Branch owner now: unassigned; the draft PR is the coordination point
 - Working tree status: clean implementation checkpoint; final PR-link handoff update pending
-- Completed: real Java route to rendered React download qualification; exact Playwright-saved file hash/verifier/hash proof; installed verifier and browser negative matrices; authorization, stale-state, failure and deterministic cleanup controls; requirements/runbook/test/traceability updates
-- Remaining: CI confirmation and independent review; leave the draft PR open and unmerged
-- Files materially changed: browser export qualification/wrapper; synthetic browser qualification clock; approval export/checker/UI runbooks; quality acceptance; traceability matrix; this handoff
-- Tests passed: focused Java approval export and verifier tests; 56 focused and 124 aggregate React tests; final `pnpm test:approval-export:browser` with real Java/Chromium/installed verifier, all negative controls and cleanup; `pnpm format:check`; `pnpm docs:links`; isolated pre-existing process cleanup and latency qualifications
-- Tests failed/not run: `pnpm check` was run three times; its unchanged aggregate adapters suite failed managed-host-only process-zombie checks on the first run and the pre-existing high-concurrency latency qualification on later runs; each exact failing test passed in isolation, and no slice-specific gate failed
+- Completed: real Java route to rendered React download qualification; exact Playwright-saved file hash/verifier/hash proof; installed verifier and browser negative matrices; export-only fixed clock; authorization, stale-state, failure and deterministic cleanup controls; requirements/runbook/test/traceability updates
+- Remaining: fresh CI confirmation after the scoped-clock repair and independent review; leave the draft PR open and unmerged
+- Files materially changed: browser export qualification/wrapper; shared browser launcher cleanup and local-browser override; export-only synthetic clock; approval export/checker/UI runbooks; quality acceptance; traceability matrix; this handoff
+- Tests passed: focused Java approval export and verifier tests; 56 focused and 124 aggregate React tests; all 35 existing rendered approval tests; final real Java/Chromium/installed-verifier export qualification with all negative controls and cleanup; `pnpm format:check`; `pnpm docs:links`; isolated pre-existing process cleanup and latency qualifications; GitHub `verify` and Cloudflare Pages on the prior pushed head
+- Tests failed/not run: local `pnpm check` runs hit managed-host process-zombie and high-concurrency latency flakes, while each exact failure and GitHub `verify` passed; the first GitHub browser job exposed the shared fixed-clock regression, which is repaired and locally qualified, with fresh CI pending
 - Exact next command: gh pr checks 87 --watch
 - Required environment: Node 22+, pnpm 11.25.0, Java 21, Docker/PostgreSQL and Playwright Chromium
 - Local-only/manual steps: none for the automated simulator gate; live IdP/real-target qualification remains out of scope

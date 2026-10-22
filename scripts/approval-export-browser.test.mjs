@@ -222,7 +222,10 @@ async function startFixture() {
     throw new Error("BROWSER_FIXTURE_DOCKER_UNAVAILABLE");
   const child = spawn("pnpm", ["demo:approvals:browser"], {
     cwd: root,
-    env: fixtureEnvironment(),
+    env: {
+      ...fixtureEnvironment(),
+      TRACEPERMIT_BROWSER_EXPORT_QUALIFICATION: "1",
+    },
     detached: true,
     stdio: ["pipe", "pipe", "pipe"],
   });
