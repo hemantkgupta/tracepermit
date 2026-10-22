@@ -142,5 +142,7 @@ pnpm docs:links
 The browser CI job runs this integration gate after installing its pinned
 Playwright Chromium. A missing Java route, missing seeded approval, invalid
 response, failed browser download, malformed saved JSON file, leaked listener,
-or relevant console error fails the job; the integrated check is never skipped
-because another implementation slice is absent.
+offline-checker rejection, or relevant console error fails the job. The wrapper
+builds the source-free checker distribution first and invokes its installed
+launcher with only Java and a credential-free environment. The integrated check
+is never skipped because another implementation slice is absent.

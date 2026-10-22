@@ -5,6 +5,11 @@ GitHub is authoritative for contracts, code, review and transferable state.
 Notion is the readable roadmap, not a substitute for pushed work. All lanes below
 are assignments prepared for founder forwarding, not claims that a worker ran.
 
+Integration status on 2026-10-22: the backend contract/API and React download
+are merged. The offline checker integration branch consumes their exact contract
+and adds the required exported-file-to-installed-checker gate. This status does
+not close the remaining live-provider, fresh-host, retention or production gates.
+
 ## Outcome and priority
 
 An evaluator can propose a simulated change through Codex, independently review

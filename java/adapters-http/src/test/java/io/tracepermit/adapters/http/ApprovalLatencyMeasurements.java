@@ -851,13 +851,15 @@ public final class ApprovalLatencyMeasurements {
           simulator,
           clock);
 
-      client = HttpClient.newBuilder()
-          .connectTimeout(Duration.ofSeconds(5))
-          .build();
+      client = newQualificationHttpClient();
 
       performMcpHandshake(server.port(), requesterToken, client);
 
       for (int i = 0; i < concurrencyLevels.length; i++) {
+        if (i > 0) {
+          retireQualificationHttpClient(client);
+          client = newQualificationHttpClient();
+        }
         int concurrency = concurrencyLevels[i];
         int warmup = warmupCounts[i];
         int measured = measuredCounts[i];
@@ -1053,6 +1055,28 @@ public final class ApprovalLatencyMeasurements {
         replayRuleDelta,
         overallPassed,
         failures);
+  }
+
+  static HttpClient newQualificationHttpClient() {
+    return HttpClient.newBuilder()
+        .connectTimeout(Duration.ofSeconds(5))
+        .build();
+  }
+
+  /**
+   * Retires one sweep's transport pool before the next sweep begins. This keeps
+   * an idle connection closed by the JDK loopback server from leaking into a
+   * later, slower sweep as an unrelated transport failure. No operation is
+   * retried, and the fixed server admission capacity is unchanged.
+   */
+  static void retireQualificationHttpClient(HttpClient client) throws InterruptedException {
+    client.shutdown();
+    if (!client.awaitTermination(Duration.ofSeconds(5))) {
+      client.shutdownNow();
+      if (!client.awaitTermination(Duration.ofSeconds(5))) {
+        throw new IllegalStateException("HTTP_CLIENT_SHUTDOWN_TIMEOUT");
+      }
+    }
   }
 
   private static void assertZeroStateDeltas(

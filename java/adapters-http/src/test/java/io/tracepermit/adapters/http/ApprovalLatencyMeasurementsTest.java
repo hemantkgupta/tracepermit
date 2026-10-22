@@ -426,4 +426,13 @@ final class ApprovalLatencyMeasurementsTest {
         .isZero();
     assertThat(out.toString()).contains("Qualification passed successfully");
   }
+
+  @Test
+  void qualificationHttpClientRetiresWithinItsBound() throws Exception {
+    var client = ApprovalLatencyMeasurements.newQualificationHttpClient();
+
+    ApprovalLatencyMeasurements.retireQualificationHttpClient(client);
+
+    assertThat(client.isTerminated()).isTrue();
+  }
 }

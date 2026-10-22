@@ -57,6 +57,8 @@ pnpm install --frozen-lockfile
 pnpm build
 source scripts/configure-java-environment.sh
 java/gradlew -p java :adapters-http:test --tests '*ApprovalReviewExportTest' --tests '*SimulatorApprovalExportTest' --tests '*SimulatorApprovalRedactionBoundaryTest'
+java/gradlew -p java :review-verifier:test
+pnpm test:approval-export:browser
 pnpm check
 pnpm format:check
 pnpm docs:links
@@ -65,7 +67,9 @@ pnpm docs:links
 These tests use signed synthetic tokens, disposable PostgreSQL and the synthetic
 browser protocol. They cover visibility/scope/enrollment/expiry, checksum
 sensitivity, terminal states, restart, original binding, no read-side authority
-or simulator changes, attachment/cache headers and canary exclusion. They do not
-claim rendered download UI, standalone checker, live Auth0, fresh-laptop install,
-retention/deletion or full MVP completion. The other milestone packets are in
-the [delivery plan](../planning/audit-ready-approval-workspace.md).
+or simulator changes, attachment/cache headers and canary exclusion. The required
+browser gate exercises the rendered download against the real Java route and
+passes the saved file to the source-free installed checker. These tests do not
+claim live Auth0, fresh-laptop installation, retention/deletion or full MVP
+completion. The milestone boundaries are in the
+[delivery plan](../planning/audit-ready-approval-workspace.md).

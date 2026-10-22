@@ -17,9 +17,9 @@ arguments, raw evidence, credentials and target responses. The unsigned payload
 checksum is not an original-action, full-history, transactional-snapshot or
 authorship proof. It grants no execution authority. The React inbox exposes an
 explicit, session-bound download after closed-schema and request-binding checks;
-a required browser gate saves and validates the file from the real Java route.
-The offline Java checker remains a separate implementation/qualification slice.
-See [ADR0064](../architecture/0064-unsigned-approval-review-export.md).
+a required browser gate saves the file from the real Java route and passes it to
+the installed Java-only offline checker for closed-structure and checksum
+validation. See [ADR0064](../architecture/0064-unsigned-approval-review-export.md).
 
 ## Assurance vocabulary
 
