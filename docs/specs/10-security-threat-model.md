@@ -329,3 +329,12 @@ this qualification. No public tunnel, Management API or real target is added.
 - Secret scanning and log/evidence redaction tests
 - Dependency, container, and infrastructure configuration scanning
 - Penetration test before a real connector or target pilot
+
+### Installed requester threats
+
+| ID    | Threat                                                                       | Current control                                                                                                     | Residual limit                                                          |
+| ----- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| T-046 | Browser SSO authenticates a different human for an installed requester       | Exact signed subject/client/org in both tokens plus requester-only backend enrollment                               | Operator must select the dedicated account; same-UID compromise remains |
+| T-047 | Local callback injection, replay or port squatting steals a code             | Bind-before-browser exact IPv4 loopback, one flow/attempt, state/issuer/PKCE, strict bounded request                | Local denial of one login attempt remains possible                      |
+| T-048 | Requester bearer leaks through shell, argv, config or output                 | Owner-only no-replace envelope; consume before fixed child; child-only environment variable; stable redacted errors | Same-UID process inspection and child compromise remain                 |
+| T-049 | Expiry or launch uncertainty causes an automatic duplicate request or effect | No refresh/retry/restart; explicit re-login, status and one bound resume; every MCP call reauthenticated            | Lost initial response may remain uncertain                              |

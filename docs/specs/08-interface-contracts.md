@@ -797,3 +797,20 @@ resumability, and server-initiated notifications are outside the POC.
 
 Connector compatibility tests must pin observed handshake behavior before a
 remote deployment is declared supported.
+
+## 11. Installed requester qualification and launcher
+
+`GET /api/v1/requester-qualification` accepts only one bearer Authorization
+header and no query, body, Origin, Cookie, transfer encoding or source
+attestation. It reuses the configured access-token verifier and membership
+resolver, requires a human role set exactly `{REQUESTER}`, exact
+`approvals.read approvals.request approvals.execute` API authority (plus optional
+`openid`) and at least 60 seconds of signed lifetime. Success is `204 No Content`
+with `Cache-Control: no-store`; failure returns a bounded code. It performs no
+database, policy, approval, evidence, permit, execution or target mutation.
+
+The installed `tracepermit-requester-auth` accepts exactly one of `--help`,
+`--check`, `--login`, `--codex`, or `--cleanup`. Private configuration comes only
+from `TRACEPERMIT_REQUESTER_CONFIG`. The credential value is never accepted in
+argv. `--codex` consumes the verified credential and configures only the exact
+loopback `/mcp` URL with bearer variable `TRACEPERMIT_REQUESTER_BEARER`.

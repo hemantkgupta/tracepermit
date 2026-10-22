@@ -159,3 +159,20 @@ alerting, rollback, and representative client/load tests.
 For a change to a security boundary, update requirement IDs in the
 [traceability matrix](12-traceability-matrix.md), the relevant
 [ADR](../architecture/), and the public architecture/contract documentation.
+
+## Installed requester sign-in acceptance
+
+Automated acceptance requires closed offline configuration; one-shot numeric
+loopback callback; exact public authorization/token shapes; independent signed
+access/ID-token validation; requester-only qualification with zero authority or
+target mutation; owner-only no-replace publication including a simultaneous
+publisher race; and a fixed child launch whose argv/output omit secret sentinels.
+The source-free archive must include executable requester and approval launchers,
+example configs, runbooks, manifest entries and complete checksums, without test
+fixtures, source, provider IDs, keys or credentials.
+
+Live provider and installed-Codex acceptance remains manual: use the exact clean
+archive commit, dedicated requester/reviewer identities, numeric loopback only,
+and show request → distinct review → explicit resume → one simulated effect plus
+expiry/re-login and replay rejection. A missing variable, provider mismatch or
+unavailable interactive browser is pending/failed, never an automated pass.
