@@ -437,6 +437,11 @@ test("distribution archive layout, permissions, and clean dependency inventory",
     ),
   );
   assert.ok(
+    installedRunbook.includes(
+      `/blob/${manifest.sourceCommit}/docs/demo-scenarios/evidence/installed-auth0-approval-2026-10-22.md`,
+    ),
+  );
+  assert.ok(
     !/\]\((?:\.\.\/|authenticated-approval-api-foundation\.md)/.test(
       installedRunbook,
     ),

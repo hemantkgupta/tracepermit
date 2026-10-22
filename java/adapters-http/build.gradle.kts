@@ -264,6 +264,7 @@ abstract class StageSimulatorApprovalDistribution : DefaultTask() {
     val sourceDocs = "https://github.com/hemantkgupta/tracepermit/blob/${sourceCommit.get()}/docs"
     val installedRunbook = runbook.get().asFile.readText()
       .replace("](../architecture/", "]($sourceDocs/architecture/")
+      .replace("](../demo-scenarios/", "]($sourceDocs/demo-scenarios/")
       .replace("](authenticated-approval-api-foundation.md)", "]($sourceDocs/runbooks/authenticated-approval-api-foundation.md)")
       .replace("](operator-recovery-quarantine.md)", "]($sourceDocs/runbooks/operator-recovery-quarantine.md)")
     docsDir.resolve("setup-runbook.md").writeText(installedRunbook)
