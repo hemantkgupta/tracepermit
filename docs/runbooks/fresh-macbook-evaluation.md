@@ -398,8 +398,10 @@ Require schema `1.0`, `status: "live"` for health and `status: "ready"` for read
 Origin, query or body. These probes check the local process/database/recovery
 composition, not the external IdP, reviewer availability or target safety.
 
-For live sign-in and role transitions, continue with Path C. Otherwise record
-provider/browser qualification as pending, even when startup/readiness pass.
+For live sign-in and role transitions, continue with Path C. One named same-Mac
+Auth0 composition completed this procedure on 2026-10-22; a different Mac,
+registration or provider still needs its own record even when startup/readiness
+pass.
 
 Stop the foreground service with **Ctrl+C**, wait up to 30 seconds for process
 exit, then run Path A's ten-second port-release check. Require both process exit
