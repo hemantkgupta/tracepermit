@@ -76,6 +76,7 @@ export default defineConfig({
     siteTitle: "TracePermit",
 
     nav: [
+      { text: "Learn", link: "/learn/securing-mcp-tool-execution" },
       {
         text: "Guide",
         items: [
@@ -105,6 +106,15 @@ export default defineConfig({
     ],
 
     sidebar: [
+      {
+        text: "Agent Security Foundations",
+        items: [
+          {
+            text: "Securing MCP Tool Execution",
+            link: "/learn/securing-mcp-tool-execution",
+          },
+        ],
+      },
       {
         text: "Overview",
         items: [
