@@ -282,6 +282,36 @@ async function startFixture() {
   async function stop() {
     if (stopped) return;
     stopped = true;
+    const requestGracefulStop = async () => {
+      if (
+        child.exitCode !== null ||
+        child.signalCode !== null ||
+        child.stdin.destroyed
+      ) {
+        return;
+      }
+      try {
+        await within(
+          new Promise((resolve, reject) => {
+            const onError = (failure) => {
+              child.stdin.off("error", onError);
+              reject(failure);
+            };
+            child.stdin.once("error", onError);
+            child.stdin.end("\n", () => {
+              child.stdin.off("error", onError);
+              resolve();
+            });
+          }),
+          1_000,
+          "BROWSER_FIXTURE_GRACEFUL_STOP_TIMEOUT",
+        );
+      } catch (failure) {
+        if (failure?.code !== "EPIPE") {
+          throw new Error("BROWSER_FIXTURE_GRACEFUL_STOP_FAILED");
+        }
+      }
+    };
     const killOwnedGroup = (signal) => {
       if (child.exitCode === null && child.signalCode === null && child.pid) {
         try {
@@ -291,16 +321,31 @@ async function startFixture() {
         }
       }
     };
-    killOwnedGroup("SIGTERM");
+    await requestGracefulStop();
     let result = await Promise.race([
       exited,
-      new Promise((resolve) => setTimeout(() => resolve(null), 5_000)),
+      new Promise((resolve) => setTimeout(() => resolve(null), 30_000)),
     ]);
+    if (result === null) {
+      killOwnedGroup("SIGTERM");
+      result = await Promise.race([
+        exited,
+        new Promise((resolve) => setTimeout(() => resolve(null), 5_000)),
+      ]);
+    }
     if (result === null) {
       killOwnedGroup("SIGKILL");
       result = await within(exited, 5_000, "BROWSER_FIXTURE_PROCESS_LINGERING");
     }
     assert.ok(result, "BROWSER_FIXTURE_PROCESS_LINGERING");
+    if (origin) {
+      assert.equal(result.code, 0, "BROWSER_FIXTURE_GRACEFUL_STOP_REQUIRED");
+      assert.equal(
+        result.signal,
+        null,
+        "BROWSER_FIXTURE_GRACEFUL_STOP_REQUIRED",
+      );
+    }
     let portReleased = !origin;
     if (origin) {
       for (let attempt = 0; attempt < 40; attempt++) {
