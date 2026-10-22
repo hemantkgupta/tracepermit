@@ -470,6 +470,19 @@ startup and declared containment. These are documentation/traceability additions
 not proof of a new laptop, external IdP, published release or production readiness;
 requirement statuses remain unchanged.
 
+Day 3 **preparation only** adds a third explicit live-provider/manual path,
+owner-writable Corepack setup, clean-checkout/archive commit checks, trusted outer
+and inner checksums, new extraction directory, missing-browser-config warning,
+offline-before-init/run ordering, empty-only initialization, finite observation
+budgets, loopback/port-release checks, disposable versus retained restart semantics
+and private fact-only evidence. FR-007/012; SEC-003/011/012; REL-002; OPS-002/004
+map to documentation conformance in `scripts/flow-diagrams.test.mjs` and built
+phone/desktop canonical-page checks in `scripts/site-onboarding-browser.test.mjs`.
+These tests compare supported command/output/archive/fixture facts to merged code;
+they do not execute the founder's installation. Day 3, fresh-Mac, live external-IdP
+and installed requester/Codex qualification remain pending; no runtime or whole-ID
+status is changed.
+
 The [public verification index](../../site/guide/verification.md) adds dated,
 revision-pinned client evidence, named compatibility boundaries and two retained
 screenshots of the same synthetic approval/replay case. It supports OPS-002/004
