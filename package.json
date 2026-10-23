@@ -62,6 +62,7 @@
     "portability:check": "scripts/run-java-portability-check.sh",
     "java:check": "scripts/run-java-check.sh",
     "test:java-postgres": "scripts/run-java-postgres-tests.sh",
+    "test:java-mariadb": "scripts/run-java-mariadb-tests.sh",
     "test:approval-api": "scripts/run-java-approval-api-tests.sh",
     "java:env-check": "scripts/test-java-environment.sh",
     "build:java-endpoint": "scripts/build-java-endpoint-connector.sh",

@@ -51,3 +51,8 @@ incomplete. The console download is exercised against the real Java route by a
 required browser gate, which also passes the saved file to the installed Java
 offline checker. Live-provider qualification retains a separate gate in the
 [delivery plan](../planning/audit-ready-approval-workspace.md).
+
+[ADR 0066](../architecture/0066-mariadb-permit-consumption-foundation.md) adds
+an unwired MariaDB standalone replay-store foundation for exact 10.6.25 and
+11.4.13 versions. It does not claim approval/evidence parity, RDS qualification
+or production runtime support.

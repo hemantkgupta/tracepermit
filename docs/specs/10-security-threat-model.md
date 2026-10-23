@@ -152,14 +152,17 @@ Authenticated rollout and pending-approval integration remain separate work. See
 The standalone Java consumption authority uses a private, hash-verified action
 snapshot for tenant routing and rejects an explicit tenant mismatch before
 storage. The PostgreSQL adapter requires action provenance and commits its own
-bounded consumption/pruning transaction before success, including on initially
-manual-transaction connections. Commit/close uncertainty is failure, not retry
-authority; a row may already exist. Tests cover partition switching and
-transaction failures with no reported-success effect. The existing durable
+bounded consumption/pruning transaction before success. The unwired MariaDB
+adapter provides the same standalone claim boundary for two exact qualified
+engine versions but deliberately omits pruning until referenced state exists.
+Commit/close uncertainty is failure, not retry authority; a row may already
+exist. Tests cover partition switching, concurrent claims and transaction
+failures with no reported-success effect. The existing durable
 execution/approval claim path is unchanged and remains atomic with evidence;
 the standalone adapter must not pre-consume its permit. These trusted Java APIs
 are not remote authentication or database-admin isolation. See
-[ADR 0041](../architecture/0041-postgres-durable-permit-consumption.md)
+[ADR 0041](../architecture/0041-postgres-durable-permit-consumption.md) and
+[ADR 0066](../architecture/0066-mariadb-permit-consumption-foundation.md)
 (FR-008, SEC-005/006/009, REL-004).
 
 The separate authenticated loopback approval API adds verified access tokens

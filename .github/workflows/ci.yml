@@ -66,6 +66,9 @@ jobs:
       - name: Verify durable PostgreSQL enforcement state
         run: pnpm test:java-postgres --rerun-tasks
 
+      - name: Verify MariaDB standalone permit consumption
+        run: pnpm test:java-mariadb --rerun-tasks
+
       - name: Verify source-free simulator approval distribution
         run: |
           pnpm build:distribution
