@@ -67,6 +67,17 @@ lookup retain `unknown`, not a confirmed failure. State and registration are
 process-local; durable composition and general absence semantics remain separate.
 See [ADR 0069](../architecture/0069-github-app-draft-pr-adapter-and-reconciliation.md).
 
+## Uncommitted business-operation lifecycle proposals
+
+The application module's `BusinessOperationTransitionPlanner` additionally builds
+uncommitted v1 transition proposals against exact scope and a token covering the
+whole snapshot, recovery generation, sequence and all dimension versions. It
+revalidates one append and returns defensive copies, with no repository or target
+port. Tokens/proposals are not authentication, authority, atomic CAS or observed
+outcome evidence. The registration repository still refuses progressed candidates;
+future trusted durable lifecycle composition is separate. See
+[ADR 0071](../architecture/0071-uncommitted-operation-transition-proposals.md).
+
 ## OIDC refresh and transport resource boundaries
 
 `CachingOidcJwkResolver` keys its cache by the operator-owned issuer and exact

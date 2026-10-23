@@ -9,6 +9,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.tracepermit.application.BusinessOperationRegistration;
 import io.tracepermit.application.BusinessOperationScope;
 import io.tracepermit.application.BusinessOperationStorageException;
+import io.tracepermit.application.BusinessOperationTransitionPlanner;
 import io.tracepermit.contracts.BusinessOperationValidator;
 import io.tracepermit.contracts.CanonicalJson;
 import io.tracepermit.contracts.JsonSupport;
@@ -243,6 +244,20 @@ abstract class OperationRepositoryContract {
     rehash(large);
     assertCode(() -> repository.createOrGet(SCOPE, large), OPERATION_TOO_LARGE);
     assertCounts(0, 0);
+  }
+
+  @Test
+  void uncommittedProposalCannotAdvanceOrReplaceTheRegistrationSnapshot() {
+    ObjectNode initial = operation();
+    repository.createOrGet(SCOPE, initial);
+    var planner = new BusinessOperationTransitionPlanner();
+    var proposal = planner.propose(SCOPE, initial, planner.observe(SCOPE, initial),
+        BusinessOperationTransitionPlanner.Dimension.AUTHORIZATION,
+        "approved", "SYNTHETIC_SHAPE_ONLY", java.time.Instant.parse(initial.path("updatedAt").asText()));
+
+    assertCode(() -> repository.createOrGet(SCOPE, proposal.snapshot()), OPERATION_INITIAL_STATE_REQUIRED);
+    assertThat(repository.find(SCOPE, initial.path("operationId").asText())).contains(initial);
+    assertCounts(1, 3);
   }
 
   @Test

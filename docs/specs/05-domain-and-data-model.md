@@ -70,6 +70,14 @@ remain immutable. Authority-bearing transitions and retention deletion are pendi
 The dedicated registration database is separate from existing approval and
 permit-consumption databases.
 
+The application layer can construct an
+[uncommitted transition proposal](../architecture/0071-uncommitted-operation-transition-proposals.md)
+against the exact current snapshot/versions/generation. It preserves immutable
+fields and the old history prefix, but does not commit, arbitrate two callers or
+establish authority. The existing registration port cannot persist a progressed
+proposal. Durable lifecycle mutation and current actor/policy/approval checks
+remain separate service responsibilities.
+
 ### Approval aggregate
 
 Owns approval request state, reviewer identity, decision, expiry, request hash,

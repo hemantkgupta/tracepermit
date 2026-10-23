@@ -89,6 +89,19 @@
 
 ## 5. Trust-boundary controls
 
+### Lifecycle proposals are not authority
+
+The optional `BusinessOperationTransitionPlanner` returns only candidate data.
+Its optimistic state token is not signed authority, and no label in a proposal
+proves a policy decision, permit consumption, target result or publication receipt.
+Exact scope/state comparisons and v1 append validation reject stale/malformed
+plans; they do not authenticate or arbitrate simultaneous writers. The immutable
+registration repository rejects progressed proposals on all three test engines.
+There is no public planner route or target dependency. A future durable lifecycle
+service must recheck current authority and state under its transaction before
+committing an append; no executor may trust a caller-supplied proposal. See
+[ADR 0071](../architecture/0071-uncommitted-operation-transition-proposals.md).
+
 ### GitHub confirmation and lookup bounds
 
 POST confirmation and GET reconciliation read at most 65,536 decoded bytes plus

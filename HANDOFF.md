@@ -1,26 +1,32 @@
 # TracePermit implementation handoff
 
-GitHub is authoritative. This record contains transferable state only, with no
-provider credentials, customer-private documents or local private configuration.
+GitHub is authoritative. This record contains transferable product state only;
+no private customer documents, raw client keys or provider credentials.
 
 TRACEPERMIT HANDOFF
 
-- Task: Reconcile PR #98 with merged PR #96 and qualify its immutable scoped registration boundary on MariaDB/PostgreSQL.
+- Task: Implement an uncommitted, scope/state-bound lifecycle proposal primitive and record one observed bounded advisory batch.
 - Repository: https://github.com/hemantkgupta/tracepermit
-- Branch: codex/durable-business-operation-repository
-- Base commit: b894f601dc0488bb29fa46956a78db78c25a3095 (latest fetched main, merged PR #96)
-- Latest pushed commit: pre-reconciliation checkpoint `56a4b28f159931f582369fcc2b02ed7e36c64470`; the reconciliation commit follows it. Verify the exact PR head before taking ownership.
-- PR URL: https://github.com/hemantkgupta/tracepermit/pull/98
-- Branch owner now: unassigned after final push; this Mac thread has stopped editing. PR #98 remains open/unmerged with its existing non-draft status preserved.
-- Working tree status: clean and synced after reconciliation commit/push. Normal merge only; no rebase or force-push.
-- Completed: follow-up source review of transactions, scoped reads, duplicate handling, commit uncertainty and restricted grants found no substantiated runtime defect within the initial-registration boundary; reconciled the three documentation conflicts while retaining both module/traceability sections and merged PR #96 streaming/UNKNOWN repairs; no manual runtime, schema, workflow or generated-file edits during reconciliation; application registration port and separate trusted scope; isolated JDBC module with explicit empty-database installation and validate-only startup; primary scoped-key arbitration; original-record retry return and changed-binding conflict; atomic initial snapshot plus three facts; commit/cleanup uncertainty; integrity-checked scoped reads; restricted runtime grants; shared engine tests and CI job; ADR 0070, runbook, learning/specification/traceability and public capability updates
-- Remaining: exact-head hosted CI and independent review. Leave PR #98 open/unmerged. Reconcile separately if PR #94 lands; build authority-bearing operation lifecycle/service composition before exposing an operations API or AgentCore ingress.
-- Files materially changed: manual reconciliation only in HANDOFF.md and specifications 07/12; other main changes imported unchanged. Existing PR scope: application BusinessOperation port/scope/result/exception and scope tests; new persistence-operations module, migrations and shared tests; Gradle settings; focused test script/package command; CI workflow; ADR 0070 and repository runbook; learning/specifications 03/05/07/08/12 and index; working-today site page; this handoff
-- Tests passed (reconciled checkpoint): fresh `pnpm test:java-operations --rerun-tasks` (108 cases, zero failures/errors/skips on PostgreSQL 16.4 and MariaDB 11.4.13/10.6.25, including 20 mixed-payload races per engine); `pnpm check` (124 React tests; 1,347 Java cases recorded, zero failures/errors, one installed-archive skip); aggregate coverage 94.26% line / 77.53% branch, thresholds unchanged; formatting; documentation links (1,007); flow checks (13 tests); actionlint; shell syntax; git diff checks.
-- Tests failed/not run: no current local failure. Installed-archive connector E2E skipped because its archive was absent. Site build/six site-verification cases were earlier producer evidence and were not rerun for this documentation-only reconciliation; exact-head Cloudflare remains a gate. Live RDS/TLS/replication/failover, AgentCore, external IdP, S3 and real GitHub target work were not run.
-- Exact next command: gh pr checks 98 --repo hemantkgupta/tracepermit --watch
-- Required environment: Java 21, Node.js 22+, Corepack/pnpm 11.25.0, Docker for the three pinned database images; repeating site verification also requires npm --prefix site ci
-- Local-only/manual steps: generated test credentials and disposable containers are not transferable artifacts; source/build caches remain ignored; the four customer planning files remain outside Git in the separate shared checkout and were not copied or committed here
-- Security constraints: derive tenant/workspace/requester scope from verified adapter context; registration never grants authority or dispatches a target; runtime uses a dedicated writer database with SELECT/INSERT only; never log connection details or payloads; no credentials, customer identifiers, planning files, real target calls, force-push, rebase or PR merge
-- Known limitations: initial registration only and unwired; no lifecycle mutation, API authentication/authorization, arbitrary-argument redaction/encryption, retention execution, recovery fencing, MariaDB approval/evidence parity, S3 publication, RDS/failover qualification, EKS or production claim
-- Safe for another environment to continue: yes, after fetching/verifying the exact PR head, confirming a clean tree and explicitly taking branch ownership.
+- Branch: codex/operation-transition-proposals
+- Base commit: b84b5ee904a20348e169f32b8b453e397c9b0935 (merged PR #98)
+- Latest pushed commit: feature checkpoint pending; verify the exact PR head before taking ownership.
+- PR URL: pending draft PR creation
+- Branch owner now: Mac implementation session; do not edit concurrently.
+- Working tree status: coherent implementation verified; commit/push pending.
+- Completed:
+  - Added pure Java BusinessOperationTransitionPlanner, redacted fixed-code exception, exact whole-state token and defensively copied uncommitted Proposal.
+  - One validated append preserves immutable fields/history, all unrelated dimension projections and the frozen v1 graph/canonicalization contract. Stale scope/state, invalid edges/reasons/time and 256-KiB overflow fail closed.
+  - No database, signing, credentials, clock, network, target or publication port is present. A candidate status is not proof of authority, an atomic winner or a real event.
+  - Added nine unit cases plus a shared registration-rejection regression on all three databases. Removing the stale guard made all three selected regressions fail; it was restored before the passing full check.
+  - Added ADR 0071, specifications, learning/traceability and a sanitized bounded-advisory receipt.
+  - Ran one Flash request and one GLM request using existing subscription routes only. Flash test advice accepted; GLM response rejected by closed-schema validation, no retry and no accepted review. Neither worker edited or tested product files.
+- Remaining: Open draft PR, exact-head hosted CI and independent implementation review. Next product slice is a trusted durable lifecycle command with atomic state/authority rechecks; no public API/executor wiring yet. A versioned independently reviewed controller, containment/negative-permission probes and bounded repair leases remain prerequisites for an unattended writer loop.
+- Files materially changed: application planner/exception and unit test; shared OperationRepositoryContract test; ADR 0071; bounded-lifecycle-advisory-trial receipt; business-operation learning module; specifications 03/05/07/10/12 and index; HANDOFF.
+- Tests passed: focused nine proposal cases and 111 database cases (37 each on PostgreSQL 16.4, MariaDB 11.4.13 and 10.6.25), zero failures/errors/skips; pnpm check (124 React tests; 1,359 Java cases recorded, zero failures/errors, one existing installed-archive skip); aggregate 94.29% line / 77.63% branch, unchanged gates; formatting, 1,016 documentation links, 13 flow tests and diff checks. Local advisory-helper unit tests: 17 passed (not product CI).
+- Tests failed/not run: expected stale-guard negative control: three failures; restored implementation passed. Installed archive/native-PTY E2E skipped because its archive was absent. GLM advisory schema failure is not an audit pass. No live provider, RDS/TLS/failover, AgentCore, S3, real target or production qualification.
+- Exact next command: git status --short --branch
+- Required environment: Java 21 via scripts/configure-java-environment.sh; Node.js 22+, pnpm 11.25.0; Docker for pinned database tests. Subscription CLIs are optional local development advisers, not product/runtime dependencies.
+- Local-only/manual steps: CLI helper/controller and detailed advisory report remain local and unversioned; the sanitized receipt is in Git. Existing provider authentication stays private. Ignored caches and disposable test credentials are not transferable state.
+- Security constraints: proposals/tokens grant no authority; registration still rejects progressed aggregates; no API route, effect retry, permit/policy relaxation, merge or force-push. No private customer input supplied to workers. No paid API fallback/credit overage enabled by the controller; upstream billing/model identity and complete native containment are not independently attested.
+- Known limitations: pure candidate construction only, not atomic CAS, authentication/authorization, lifecycle persistence, verified target outcome, evidence receipt or production readiness. Observed advisory assistance is not an unattended coding loop or independent final-code audit.
+- Safe for another environment to continue: no, until checkpoint is pushed and Mac writer explicitly releases ownership.

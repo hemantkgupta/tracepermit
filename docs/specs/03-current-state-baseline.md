@@ -44,6 +44,15 @@ a general qualification of pagination/eventual-visibility absence semantics.
 In-memory simulator target executions (`mode: "simulated"`) remain explicitly distinguished
 from live pilot operations (`mode: "pilot"`). See the [operator runbook](../runbooks/agentcore-github-pr-pilot.md).
 
+## Uncommitted operation transition proposals
+
+The Java application layer also provides an
+[uncommitted transition proposal primitive](../architecture/0071-uncommitted-operation-transition-proposals.md).
+It checks exact scope and optimistic state identity, appends one valid v1 fact,
+and preserves other fields/history. It neither commits nor authorizes anything;
+the registration repository rejects progressed candidates. Atomic lifecycle
+persistence, actor/policy/approval checks and service/API wiring remain pending.
+
 ## Assurance vocabulary
 
 - **Implemented:** code exists in the public tree and passes automated tests.

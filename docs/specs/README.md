@@ -63,3 +63,8 @@ the isolated registration port/library and a shared MariaDB/PostgreSQL contract
 suite. Scoped-key uniqueness, changed-content conflict, snapshot/initial-fact
 atomicity and commit uncertainty are implemented for registration. The module
 is not wired into the simulator, an operations API or a target executor.
+
+[ADR0071](../architecture/0071-uncommitted-operation-transition-proposals.md) adds
+a pure, scope/state-bound transition proposal helper. A candidate label is not
+authority or a committed event; durable lifecycle service composition remains
+pending.
