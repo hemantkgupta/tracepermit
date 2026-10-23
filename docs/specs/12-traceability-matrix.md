@@ -60,6 +60,15 @@ are instance-local (default DNS is shared across sources); provider fairness,
 process-wide cardinality, forced OS-call cancellation and a universal hard
 wall-clock SLO are not established. No whole-requirement status is promoted.
 
+The [OkHttp 5 transport qualification](../runbooks/jwks-refresh-isolation.md#okhttp-5-transport-qualification)
+adds SEC-003/011/012/015 and REL-001/009 regression evidence through generated-key
+untrusted-certificate/wrong-hostname failures and peer-observed response closure
+for status/media/size rejection before the call deadline. Existing pinned TLS,
+redirect, timeout, DNS, redaction and simulator-only remote MCP tests remain in
+force. OPS-002/004 gain the selected JVM artifact, upstream migration references
+and reproducible commands. Production behavior and whole-ID status are unchanged;
+live-provider, public-edge and external binary compatibility remain unqualified.
+
 ## Bounded simulator approval listener admission
 
 Requirements: FR-003/007/009; SEC-002/003/017; REL-001/004/009; OPS-001/005.
