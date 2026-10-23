@@ -25,8 +25,13 @@ dimensions. “Approved” must not imply “executed”; “succeeded” must n
 into a retry. Append-only transitions preserve how each projection reached its
 current state.
 
-The current foundation validates one aggregate. Durable request-key uniqueness,
-same-key/same-payload return, same-key/different-payload conflict, authorized
-snapshot reads, and atomic state transitions still need a repository and real
-database constraints. See
-[ADR 0068](../architecture/0068-versioned-business-operation-contract.md).
+The validator checks one aggregate. The separate registration repository now uses
+a scoped unique database key, returns the original matching retry, rejects changed
+bindings and commits a snapshot plus its three initial facts atomically. A commit
+exception remains unknown even if rollback later succeeds: only a later explicit
+same-key read/registration can establish whether that initial record exists.
+
+Registration grants no authority. Current identity checks, approval/permit
+consumption and authority-bearing state transitions still belong to a future
+service composition. See [ADR 0068](../architecture/0068-versioned-business-operation-contract.md)
+and [ADR 0070](../architecture/0070-durable-business-operation-registration.md).

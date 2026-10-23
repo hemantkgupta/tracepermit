@@ -60,6 +60,16 @@ foundation only. They do not provide repository uniqueness, access control,
 encryption, retention deletion, resume/cancel APIs, target dispatch or
 reconciliation. See [ADR 0068](../architecture/0068-versioned-business-operation-contract.md).
 
+The separate [durable registration library](../architecture/0070-durable-business-operation-registration.md)
+persists only the initial aggregate and its three facts in one transaction.
+Its unique key is the trusted tenant/workspace/requester fingerprint plus the client
+request-key fingerprint. A duplicate with matching adapter, semantic action,
+resource/precondition and recovery generation returns the original aggregate;
+a changed binding conflicts. The first snapshot's policy, artifacts and retention
+remain immutable. Authority-bearing transitions and retention deletion are pending.
+The dedicated registration database is separate from existing approval and
+permit-consumption databases.
+
 ### Approval aggregate
 
 Owns approval request state, reviewer identity, decision, expiry, request hash,
