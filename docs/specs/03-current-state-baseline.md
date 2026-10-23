@@ -30,6 +30,18 @@ validation. See [ADR0064](../architecture/0064-unsigned-approval-review-export.m
 - **Target:** an architectural design or port without a qualified production
   implementation.
 
+## Business-operation contract foundation
+
+Java and the checked-in language-neutral artifacts now validate a strict
+business-operation snapshot around an immutable canonical action. Deterministic
+tests bind canonical, semantic, resource/precondition and target-generation
+digests; keep transport/event/operation/request/target identities separate; and
+enforce three independent append-only lifecycle dimensions. This is contract
+and state-machine evidence only. There is no operation API, MariaDB/PostgreSQL
+repository, request-key conflict transaction, AgentCore adapter, real GitHub
+dispatch, S3 evidence delivery or production deployment in this slice. See
+[ADR 0068](../architecture/0068-versioned-business-operation-contract.md).
+
 ## Current capability by boundary
 
 | Boundary                    | Implemented and verified                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Important limit                                                                                                                                                                                                                                                                                                                                                                     |

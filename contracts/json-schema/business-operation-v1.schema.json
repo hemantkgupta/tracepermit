@@ -1,0 +1,416 @@
+{
+  "$id": "https://schemas.tracepermit.invalid/v1/business-operation-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "operationId": {
+      "$ref": "#/$defs/uuid"
+    },
+    "trustedContext": {
+      "type": "object",
+      "properties": {
+        "tenantId": {
+          "$ref": "#/$defs/partitionIdentifier"
+        },
+        "workspaceId": {
+          "$ref": "#/$defs/partitionIdentifier"
+        },
+        "requesterPrincipalId": {
+          "$ref": "#/$defs/identifier"
+        }
+      },
+      "required": [
+        "tenantId",
+        "workspaceId",
+        "requesterPrincipalId"
+      ],
+      "additionalProperties": false
+    },
+    "adapterId": {
+      "$ref": "#/$defs/identifier"
+    },
+    "clientRequestKeyHash": {
+      "$ref": "#/$defs/hash"
+    },
+    "canonicalization": {
+      "type": "string",
+      "const": "tracepermit-canonical-json-v1"
+    },
+    "canonicalAction": {
+      "$ref": "https://schemas.tracepermit.invalid/v1/intercepted-action-v1.schema.json"
+    },
+    "canonicalActionHash": {
+      "$ref": "#/$defs/hash"
+    },
+    "semanticPayloadDigest": {
+      "$ref": "#/$defs/hash"
+    },
+    "resourceBinding": {
+      "type": "object",
+      "properties": {
+        "system": {
+          "$ref": "#/$defs/identifier"
+        },
+        "environment": {
+          "type": "string",
+          "enum": [
+            "dev",
+            "test",
+            "staging",
+            "prod"
+          ]
+        },
+        "resourceType": {
+          "$ref": "#/$defs/identifier"
+        },
+        "resourceIdHash": {
+          "$ref": "#/$defs/hash"
+        },
+        "precondition": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "none",
+                "version",
+                "etag",
+                "commit_sha",
+                "resource_state_digest"
+              ]
+            },
+            "valueHash": {
+              "$ref": "#/$defs/hash"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "kind": {
+                    "const": "none"
+                  }
+                },
+                "required": [
+                  "kind"
+                ]
+              },
+              "then": {
+                "not": {
+                  "required": [
+                    "valueHash"
+                  ]
+                }
+              },
+              "else": {
+                "required": [
+                  "valueHash"
+                ]
+              }
+            }
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "system",
+        "environment",
+        "resourceType",
+        "resourceIdHash",
+        "precondition"
+      ],
+      "additionalProperties": false
+    },
+    "resourceBindingHash": {
+      "$ref": "#/$defs/hash"
+    },
+    "targetIdempotencyKeyHash": {
+      "$ref": "#/$defs/hash"
+    },
+    "policyRelease": {
+      "type": "object",
+      "properties": {
+        "policyId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "version": {
+          "$ref": "#/$defs/positiveSafeInteger"
+        },
+        "contentHash": {
+          "$ref": "#/$defs/hash"
+        }
+      },
+      "required": [
+        "policyId",
+        "version",
+        "contentHash"
+      ],
+      "additionalProperties": false
+    },
+    "artifactDigests": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "$ref": "#/$defs/identifier"
+          },
+          "digest": {
+            "$ref": "#/$defs/hash"
+          }
+        },
+        "required": [
+          "kind",
+          "digest"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "recoveryGeneration": {
+      "$ref": "#/$defs/positiveSafeInteger"
+    },
+    "retention": {
+      "type": "object",
+      "properties": {
+        "policyId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "retainUntil": {
+          "$ref": "#/$defs/timestamp"
+        }
+      },
+      "required": [
+        "policyId",
+        "retainUntil"
+      ],
+      "additionalProperties": false
+    },
+    "authorization": {
+      "$ref": "#/$defs/authorizationSnapshot"
+    },
+    "execution": {
+      "$ref": "#/$defs/executionSnapshot"
+    },
+    "evidence": {
+      "$ref": "#/$defs/evidenceSnapshot"
+    },
+    "createdAt": {
+      "$ref": "#/$defs/timestamp"
+    },
+    "updatedAt": {
+      "$ref": "#/$defs/timestamp"
+    },
+    "transitions": {
+      "type": "array",
+      "minItems": 3,
+      "items": {
+        "type": "object",
+        "properties": {
+          "sequence": {
+            "$ref": "#/$defs/positiveSafeInteger"
+          },
+          "dimension": {
+            "type": "string",
+            "enum": [
+              "authorization",
+              "execution",
+              "evidence"
+            ]
+          },
+          "from": {
+            "$ref": "#/$defs/operationState"
+          },
+          "to": {
+            "$ref": "#/$defs/operationState"
+          },
+          "version": {
+            "$ref": "#/$defs/positiveSafeInteger"
+          },
+          "at": {
+            "$ref": "#/$defs/timestamp"
+          },
+          "reasonCode": {
+            "type": "string",
+            "pattern": "^[A-Z][A-Z0-9_]{0,127}$"
+          }
+        },
+        "required": [
+          "sequence",
+          "dimension",
+          "to",
+          "version",
+          "at",
+          "reasonCode"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "operationId",
+    "trustedContext",
+    "adapterId",
+    "clientRequestKeyHash",
+    "canonicalization",
+    "canonicalAction",
+    "canonicalActionHash",
+    "semanticPayloadDigest",
+    "resourceBinding",
+    "resourceBindingHash",
+    "targetIdempotencyKeyHash",
+    "policyRelease",
+    "artifactDigests",
+    "recoveryGeneration",
+    "retention",
+    "authorization",
+    "execution",
+    "evidence",
+    "createdAt",
+    "updatedAt",
+    "transitions"
+  ],
+  "$defs": {
+    "hash": {
+      "type": "string",
+      "pattern": "^sha256:[a-f0-9]{64}$"
+    },
+    "identifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$"
+    },
+    "partitionIdentifier": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "uuid": {
+      "type": "string",
+      "format": "uuid",
+      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+    },
+    "positiveSafeInteger": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "operationState": {
+      "type": "string",
+      "enum": [
+        "evaluating",
+        "denied",
+        "awaiting_approval",
+        "approved",
+        "expired",
+        "revoked",
+        "cancelled",
+        "not_started",
+        "claimed",
+        "executing",
+        "succeeded",
+        "failed",
+        "unknown",
+        "pending",
+        "leased",
+        "published",
+        "delivery_unknown"
+      ]
+    },
+    "authorizationSnapshot": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "evaluating",
+            "denied",
+            "awaiting_approval",
+            "approved",
+            "expired",
+            "revoked",
+            "cancelled"
+          ]
+        },
+        "version": {
+          "$ref": "#/$defs/positiveSafeInteger"
+        },
+        "updatedAt": {
+          "$ref": "#/$defs/timestamp"
+        }
+      },
+      "required": [
+        "status",
+        "version",
+        "updatedAt"
+      ],
+      "additionalProperties": false
+    },
+    "executionSnapshot": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "not_started",
+            "claimed",
+            "executing",
+            "succeeded",
+            "failed",
+            "unknown"
+          ]
+        },
+        "version": {
+          "$ref": "#/$defs/positiveSafeInteger"
+        },
+        "updatedAt": {
+          "$ref": "#/$defs/timestamp"
+        }
+      },
+      "required": [
+        "status",
+        "version",
+        "updatedAt"
+      ],
+      "additionalProperties": false
+    },
+    "evidenceSnapshot": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "leased",
+            "published",
+            "delivery_unknown"
+          ]
+        },
+        "version": {
+          "$ref": "#/$defs/positiveSafeInteger"
+        },
+        "updatedAt": {
+          "$ref": "#/$defs/timestamp"
+        }
+      },
+      "required": [
+        "status",
+        "version",
+        "updatedAt"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
