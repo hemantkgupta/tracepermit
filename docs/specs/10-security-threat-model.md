@@ -82,8 +82,23 @@
 | T-043 | Concurrent new rate-limit keys bypass the configured capacity                                      | Atomic new-key admission, per-key claims, conditional expiry cleanup, contention regression test                                                                       | Process-local limiter is not shared production abuse state                                  |
 | T-044 | An integer-format change silently alters signed canonical v1 bytes                                 | Frozen v1 method/vectors; exact-integer helper separate and inactive for signed artifacts                                                                              | A future profile needs explicit versioning and cross-language qualification                 |
 | T-045 | Container packaging publishes a local listener, embeds secrets, or silently replaces retained keys | No published ports; Linux host network plus exact loopback binds; non-root/read-only app; private-file allowlist and no-replacement setup; image/runtime qualification | Docker daemon/root or same-operator compromise; unsupported Desktop/bridge/proxy deployment |
+| T-046 | Agent attempts pull request creation on unauthorized GitHub repository or non-main base branch     | Strict repository allowlist (`tracepermit/agentcore-pr-pilot`), strict base branch allowlist (`main`), fail-closed validation; FR-002/SEC-002                          | Compromised trusted provider or operator allowlist misconfiguration                         |
+| T-047 | Agent attempts to create non-draft pull request or inject unknown API fields                       | Strict `draft: true` invariant enforcement (`DRAFT_REQUIRED_TRUE`), unknown argument and target field rejection; SEC-002                                               | Upstream model intent drift                                                                 |
+| T-048 | External PR creation times out or disconnects and re-execution duplicates effect                   | Stable operation key, ambiguous timeout or oversized 201 marked UNKNOWN, unavailable GET retains UNKNOWN, zero automatic re-execution; FR-015/SEC-019/ADR 0069         | Process-local ledger; durable integration and general absence semantics pending             |
+| T-049 | GitHub App installation token or credential leaks through evidence, logs, or network redirects     | Trusted credential provider, token masked in memory, exception message redaction, NO_PROXY, disabled redirects, evidence fingerprints only; SEC-003/012/015            | Host machine compromise of trusted secret provider                                          |
 
 ## 5. Trust-boundary controls
+
+### GitHub confirmation and lookup bounds
+
+POST confirmation and GET reconciliation read at most 65,536 decoded bytes plus
+one overflow byte, including chunked bodies without a length header, before JSON
+parsing. Responses close on overflow/read failure. A 201 with an oversized body
+may already represent a committed PR, so it records `unknown` and blocks another
+POST. A rejected/unavailable lookup (401/403/404, redirect, oversize or transport
+failure) cannot prove that earlier effect absent. It returns `unknown` with a
+fixed reason, no confirmed result and no effect retry (SEC-015/019; REL-003/008).
+This is automated fake-server qualification, not production GitHub assurance.
 
 Opt-in endpoint observation capture introduces a local diagnostic-file privacy
 boundary (FR-016/017, SEC-003/012). Default-disabled capture uses an existing

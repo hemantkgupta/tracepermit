@@ -19,27 +19,53 @@ No database migration or real target is introduced. See
 
 ## Module ownership
 
-| Module                   | Responsibility                                                                                                                     |
-| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `contracts`              | Canonical JSON, strict action/business-operation/signed-claim validation, bounded opt-in projection redaction (ADR 0043/0068)      |
-| `identity`               | Development token, source proof, workload/delegation, OAuth/OIDC verification                                                      |
-| `policy`                 | Deterministic classifier, sequence signals, strict policy schema validation, lifecycle staging/activation/rollback, and simulation |
-| `security`               | Request-bound permit issue, verification, and consumption                                                                          |
-| `execution`              | Attempts, idempotency, unknown outcomes, evidence chain                                                                            |
-| `application`            | Fail-closed orchestration and trusted reviewer workflow                                                                            |
-| `simulator`              | Bounded, stateful AWS/Jira fakes; no real target SDK                                                                               |
-| `adapters-http`          | Loopback MCP, read-only projections, and separate authenticated approval/browser adapter                                           |
-| `adapters-remote`        | Authenticated MCP edge and SSRF-safe JWKS HTTPS                                                                                    |
-| `endpoint-connector`     | MCP stdio origin observation and loopback forwarding                                                                               |
-| `persistence-postgres`   | Durable claims, approvals, policy revisions/lifecycle, evidence, outbox, reconciliation                                            |
-| `persistence-operations` | Isolated MariaDB/PostgreSQL operation registration, scoped-key uniqueness and immutable initial facts (ADR 0070)                   |
-| `observability-otel`     | Bounded telemetry projection                                                                                                       |
-| `conformance`            | Checked-in schema, vector, and invariant tests                                                                                     |
+| Module                   | Responsibility                                                                                                                      |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `contracts`              | Canonical JSON, strict action/business-operation/signed-claim validation, bounded opt-in projection redaction (ADR 0043/0068)       |
+| `identity`               | Development token, source proof, workload/delegation, OAuth/OIDC verification                                                       |
+| `policy`                 | Deterministic classifier, sequence signals, strict policy schema validation, lifecycle staging/activation/rollback, and simulation  |
+| `security`               | Request-bound permit issue, verification, and consumption                                                                           |
+| `execution`              | Attempts, idempotency, unknown outcomes, evidence chain                                                                             |
+| `application`            | Fail-closed orchestration and trusted reviewer workflow                                                                             |
+| `simulator`              | Bounded, stateful AWS/Jira fakes; no real target SDK                                                                                |
+| `adapters-http`          | Loopback MCP, read-only projections, and separate authenticated approval/browser adapter                                            |
+| `adapters-remote`        | Authenticated MCP edge, SSRF-safe JWKS HTTPS, and bounded AgentCore GitHub draft pull request adapter with read-only reconciliation |
+| `endpoint-connector`     | MCP stdio origin observation and loopback forwarding                                                                                |
+| `persistence-postgres`   | Durable claims, approvals, policy revisions/lifecycle, evidence, outbox, reconciliation                                             |
+| `persistence-operations` | Isolated MariaDB/PostgreSQL operation registration, scoped-key uniqueness and immutable initial facts (ADR 0070)                    |
+| `observability-otel`     | Bounded telemetry projection                                                                                                        |
+| `conformance`            | Checked-in schema, vector, and invariant tests                                                                                      |
 
 Transport code stays in adapters. All origins converge on the canonical
 action contract before classification or policy. Application and domain code
 receive trusted identity context from adapters; they do not infer it from tool
 arguments. The executor has no route to a real AWS or Jira service.
+
+## AgentCore GitHub draft pull request adapter and reconciliation
+
+`GitHubDraftPullRequestAdapter` in package `io.tracepermit.adapters.remote.github`
+handles the AgentCore pilot operation `github.pull_request.create`. It performs
+strict pre-execution canonical validation, repository allowlisting
+(`tracepermit/agentcore-pr-pilot`), base branch allowlisting (`main`), and mandatory
+`draft: true` enforcement before consuming execution permits. Transport configuration
+enforces `Proxy.NO_PROXY`, disabled redirects and retries, bounded timeouts (5s connect,
+10s call), and decoded response size limits (65,536 bytes, enforced while reading
+with one overflow byte for detection). Credential tokens are derived via
+`GitHubAppCredentialProvider`, masked in memory, and stripped from error messages and
+evidence records.
+
+To address the absence of client-specified idempotency in GitHub's REST API,
+`GitHubDraftPullRequestAdapter.computeOperationKey(...)` derives a deterministic
+SHA-256 operation key bound to installation ID, repository, head branch, and base branch.
+Ambiguous socket timeouts and network failures transition attempts to `unknown` without
+automatic retries. `GitHubPullRequestOutcomeResolver` implements `TargetOutcomeResolver`
+to query `GET /repos/{owner}/{repo}/pulls?head={owner}:{head}&base={base}&state=all`
+during scheduled reconciliation, transitioning to `succeeded` only upon observing a
+matching pull request, or `failed` under the existing successful-empty-lookup
+contract. Oversized HTTP 201 confirmation and unavailable/rejected/oversized GET
+lookup retain `unknown`, not a confirmed failure. State and registration are
+process-local; durable composition and general absence semantics remain separate.
+See [ADR 0069](../architecture/0069-github-app-draft-pr-adapter-and-reconciliation.md).
 
 ## OIDC refresh and transport resource boundaries
 
