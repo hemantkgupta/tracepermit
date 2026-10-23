@@ -1,0 +1,205 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  width="480"
+  height="892"
+  viewBox="0 0 480 892"
+  role="img"
+  aria-labelledby="title desc"
+>
+  <title id="title">Authorize the action before credential use</title>
+  <desc id="desc">
+    Lower-trust content can influence a tool proposal. A trusted execution
+    boundary combines verified caller context and registered tool routing with
+    action authorization. Refused or pending actions stop without a target call.
+    Allowed actions receive bounded execution authority before reaching the
+    protected target.
+  </desc>
+  <defs>
+    <marker
+      id="arrow"
+      viewBox="0 0 10 10"
+      refX="9"
+      refY="5"
+      markerWidth="7"
+      markerHeight="7"
+      orient="auto-start-reverse"
+    >
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b" />
+    </marker>
+    <marker
+      id="allow-arrow"
+      viewBox="0 0 10 10"
+      refX="9"
+      refY="5"
+      markerWidth="7"
+      markerHeight="7"
+      orient="auto-start-reverse"
+    >
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#047857" />
+    </marker>
+  </defs>
+  <rect width="480" height="892" rx="16" fill="#f8fafc" />
+  <g
+    font-family="system-ui, -apple-system, Segoe UI, sans-serif"
+    text-anchor="middle"
+    fill="#0f172a"
+  >
+    <rect
+      x="32"
+      y="24"
+      width="416"
+      height="112"
+      rx="12"
+      fill="#fffbeb"
+      stroke="#d97706"
+      stroke-width="1.5"
+    />
+    <text x="240" y="61" font-size="22" font-weight="650">
+      Lower-trust context
+    </text>
+    <text x="240" y="91" font-size="18">
+      Ticket text, tool output, metadata
+    </text>
+    <text x="240" y="116" font-size="18" fill="#92400e">
+      Content can influence the model
+    </text>
+    <path
+      d="M240 137 V175"
+      fill="none"
+      stroke="#64748b"
+      stroke-width="2"
+      marker-end="url(#arrow)"
+    />
+    <rect
+      x="32"
+      y="184"
+      width="416"
+      height="88"
+      rx="12"
+      fill="#ffffff"
+      stroke="#94a3b8"
+      stroke-width="1.5"
+    />
+    <text x="240" y="221" font-size="22" font-weight="650">Tool proposal</text>
+    <text x="240" y="250" font-size="18">A name and arguments</text>
+    <path
+      d="M240 273 V298"
+      fill="none"
+      stroke="#64748b"
+      stroke-width="2"
+      marker-end="url(#arrow)"
+    />
+    <rect
+      x="16"
+      y="308"
+      width="448"
+      height="416"
+      rx="16"
+      fill="#eff6ff"
+      stroke="#2563eb"
+      stroke-width="1.5"
+      stroke-dasharray="6 5"
+    />
+    <text x="240" y="339" font-size="20" font-weight="650" fill="#1d4ed8">
+      Trusted execution boundary
+    </text>
+    <rect
+      x="40"
+      y="360"
+      width="400"
+      height="96"
+      rx="12"
+      fill="#ffffff"
+      stroke="#93c5fd"
+      stroke-width="1.5"
+    />
+    <text x="240" y="395" font-size="21" font-weight="650">
+      Verified caller + registered tool
+    </text>
+    <text x="240" y="426" font-size="18">Normalize the effective action</text>
+    <path
+      d="M240 457 V482"
+      fill="none"
+      stroke="#64748b"
+      stroke-width="2"
+      marker-end="url(#arrow)"
+    />
+    <rect
+      x="40"
+      y="492"
+      width="400"
+      height="76"
+      rx="12"
+      fill="#dbeafe"
+      stroke="#60a5fa"
+      stroke-width="1.5"
+    />
+    <text x="240" y="524" font-size="21" font-weight="650">
+      Authorize this action
+    </text>
+    <text x="240" y="549" font-size="18">
+      Principal, resource, policy, approval
+    </text>
+    <path
+      d="M240 569 V590 H130 V614"
+      fill="none"
+      stroke="#64748b"
+      stroke-width="2"
+      marker-end="url(#arrow)"
+    />
+    <path
+      d="M240 590 H350 V614"
+      fill="none"
+      stroke="#047857"
+      stroke-width="2"
+      marker-end="url(#allow-arrow)"
+    />
+    <rect
+      x="40"
+      y="624"
+      width="180"
+      height="76"
+      rx="12"
+      fill="#fff1f2"
+      stroke="#fb7185"
+      stroke-width="1.5"
+    />
+    <text x="130" y="654" font-size="21" font-weight="650">Refuse or wait</text>
+    <text x="130" y="681" font-size="18" fill="#9f1239">No target call</text>
+    <rect
+      x="260"
+      y="624"
+      width="180"
+      height="76"
+      rx="12"
+      fill="#ecfdf5"
+      stroke="#34d399"
+      stroke-width="1.5"
+    />
+    <text x="350" y="654" font-size="21" font-weight="650">Execute</text>
+    <text x="350" y="681" font-size="18" fill="#065f46">Bounded authority</text>
+    <path
+      d="M350 701 V778"
+      fill="none"
+      stroke="#047857"
+      stroke-width="2"
+      marker-end="url(#allow-arrow)"
+    />
+    <text x="322" y="751" text-anchor="end" font-size="18" fill="#065f46">
+      Credential use
+    </text>
+    <rect
+      x="248"
+      y="788"
+      width="204"
+      height="76"
+      rx="12"
+      fill="#ffffff"
+      stroke="#34d399"
+      stroke-width="1.5"
+    />
+    <text x="350" y="833" font-size="21" font-weight="650">
+      Protected target
+    </text>
+  </g>
+</svg>
