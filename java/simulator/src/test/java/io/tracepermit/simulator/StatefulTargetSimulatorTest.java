@@ -172,6 +172,44 @@ final class StatefulTargetSimulatorTest {
         "INVALID_SIMULATOR_ARGUMENTS");
   }
 
+  @Test
+  void githubDraftPullRequestCreationIsStatefulAndEnforcesDraft() {
+    StatefulTargetSimulator simulator = new StatefulTargetSimulator();
+    ObjectNode arguments =
+        JsonSupport.MAPPER
+            .createObjectNode()
+            .put("repository", "tracepermit/agentcore-pr-pilot")
+            .put("title", "Simulated draft PR")
+            .put("head", "feature/sim-1")
+            .put("base", "main")
+            .put("draft", true)
+            .put("body", "Simulated body");
+
+    JsonNode result = simulator.invoke(action("github.pull_request.create", "github", arguments));
+
+    assertThat(result.path("mode").asText()).isEqualTo("simulated");
+    assertThat(result.path("system").asText()).isEqualTo("github");
+    assertThat(result.path("operation").asText()).isEqualTo("github.pull_request.create");
+    assertThat(result.path("pullRequest").path("number").asInt()).isEqualTo(1);
+    assertThat(result.path("pullRequest").path("draft").asBoolean()).isTrue();
+    assertThat(result.path("pullRequest").path("head").asText()).isEqualTo("feature/sim-1");
+    assertThat(result.path("pullRequest").path("base").asText()).isEqualTo("main");
+
+    // Snapshot check
+    JsonNode snapshot = simulator.snapshot();
+    assertThat(snapshot.path("github").path("pullRequests").has("PR-1")).isTrue();
+
+    // Rejection: draft = false
+    ObjectNode draftFalse = arguments.deepCopy();
+    draftFalse.put("draft", false);
+    assertCode(simulator, action("github.pull_request.create", "github", draftFalse), "INVALID_SIMULATOR_ARGUMENTS");
+
+    // Rejection: base != main
+    ObjectNode wrongBase = arguments.deepCopy();
+    wrongBase.put("base", "develop");
+    assertCode(simulator, action("github.pull_request.create", "github", wrongBase), "INVALID_SIMULATOR_ARGUMENTS");
+  }
+
   private static ObjectNode action(String toolName, String system, ObjectNode arguments) {
     ObjectNode target = JsonSupport.MAPPER.createObjectNode()
         .put("system", system)

@@ -1,0 +1,70 @@
+{
+  "schemaVersion": "1.0",
+  "eventId": "018f47a2-f5ce-7a4b-8f54-80e5d3eaf099",
+  "observedAt": "2026-10-23T12:00:00.000Z",
+  "traceId": "1a2b3c4d5e6f7890123456789abcdef0",
+  "identity": {
+    "subject": {
+      "id": "agentcore-workload-pilot",
+      "type": "workload",
+      "displayName": "AgentCore Pilot Workload",
+      "organizationId": "tracepermit",
+      "authenticationMethod": "workload_token",
+      "assurance": "authenticated"
+    },
+    "evidence": [
+      {
+        "evidenceId": "evidence-agentcore-workload",
+        "subjectId": "agentcore-workload-pilot",
+        "kind": "workload_token",
+        "assurance": "authenticated",
+        "issuer": "https://agentcore.tracepermit.invalid",
+        "verifiedAt": "2026-10-23T11:59:59.000Z",
+        "credentialFingerprint": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    ]
+  },
+  "trigger": {
+    "kind": "service",
+    "origin": "api",
+    "requestId": "req-agentcore-001",
+    "clientName": "agentcore-pilot"
+  },
+  "declaredIntent": {
+    "goal": "Create a draft pull request in allowlisted pilot repository",
+    "source": "api_field"
+  },
+  "action": {
+    "protocol": "http",
+    "toolName": "github.pull_request.create",
+    "arguments": {
+      "repository": "tracepermit/agentcore-pr-pilot",
+      "title": "feat(pilot): agentcore draft pull request",
+      "head": "codex/agentcore-test-branch",
+      "base": "main",
+      "draft": true,
+      "body": "Automated draft pull request managed by TracePermit pilot."
+    },
+    "target": {
+      "system": "github",
+      "environment": "test",
+      "accountId": "tracepermit/agentcore-pr-pilot",
+      "resourceType": "pull_request"
+    }
+  },
+  "lineage": {
+    "rootPrincipalId": "agentcore-workload-pilot",
+    "hops": [
+      {
+        "hopId": "hop-root",
+        "kind": "principal",
+        "subjectId": "agentcore-workload-pilot",
+        "assurance": "authenticated",
+        "source": "workload_token",
+        "observedAt": "2026-10-23T11:59:59.000Z"
+      }
+    ],
+    "delegations": []
+  },
+  "clientClaims": {}
+}

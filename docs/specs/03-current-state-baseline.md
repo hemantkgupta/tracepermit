@@ -21,6 +21,23 @@ a required browser gate saves the file from the real Java route and passes it to
 the installed Java-only offline checker for closed-structure and checksum
 validation. See [ADR0064](../architecture/0064-unsigned-approval-review-export.md).
 
+## AgentCore GitHub draft pull request adapter foundation
+
+The Java backend adds `GitHubDraftPullRequestAdapter` and `GitHubPullRequestOutcomeResolver`
+in `adapters-remote` for the first AgentCore pilot operation `github.pull_request.create`.
+The adapter strictly allowlists destination host HTTPS `api.github.com`, repository
+`tracepermit/agentcore-pr-pilot`, base branch `main`, and enforces mandatory `draft: true`.
+Transport invariants enforce `Proxy.NO_PROXY`, disabled redirects, disabled connection
+retries, bounded connect (5s) and call (10s) timeouts, and a 64 KB response size limit.
+GitHub App installation credentials are provided via a trusted provider port and masked in
+memory; audit evidence stores only the cryptographic `credentialFingerprint` (`sha256:...`)
+and stable installation/repository identifiers. Because GitHub PR creation lacks a native
+idempotency key, an explicit stable operation key (`sha256(installId:repo:head:base)`) and
+read-only lookup port (`GET /repos/{owner}/{repo}/pulls?head={owner}:{head}&base={base}&state=all`)
+resolve uncertain timeouts and transport disconnects without re-execution (ADR 0055).
+In-memory simulator target executions (`mode: "simulated"`) remain explicitly distinguished
+from live pilot operations (`mode: "pilot"`). See the [operator runbook](../runbooks/agentcore-github-pr-pilot.md).
+
 ## Assurance vocabulary
 
 - **Implemented:** code exists in the public tree and passes automated tests.
