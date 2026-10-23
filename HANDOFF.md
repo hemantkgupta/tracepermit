@@ -1,27 +1,27 @@
 # TracePermit implementation handoff
 
-This file records only transferable repository state. It contains no provider
-identifiers, tokens, authorization codes, PKCE values, cookies, passwords,
-client secrets, private keys or local private paths.
+This file records only transferable repository state. It contains no customer
+planning files, database URLs, AWS identifiers, passwords, tokens, keys or
+other private operator values.
 
 TRACEPERMIT HANDOFF
 
-- Task: Record Day 5 source-free installed Auth0 approval qualification, correct stale public/internal claims and repair packaged evidence-link relocation.
+- Task: Add a bounded MariaDB durable permit-consumption foundation without claiming PostgreSQL approval/evidence parity.
 - Repository: https://github.com/hemantkgupta/tracepermit
-- Branch: codex/day5-release-candidate
-- Base commit: 79c95770990d54d3bc01cc68b710d86794795cf5
-- Latest pushed commit: CI repair checkpoint `7722153`; this handoff-only commit follows it
-- PR URL: https://github.com/hemantkgupta/tracepermit/pull/91
-- Branch owner now: unassigned after this handoff push; draft PR #91 is the coordination point
-- Working tree status: clean after the final handoff commit and push
-- Completed: built and checksum-verified the clean source-free archive from base commit; passed the eight-case distribution suite; exercised native/public requester sign-in, distinct reviewer approval, explicit requester execution, clean stop/restart, session invalidation and durable consumed/succeeded state; added a sanitized evidence record; reconciled public site, ADR, runbook, baseline and traceability claims; repaired the installed-runbook relocation so repository-relative evidence links become source-commit-pinned GitHub links and added a regression assertion
-- Remaining: rerun GitHub CI on the repair head, independent exact-head claim/security review and human review; leave draft PR #91 open and unmerged; after merge, run the founder go/no-go against the chosen final main commit before calling anything a release
-- Files materially changed: named Auth0 evidence record; ADR 0036/0063; Auth0/browser/fresh-Mac/distribution/withdrawal runbooks; specification index/baseline/traceability; public approvals/deployment/security/verification/working-today pages; source-free archive link relocation and regression test; this handoff
-- Tests passed: `pnpm test:distribution` (8/8 on exact qualified base and again on clean CI repair checkpoint `7722153`); archive checksum inventory; installed `--check`, `--init-db`, loopback run/stop/restart and live synthetic Auth0 journey; `pnpm check` (124 React tests plus Java `checkAll`, build successful in 7m28s); `pnpm format:check`; `pnpm docs:flows:check`; `pnpm docs:links` (947 links); `pnpm site:build`; `git diff --check`
-- Tests failed/not run: GitHub CI rerun and independent exact-head audit are pending; explicit live server replay, viewer mutation denial, combined-role self-review denial and withdrawal were not repeated in the 2026-10-22 run
-- Exact next command: gh pr checks 91 --watch
-- Required environment: review needs only GitHub/source; repeating the live gate needs macOS, Java 21, PostgreSQL, the exact archive, private operator configuration and the dedicated synthetic Auth0 registration
-- Local-only/manual steps: private operator configuration, keys, database password, browser sessions, synthetic user credentials and the live database remain local-only and outside Git; retire them through normal operator cleanup after evidence review
-- Security constraints: numeric loopback only; native/public client with S256 PKCE and no client secret; simulator targets only; no raw credentials, provider identifiers, callback values or private configuration in Git/chat/PR; no general Auth0/OIDC, public-edge, signed-release or production claim
-- Known limitations: locally built unsigned archive, one named provider registration, operator-captured evidence, no real target, no fresh-second-Mac execution, no public download and no production readiness certification
-- Safe for another environment to continue: yes, after explicit branch ownership transfer
+- Branch: codex/mariadb-durable-state-foundation
+- Base commit: 642a86b2c0128ced66b49bdce3f505516560d6d6
+- Latest pushed commit: implementation commit `d795d05`; this handoff-only commit follows it
+- PR URL: https://github.com/hemantkgupta/tracepermit/pull/94
+- Branch owner now: unassigned after this handoff commit is pushed; the Mac thread has stopped editing the branch
+- Working tree status: clean after this handoff commit and push
+- Completed: added the isolated `persistence-mariadb` Java module; exact MariaDB 11.4.13 primary and 10.6.25 transitional engine profiles; explicit empty-database initialization; validate-only runtime; strict InnoDB/object/schema/Flyway checks; tenant-bound plain-insert replay claim with only vendor duplicate-key 1062 treated as replay; commit-before-success and acknowledgement-uncertainty handling; dedicated CI gate; ADR, runbook, baseline, low-level design, threat model, quality and traceability updates
+- Remaining: exact-head GitHub CI and independent review; later slices must port composed approval/execution/evidence, policy, recovery, pruning and RDS deployment/failover qualification before any MariaDB runtime wiring or production-support claim
+- Files materially changed: `.github/workflows/ci.yml`; `java/settings.gradle.kts`; new `java/persistence-mariadb/**`; `scripts/run-java-mariadb-tests.sh`; `package.json`; ADR 0066; MariaDB qualification runbook; affected specifications; this handoff
+- Tests passed: exact implementation commit `pnpm test:java-mariadb --rerun-tasks` (14 tests, zero failures/errors/skips across both exact images); exact implementation commit `pnpm check` (124 React tests and Java `checkAll`/aggregate coverage successful; one pre-existing installed-archive connector E2E skipped because the archive was not prepared); `pnpm format:check`; `pnpm docs:links` (988 local links); `pnpm docs:flows:check`; `actionlint .github/workflows/ci.yml`; `git diff --check`
+- Tests failed/not run: no failed local gate; live Amazon RDS, TLS, replication, Multi-AZ failover, backup/restore, restricted migration/runtime DB users and composed MariaDB approval/evidence behavior were not run
+- Exact next command: `gh pr checks 94 --repo hemantkgupta/tracepermit --watch`
+- Required environment: review needs GitHub/source; repeating the focused gate needs Java 21, Node.js 22+, Corepack/pnpm 11.25.0 and Docker capable of running the exact MariaDB 10.6.25 and 11.4.13 images
+- Local-only/manual steps: the four `agentcore-work` customer planning files remain outside this worktree and ignored in the shared checkout; later RDS endpoints, account identifiers, security groups, database names/users/passwords and test evidence must remain private and sanitized
+- Security constraints: module remains unwired; dedicated non-system database; InnoDB writer endpoint for authority state; unknown engine/version/schema fails closed; no `INSERT IGNORE`, automatic migration/repair/retry, replica authority reads, credential output, real target, force-push or merge
+- Known limitations: standalone replay claim only; not `PostgresDurableEnforcementState` parity, RDS qualification, production deployment, exactly-once target execution, database-admin isolation or a GitHub/AgentCore integration
+- Safe for another environment to continue: yes, after fetching the branch, verifying the expected commit, confirming a clean worktree and explicitly taking ownership
