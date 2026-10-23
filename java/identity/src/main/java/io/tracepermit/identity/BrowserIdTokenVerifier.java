@@ -33,8 +33,11 @@ public final class BrowserIdTokenVerifier {
     this.provider = java.util.Objects.requireNonNull(provider);
     this.keys = java.util.Objects.requireNonNull(keys);
     this.clock = java.util.Objects.requireNonNull(clock);
-    if (organization != null && (!"org_id".equals(provider.tenantClaim())
+    if (organization != null && ((!provider.tokenProfile().isOkta() && !"org_id".equals(provider.tenantClaim()))
         || provider.tenantId(organization) == null)) {
+      throw new IllegalArgumentException("INVALID_BROWSER_ORGANIZATION");
+    }
+    if (provider.tokenProfile().isOkta() && organization == null) {
       throw new IllegalArgumentException("INVALID_BROWSER_ORGANIZATION");
     }
     this.organization = organization;
@@ -68,10 +71,15 @@ public final class BrowserIdTokenVerifier {
           || !connector.subjectId().equals(provider.issuer() + "#" + text(claims, "sub"))
           || !clientId.equals(connector.clientId())
           || !nonce.equals(text(claims, "nonce"))
-          || (organization != null && !organization.equals(text(claims, "org_id")))
+          || (organization != null && (!organization.equals(text(claims, provider.tenantClaim()))
+              || !provider.tenantId(organization).equals(connector.organizationId())))
           || (claims.has("azp") && !clientId.equals(text(claims, "azp")))
           || issued > now + 30 || expires <= now || expires <= issued || expires - issued > 900
           || (claims.has("nbf") && integer(claims, "nbf") > now + 30)) {
+        throw new IllegalArgumentException();
+      }
+      if (provider.tokenProfile().isOkta()
+          && !provider.tokenProfile().mappedRole(claims).equals(connector.mappedRole())) {
         throw new IllegalArgumentException();
       }
       if (claims.has("at_hash")) {
@@ -86,6 +94,8 @@ public final class BrowserIdTokenVerifier {
       throw new SecurityException("INVALID_BROWSER_ID_TOKEN");
     }
   }
+
+  public boolean usesOktaProfile() { return provider.tokenProfile().isOkta(); }
 
   private static JsonNode segment(String encoded) throws Exception {
     byte[] decoded = Base64.getUrlDecoder().decode(encoded);

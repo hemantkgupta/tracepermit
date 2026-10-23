@@ -4,6 +4,11 @@ These documents describe the Java/React POC and distinguish implemented
 controls from target enterprise requirements. Source and tests determine what
 actually runs; a target requirement is not an implementation claim.
 
+[ADR0067](../architecture/0067-bounded-okta-oidc-qualification.md) and the
+[Okta operator runbook](../runbooks/okta-oidc-qualification.md) define the
+schema1.2 public/native custom-server foundation. Generated-signature tests
+qualify the bounded implementation, not a live tenant or EKS deployment.
+
 | Document                                               | Purpose                                         |
 | ------------------------------------------------------ | ----------------------------------------------- |
 | [Governance](00-specification-governance.md)           | Requirement language and change rules           |
