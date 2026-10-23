@@ -5,48 +5,22 @@ provider credentials, customer-private documents or local private configuration.
 
 TRACEPERMIT HANDOFF
 
-- Task: Reconcile PR #96 with merged business-operation contract foundation on main, preserving bounded response/uncertainty repairs (FR-015; SEC-015/019; REL-003/008).
+- Task: Reconcile PR #98 with merged PR #96 and qualify its immutable scoped registration boundary on MariaDB/PostgreSQL.
 - Repository: https://github.com/hemantkgupta/tracepermit
-- Branch: codex/github-draft-pr-adapter-foundation
-- Base commit: 7847e890317bdcbeb3659352f3b31ba66f0eae8f (latest fetched main, merged PR #97)
-- Latest pushed commit: pre-reconciliation head `81c677564086498c9dfb776fce7d3494fd1efafa`; the reconciliation commit follows it. Verify the exact PR head before taking ownership.
-- PR URL: https://github.com/hemantkgupta/tracepermit/pull/96
-- Branch owner now: unassigned after final push; Mac writer released. PR #96 is open/unmerged; its existing non-draft status is preserved.
-- Working tree status: clean after reconciliation commit/push. Normal merge only; no rebase or force-push.
-- Completed:
-  - Reconciled main's merged PR #97 contract foundation with PR #96. Only HANDOFF and two specification documents conflicted; both traceability sections and module responsibilities are retained. No manual Java, schema/vector or enforcement changes were needed.
-  - Retained ADR 0068, strict business-operation schema/validator/vectors, conformance checks and the transport/event/operation/request-key identity distinctions. No process-local adapter ledger is presented as durable business-operation state.
-  - Replaced whole-body reads in POST confirmation and GET lookup with shared bounded decoded-byte reads: at most configured limit plus one overflow byte, independent of Content-Length.
-  - Oversized HTTP 201 confirmation now records unknown, not failed, and blocks a later permit from issuing another POST.
-  - GET 401/403/404, redirects and oversized responses retain unknown with fixed reason codes. No result is cached and no effect is retried.
-  - Added byte-reader and chunked HTTP regressions, exact-limit acceptance, no-repeat-POST and later GET recovery checks.
-  - Renumbered the duplicate GitHub ADR 0055 to unused ADR 0069 and updated all references, specs, threat model and traceability. Existing endpoint distribution ADR 0055 is unchanged.
-  - Corrected inherited documentation: ledger is process-local with no TTL; default transport deadlines are 5s connect and 10s read/call, with no explicit write-timeout setting. No durable worker composition is claimed.
-- Remaining: Exact-head hosted CI and independent full adapter review. Do not merge the PR automatically. Durable pilot composition and trustworthy general GitHub absence/pagination semantics remain separate qualification work.
-- Files materially changed:
-  - Manual merge resolution only: `HANDOFF.md`, `docs/specs/07-low-level-design-java.md`, `docs/specs/12-traceability-matrix.md`. Main's contract/code/vector files were imported unchanged; adapter/reader files below are the pre-existing PR #96 repair scope, not new runtime edits during reconciliation.
-  - `java/adapters-remote/.../github/BoundedGitHubResponse.java` (new)
-  - `java/adapters-remote/.../github/GitHubDraftPullRequestAdapter.java`
-  - `java/adapters-remote/.../github/GitHubPullRequestOutcomeResolver.java`
-  - `java/adapters-remote/.../github/BoundedGitHubResponseTest.java` (new)
-  - `java/adapters-remote/.../github/GitHubDraftPullRequestAdapterTest.java`
-  - `docs/architecture/0069-github-app-draft-pr-adapter-and-reconciliation.md` (renamed from duplicate 0055)
-  - `docs/runbooks/agentcore-github-pr-pilot.md`
-  - `docs/specs/03-current-state-baseline.md`, `07-low-level-design-java.md`, `10-security-threat-model.md`, `12-traceability-matrix.md`
-  - `HANDOFF.md`
-- Tests passed (reconciled checkpoint):
-  - Focused contract/validator/conformance and GitHub adapter/reader verification: 58 cases, zero failures/errors/skips.
-  - Focused GitHub adapter/reader suites: 44 cases, no failures.
-  - `pnpm check`: React build/typecheck and 124 tests; Java environment validation and checkAll. Java reports record 1,237 cases, zero failures/errors, one installed-archive E2E skip.
-  - Aggregate coverage: 94.24% line, 77.70% branch; existing thresholds unchanged.
-  - `pnpm format:check`, `pnpm docs:links` (996 links), `pnpm docs:flows:check` (13 tests), `git diff --check`.
-- Tests failed/not run:
-  - Expected pre-fix negative control: eight revised adapter cases failed against the original implementation.
-  - Expected streaming mutation control: temporarily restoring whole-body reads made both chunked overflow regressions fail; bounded reads were restored and full checks passed afterward. No mutant is committed.
-  - Installed archive/native PTY E2E was skipped because its archive was absent. No live GitHub call, external provider login, production target, or durable multi-replica composition was qualified.
-- Exact next command: `gh pr checks 96 --repo hemantkgupta/tracepermit`
-- Required environment: Node.js 22+, pnpm 11.25.0, Java 21 via `scripts/configure-java-environment.sh`; Docker for database qualification.
-- Local-only/manual steps: Ignored dependency/build caches are not transferable. Live pilot credentials remain private operator configuration, not GitHub artifacts.
-- Security constraints: Synthetic MockWebServer/simulator tests only. Private customer source files untouched. No raw tokens, private keys or credentials in the repair. Preserve draft-only sandbox allowlists; no PR merge, rebase, force-push, public listener or target retry.
-- Known limitations: Process-local adapter foundation, not production readiness. General GitHub absence semantics, live GitHub/App configuration, authority/destination integration and durable restart/replica composition need independent review/qualification.
+- Branch: codex/durable-business-operation-repository
+- Base commit: b894f601dc0488bb29fa46956a78db78c25a3095 (latest fetched main, merged PR #96)
+- Latest pushed commit: pre-reconciliation checkpoint `56a4b28f159931f582369fcc2b02ed7e36c64470`; the reconciliation commit follows it. Verify the exact PR head before taking ownership.
+- PR URL: https://github.com/hemantkgupta/tracepermit/pull/98
+- Branch owner now: unassigned after final push; this Mac thread has stopped editing. PR #98 remains open/unmerged with its existing non-draft status preserved.
+- Working tree status: clean and synced after reconciliation commit/push. Normal merge only; no rebase or force-push.
+- Completed: follow-up source review of transactions, scoped reads, duplicate handling, commit uncertainty and restricted grants found no substantiated runtime defect within the initial-registration boundary; reconciled the three documentation conflicts while retaining both module/traceability sections and merged PR #96 streaming/UNKNOWN repairs; no manual runtime, schema, workflow or generated-file edits during reconciliation; application registration port and separate trusted scope; isolated JDBC module with explicit empty-database installation and validate-only startup; primary scoped-key arbitration; original-record retry return and changed-binding conflict; atomic initial snapshot plus three facts; commit/cleanup uncertainty; integrity-checked scoped reads; restricted runtime grants; shared engine tests and CI job; ADR 0070, runbook, learning/specification/traceability and public capability updates
+- Remaining: exact-head hosted CI and independent review. Leave PR #98 open/unmerged. Reconcile separately if PR #94 lands; build authority-bearing operation lifecycle/service composition before exposing an operations API or AgentCore ingress.
+- Files materially changed: manual reconciliation only in HANDOFF.md and specifications 07/12; other main changes imported unchanged. Existing PR scope: application BusinessOperation port/scope/result/exception and scope tests; new persistence-operations module, migrations and shared tests; Gradle settings; focused test script/package command; CI workflow; ADR 0070 and repository runbook; learning/specifications 03/05/07/08/12 and index; working-today site page; this handoff
+- Tests passed (reconciled checkpoint): fresh `pnpm test:java-operations --rerun-tasks` (108 cases, zero failures/errors/skips on PostgreSQL 16.4 and MariaDB 11.4.13/10.6.25, including 20 mixed-payload races per engine); `pnpm check` (124 React tests; 1,347 Java cases recorded, zero failures/errors, one installed-archive skip); aggregate coverage 94.26% line / 77.53% branch, thresholds unchanged; formatting; documentation links (1,007); flow checks (13 tests); actionlint; shell syntax; git diff checks.
+- Tests failed/not run: no current local failure. Installed-archive connector E2E skipped because its archive was absent. Site build/six site-verification cases were earlier producer evidence and were not rerun for this documentation-only reconciliation; exact-head Cloudflare remains a gate. Live RDS/TLS/replication/failover, AgentCore, external IdP, S3 and real GitHub target work were not run.
+- Exact next command: gh pr checks 98 --repo hemantkgupta/tracepermit --watch
+- Required environment: Java 21, Node.js 22+, Corepack/pnpm 11.25.0, Docker for the three pinned database images; repeating site verification also requires npm --prefix site ci
+- Local-only/manual steps: generated test credentials and disposable containers are not transferable artifacts; source/build caches remain ignored; the four customer planning files remain outside Git in the separate shared checkout and were not copied or committed here
+- Security constraints: derive tenant/workspace/requester scope from verified adapter context; registration never grants authority or dispatches a target; runtime uses a dedicated writer database with SELECT/INSERT only; never log connection details or payloads; no credentials, customer identifiers, planning files, real target calls, force-push, rebase or PR merge
+- Known limitations: initial registration only and unwired; no lifecycle mutation, API authentication/authorization, arbitrary-argument redaction/encryption, retention execution, recovery fencing, MariaDB approval/evidence parity, S3 publication, RDS/failover qualification, EKS or production claim
 - Safe for another environment to continue: yes, after fetching/verifying the exact PR head, confirming a clean tree and explicitly taking branch ownership.

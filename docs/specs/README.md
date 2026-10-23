@@ -57,3 +57,9 @@ the persistence-neutral business-operation schema, frozen synthetic draft-PR
 vector and Java lifecycle/binding validator. It does not implement durable
 request deduplication, an operations API, a database adapter, AgentCore ingress
 or a real target.
+
+[ADR0070](../architecture/0070-durable-business-operation-registration.md) adds
+the isolated registration port/library and a shared MariaDB/PostgreSQL contract
+suite. Scoped-key uniqueness, changed-content conflict, snapshot/initial-fact
+atomicity and commit uncertainty are implemented for registration. The module
+is not wired into the simulator, an operations API or a target executor.

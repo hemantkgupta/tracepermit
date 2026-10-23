@@ -491,10 +491,16 @@ versions/sequences and inconsistent snapshot projections. Trusted context is
 never accepted as proof from a public request body. The frozen vector uses only
 synthetic simulator data.
 
-No operations HTTP API is implemented by this contract slice. In particular,
-same-key/same-payload return, same-key/different-payload conflict, authorized
-reads and atomic persistence remain repository responsibilities. See
-[ADR 0068](../architecture/0068-versioned-business-operation-contract.md).
+No operations HTTP API is implemented. Same-key/same-payload return and
+same-key/different-payload conflict are provided
+by the isolated `BusinessOperationRepository` port and JDBC registration library
+in [ADR 0070](../architecture/0070-durable-business-operation-registration.md).
+It atomically stores only the initial evaluating/not_started/pending snapshot
+and three facts. Registration returns the original snapshot without overwriting
+policy/artifact/retention proposals. Read visibility is scoped by trusted tenant,
+workspace and requester; authentication and authorization remain adapter duties.
+See [ADR 0068](../architecture/0068-versioned-business-operation-contract.md) for
+the underlying document contract.
 
 ## 3A. Java development control-plane reads
 

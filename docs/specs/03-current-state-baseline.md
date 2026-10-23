@@ -1,6 +1,6 @@
 # Current-state capability matrix
 
-**As of:** 2026-10-22
+**As of:** 2026-10-23
 **Scope:** public Java-backend/React-console proof of concept
 
 This is the authoritative boundary between running POC behavior and product
@@ -59,11 +59,17 @@ Java and the checked-in language-neutral artifacts now validate a strict
 business-operation snapshot around an immutable canonical action. Deterministic
 tests bind canonical, semantic, resource/precondition and target-generation
 digests; keep transport/event/operation/request/target identities separate; and
-enforce three independent append-only lifecycle dimensions. This is contract
-and state-machine evidence only. There is no operation API, MariaDB/PostgreSQL
-repository, request-key conflict transaction, AgentCore adapter, real GitHub
-dispatch, S3 evidence delivery or production deployment in this slice. See
-[ADR 0068](../architecture/0068-versioned-business-operation-contract.md).
+enforce three independent append-only lifecycle dimensions. The isolated JDBC
+registration library additionally commits an initial snapshot and all three
+initial facts atomically, returns an original scoped-key retry, rejects changed
+bindings and reports commit uncertainty. One shared test suite runs on MariaDB
+11.4.13/10.6.25 and PostgreSQL 16.4, including concurrent repository instances,
+restart, restricted runtime grants and corruption checks. This library remains
+unwired: operation APIs, authority-bearing lifecycle transitions, AgentCore,
+GitHub dispatch, S3 delivery, RDS and production deployment remain pending. See
+[ADR 0068](../architecture/0068-versioned-business-operation-contract.md),
+[ADR 0070](../architecture/0070-durable-business-operation-registration.md) and the
+[repository runbook](../runbooks/business-operation-repository.md).
 
 ## Current capability by boundary
 

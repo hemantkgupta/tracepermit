@@ -1,0 +1,32 @@
+package io.tracepermit.application;
+
+/** Fixed diagnostic codes intentionally exclude SQL, connection details, identifiers and payloads. */
+public final class BusinessOperationStorageException extends RuntimeException {
+  private static final long serialVersionUID = 1L;
+
+  public enum Code {
+    OPERATION_SCOPE_MISMATCH,
+    OPERATION_INITIAL_STATE_REQUIRED,
+    OPERATION_TOO_LARGE,
+    OPERATION_ID_INVALID,
+    OPERATION_REQUEST_KEY_CONFLICT,
+    OPERATION_ID_CONFLICT,
+    OPERATION_STORAGE_UNAVAILABLE,
+    OPERATION_COMMIT_UNKNOWN,
+    OPERATION_STORAGE_CORRUPT,
+    OPERATION_SCHEMA_NOT_READY,
+    OPERATION_DATABASE_UNSUPPORTED,
+    OPERATION_WRITER_REQUIRED
+  }
+
+  private final Code code;
+
+  public BusinessOperationStorageException(Code code) {
+    super(code.name());
+    this.code = code;
+  }
+
+  public Code code() {
+    return code;
+  }
+}
