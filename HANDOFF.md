@@ -1,74 +1,48 @@
 # TracePermit implementation handoff
 
-This file records only transferable repository state. It contains no provider
-identifiers, tokens, authorization codes, PKCE values, cookies, passwords,
-client secrets, private keys or local private paths.
+GitHub is authoritative. This record contains transferable state only, with no
+provider credentials, customer-private documents or local private configuration.
 
 TRACEPERMIT HANDOFF
 
-- Task: Implement the bounded GitHub App adapter foundation for the first TracePermit AgentCore pilot operation (`github.pull_request.create`).
+- Task: PR #96 bounded response/uncertainty repair (FR-015; SEC-015/019; REL-003/008).
 - Repository: https://github.com/hemantkgupta/tracepermit
 - Branch: codex/github-draft-pr-adapter-foundation
 - Base commit: 642a86b2c0128ced66b49bdce3f505516560d6d6
-- Latest pushed commit: implementation commit `f8d50336e1a5523eb7c19eefdb3dd98404d72df2`; this handoff commit follows it
+- Latest pushed commit: validated repair checkpoint `56056844b43cd9c6536cce593dc8010eb276849d`; a handoff-only commit follows it. Verify the exact PR head before taking ownership.
 - PR URL: https://github.com/hemantkgupta/tracepermit/pull/96
-- Branch owner now: unassigned after this handoff push; draft PR #96 is the coordination point
-- Working tree status: clean after the final handoff commit and push
+- Branch owner now: unassigned after final push; Mac writer released. PR #96 remains draft/open/unmerged.
+- Working tree status: clean after handoff commit/push; no force-push or main reconciliation.
 - Completed:
-  - Created bounded Java GitHub App adapter (`GitHubDraftPullRequestAdapter`) and supporting records/provider ports.
-  - Implemented strict canonical action validation: target repository allowlist strictly `tracepermit/agentcore-pr-pilot`, base strictly `main`, draft strictly `true`, head ref bounded pattern (`[a-zA-Z0-9._/-]{1,255}`), title/body bounds, and rejection of forbidden self-assertions (`authenticated`, `delegated`, `verified`).
-  - Implemented fail-closed handling for unknown target/argument fields, unknown operations, malformed input, and unsupported schema versions.
-  - Configured OkHttpClient with NO_PROXY, disabled redirects (`followRedirects(false)`, `followSslRedirects(false)`), disabled retries (`retryOnConnectionFailure(false)`), bounded 10-second connect/read/write timeouts, and strict 64 KB response size limits.
-  - Implemented external idempotency via stable operation key `sha256(installationId:repository:head:base)` recorded in `InMemoryExecutionLedger` with 24-hour expiration.
-  - Implemented reconciliation contract via `GitHubPullRequestOutcomeResolver` implementing `TargetOutcomeResolver` to query `GET /repos/{owner}/{repo}/pulls` without mutating state on ambiguous network timeouts or transport disconnects.
-  - Updated `StatefulTargetSimulator` to simulate `github.pull_request.create` with snapshot support and `mode: "simulated"`.
-  - Added contract fixture `fixtures/agentcore-github-draft-pr.json`.
-  - Documented design in `docs/architecture/0055-github-app-draft-pr-adapter-and-reconciliation.md` (ADR 0055).
-  - Authored operator runbook in `docs/runbooks/agentcore-github-pr-pilot.md` citing affected requirement IDs.
-  - Updated specifications (`docs/specs/03-current-state-baseline.md`, `docs/specs/07-low-level-design-java.md`), threat model (`docs/specs/10-security-threat-model.md` with T-046..T-049), and traceability matrix (`docs/specs/12-traceability-matrix.md`).
-  - Added 22 comprehensive tests in `GitHubDraftPullRequestAdapterTest` (success, deny, malformed input, wrong repo/base, draft=false, redirect/proxy/retry, timeout, response-bound, duplicate/concurrency, uncertain-outcome, secret-redaction, credentials/exception edge cases) and simulator tests in `StatefulTargetSimulatorTest`.
-  - Qualified the full test and verification suite: `pnpm check` (124 console vitests, tsc, vite build, Java environment check, and Java `checkAll` with 94%+ JaCoCo line coverage across all subprojects), `pnpm format:check`, `pnpm docs:links` (988 links verified), `pnpm docs:flows:check` (13/13 flow diagrams verified), and `git diff --check`.
-  - Opened draft PR #96 and left it unmerged.
-- Remaining: GitHub Actions CI monitoring of draft PR #96, independent security and exact-head code review; leave draft PR #96 open and unmerged.
+  - Replaced whole-body reads in POST confirmation and GET lookup with shared bounded decoded-byte reads: at most configured limit plus one overflow byte, independent of Content-Length.
+  - Oversized HTTP 201 confirmation now records unknown, not failed, and blocks a later permit from issuing another POST.
+  - GET 401/403/404, redirects and oversized responses retain unknown with fixed reason codes. No result is cached and no effect is retried.
+  - Added byte-reader and chunked HTTP regressions, exact-limit acceptance, no-repeat-POST and later GET recovery checks.
+  - Renumbered the duplicate GitHub ADR 0055 to unused ADR 0069 and updated all references, specs, threat model and traceability. Existing endpoint distribution ADR 0055 is unchanged.
+  - Corrected inherited documentation: ledger is process-local with no TTL; default transport deadlines are 5s connect and 10s read/call, with no explicit write-timeout setting. No durable worker composition is claimed.
+- Remaining: Exact-head hosted CI and independent full adapter review. Do not merge automatically. Durable pilot composition and trustworthy general GitHub absence/pagination semantics are separate qualification work.
 - Files materially changed:
-  - `docs/architecture/0055-github-app-draft-pr-adapter-and-reconciliation.md`
+  - `java/adapters-remote/.../github/BoundedGitHubResponse.java` (new)
+  - `java/adapters-remote/.../github/GitHubDraftPullRequestAdapter.java`
+  - `java/adapters-remote/.../github/GitHubPullRequestOutcomeResolver.java`
+  - `java/adapters-remote/.../github/BoundedGitHubResponseTest.java` (new)
+  - `java/adapters-remote/.../github/GitHubDraftPullRequestAdapterTest.java`
+  - `docs/architecture/0069-github-app-draft-pr-adapter-and-reconciliation.md` (renamed from duplicate 0055)
   - `docs/runbooks/agentcore-github-pr-pilot.md`
-  - `docs/specs/03-current-state-baseline.md`
-  - `docs/specs/07-low-level-design-java.md`
-  - `docs/specs/10-security-threat-model.md`
-  - `docs/specs/12-traceability-matrix.md`
-  - `fixtures/agentcore-github-draft-pr.json`
+  - `docs/specs/03-current-state-baseline.md`, `07-low-level-design-java.md`, `10-security-threat-model.md`, `12-traceability-matrix.md`
   - `HANDOFF.md`
-  - `java/adapters-remote/build.gradle.kts`
-  - `java/adapters-remote/src/main/java/io/tracepermit/adapters/remote/github/GitHubAppCredentialProvider.java`
-  - `java/adapters-remote/src/main/java/io/tracepermit/adapters/remote/github/GitHubAppCredentials.java`
-  - `java/adapters-remote/src/main/java/io/tracepermit/adapters/remote/github/GitHubDraftPullRequestAction.java`
-  - `java/adapters-remote/src/main/java/io/tracepermit/adapters/remote/github/GitHubDraftPullRequestAdapter.java`
-  - `java/adapters-remote/src/main/java/io/tracepermit/adapters/remote/github/GitHubDraftPullRequestResult.java`
-  - `java/adapters-remote/src/main/java/io/tracepermit/adapters/remote/github/GitHubPullRequestException.java`
-  - `java/adapters-remote/src/main/java/io/tracepermit/adapters/remote/github/GitHubPullRequestOutcomeResolver.java`
-  - `java/adapters-remote/src/test/java/io/tracepermit/adapters/remote/github/GitHubDraftPullRequestAdapterTest.java`
-  - `java/simulator/src/main/java/io/tracepermit/simulator/StatefulTargetSimulator.java`
-  - `java/simulator/src/test/java/io/tracepermit/simulator/StatefulTargetSimulatorTest.java`
 - Tests passed:
-  - `pnpm check` (124 React console tests, tsc, vite build, Java environment check, and Java `checkAll` with 94%+ JaCoCo line coverage)
-  - `pnpm format:check`
-  - `pnpm docs:links` (988 local targets verified)
-  - `pnpm docs:flows:check` (13 flow diagram test suites verified)
-  - `git diff --check`
-  - `./gradlew :adapters-remote:test :adapters-remote:jacocoTestReport` (22/22 GitHub adapter tests passed, 95% line coverage in adapter, 93.3% in resolver, 100% in credentials, exceptions, and results)
-  - `./gradlew :simulator:test` (all simulator tests passed)
-- Tests failed/not run: Real private repository `tracepermit/agentcore-pr-pilot` was not called (strictly forbidden in automated tests; all tests use deterministic MockWebServer or simulator).
-- Exact next command: `gh pr checks 96 --watch`
-- Required environment: Node.js 22+, pnpm 11.25.0, Java 21, Gradle wrapper.
-- Local-only/manual steps: None. Live GitHub App installation credentials and repository access remain external to automated test suites.
-- Security constraints:
-  - Repository allowlist: strictly `tracepermit/agentcore-pr-pilot`.
-  - Base branch: strictly `main`.
-  - `draft: true` strictly enforced.
-  - No merge, issues, branch mutation, or destructive capability.
-  - No bearer tokens, private keys, or secrets stored in Git, logs, or evidence.
-  - Credential fingerprints (`sha256:...`) and stable installation ID stored in evidence.
-  - Ambiguous timeouts treated as `unknown` without retry.
-- Known limitations: Bounded pilot foundation for PR creation only. Real GitHub calls require private installation credentials supplied at runtime by trusted provider.
-- Safe for another environment to continue: yes, after branch ownership transfer; PR #96 is unmerged and ready for review.
+  - Focused GitHub adapter/reader suites: 44 cases, no failures.
+  - `pnpm check`: React build/typecheck and 124 tests; Java environment validation and checkAll. Java reports record 1,227 cases, zero failures/errors, one installed-archive E2E skip. The restored final implementation passed again with normal Gradle cache reuse.
+  - Aggregate coverage: 94.16% line, 77.76% branch; existing thresholds unchanged.
+  - `pnpm format:check`, `pnpm docs:links` (990 links), `pnpm docs:flows:check` (13 tests), `git diff --check`.
+- Tests failed/not run:
+  - Expected pre-fix negative control: eight revised adapter cases failed against the original implementation.
+  - Expected streaming mutation control: temporarily restoring whole-body reads made both chunked overflow regressions fail; bounded reads were restored and full checks passed afterward. No mutant is committed.
+  - Installed archive/native PTY E2E was skipped because its archive was absent. No live GitHub call, external provider login, production target, or durable multi-replica composition was qualified.
+- Exact next command: `gh pr checks 96 --repo hemantkgupta/tracepermit`
+- Required environment: Node.js 22+, pnpm 11.25.0, Java 21 via `scripts/configure-java-environment.sh`; Docker for database qualification.
+- Local-only/manual steps: Ignored dependency/build caches are not transferable. Live pilot credentials remain private operator configuration, not GitHub artifacts.
+- Security constraints: Synthetic MockWebServer/simulator tests only. Private customer source files untouched. No raw tokens, private keys or credentials in the repair. Preserve draft-only sandbox allowlists; no merge, force-push, public listener or target retry.
+- Known limitations: Process-local adapter foundation, not production readiness. General GitHub absence semantics, live GitHub/App configuration, authority/destination integration and durable restart/replica composition need independent review/qualification.
+- Safe for another environment to continue: yes, after fetching/verifying the exact PR head, confirming a clean tree and explicitly taking branch ownership.
