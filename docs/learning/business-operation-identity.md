@@ -35,3 +35,13 @@ Registration grants no authority. Current identity checks, approval/permit
 consumption and authority-bearing state transitions still belong to a future
 service composition. See [ADR 0068](../architecture/0068-versioned-business-operation-contract.md)
 and [ADR 0070](../architecture/0070-durable-business-operation-registration.md).
+
+The [transition proposal helper](../architecture/0071-uncommitted-operation-transition-proposals.md)
+can now construct a candidate append against an exact snapshot token. It preserves
+all immutable bindings and rejects stale versions, scope mismatch and invalid
+edges. The token is forgeable state identity, not a permit. A valid `approved` or
+`claimed` document is still only data: two proposals can share one starting token,
+and the current registration repository rejects both as lifecycle updates.
+Future actor/policy/approval checks and an atomic durable command must precede
+any authority or target effect. Cancelling authorization does not stop an
+already executing target; unknown never becomes permission to try again.
