@@ -34,13 +34,13 @@ This runbook documents the operational procedures, trust boundaries, and reconci
    - HTTP and HTTPS redirects rejected (`UNEXPECTED_REDIRECT`).
    - Transport retries disabled (`retryOnConnectionFailure(false)`).
    - Bounded timeouts (5s connect, 10s call).
-   - Maximum response size bounded to 64 KB (65,536 bytes).
+   - Maximum decoded response size bounded to 65,536 bytes while reading POST confirmation and GET lookup, including chunked responses without `Content-Length`. The reader materializes at most one overflow byte beyond the limit; responses close on rejection.
 5. **Secret Redaction (`SEC-003`, `SEC-012`)**:
    Raw tokens are masked in `GitHubAppCredentials.toString()` and stripped from all error messages and exception causes. Evidence records contain only `sha256:...` fingerprints.
 
 ---
 
-## 3. Idempotency and Reconciliation Lifecycle (`ADR 0055`)
+## 3. Idempotency and Reconciliation Lifecycle (`ADR 0069`)
 
 GitHub's REST API does not support client-specified idempotency keys. To prevent duplicate pull request creation:
 
@@ -56,7 +56,8 @@ GitHub's REST API does not support client-specified idempotency keys. To prevent
       ▼
 [Claim Ledger Attempt: executing]
       │
-      ├── (201 Created) ──────────────► [succeeded] (Evidence recorded)
+      ├── (201 + readable result) ────► [succeeded] (Evidence recorded)
+      ├── (Oversized 201 body) ───────► [unknown] (RESPONSE_TOO_LARGE)
       │
       ├── (Timeout / Network Drop) ──► [unknown] (OUTCOME_UNCERTAIN_TIMEOUT)
       │                                       │
@@ -66,7 +67,8 @@ GitHub's REST API does not support client-specified idempotency keys. To prevent
       │                                       ▼
       │                            [Read-only GET /repos/.../pulls]
       │                                       ├── (PR found) ──► [succeeded]
-      │                                       └── (Empty []) ──► [failed]
+      │                                       ├── (Empty []) ──► [failed]
+      │                                       └── (Lookup unavailable) ──► [unknown]
       │
       └── (4xx / 3xx Error) ──────────► [failed] (Confirmed failure)
 ```
@@ -78,7 +80,17 @@ GitHub's REST API does not support client-specified idempotency keys. To prevent
 3. **Idempotent Replay**:
    A subsequent valid permit for an already `succeeded` operation returns the cached result without contacting GitHub.
 4. **Reconciliation by Read-Only Lookup**:
-   When an attempt transitions to `unknown`, the background worker invokes `GitHubPullRequestOutcomeResolver.lookup()`. It performs a `GET /repos/{owner}/{repo}/pulls?head={owner}:{head}&base={base}&state=all`. The original POST is never retried automatically.
+   A caller may supply `GitHubPullRequestOutcomeResolver.lookup()` to the reconciliation worker port. It performs a `GET /repos/{owner}/{repo}/pulls?head={owner}:{head}&base={base}&state=all`. The original POST is never retried automatically.
+
+Lookup authentication rejection (401/403), repository invisibility (404), redirects,
+oversized bodies and transport/server failures do not prove the original creation
+failed. They return `unknown` with the existing fixed reason code and no confirmed
+result. Correct the lookup's availability without submitting another creation.
+
+The adapter foundation uses a process-local ledger and registered lookup metadata.
+It does not itself wire a durable worker, protect across restart/replicas, or qualify
+pagination/eventual visibility as authoritative absence. See
+[ADR 0069](../architecture/0069-github-app-draft-pr-adapter-and-reconciliation.md).
 
 ---
 
@@ -87,7 +99,7 @@ GitHub's REST API does not support client-specified idempotency keys. To prevent
 Automated tests qualify the adapter against a deterministic fake HTTP server (`MockWebServer`):
 
 ```bash
-./gradlew :adapters-remote:test --tests io.tracepermit.adapters.remote.github.GitHubDraftPullRequestAdapterTest
+bash -c 'source scripts/configure-java-environment.sh && java/gradlew -p java :adapters-remote:test --tests "*github.*Test"'
 ```
 
 To run full project verification:

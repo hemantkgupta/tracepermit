@@ -48,7 +48,8 @@ strict pre-execution canonical validation, repository allowlisting
 (`tracepermit/agentcore-pr-pilot`), base branch allowlisting (`main`), and mandatory
 `draft: true` enforcement before consuming execution permits. Transport configuration
 enforces `Proxy.NO_PROXY`, disabled redirects and retries, bounded timeouts (5s connect,
-10s call), and response size limits (64 KB). Credential tokens are derived via
+10s call), and decoded response size limits (65,536 bytes, enforced while reading
+with one overflow byte for detection). Credential tokens are derived via
 `GitHubAppCredentialProvider`, masked in memory, and stripped from error messages and
 evidence records.
 
@@ -59,7 +60,11 @@ Ambiguous socket timeouts and network failures transition attempts to `unknown` 
 automatic retries. `GitHubPullRequestOutcomeResolver` implements `TargetOutcomeResolver`
 to query `GET /repos/{owner}/{repo}/pulls?head={owner}:{head}&base={base}&state=all`
 during scheduled reconciliation, transitioning to `succeeded` only upon observing a
-matching pull request, or `failed` when confirmed absent. See [ADR 0055](../architecture/0055-github-app-draft-pr-adapter-and-reconciliation.md).
+matching pull request, or `failed` under the existing successful-empty-lookup
+contract. Oversized HTTP 201 confirmation and unavailable/rejected/oversized GET
+lookup retain `unknown`, not a confirmed failure. State and registration are
+process-local; durable composition and general absence semantics remain separate.
+See [ADR 0069](../architecture/0069-github-app-draft-pr-adapter-and-reconciliation.md).
 
 ## OIDC refresh and transport resource boundaries
 

@@ -281,14 +281,18 @@ public final class GitHubDraftPullRequestAdapter {
           throw new GitHubPullRequestException(
               "OUTCOME_UNCERTAIN", "OUTCOME_UNCERTAIN", "GitHub returned HTTP 201 without a body.");
         }
-        byte[] responseBytes = responseBody.bytes();
+        byte[] responseBytes =
+            BoundedGitHubResponse.read(responseBody.byteStream(), maxResponseBytes);
         if (responseBytes.length == 0) {
           executionLedger.markUnknown(begin.attempt().attemptId(), clock.instant(), "EMPTY_RESPONSE_BODY");
           throw new GitHubPullRequestException(
               "OUTCOME_UNCERTAIN", "OUTCOME_UNCERTAIN", "GitHub returned HTTP 201 with an empty body.");
         }
         if (responseBytes.length > maxResponseBytes) {
-          executionLedger.fail(begin.attempt().attemptId(), clock.instant(), "RESPONSE_TOO_LARGE");
+          // HTTP 201 may already represent a committed effect; an unreadable confirmation is not
+          // proof of failure. Keep the attempt blocked pending read-only reconciliation.
+          executionLedger.markUnknown(
+              begin.attempt().attemptId(), clock.instant(), "RESPONSE_TOO_LARGE");
           throw new GitHubPullRequestException(
               "RESPONSE_TOO_LARGE",
               "BOUNDS_EXCEEDED",

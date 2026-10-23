@@ -153,14 +153,15 @@ public final class GitHubPullRequestOutcomeResolver implements TargetOutcomeReso
 
     try (Response response = client.newCall(request).execute()) {
       int code = response.code();
+      // A rejected/unavailable lookup cannot disprove an earlier ambiguous POST's effect.
       if (code == 404) {
-        return new ReconciliationObservation("failed", "REPOSITORY_NOT_FOUND");
+        return new ReconciliationObservation("unknown", "REPOSITORY_NOT_FOUND");
       }
       if (code == 401 || code == 403) {
-        return new ReconciliationObservation("failed", "TARGET_AUTH_FAILED");
+        return new ReconciliationObservation("unknown", "TARGET_AUTH_FAILED");
       }
       if (code >= 300 && code < 400) {
-        return new ReconciliationObservation("failed", "UNEXPECTED_REDIRECT");
+        return new ReconciliationObservation("unknown", "UNEXPECTED_REDIRECT");
       }
       if (code != 200) {
         return new ReconciliationObservation("unknown", "TARGET_LOOKUP_FAILED");
@@ -170,12 +171,12 @@ public final class GitHubPullRequestOutcomeResolver implements TargetOutcomeReso
       if (body == null) {
         return new ReconciliationObservation("unknown", "EMPTY_LOOKUP_RESPONSE");
       }
-      byte[] bytes = body.bytes();
+      byte[] bytes = BoundedGitHubResponse.read(body.byteStream(), maxResponseBytes);
       if (bytes.length == 0) {
         return new ReconciliationObservation("unknown", "EMPTY_LOOKUP_RESPONSE");
       }
       if (bytes.length > maxResponseBytes) {
-        return new ReconciliationObservation("failed", "RESPONSE_TOO_LARGE");
+        return new ReconciliationObservation("unknown", "RESPONSE_TOO_LARGE");
       }
 
       JsonNode array;

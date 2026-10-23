@@ -36,6 +36,8 @@ import okhttp3.mockwebserver.SocketPolicy;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 final class GitHubDraftPullRequestAdapterTest {
   private static final Instant NOW = Instant.parse("2026-10-23T12:00:00Z");
@@ -418,7 +420,110 @@ final class GitHubDraftPullRequestAdapterTest {
             INSTALLATION_ID, TEST_REPO, "feature/1", "main");
     ExecutionAttempt attempt = ledger.findByIdempotencyKey(operationKey);
     assertThat(attempt).isNotNull();
-    assertThat(attempt.status()).isEqualTo("failed");
+    assertThat(attempt.status()).isEqualTo("unknown");
+    assertThat(attempt.transitions().getLast().reasonCode()).isEqualTo("RESPONSE_TOO_LARGE");
+  }
+
+  @Test
+  void chunkedConfirmationOverLimitRemainsUnknownAndBlocksAnotherPost() throws Exception {
+    int limit = 1024;
+    adapter = new GitHubDraftPullRequestAdapter(
+        credentialProvider, ledger, resolver, permitAuthority, "github.pull_request.create",
+        server.url("/").uri(), Duration.ofMillis(500), Duration.ofSeconds(2), limit, CLOCK,
+        null, null);
+    server.enqueue(new MockResponse().setResponseCode(201)
+        .setChunkedBody("x".repeat(100_000), 127)
+        .throttleBody(4096, 3, TimeUnit.SECONDS));
+    JsonNode action = validCanonicalAction("Title", "feature/bounded", "main", true, "body");
+
+    assertThatThrownBy(() -> adapter.execute(action, issuePermit(action)))
+        .hasFieldOrPropertyWithValue("errorCode", "RESPONSE_TOO_LARGE");
+    String key = GitHubDraftPullRequestAdapter.computeOperationKey(
+        INSTALLATION_ID, TEST_REPO, "feature/bounded", "main");
+    assertThat(ledger.findByIdempotencyKey(key).status()).isEqualTo("unknown");
+    assertThatThrownBy(() -> adapter.execute(action, issuePermit(action)))
+        .hasFieldOrPropertyWithValue("errorCode", "EXECUTION_OUTCOME_UNKNOWN");
+    assertThat(server.getRequestCount()).isEqualTo(1);
+    assertThat(server.takeRequest(1, TimeUnit.SECONDS).getMethod()).isEqualTo("POST");
+
+    server.enqueue(new MockResponse().setResponseCode(200).setBody(
+        "[{\"number\":42,\"id\":42001,\"draft\":true,\"state\":\"open\","
+            + "\"html_url\":\"https://github.com/tracepermit/agentcore-pr-pilot/pull/42\","
+            + "\"head\":{\"ref\":\"feature/bounded\"},\"base\":{\"ref\":\"main\"}}]"));
+    ReconciliationObservation observation = resolver.lookup(lookupCandidate(key));
+    assertThat(observation.outcome()).isEqualTo("succeeded");
+    assertThat(observation.reasonCode()).isEqualTo("PR_CONFIRMED_SUCCESS");
+    assertThat(server.takeRequest(1, TimeUnit.SECONDS).getMethod()).isEqualTo("GET");
+    assertThat(server.getRequestCount()).isEqualTo(2);
+  }
+
+  @Test
+  void chunkedConfirmationExactlyAtByteLimitIsAccepted() {
+    String body = "{\"number\":42,\"id\":42001,\"draft\":true,\"state\":\"open\","
+        + "\"html_url\":\"https://github.com/tracepermit/agentcore-pr-pilot/pull/42\"}";
+    int limit = 1024;
+    adapter = new GitHubDraftPullRequestAdapter(
+        credentialProvider, ledger, resolver, permitAuthority, "github.pull_request.create",
+        server.url("/").uri(), Duration.ofMillis(500), Duration.ofSeconds(2), limit, CLOCK,
+        null, null);
+    server.enqueue(new MockResponse().setResponseCode(201)
+        .setChunkedBody(body + " ".repeat(limit - body.getBytes(StandardCharsets.UTF_8).length), 127));
+    JsonNode action = validCanonicalAction("Title", "feature/exact", "main", true, "body");
+
+    assertThat(adapter.execute(action, issuePermit(action)).number()).isEqualTo(42);
+    assertThat(server.getRequestCount()).isEqualTo(1);
+  }
+
+  @ParameterizedTest
+  @CsvSource({"401,TARGET_AUTH_FAILED", "403,TARGET_AUTH_FAILED", "404,REPOSITORY_NOT_FOUND",
+      "302,UNEXPECTED_REDIRECT", "500,TARGET_LOOKUP_FAILED"})
+  void unavailableLookupCannotConfirmFailure(int status, String reason) throws Exception {
+    String key = "sha256:" + "a".repeat(64);
+    resolver.registerOperation(key, TEST_REPO, "feature/unavailable", "main", INSTALLATION_ID);
+    server.enqueue(new MockResponse().setResponseCode(status).setHeader("Location", "/redirect"));
+
+    ReconciliationObservation observation = resolver.lookup(lookupCandidate(key));
+
+    assertThat(observation.outcome()).isEqualTo("unknown");
+    assertThat(observation.confirmed()).isFalse();
+    assertThat(observation.reasonCode()).isEqualTo(reason);
+    assertThat(resolver.getConfirmedResult(key)).isNull();
+    assertThat(server.getRequestCount()).isEqualTo(1);
+    assertThat(server.takeRequest(1, TimeUnit.SECONDS).getMethod()).isEqualTo("GET");
+  }
+
+  @Test
+  void chunkedLookupOverLimitRemainsUnknownAndExactLimitIsAccepted() throws Exception {
+    int limit = 1024;
+    resolver = new GitHubPullRequestOutcomeResolver(
+        credentialProvider, server.url("/").uri(), Duration.ofSeconds(2), limit, null, null);
+    String key = "sha256:" + "b".repeat(64);
+    resolver.registerOperation(key, TEST_REPO, "feature/bounded", "main", INSTALLATION_ID);
+    server.enqueue(new MockResponse().setResponseCode(200)
+        .setChunkedBody("[]" + " ".repeat(100_000), 127)
+        .throttleBody(4096, 3, TimeUnit.SECONDS));
+
+    ReconciliationObservation oversized = resolver.lookup(lookupCandidate(key));
+    assertThat(oversized.outcome()).isEqualTo("unknown");
+    assertThat(oversized.confirmed()).isFalse();
+    assertThat(oversized.reasonCode()).isEqualTo("RESPONSE_TOO_LARGE");
+    assertThat(resolver.getConfirmedResult(key)).isNull();
+
+    String body = "[{\"number\":42,\"id\":42001,\"draft\":true,\"state\":\"open\","
+        + "\"html_url\":\"https://github.com/tracepermit/agentcore-pr-pilot/pull/42\","
+        + "\"head\":{\"ref\":\"feature/bounded\"},\"base\":{\"ref\":\"main\"}}]";
+    server.enqueue(new MockResponse().setResponseCode(200)
+        .setChunkedBody(body + " ".repeat(limit - body.getBytes(StandardCharsets.UTF_8).length), 127));
+    assertThat(resolver.lookup(lookupCandidate(key)).outcome()).isEqualTo("succeeded");
+    assertThat(resolver.getConfirmedResult(key).number()).isEqualTo(42);
+    assertThat(server.getRequestCount()).isEqualTo(2);
+    assertThat(server.takeRequest(1, TimeUnit.SECONDS).getMethod()).isEqualTo("GET");
+    assertThat(server.takeRequest(1, TimeUnit.SECONDS).getMethod()).isEqualTo("GET");
+  }
+
+  private static ReconciliationCandidate lookupCandidate(String key) {
+    return new ReconciliationCandidate(TENANT, "attempt-bounds", "github.pull_request.create",
+        key, NOW, 1, "worker-1", NOW.plusSeconds(30));
   }
 
   @Test
@@ -975,7 +1080,7 @@ final class GitHubDraftPullRequestAdapterTest {
                 1,
                 "worker-1",
                 NOW.plusSeconds(30)));
-    assertThat(obs4.outcome()).isEqualTo("failed");
+    assertThat(obs4.outcome()).isEqualTo("unknown");
     assertThat(obs4.reasonCode()).isEqualTo("REPOSITORY_NOT_FOUND");
 
     // HTTP 401 on lookup
@@ -993,7 +1098,7 @@ final class GitHubDraftPullRequestAdapterTest {
                 1,
                 "worker-1",
                 NOW.plusSeconds(30)));
-    assertThat(obs5.outcome()).isEqualTo("failed");
+    assertThat(obs5.outcome()).isEqualTo("unknown");
     assertThat(obs5.reasonCode()).isEqualTo("TARGET_AUTH_FAILED");
 
     // HTTP 302 Redirect on lookup
@@ -1011,7 +1116,7 @@ final class GitHubDraftPullRequestAdapterTest {
                 1,
                 "worker-1",
                 NOW.plusSeconds(30)));
-    assertThat(obs6.outcome()).isEqualTo("failed");
+    assertThat(obs6.outcome()).isEqualTo("unknown");
     assertThat(obs6.reasonCode()).isEqualTo("UNEXPECTED_REDIRECT");
 
     // Empty lookup response on 200
@@ -1051,7 +1156,7 @@ final class GitHubDraftPullRequestAdapterTest {
                 1,
                 "worker-1",
                 NOW.plusSeconds(30)));
-    assertThat(obs8.outcome()).isEqualTo("failed");
+    assertThat(obs8.outcome()).isEqualTo("unknown");
     assertThat(obs8.reasonCode()).isEqualTo("RESPONSE_TOO_LARGE");
 
     // Invalid JSON (not an array) on lookup

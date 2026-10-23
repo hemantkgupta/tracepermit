@@ -1,4 +1,4 @@
-# ADR 0055: GitHub App draft pull request adapter and external reconciliation
+# ADR 0069: GitHub App draft pull request adapter and external reconciliation
 
 - Status: Accepted
 - Date: 2026-10-23
@@ -38,12 +38,12 @@ TracePermit introduces a dedicated Java adapter foundation in `adapters-remote`:
 
 ### 3. Network and Transport Safety (SEC-015)
 
-- Transport uses a pinned OkHttpClient configured with:
+- Transport uses an OkHttpClient configured with:
   - `proxy(Proxy.NO_PROXY)`: No ambient HTTP/HTTPS proxies.
   - `followRedirects(false)` & `followSslRedirects(false)`: Redirects fail closed (`UNEXPECTED_REDIRECT`).
   - `retryOnConnectionFailure(false)`: No hidden transport retries.
   - Bounded connect timeout (5s) and call timeout (10s).
-  - Maximum response size limit (64 KB / 65,536 bytes) to prevent memory exhaustion attacks.
+  - Maximum decoded response size of 65,536 bytes, enforced while reading for both POST confirmation and GET lookup. At most the limit plus one overflow byte is materialized by the reader; `Content-Length` is not trusted. The enclosing response is closed on every path, including overflow and read failure.
 
 ### 4. External Idempotency and Reconciliation Contract (FR-015, SEC-019, ADR 0005, ADR 0020)
 
@@ -52,14 +52,16 @@ TracePermit introduces a dedicated Java adapter foundation in `adapters-remote`:
   $$\text{operationKey} = \text{sha256}("github.pull\_request.create:" + \text{installationId} + ":" + \text{repository} + ":" + \text{head} + ":" + \text{base})$$
   Because GitHub enforces that only one open pull request may exist for a given `head` and `base` branch within a repository, this tuple uniquely identifies the external logical effect.
 - **Ledger Claim**:
-  Before network dispatch, the adapter claims the operation key in `InMemoryExecutionLedger` (or durable ledger). Concurrent duplicates are blocked (`CONCURRENT_EXECUTION_IN_PROGRESS`). Subsequent calls after success return the stored result without calling GitHub.
+  Before network dispatch, the adapter claims the operation key in `InMemoryExecutionLedger`. Concurrent duplicates are blocked (`CONCURRENT_EXECUTION_IN_PROGRESS`). Subsequent calls after success return the stored result without calling GitHub. This foundation has process-local state only: no restart/replica protection or composed durable reconciliation worker is claimed.
 - **Ambiguous Outcome Handling**:
   If a network timeout (`SocketTimeoutException`), transport error, or 5xx server response occurs, the adapter records the attempt status as `UNKNOWN` with an explicit reason code (`OUTCOME_UNCERTAIN_TIMEOUT`, `OUTCOME_UNCERTAIN_IO_ERROR`). The adapter **never retries the POST**.
+  An oversized HTTP 201 confirmation also records `unknown` (`RESPONSE_TOO_LARGE`): the target may already have committed the effect. A later permit cannot bypass the unknown attempt and send another POST.
 - **Read-Only Reconciliation Lookup**:
   `GitHubPullRequestOutcomeResolver` implements `TargetOutcomeResolver`. When executed by `ExecutionReconciliationWorker`, it performs a read-only `GET /repos/{owner}/{repo}/pulls?head={owner}:{head}&base={base}&state=all`:
   - If a pull request matching `head` and `base` is returned: outcome is confirmed as `succeeded` (`PR_CONFIRMED_SUCCESS`).
   - If an empty array is returned: outcome is confirmed as `failed` (`PR_CONFIRMED_ABSENT`).
-  - If the lookup times out or encounters a server error: outcome remains `unknown` (`TARGET_LOOKUP_FAILED`) and reconciliation is deferred.
+  - If lookup returns 401/403, 404, a redirect, an oversized body, a timeout, or another unavailable/invalid response: outcome remains `unknown`, with a fixed reason code. These responses describe lookup availability, not whether the earlier effect occurred. No confirmed result is cached and no POST is retried.
+  - Successful empty-array handling is the existing bounded lookup contract, not a general guarantee about pagination, eventual visibility, or arbitrary GitHub history. Those semantics and the durable production composition require separate qualification.
 
 ### 5. Simulator vs. Live Qualification Boundary (FR-012)
 
@@ -70,6 +72,6 @@ TracePermit introduces a dedicated Java adapter foundation in `adapters-remote`:
 ## Consequences
 
 - Automated retries will never re-execute a PR creation request without read-only reconciliation.
-- External uncertainty is visible, durable, and verifiable.
+- External uncertainty is visible in the process-local ledger; durable integration remains separate.
 - Pilot scope is strictly bounded to one allowlisted private sandbox repository and draft PRs.
 - No bearer tokens or private keys can leak into evidence, logs, or source control.

@@ -28,13 +28,19 @@ in `adapters-remote` for the first AgentCore pilot operation `github.pull_reques
 The adapter strictly allowlists destination host HTTPS `api.github.com`, repository
 `tracepermit/agentcore-pr-pilot`, base branch `main`, and enforces mandatory `draft: true`.
 Transport invariants enforce `Proxy.NO_PROXY`, disabled redirects, disabled connection
-retries, bounded connect (5s) and call (10s) timeouts, and a 64 KB response size limit.
+retries, bounded connect (5s) and call (10s) timeouts, and a 65,536-byte decoded
+response limit enforced while reading (at most one overflow byte beyond the limit).
 GitHub App installation credentials are provided via a trusted provider port and masked in
 memory; audit evidence stores only the cryptographic `credentialFingerprint` (`sha256:...`)
 and stable installation/repository identifiers. Because GitHub PR creation lacks a native
 idempotency key, an explicit stable operation key (`sha256(installId:repo:head:base)`) and
 read-only lookup port (`GET /repos/{owner}/{repo}/pulls?head={owner}:{head}&base={base}&state=all`)
-resolve uncertain timeouts and transport disconnects without re-execution (ADR 0055).
+support uncertain timeouts and transport disconnects without re-execution
+([ADR 0069](../architecture/0069-github-app-draft-pr-adapter-and-reconciliation.md)).
+Oversized HTTP 201 confirmations and unavailable lookups (including 401/403/404,
+redirects and oversized lookup bodies) retain `unknown`; they do not prove failure.
+This foundation is process-local, not a composed durable production executor or
+a general qualification of pagination/eventual-visibility absence semantics.
 In-memory simulator target executions (`mode: "simulated"`) remain explicitly distinguished
 from live pilot operations (`mode: "pilot"`). See the [operator runbook](../runbooks/agentcore-github-pr-pilot.md).
 
