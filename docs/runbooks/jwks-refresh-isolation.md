@@ -87,6 +87,58 @@ the publication wait and the obsolete-failure guard: the relevant tests must
 fail, then pass with both controls restored. No deliberately weakened source
 belongs in a committed or accepted build.
 
+## OkHttp 5 transport qualification
+
+Requirements: SEC-003/011/012/015; REL-001/009; OPS-002/004. This is a
+dependency compatibility qualification; transport policy and requirement status
+are unchanged.
+
+The upstream [5.0 migration notes](https://github.com/lysine-dev/okhttp/blob/parent-5.5.0/CHANGELOG.md#version-500),
+[5.5 release notes](https://github.com/lysine-dev/okhttp/blob/parent-5.5.0/CHANGELOG.md#version-550)
+and [runtime requirements](https://github.com/lysine-dev/okhttp/blob/parent-5.5.0/README.md#requirements)
+describe the JVM/Android artifact split, retained legacy MockWebServer API,
+Happy Eyeballs, DNS changes and timeout/hostname fixes. Gradle module metadata
+selects `okhttp-jvm:5.5.0` for this Java 21 application. Okio and the Kotlin
+standard library remain runtime dependencies. Test-only `mockwebserver` and
+`okhttp-tls` stay at the same 5.5.0 version; migrating to `mockwebserver3` is
+separate work. Android ECH and DNS-over-HTTPS are not enabled by this update.
+
+`SsrfSafeHttpsJwkSetSource` is the sole production OkHttp consumer. Its GET and
+form POST retain exact HTTPS allowlists, validated/pinned DNS, explicit
+`Proxy.NO_PROXY`, disabled redirects and connection retries, bounded response
+size and a shared DNS/HTTP deadline. OkHttp's address selection operates only
+on the already validated address list. The remote MCP listener itself uses the
+JDK HTTPS server; OkHttp also appears in its test clients and shared TLS fixture.
+
+`SsrfSafeHttpsJwkSetSourceTest` covers successful GET/public/confidential POST,
+destination/redirect rejection, address policy, DNS capacity/deadlines, HTTP
+status/media/size/UTF-8 failures and fixed credential-free errors. Runtime-generated
+certificates independently exercise untrusted-chain and wrong-hostname refusal.
+For rejected status, media type and declared size, a TLS peer withholds the body
+and requires client EOF within three seconds, before the eight-second client
+call deadline. This detects a response left open until timeout. The listener,
+accepted socket and worker have explicit bounded cleanup. No signing keys are
+written to disk.
+
+After selecting Java 21 with the existing environment helper, reproduce with:
+
+```bash
+source scripts/configure-java-environment.sh
+java/gradlew -p java :adapters-remote:dependencyInsight --dependency okhttp --configuration runtimeClasspath
+java/gradlew -p java :adapters-remote:dependencies --configuration testRuntimeClasspath
+java/gradlew -p java :adapters-remote:test --rerun-tasks --no-build-cache
+pnpm check
+pnpm format:check
+pnpm docs:links
+```
+
+The full remote-adapter suite also exercises TLS authentication before dispatch,
+loopback-only foundation binding, sender constraint, safe failure responses and
+simulator enforcement. Loopback TLS peers and custom trust are test-only;
+production trust and public-address policy remain intact. This evidence does
+not qualify a live IdP, public network edge, Android, external precompiled
+OkHttp consumers or real AWS/Jira targets.
+
 ## Operator Troubleshooting
 
 ### Symptom: `OIDC_KEY_SET_UNAVAILABLE`

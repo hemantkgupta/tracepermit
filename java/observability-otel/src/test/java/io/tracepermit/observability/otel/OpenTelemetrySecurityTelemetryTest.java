@@ -14,6 +14,7 @@ import io.tracepermit.application.SecurityTelemetryEvent;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 
 final class OpenTelemetrySecurityTelemetryTest {
@@ -49,6 +50,14 @@ final class OpenTelemetrySecurityTelemetryTest {
       var span = exporter.getFinishedSpanItems().getFirst();
       assertThat(span.getName()).isEqualTo("tracepermit.remote.edge.denial");
       assertThat(span.getStatus().getStatusCode()).isEqualTo(StatusCode.ERROR);
+      assertThat(span.getStartEpochNanos())
+          .isEqualTo(
+              TimeUnit.MILLISECONDS.toNanos(
+                  Instant.parse("2026-03-01T12:00:00Z").toEpochMilli()));
+      assertThat(span.getEndEpochNanos())
+          .isEqualTo(
+              TimeUnit.MILLISECONDS.toNanos(
+                  Instant.parse("2026-03-01T12:00:00.012Z").toEpochMilli()));
       assertThat(span.getAttributes().asMap())
           .containsEntry(AttributeKey.stringKey("tracepermit.event"), "remote.edge.denial")
           .containsEntry(AttributeKey.stringKey("tracepermit.outcome"), "denied")
@@ -57,10 +66,47 @@ final class OpenTelemetrySecurityTelemetryTest {
           .doesNotContainKey(AttributeKey.stringKey("authorization"))
           .doesNotContainKey(AttributeKey.stringKey("arguments"))
           .doesNotContainKey(AttributeKey.stringKey("result"));
-      assertThat(metricReader.collectAllMetrics())
+      var metrics = metricReader.collectAllMetrics();
+      assertThat(metrics)
           .extracting(metric -> metric.getName())
           .containsExactlyInAnyOrder(
               "tracepermit.security.events", "tracepermit.security.operation.duration");
+
+      var eventCount =
+          metrics.stream()
+              .filter(metric -> metric.getName().equals("tracepermit.security.events"))
+              .findFirst()
+              .orElseThrow()
+              .getLongSumData()
+              .getPoints()
+              .iterator()
+              .next();
+      assertThat(eventCount.getValue()).isEqualTo(1L);
+      assertThat(eventCount.getAttributes().asMap())
+          .containsEntry(AttributeKey.stringKey("tracepermit.event"), "remote.edge.denial")
+          .containsEntry(AttributeKey.stringKey("tracepermit.outcome"), "denied")
+          .containsEntry(AttributeKey.stringKey("tracepermit.component"), "remote_edge")
+          .containsEntry(AttributeKey.stringKey("tracepermit.stage"), "authentication")
+          .containsEntry(
+              AttributeKey.stringKey("tracepermit.reason_code"), "INVALID_ACCESS_TOKEN")
+          .doesNotContainKey(AttributeKey.stringKey("authorization"))
+          .doesNotContainKey(AttributeKey.stringKey("arguments"))
+          .doesNotContainKey(AttributeKey.stringKey("result"));
+
+      var duration =
+          metrics.stream()
+              .filter(
+                  metric ->
+                      metric.getName().equals("tracepermit.security.operation.duration"))
+              .findFirst()
+              .orElseThrow()
+              .getHistogramData()
+              .getPoints()
+              .iterator()
+              .next();
+      assertThat(duration.getCount()).isEqualTo(1L);
+      assertThat(duration.getSum()).isEqualTo(12.0);
+      assertThat(duration.getAttributes()).isEqualTo(eventCount.getAttributes());
     }
   }
 }
