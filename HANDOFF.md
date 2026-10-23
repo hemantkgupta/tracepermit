@@ -20,7 +20,7 @@ TRACEPERMIT HANDOFF
   - Added byte-reader and chunked HTTP regressions, exact-limit acceptance, no-repeat-POST and later GET recovery checks.
   - Renumbered the duplicate GitHub ADR 0055 to unused ADR 0069 and updated all references, specs, threat model and traceability. Existing endpoint distribution ADR 0055 is unchanged.
   - Corrected inherited documentation: ledger is process-local with no TTL; default transport deadlines are 5s connect and 10s read/call, with no explicit write-timeout setting. No durable worker composition is claimed.
-- Remaining: Exact-head hosted CI and independent full adapter review. Do not merge automatically. Durable pilot composition and trustworthy general GitHub absence/pagination semantics are separate qualification work.
+- Remaining: GitHub reports this PR as CONFLICTING with main after the repair push; only Cloudflare has registered on the new head so far. Main reconciliation requires explicit owner approval (no merge/rebase performed here), followed by exact-head hosted CI and independent full adapter review. Do not merge automatically. Durable pilot composition and trustworthy general GitHub absence/pagination semantics are separate qualification work.
 - Files materially changed:
   - `java/adapters-remote/.../github/BoundedGitHubResponse.java` (new)
   - `java/adapters-remote/.../github/GitHubDraftPullRequestAdapter.java`
