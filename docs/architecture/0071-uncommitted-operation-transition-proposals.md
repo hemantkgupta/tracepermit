@@ -29,6 +29,12 @@ match the supplied, revalidated snapshot. A change in another dimension or an
 immutable policy/action binding invalidates an old token. No stale proposal is
 automatically rebased or retried.
 
+The hash identifies the snapshot under the frozen v1 canonical profile, not raw
+JSON byte representation. It inherits that profile's numeric limits and provides
+neither authenticity nor confidentiality. Exact large-integer/decimal business
+values still require the domain/string or future-profile boundary in ADR 0068;
+no numeric reinterpretation or new canonicalization profile is introduced here.
+
 Append one globally sequenced fact, increment only the chosen dimension's
 version, update that dimension and aggregate time, and preserve every other
 field and the entire old history prefix. Reuse the existing v1 validator's
