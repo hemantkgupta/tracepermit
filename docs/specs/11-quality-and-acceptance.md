@@ -54,6 +54,19 @@ shutdown must stop children and remove the local endpoint key and session.
 
 ## Behavior acceptance
 
+GitHub target-preflight acceptance (FR-008/009/012/015; SEC-001/002/003/012/015/019;
+REL-001/003/004/005/008/009; OPS-002/004) uses only numeric-loopback fake peers and
+runtime-generated keys. The focused remote adapter suite must prove zero POST
+for destination/credential/preflight mismatch; strict typed 201 identity;
+read-only exact-positive lookup and unknown for absent/duplicate/incomplete/
+unavailable observations; no retry, cross-origin credential forwarding or stale
+confirmation reuse; bounded chunked reads, time and cleanup; and concurrent
+single dispatch. Guard-removal controls must fail before restoration and the
+final gates. The suite replaces ADR0069's permissive/empty-list success/failure
+fixtures, without weakening permit or target allowlists. No live target or
+durable executor is qualified. See the
+[runbook](../runbooks/github-pilot-target-preflight.md).
+
 | Boundary         | Required evidence                                                                                                                       |
 | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | Authentication   | Invalid, expired, wrong-issuer/audience, replayed, or sender-mismatched credentials stop before protected dispatch                      |

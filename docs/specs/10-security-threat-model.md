@@ -111,6 +111,16 @@ may already represent a committed PR, so it records `unknown` and blocks another
 POST. A rejected/unavailable lookup (401/403/404, redirect, oversize or transport
 failure) cannot prove that earlier effect absent. It returns `unknown` with a
 fixed reason, no confirmed result and no effect retry (SEC-015/019; REL-003/008).
+ADR0073 additionally requires a separate trusted immutable target/precondition
+record, exact production origin/platform TLS/public DNS pinning and GET
+installation-access/repository/ref checks before dispatch. Contradictory target
+aliases cannot hide behind one allowlisted field. Positive confirmation requires
+typed IDs, full repository/owner, exact refs/SHAs/draft/state/content. Empty,
+duplicate, paginated, unavailable and incomplete lookup results remain unknown;
+no older cached result is exposed after a failed lookup. The installation ID
+still depends on trusted credential provenance, and mutable refs can race after
+GET. The process-local ledger is not durable or an exactly-once service. See
+[ADR0073](../architecture/0073-github-pilot-target-preflight.md).
 This is automated fake-server qualification, not production GitHub assurance.
 
 Opt-in endpoint observation capture introduces a local diagnostic-file privacy

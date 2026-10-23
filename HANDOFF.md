@@ -1,32 +1,26 @@
 # TracePermit implementation handoff
 
-GitHub is authoritative. This record contains transferable product state only;
-no private customer documents, raw client keys or provider credentials.
+Transfer repository facts only. Private provider/customer files, credentials,
+operator configuration and local planning data remain outside Git.
 
 TRACEPERMIT HANDOFF
 
-- Task: Implement an uncommitted, scope/state-bound lifecycle proposal primitive and record one observed bounded advisory batch.
+- Task: Cloud-only GitHub pilot target preflight, strict confirmation and conservative GET-only outcome observation; synthetic qualification.
 - Repository: https://github.com/hemantkgupta/tracepermit
-- Branch: codex/operation-transition-proposals
-- Base commit: b84b5ee904a20348e169f32b8b453e397c9b0935 (merged PR #98)
-- Latest pushed commit: validated runtime checkpoint `c98f0d94048d23a67685d465cd51ecd0723493b3`; a documentation-only handoff commit follows. Verify the exact PR head before taking ownership.
-- PR URL: https://github.com/hemantkgupta/tracepermit/pull/99
-- Branch owner now: unassigned after final push; this Mac thread has stopped editing. Draft PR #99 is the coordination point.
-- Working tree status: clean and synced after handoff commit/push; no merge, rebase or force-push.
-- Completed:
-  - Added pure Java BusinessOperationTransitionPlanner, redacted fixed-code exception, exact whole-state token and defensively copied uncommitted Proposal.
-  - One validated append preserves immutable fields/history, all unrelated dimension projections and the frozen v1 graph/canonicalization contract. Stale scope/state, invalid edges/reasons/time and 256-KiB overflow fail closed.
-  - No database, signing, credentials, clock, network, target or publication port is present. A candidate status is not proof of authority, an atomic winner or a real event.
-  - Added nine unit cases plus a shared registration-rejection regression on all three databases. Removing the stale guard made all three selected regressions fail; it was restored before the passing full check.
-  - Added ADR 0071, specifications, learning/traceability and a sanitized bounded-advisory receipt.
-  - Ran one Flash request and one GLM request using existing subscription routes only. Flash test advice accepted; GLM response rejected by closed-schema validation, no retry and no accepted review. Neither worker edited or tested product files.
-- Remaining: Exact-head hosted CI and independent implementation review. Leave draft PR #99 open/unmerged. Next product slice is a trusted durable lifecycle command with atomic state/authority rechecks; no public API/executor wiring yet. A versioned independently reviewed controller, containment/negative-permission probes and bounded repair leases remain prerequisites for an unattended writer loop.
-- Files materially changed: application planner/exception and unit test; shared OperationRepositoryContract test; ADR 0071; bounded-lifecycle-advisory-trial receipt; business-operation learning module; specifications 03/05/07/10/12 and index; HANDOFF.
-- Tests passed: focused nine proposal cases and 111 database cases (37 each on PostgreSQL 16.4, MariaDB 11.4.13 and 10.6.25), zero failures/errors/skips; pnpm check (124 React tests; 1,359 Java cases recorded, zero failures/errors, one existing installed-archive skip); aggregate 94.29% line / 77.63% branch, unchanged gates; formatting, 1,016 documentation links, 13 flow tests and diff checks. Local advisory-helper unit tests: 17 passed (not product CI).
-- Tests failed/not run: expected stale-guard negative control: three failures; restored implementation passed. Installed archive/native-PTY E2E skipped because its archive was absent. GLM advisory schema failure is not an audit pass. No live provider, RDS/TLS/failover, AgentCore, S3, real target or production qualification.
-- Exact next command: gh pr checks 99 --repo hemantkgupta/tracepermit --watch
-- Required environment: Java 21 via scripts/configure-java-environment.sh; Node.js 22+, pnpm 11.25.0; Docker for pinned database tests. Subscription CLIs are optional local development advisers, not product/runtime dependencies.
-- Local-only/manual steps: CLI helper/controller and detailed advisory report remain local and unversioned; the sanitized receipt is in Git. Existing provider authentication stays private. Ignored caches and disposable test credentials are not transferable state.
-- Security constraints: proposals/tokens grant no authority; registration still rejects progressed aggregates; no API route, effect retry, permit/policy relaxation, merge or force-push. No private customer input supplied to workers. No paid API fallback/credit overage enabled by the controller; upstream billing/model identity and complete native containment are not independently attested.
-- Known limitations: pure candidate construction only, not atomic CAS, authentication/authorization, lifecycle persistence, verified target outcome, evidence receipt or production readiness. Observed advisory assistance is not an unattended coding loop or independent final-code audit.
-- Safe for another environment to continue: yes, after fetching/verifying the exact PR head, confirming a clean tree and explicitly taking branch ownership. Only read-only review may run concurrently.
+- Branch: codex/github-pilot-target-preflight
+- Base commit: 2883eb6dc9c40f88c231ddc6cec7df5f016b2add (frozen base)
+- Latest pushed commit: use the draft PR exact head / git rev-parse HEAD; this file is part of that checkpoint
+- PR URL: locate the open draft by head branch codex/github-pilot-target-preflight; final chat/PR handoff records its URL
+- Branch owner now: cloud until final explicit ownership release; Mac owns codex/durable-operation-lifecycle exclusively
+- Working tree status: final handoff records clean local/remote equality; local caches/test logs are outside Git
+- Completed: exact production origin, pinned public DNS/platform TLS, explicit package-private numeric-loopback seam, bounded transport/cleanup/one-exchange guard; trusted target binding and GET preflight; mandatory permit, strict typed success and conservative lookup; ADR0073, runbook and affected specifications; restored guard-removal controls
+- Remaining: independent security/exact-head CI review; separately designed business-operation precondition/hash bridge and durable executor; any live target/provider qualification needs a new approved task
+- Files materially changed: Java adapters-remote GitHub transport/preflight/binding/action/adapter/resolver/error handling, bounded public DNS helper and tests; ADR0069 clarification and ADR0073; dedicated/existing GitHub runbooks; specs README/03/08/10/11/12; this handoff
+- Tests passed: initial 160 focused GitHub cases; final 271 remote cases; pnpm check (1,515 Java passes, 124 React passes, aggregate coverage gate); pnpm format:check; pnpm docs:links (1,035 links); pnpm docs:flows:check; git diff --check. Installation-match guard removal caused one expected failure and draft-guard removal caused three; both restored before passing final gates
+- Tests failed/not run: zero final failures; one existing installedArchiveConnectorAgainstRealBackendWithNativePty case skipped because its endpoint archive was not built. Only deliberate guard-removal tests failed during qualification. No live GitHub/AWS/Okta/Auth0/S3 target, App installation/token mint, EKS/public ingress or durable lifecycle integration; hosted CI is separate
+- Exact next command: gh pr list --repo hemantkgupta/tracepermit --head codex/github-pilot-target-preflight
+- Required environment: Node.js 22+, Corepack/pnpm 11.25.0, Java 21, Docker/disposable database engines for pnpm check; no target/provider credentials required
+- Local-only/manual steps: review draft and coordinate shared-doc integration; do not run a live target/provider experiment under this packet
+- Security constraints: no merge/rebase/force-push, other-branch edits, paid fallback, public endpoint or real target; agentcore-work/** excluded before checkout and unread; no secrets/private keys or raw target payload diagnostics; gates unchanged
+- Known limitations: trusted credential port vouches for opaque-token installation provenance; mutable refs race after reads; lookup observes exact desired-effect presence rather than original POST causality; no absence/exactly-once guarantee; process-local ledger/metadata and frozen-contract integration remain unqualified
+- Safe for another environment to continue: yes, only after final explicit branch ownership release
