@@ -21,7 +21,7 @@ No database migration or real target is introduced. See
 
 | Module                 | Responsibility                                                                                                                      |
 | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `contracts`            | Canonical JSON, strict action and signed-claim validation, bounded opt-in projection redaction (ADR 0043)                           |
+| `contracts`            | Canonical JSON, strict action/business-operation/signed-claim validation, bounded opt-in projection redaction (ADR 0043/0068)       |
 | `identity`             | Development token, source proof, workload/delegation, OAuth/OIDC verification                                                       |
 | `policy`               | Deterministic classifier, sequence signals, strict policy schema validation, lifecycle staging/activation/rollback, and simulation  |
 | `security`             | Request-bound permit issue, verification, and consumption                                                                           |

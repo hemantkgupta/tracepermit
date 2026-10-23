@@ -1,0 +1,266 @@
+{
+  "schemaVersion": "1.0",
+  "operation": {
+    "schemaVersion": "1.0",
+    "operationId": "018f47a2-f5ce-7a4b-8f54-80e5d3eaf201",
+    "trustedContext": {
+      "tenantId": "synthetic-tenant",
+      "workspaceId": "synthetic-github-sandbox",
+      "requesterPrincipalId": "principal:synthetic-requester"
+    },
+    "adapterId": "github-draft-pr-v1",
+    "clientRequestKeyHash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "canonicalization": "tracepermit-canonical-json-v1",
+    "canonicalAction": {
+      "schemaVersion": "1.0",
+      "eventId": "018f47a2-f5ce-7a4b-8f54-80e5d3eaf200",
+      "observedAt": "2026-10-23T10:00:00.000Z",
+      "traceId": "0123456789abcdef0123456789abcdef",
+      "identity": {
+        "subject": {
+          "id": "principal:synthetic-requester",
+          "displayName": "Synthetic requester",
+          "organizationId": "synthetic-tenant",
+          "authenticationMethod": "oauth",
+          "assurance": "authenticated",
+          "type": "human"
+        },
+        "actor": {
+          "id": "agent:synthetic-agentcore-pilot",
+          "displayName": "Synthetic AgentCore pilot",
+          "organizationId": "synthetic-tenant",
+          "authenticationMethod": "client_metadata",
+          "assurance": "asserted",
+          "type": "agent"
+        },
+        "evidence": [
+          {
+            "evidenceId": "evidence-synthetic-requester",
+            "subjectId": "principal:synthetic-requester",
+            "kind": "oauth_token",
+            "assurance": "authenticated",
+            "issuer": "synthetic-oidc-fixture",
+            "verifiedAt": "2026-10-23T09:59:59.000Z",
+            "credentialFingerprint": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+          },
+          {
+            "evidenceId": "evidence-synthetic-agent",
+            "subjectId": "agent:synthetic-agentcore-pilot",
+            "kind": "client_metadata",
+            "assurance": "asserted",
+            "issuer": "synthetic-agentcore-fixture"
+          }
+        ]
+      },
+      "trigger": {
+        "kind": "human",
+        "origin": "api",
+        "requestId": "transport-request-synthetic-001",
+        "clientName": "synthetic-agentcore-pilot"
+      },
+      "declaredIntent": {
+        "goal": "Create one draft pull request in the synthetic sandbox",
+        "source": "api_field"
+      },
+      "action": {
+        "protocol": "http",
+        "toolName": "github.pull_request.create",
+        "arguments": {
+          "owner": "synthetic-sandbox",
+          "repository": "agentcore-pr-pilot",
+          "head": "synthetic-change",
+          "base": "main",
+          "title": "Synthetic governed change",
+          "draft": true
+        },
+        "target": {
+          "system": "github",
+          "environment": "test",
+          "accountId": "synthetic-sandbox",
+          "resourceType": "repository"
+        }
+      },
+      "lineage": {
+        "rootPrincipalId": "principal:synthetic-requester",
+        "hops": [
+          {
+            "hopId": "hop-synthetic-requester",
+            "kind": "principal",
+            "subjectId": "principal:synthetic-requester",
+            "assurance": "authenticated",
+            "source": "synthetic-oidc-fixture",
+            "observedAt": "2026-10-23T09:59:59.000Z"
+          },
+          {
+            "hopId": "hop-synthetic-agent",
+            "parentHopId": "hop-synthetic-requester",
+            "kind": "agent",
+            "subjectId": "agent:synthetic-agentcore-pilot",
+            "assurance": "asserted",
+            "source": "synthetic-agentcore-fixture",
+            "observedAt": "2026-10-23T10:00:00.000Z"
+          }
+        ],
+        "delegations": []
+      },
+      "clientClaims": {}
+    },
+    "canonicalActionHash": "sha256:950fabebd940cbb4f456d5ddd34b654c77503bcfe77b3d8cb02bf50b88f1132c",
+    "semanticPayloadDigest": "sha256:309a92e7e12d33a9af80f367e9bf588062f72374c8bb244fc95b0c00b28b4701",
+    "resourceBinding": {
+      "system": "github",
+      "environment": "test",
+      "resourceType": "repository",
+      "resourceIdHash": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+      "precondition": {
+        "kind": "commit_sha",
+        "valueHash": "sha256:4444444444444444444444444444444444444444444444444444444444444444"
+      }
+    },
+    "resourceBindingHash": "sha256:98810c28d59599e2e9c156207a37345ad9bd8fb5634d2d7c8e16d47e5232423f",
+    "targetIdempotencyKeyHash": "sha256:953e64ef70e9433f0f63b2c0b23aa658609199f1dca04dcf50a363d2821694a4",
+    "policyRelease": {
+      "policyId": "synthetic-github-draft-pr",
+      "version": 1,
+      "contentHash": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+    },
+    "artifactDigests": [
+      {
+        "kind": "policy_bundle",
+        "digest": "sha256:6666666666666666666666666666666666666666666666666666666666666666"
+      },
+      {
+        "kind": "adapter_release",
+        "digest": "sha256:7777777777777777777777777777777777777777777777777777777777777777"
+      }
+    ],
+    "recoveryGeneration": 1,
+    "retention": {
+      "policyId": "synthetic-pilot-30d",
+      "retainUntil": "2026-11-22T10:00:00.000Z"
+    },
+    "authorization": {
+      "status": "awaiting_approval",
+      "version": 2,
+      "updatedAt": "2026-10-23T10:00:00.003Z"
+    },
+    "execution": {
+      "status": "not_started",
+      "version": 1,
+      "updatedAt": "2026-10-23T10:00:00.001Z"
+    },
+    "evidence": {
+      "status": "pending",
+      "version": 1,
+      "updatedAt": "2026-10-23T10:00:00.002Z"
+    },
+    "createdAt": "2026-10-23T10:00:00.000Z",
+    "updatedAt": "2026-10-23T10:00:00.003Z",
+    "transitions": [
+      {
+        "sequence": 1,
+        "dimension": "authorization",
+        "to": "evaluating",
+        "version": 1,
+        "at": "2026-10-23T10:00:00.000Z",
+        "reasonCode": "OPERATION_CREATED"
+      },
+      {
+        "sequence": 2,
+        "dimension": "execution",
+        "to": "not_started",
+        "version": 1,
+        "at": "2026-10-23T10:00:00.001Z",
+        "reasonCode": "EXECUTION_NOT_AUTHORIZED"
+      },
+      {
+        "sequence": 3,
+        "dimension": "evidence",
+        "to": "pending",
+        "version": 1,
+        "at": "2026-10-23T10:00:00.002Z",
+        "reasonCode": "EVIDENCE_PENDING"
+      },
+      {
+        "sequence": 4,
+        "dimension": "authorization",
+        "from": "evaluating",
+        "to": "awaiting_approval",
+        "version": 2,
+        "at": "2026-10-23T10:00:00.003Z",
+        "reasonCode": "HUMAN_APPROVAL_REQUIRED"
+      }
+    ]
+  },
+  "invalidMutations": [
+    {
+      "name": "changed-canonical-action",
+      "operation": "replace",
+      "path": "/canonicalAction/action/arguments/title",
+      "value": "Mutated after binding",
+      "expectedPath": "canonicalActionHash"
+    },
+    {
+      "name": "changed-semantic-digest",
+      "operation": "replace",
+      "path": "/semanticPayloadDigest",
+      "value": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+      "expectedPath": "semanticPayloadDigest"
+    },
+    {
+      "name": "transport-id-used-as-operation-id",
+      "operation": "replace",
+      "path": "/operationId",
+      "value": "transport-request-synthetic-001",
+      "expectedPath": "operationId"
+    },
+    {
+      "name": "non-contiguous-global-sequence",
+      "operation": "replace",
+      "path": "/transitions/3/sequence",
+      "value": 5,
+      "expectedPath": "transitions[3].sequence"
+    },
+    {
+      "name": "direct-snapshot-relabel",
+      "operation": "replace",
+      "path": "/authorization/status",
+      "value": "approved",
+      "expectedPath": "authorization.status"
+    },
+    {
+      "name": "cross-dimension-state",
+      "operation": "replace",
+      "path": "/execution/status",
+      "value": "approved",
+      "expectedPath": "execution.status"
+    },
+    {
+      "name": "unknown-root-field",
+      "operation": "add",
+      "path": "/authenticated",
+      "value": true,
+      "expectedPath": "$businessOperation"
+    },
+    {
+      "name": "trusted-requester-action-mismatch",
+      "operation": "replace",
+      "path": "/trustedContext/requesterPrincipalId",
+      "value": "principal:other-requester",
+      "expectedPath": "trustedContext.requesterPrincipalId"
+    },
+    {
+      "name": "recovery-generation-target-key-mismatch",
+      "operation": "replace",
+      "path": "/recoveryGeneration",
+      "value": 2,
+      "expectedPath": "targetIdempotencyKeyHash"
+    },
+    {
+      "name": "missing-resource-precondition-binding",
+      "operation": "remove",
+      "path": "/resourceBinding/precondition/valueHash",
+      "expectedPath": "resourceBinding.precondition.valueHash"
+    }
+  ]
+}
