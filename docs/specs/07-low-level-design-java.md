@@ -78,6 +78,14 @@ outcome evidence. The registration repository still refuses progressed candidate
 future trusted durable lifecycle composition is separate. See
 [ADR 0071](../architecture/0071-uncommitted-operation-transition-proposals.md).
 
+`JdbcBusinessOperationLifecycleRepository` adds only a closed pending-owner
+withdrawal command and coherent current reads, using a separate head/journal.
+Locked READ COMMITTED mutation checks exact whole-state identity and database-time
+authority; REPEATABLE READ inspection validates one consistent history. Explicit
+V1→V2 migration preserves initial rows and adds column-scoped head update grants.
+It is not an arbitrary JSON transition port or a policy/approval/target executor.
+See [ADR 0072](../architecture/0072-durable-pending-operation-withdrawal.md).
+
 ## OIDC refresh and transport resource boundaries
 
 `CachingOidcJwkResolver` keys its cache by the operator-owned issuer and exact
