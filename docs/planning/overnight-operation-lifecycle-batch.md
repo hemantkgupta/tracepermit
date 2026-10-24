@@ -92,3 +92,14 @@ reserved for the Mac lifecycle slice; ADR 0073 for cloud target preflight.
   load; unchanged single-worker rerun passed. Original-head hosted verify
   separately failed the unchanged latency harness. Neither failure was hidden
   by removing tests, raising deadlines or reducing internal concurrency.
+- A later Mac reader review reproduced permissive duplicate-key/trailing-data
+  acceptance in stored originals, heads, facts, actors and populated upgrade
+  inputs. Runtime repair `5ec343be33903884029a2a24a297ce54e0864539` adds a strict
+  package-local decoder without changing global JSON/canonical semantics or
+  migrations. Ten pre-repair PostgreSQL cases failed; the final full local check
+  passed (1,498 recorded Java cases, 124 React tests; one existing archive skip).
+  The shared database suite now has 234 cases, 78 per engine; 11 isolated reader
+  cases also pass. Hosted latency diagnosis stays separate.
+- Gemini's earlier-head reports were consumed and checked read-only: 271 total
+  remote cases, of which 189 are GitHub-related, and 195 database cases. They do
+  not qualify the subsequent exception, numeric-binding or strict-reader repairs.
