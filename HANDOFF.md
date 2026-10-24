@@ -3,6 +3,18 @@
 GitHub is authoritative. Credentials, private customer/provider planning and local
 operator values remain outside Git. Historical receipts are not fresh results.
 
+## Wave 2 Mac ownership checkpoint
+
+The operator authorized the eight-hour durable authority/admission lane and two
+separate cloud lanes, with every PR left unmerged. Mac has sole writer ownership
+of `codex/durable-operation-authority` from main
+`0bc6b618aa9eac7df3bacf7a6d4bcafe2a824c4f` in the isolated
+`tracepermit-durable-authority` checkout. The [wave-two board](docs/planning/wave2-durable-authority-batch.md)
+records exclusive paths, design prerequisites and bounded completion gates.
+This initial documentation checkpoint claims no runtime change or new test pass.
+The generic cloud launches stopped at environment selection before editing;
+their creation is not evidence that either approved cloud lane is running.
+
 ## Current PR104 reconciliation
 
 The user requested a normal merge of current main
