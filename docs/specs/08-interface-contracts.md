@@ -16,6 +16,27 @@
 
 ## 2. Current HTTP surfaces
 
+### GitHub target adapter (internal library, no listener)
+
+Production constructors pin `https://api.github.com` and platform TLS. A separate
+operator-owned `GitHubPilotTargetBinding` supplies immutable installation/repo/
+owner IDs and exact allowed head/base/SHA preconditions. It is not a public
+action field or authority artifact. Missing binding/permit authority refuses
+dispatch. Existing repository aliases and target identity must agree.
+The installation/repository/owner ID range is `1..9007199254740991`; larger
+integers fail closed before transport so frozen v1 numeric fingerprints cannot
+alias distinct trusted bindings. No global canonical profile is changed.
+GET installation-access, repository and ref observations precede POST; exact
+typed positive confirmation is required. Reconciliation is GET-only and confirms
+only an unambiguous exact open draft/content observation; empty, paginated,
+duplicate or inaccessible lists remain unknown. No lookup mutates a ledger or
+retries a write. Both confirmation paths require an exact JSON string body;
+explicit null is accepted only for an empty expected body. Missing, boolean,
+numeric and container bodies never match through coercion; invalid lookup
+observations remove previous cached confirmation. Numeric-loopback injection is explicitly package-private/test
+only; all public constructors reject it. This is not a business-operation API
+or a frozen-hash bridge. See [ADR0073](../architecture/0073-github-pilot-target-preflight.md).
+
 ### Authenticated simulator approval API foundation
 
 Pending-only requester withdrawal implements the Java API slice of

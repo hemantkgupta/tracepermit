@@ -87,6 +87,9 @@ public record GitHubDraftPullRequestAction(
       throw new GitHubPullRequestException(
           "INVALID_TARGET_SYSTEM", "PILOT_BOUNDARY_VIOLATION", "The target system must be 'github'.");
     }
+    if (!"pull_request".equals(targetNode.path("resourceType").asText())) {
+      throw GitHubApiTransport.rejected("INVALID_TARGET_RESOURCE");
+    }
 
     String environment = targetNode.path("environment").asText();
 
@@ -210,19 +213,26 @@ public record GitHubDraftPullRequestAction(
   }
 
   private static String resolveRepository(JsonNode arguments, JsonNode target) {
-    if (arguments.has("repository") && arguments.path("repository").isTextual()) {
-      return arguments.path("repository").asText().trim();
+    String resolved = null;
+    if (arguments.has("repository")) {
+      if (!arguments.path("repository").isTextual()) throw GitHubApiTransport.rejected("REPOSITORY_BINDING_INVALID");
+      resolved = arguments.path("repository").textValue().trim();
     }
-    if (arguments.has("owner") && arguments.has("repo")
-        && arguments.path("owner").isTextual() && arguments.path("repo").isTextual()) {
-      return arguments.path("owner").asText().trim() + "/" + arguments.path("repo").asText().trim();
+    if (arguments.has("owner") || arguments.has("repo")) {
+      if (!arguments.path("owner").isTextual() || !arguments.path("repo").isTextual()) {
+        throw GitHubApiTransport.rejected("REPOSITORY_BINDING_INVALID");
+      }
+      String split = arguments.path("owner").textValue().trim() + "/" + arguments.path("repo").textValue().trim();
+      if (resolved != null && !resolved.equalsIgnoreCase(split)) throw GitHubApiTransport.rejected("REPOSITORY_BINDING_INVALID");
+      resolved = split;
     }
-    if (target.has("accountId") && target.path("accountId").isTextual()) {
-      return target.path("accountId").asText().trim();
+    if (target.has("accountId")) {
+      if (!target.path("accountId").isTextual()) throw GitHubApiTransport.rejected("REPOSITORY_BINDING_INVALID");
+      String account = target.path("accountId").textValue().trim();
+      if (resolved != null && !resolved.equalsIgnoreCase(account)) throw GitHubApiTransport.rejected("REPOSITORY_BINDING_INVALID");
+      resolved = account;
     }
-    throw new GitHubPullRequestException(
-        "MISSING_REPOSITORY",
-        "MALFORMED_INPUT",
-        "Target repository must be specified in arguments or target accountId.");
+    if (resolved == null || resolved.isBlank()) throw GitHubApiTransport.rejected("MISSING_REPOSITORY");
+    return resolved;
   }
 }

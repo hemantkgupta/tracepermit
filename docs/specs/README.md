@@ -25,6 +25,12 @@ the traceability matrix, and add positive and negative tests. The
 [simulator scenarios](../demo-scenarios/README.md) show qualified POC paths.
 No demo path may contact a real destructive target.
 
+[ADR0073](../architecture/0073-github-pilot-target-preflight.md) and the
+[target-preflight runbook](../runbooks/github-pilot-target-preflight.md) qualify
+the GitHub adapter's explicit operator binding, fixed production transport,
+GET preflight and conservative lookup with synthetic servers only. They do not
+compose the business-operation executor or authorize a live target.
+
 Proposed product work is separate from the current implementation index. The
 [pending-request cancellation contract](../design/pending-approval-cancellation.md)
 and [ADR 0058](../architecture/0058-pending-approval-cancellation-contract.md)
@@ -52,6 +58,11 @@ required browser gate, which also passes the saved file to the installed Java
 offline checker. Live-provider qualification retains a separate gate in the
 [delivery plan](../planning/audit-ready-approval-workspace.md).
 
+[ADR 0066](../architecture/0066-mariadb-permit-consumption-foundation.md) adds
+an unwired MariaDB standalone replay-store foundation for exact 10.6.25 and
+11.4.13 versions. It does not claim approval/evidence parity, RDS qualification
+or production runtime support.
+
 [ADR0068](../architecture/0068-versioned-business-operation-contract.md) adds
 the persistence-neutral business-operation schema, frozen synthetic draft-PR
 vector and Java lifecycle/binding validator. It does not implement durable
@@ -76,3 +87,11 @@ checks. Initial registration/retry semantics stay unchanged. There is no generic
 proposed-state write, operations API, approval/permit or target wiring.
 Stored operation JSON and populated upgrade inputs reject duplicate keys and
 trailing data without changing global JSON/canonical semantics.
+
+[ADR0074](../architecture/0074-reserved-lane-bounded-dispatch.md) replaces
+queue-first simulator listener dispatch with explicit lane reservations and the
+same bounded pending FIFO. It retains the eight-lane/sixteen-pending default,
+pre-handler refusal and bounded close; see the
+[handoff explanation](../learning/bounded-dispatch-handoff.md) and
+[qualification record](../runbooks/latency-qualification-transport-diagnostics.md).
+This does not qualify production load or a public abuse-control boundary.

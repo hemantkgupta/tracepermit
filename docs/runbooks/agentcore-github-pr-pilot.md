@@ -1,5 +1,11 @@
 # Operator Runbook: AgentCore GitHub Draft Pull Request Pilot
 
+Current synthetic target-validation contract:
+[ADR0073](../architecture/0073-github-pilot-target-preflight.md) and the
+[dedicated preflight runbook](github-pilot-target-preflight.md) supersede the
+original permissive confirmation/absence path. No live GitHub access, credential
+installation or production execution is authorized or qualified by this guide.
+
 ## 1. Overview and Pilot Boundary
 
 This runbook documents the operational procedures, trust boundaries, and reconciliation lifecycle for TracePermit's first AgentCore pilot operation: `github.pull_request.create`.
@@ -56,7 +62,7 @@ GitHub's REST API does not support client-specified idempotency keys. To prevent
       ▼
 [Claim Ledger Attempt: executing]
       │
-      ├── (201 + readable result) ────► [succeeded] (Evidence recorded)
+      ├── (201 + exact typed identity/content) ──► [succeeded]
       ├── (Oversized 201 body) ───────► [unknown] (RESPONSE_TOO_LARGE)
       │
       ├── (Timeout / Network Drop) ──► [unknown] (OUTCOME_UNCERTAIN_TIMEOUT)
@@ -66,11 +72,11 @@ GitHub's REST API does not support client-specified idempotency keys. To prevent
       │                                       │
       │                                       ▼
       │                            [Read-only GET /repos/.../pulls]
-      │                                       ├── (PR found) ──► [succeeded]
-      │                                       ├── (Empty []) ──► [failed]
+      │                                       ├── (One exact complete open draft) ──► [succeeded observation]
+      │                                       ├── (Empty/duplicate/paginated) ──► [unknown]
       │                                       └── (Lookup unavailable) ──► [unknown]
       │
-      └── (4xx / 3xx Error) ──────────► [failed] (Confirmed failure)
+      └── (401/403/404/422 refusal) ──► [failed]; other/redirect ──► [unknown]
 ```
 
 1. **Stable Operation Key**:
@@ -81,6 +87,12 @@ GitHub's REST API does not support client-specified idempotency keys. To prevent
    A subsequent valid permit for an already `succeeded` operation returns the cached result without contacting GitHub.
 4. **Reconciliation by Read-Only Lookup**:
    A caller may supply `GitHubPullRequestOutcomeResolver.lookup()` to the reconciliation worker port. It performs a `GET /repos/{owner}/{repo}/pulls?head={owner}:{head}&base={base}&state=all`. The original POST is never retried automatically.
+
+An explicit operator target record and current request-bound permit are required.
+GET installation access, immutable repository/owner and exact ref/SHA preflight
+must pass before POST or lookup. Ref state can race after a read; no native CAS
+or exactly-once property is claimed. A positive lookup observes the desired
+logical effect, not which request created it. Empty lists remain unknown.
 
 Lookup authentication rejection (401/403), repository invisibility (404), redirects,
 oversized bodies and transport/server failures do not prove the original creation

@@ -213,6 +213,15 @@ commit may leave a consumed row without dispatch. No automatic retry occurs.
 This standalone claim must not precede the composed durable claim transaction.
 See [ADR 0041](../architecture/0041-postgres-durable-permit-consumption.md).
 
+The separate `persistence-mariadb` module implements only this standalone claim
+boundary. Its explicit empty-database initializer and validate-only runtime
+accept exact MariaDB 11.4.13 (primary) and 10.6.25 (transitional), require
+InnoDB, and reject unknown versions or schema objects. A plain tenant/permit
+primary-key insert is the serialization point; only duplicate-key error 1062
+means replay. Commit acknowledgement uncertainty fails closed. The module is
+not wired into a launcher and does not implement approval, evidence, policy or
+recovery state. See [ADR 0066](../architecture/0066-mariadb-permit-consumption-foundation.md).
+
 The default loopback demo uses process-local stores. Those stores are not
 safe for multi-replica or restart-persistent enforcement. The optional
 PostgreSQL composition uses short transactions to atomically claim a permit
