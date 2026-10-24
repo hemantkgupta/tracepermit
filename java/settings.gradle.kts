@@ -14,6 +14,7 @@ include(
   "review-verifier",
   "persistence-postgres",
   "persistence-mariadb",
+  "persistence-operations",
   "observability-otel",
   "conformance",
 )
