@@ -2,7 +2,26 @@
 
 Status: diagnostic checkpoint preserved; narrowly authorized qualification-helper
 repair demonstrated but insufficient for reliability. See the [evidence and repair limits](../runbooks/latency-qualification-transport-diagnostics.md).
-No public-runtime change or hosted reliability qualification is claimed.
+The historical helper-only results below do not qualify reliability.
+
+## Subsequent bounded dispatch authorization — 2026-10-24
+
+The user explicitly approved dispatch/handoff investigation and repair while
+preserving existing limits and gates, draft PR only, no merges or live actions.
+The cloud writer released the clean `0ed639a9f88c569be1c0d28d55ab1f6ebb59ae5e`
+head; the Mac writer fetched, verified the handoff and took sole ownership of
+this branch. Other feature branches remain untouched. The remaining queue-first
+wakeup gap was reproduced against the actual factory before repair. The
+candidate in [ADR0074](../architecture/0074-reserved-lane-bounded-dispatch.md)
+reserves a lane before pending admission, retaining default8/16 and the original
+security/permit/replay/count/deadline gates. New qualification is in progress;
+no hosted or production reliability claim is made. This explicit authorization
+supersedes only the earlier stop-for-runtime-direction boundary, not the bounded
+work loop, no-retry or no-merge constraints.
+
+The sections below preserve the original helper-only scope and stopping point
+as history. Their former runtime-repair prohibition is superseded only by the
+explicit dispatch authorization above.
 
 The held-after-Future regression failed before the repair and passed after;
 one full two-CPU qualification passed after the repair. The next independent

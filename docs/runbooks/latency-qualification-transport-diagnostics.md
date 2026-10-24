@@ -2,9 +2,102 @@
 
 Requirements: PERF-001/002/003; OPS-002/003/004; REL-001/005/009;
 SEC-003/005/006/012. This is bounded test observability, counterexample evidence
-and a narrowly authorized qualification-helper repair, not a completed
-requirement, production SLO or hosted reliability qualification. No public
-runtime or enforcement contract changes; no new ADR.
+and the historical qualification-helper repair, followed by explicitly
+authorized bounded dispatch repair. It does not complete a requirement or
+establish a production SLO. The current mechanism is in
+[ADR0074](../architecture/0074-reserved-lane-bounded-dispatch.md); it preserves
+admission ceilings and security gates. Earlier sections below retain the frozen
+helper-only scope and its failed results as historical evidence.
+
+## Subsequent dispatch repair — 2026-10-24
+
+After cloud writer release at `0ed639a`, the user explicitly approved bounded
+dispatch/handoff investigation and repair on the Mac, draft PR only, no merges
+or live actions. The actual factory was exercised with a package-private
+thread-factory seam, eight prestarted workers held before their worker loop,
+and 24 offers. The old queue-first executor refused the seventeenth offer:
+queue16 fills before any worker can dequeue. Cleanup released the workers and
+joined the owned pool within two seconds. This deterministic worker-wakeup
+counterexample failed before repair; it does not reconstruct every earlier
+hosted failure or assert an atomic interpretation of historic sampled counters.
+
+The candidate `BoundedDispatchExecutor` explicitly assigns one task per free
+lane before using pending16. Reservation includes handoff before a worker wakes.
+The same probe now admits exactly24, refuses the25th, runs nothing before worker
+release and then runs exactly24 tasks once. It retains eight workers, at most16
+additional pending tasks and at most24 outstanding tasks, not a larger bound.
+Handler/auth/body/SQL/policy/permit/target code is unchanged. Refusal precedes
+handler execution and has no guaranteed response body. See ADR0074 for shutdown,
+failure, cancellation and submission-ownership semantics.
+
+The existing test-only observer now attaches to the bounded executor's fixed
+rejection observer, not a `ThreadPoolExecutor` rejection policy. It receives
+only a future-task flag and one atomic reserved/pending count pair. Overflow
+always throws the fixed rejection even if observation fails. Exact observer
+restoration is checked. Historical maxima were non-atomic samples; they are
+not retroactively upgraded. The unchanged output key `REJECT_MAX_ACTIVE` now
+counts reserved lanes (which may be waiting for worker wakeup), not a claim
+that all those threads are already running a handler.
+
+Focused two-CPU validation passed 31 cases: six helper, ten executor, five
+diagnostic-observer and ten real HTTP admission cases, zero failures/errors/skips.
+These retain the zero-key-resolution/zero-SQL/zero-rule overflow controls and
+approved execution/replay assertions. No failed run is relabeled, automatically
+retried or used as a successful latency sample.
+
+A new startup-cleanup control initially failed: on the tested JDK, stopping an
+unstarted bound HTTP server did not release its socket. Startup now creates
+workers before binding; failed worker creation cannot allocate that socket,
+and a failed bind stops the created workers. The corrected control verifies
+both ordering and finite worker joins. One compilation warning about a
+non-completing `finally` and one CPU-profile launch error were corrected before
+these passes; no compiler/environment check or qualification gate was relaxed.
+The CPU option is applied only after sourcing Java configuration, because
+`JAVA_TOOL_OPTIONS` output otherwise contaminates its `javac -version` probe.
+
+After the final startup change, three independent forced complete runs passed
+all sixteen `ApprovalLatencyMeasurementsTest` cases each, with zero failures,
+errors or skips. No runtime source changed between these three runs. Earlier
+exploratory passes before startup cleanup are not substituted for this sequence.
+
+| Final-runtime run | JUnit suite start (UTC, 2026-10-24) | Result                                   |
+| ----------------- | ----------------------------------- | ---------------------------------------- |
+| 1                 | 05:14:12.496                        | 16 passed; complete default success gate |
+| 2                 | 05:14:58.402                        | 16 passed; complete default success gate |
+| 3                 | 05:16:07.673                        | 16 passed; complete default success gate |
+
+Each used Java21, one Gradle worker, Docker PostgreSQL16.4-alpine and a
+process-local two-CPU JVM profile. From the repository root:
+
+```bash
+(
+  set -euo pipefail
+  source scripts/configure-java-environment.sh
+  export JAVA_TOOL_OPTIONS='-XX:ActiveProcessorCount=2'
+  java/gradlew -p java :adapters-http:test \
+    --tests '*ApprovalLatencyMeasurementsTest' --max-workers=1 --rerun-tasks
+)
+```
+
+This command was invoked independently three times, not as a loop that ignores
+failure. The sequence would stop on a failure. No client/action/SQL retry,
+capacity/deadline increase or changed success/count/negative control was used.
+The broad repository gate and exact-head hosted checks remain separate evidence.
+
+The first broad `pnpm check` after dispatch repair passed: React build/typecheck
+and124 tests; Java recorded1378 cases across138 suites, zero failures/errors,
+one existing installed-archive/native-PTY test skipped because its archive was
+absent. The changed HTTP suite freshly ran425 cases (424 passed, that one skip).
+Other unchanged suites reused valid Gradle outputs:61 actionable tasks,
+5 executed,16 from cache,40 up-to-date; this is not a fresh run of every Java
+test. Aggregate coverage passed unchanged gates:94.34% line/77.75% branch.
+The Mac used Node25.6.1, pnpm11.25.0 and Java21; the earlier Node22.23.4
+receipt below belongs to the cloud helper checkpoint, not this Mac run.
+Frozen install, format,1035 documentation links,13 synchronized flows and
+`git diff --check` passed. No second broad attempt was needed.
+
+Hosted exact-head CI and independent integration review are still required;
+the local results do not erase prior hosted failures or qualify production.
 
 ## Frozen scope
 

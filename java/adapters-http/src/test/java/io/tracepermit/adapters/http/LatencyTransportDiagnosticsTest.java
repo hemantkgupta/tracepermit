@@ -77,10 +77,10 @@ final class LatencyTransportDiagnosticsTest {
   }
 
   @Test void admissionObservationPreservesCapacityRejectionAndRestoresTheExactHandler() throws Exception {
-    var pool = (java.util.concurrent.ThreadPoolExecutor) ApprovalAdmissionExecutors.newDispatchPool(1, 1);
+    var pool = (BoundedDispatchExecutor) ApprovalAdmissionExecutors.newDispatchPool(1, 1);
     var entered = new CountDownLatch(1); var release = new CountDownLatch(1);
     var diagnostics = new LatencyFailureDiagnostics();
-    var original = pool.getRejectedExecutionHandler();
+    var original = pool.rejectionObserver();
     var observation = new LatencyAdmissionObservation(pool, diagnostics);
     try {
       pool.execute(() -> {
@@ -91,8 +91,8 @@ final class LatencyTransportDiagnosticsTest {
       pool.execute(() -> {});
       assertThatThrownBy(() -> pool.execute(() -> {})).isInstanceOf(RejectedExecutionException.class);
       assertThatThrownBy(() -> pool.execute(new FutureTask<>(() -> null))).isInstanceOf(RejectedExecutionException.class);
-      assertThat(pool.getMaximumPoolSize()).isEqualTo(1);
-      assertThat(pool.getQueue().size()).isEqualTo(1);
+      assertThat(pool.activeLanes()).isEqualTo(1);
+      assertThat(pool.occupancy().pending()).isEqualTo(1);
       assertThat(diagnostics.admissionCategories()).containsEntry("HTTP_EXCHANGE_REJECTED", 1)
           .containsEntry("QUIESCENCE_TASK_REJECTED", 1).containsEntry("REJECT_MAX_ACTIVE", 1).containsEntry("REJECT_MAX_QUEUED", 1);
     } finally {
@@ -100,6 +100,6 @@ final class LatencyTransportDiagnosticsTest {
       try { observation.close(); }
       finally { pool.shutdownNow(); assertThat(pool.awaitTermination(2, TimeUnit.SECONDS)).isTrue(); }
     }
-    assertThat(pool.getRejectedExecutionHandler()).isSameAs(original);
+      assertThat(pool.rejectionObserver()).isSameAs(original);
   }
 }

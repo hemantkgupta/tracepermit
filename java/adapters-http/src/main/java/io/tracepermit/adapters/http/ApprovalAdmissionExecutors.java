@@ -3,26 +3,26 @@ package io.tracepermit.adapters.http;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Objects;
-import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Bounded admission plumbing for the loopback approval foundation. The dispatch
- * pool runs exactly {@code activeLanes} lanes over a queue bounded at
- * {@code pendingBound}, so at most {@code activeLanes + pendingBound} exchanges
- * are ever accepted: active work is the lane count, pending work is the queue.
- * A lane only starts a handler once it has been taken from the queue, so no
+ * pool reserves at most {@code activeLanes} lanes, then a pending FIFO bounded at
+ * {@code pendingBound}. At most {@code activeLanes + pendingBound} exchanges
+ * are outstanding: a reserved lane includes handoff before its worker wakes.
+ * A lane only starts a handler after reservation, so no
  * authentication, body parsing, or database work happens before admission, and
  * a queued exchange runs no handler code but retains its connection and any
  * buffered bytes. These are task-count bounds, not TCP or byte bounds. An offer
- * beyond the pending bound is rejected before any handler runs, which the JDK HTTP
+ * with neither a free lane nor a pending slot is rejected before any handler runs,
+ * which the JDK HTTP
  * implementation surfaces as a closed connection with no response (the
  * dispatcher catches the rejection and closes only that connection); callers
  * must not reframe that into a guaranteed JSON error contract. Threads are
@@ -38,16 +38,12 @@ final class ApprovalAdmissionExecutors {
   private ApprovalAdmissionExecutors() {}
 
   static ExecutorService newDispatchPool(int activeLanes, int pendingBound) {
+    return newDispatchPool(activeLanes, pendingBound, Thread::new);
+  }
+
+  static ExecutorService newDispatchPool(int activeLanes, int pendingBound, ThreadFactory threadFactory) {
     validate(activeLanes, pendingBound);
-    var lanes = new AtomicInteger();
-    return new ThreadPoolExecutor(activeLanes, activeLanes, 60, TimeUnit.SECONDS,
-        new ArrayBlockingQueue<>(pendingBound),
-        task -> {
-          Thread thread = new Thread(task, "approval-dispatch-" + lanes.incrementAndGet());
-          thread.setDaemon(true);
-          return thread;
-        },
-        new ThreadPoolExecutor.AbortPolicy());
+    return new BoundedDispatchExecutor(activeLanes, pendingBound, threadFactory);
   }
 
   /**
@@ -103,11 +99,15 @@ final class ApprovalAdmissionExecutors {
       for (Future<?> barrier : barriers) {
         barrier.get(remainingNanos(deadline), TimeUnit.NANOSECONDS);
       }
-      if (!(executor instanceof ThreadPoolExecutor pool)) return false;
-      while (!pool.isShutdown()) {
+      while (!executor.isShutdown()) {
         long remaining = remainingNanos(deadline);
         if (remaining == 0) return false;
-        if (pool.getActiveCount() == 0 && pool.getQueue().isEmpty()) return true;
+        if (executor instanceof BoundedDispatchExecutor pool) {
+          var occupancy = pool.occupancy();
+          if (occupancy.reserved() == 0 && occupancy.pending() == 0) return true;
+        } else if (executor instanceof ThreadPoolExecutor pool) {
+          if (pool.getActiveCount() == 0 && pool.getQueue().isEmpty()) return true;
+        } else return false;
         TimeUnit.NANOSECONDS.sleep(Math.min(remaining, TimeUnit.MILLISECONDS.toNanos(1)));
       }
       return false;

@@ -110,6 +110,19 @@ bounded close does not depend on cooperative cancellation. See
 [ADR 0050](../architecture/0050-bounded-simulator-approval-admission.md) and the
 [runbook](../runbooks/simulator-approval-admission.md).
 
+[ADR0074](../architecture/0074-reserved-lane-bounded-dispatch.md) replaces the
+queue-first mechanism with monitor-serialized lane reservation and a bounded
+pending FIFO, retaining defaults 8/16 and all pre-handler/overflow/close gates.
+`BoundedDispatchExecutorTest` adds concurrent 24-admitted/overflow controls,
+pending promotion, startup failure, cancellation, interruption and shutdown
+accounting; `ApprovalAdmissionExecutorsTest` adds a delayed-worker regression
+that failed on the old factory. A reserved lane includes handoff before worker
+wakeup; it is not an additional pending slot or authority to execute an action.
+The subsequent recorded candidate passed 31 focused cases and three independent
+complete two-CPU qualification runs (16 cases each, unchanged workload/gates).
+Worker startup precedes binding and bind failure stops the owned workers.
+This does not promote PERF-003, SEC-017 or a production/public-edge SLO.
+
 Counting key-resolution/database probes plus unchanged simulator state qualify
 no expensive handler work during overflow. Simulator rule cardinality is not
 an invocation count because identical rules deduplicate; application-level
@@ -702,7 +715,9 @@ timeout, interrupt and shutdown. No request enforcement or admission changes.
 Hosted causality/reliability remain unproved. No PERF-001/002/003 completion or promotion.
 The three-independent-pass qualification was not achieved: a post-repair full
 run still failed with one status-phase reset and one actual exchange rejection.
-Further runtime/admission repair is outside this helper-only checkpoint.
+The helper-only checkpoint remains historical. Subsequent explicit approval
+authorizes the bounded dispatch repair in ADR0074; current qualification results
+are recorded separately in the diagnostic runbook without erasing these failures.
 
 ## Data and privacy requirements
 

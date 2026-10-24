@@ -30,6 +30,15 @@ PostgreSQL integration tests use disposable Testcontainers; Docker is needed
 for those checks. Runtime-affecting changes also need the closest numbered
 simulator scenario or an equivalent protocol smoke test.
 
+Simulator listener admission also requires the bounded dispatch controls in
+[ADR0074](../architecture/0074-reserved-lane-bounded-dispatch.md): delayed
+worker wakeup cannot collapse eight lane reservations into only queue16;
+overflow, concurrent producers, failure/interrupt/cancellation and bounded
+shutdown remain fail closed. The unchanged complete latency qualification
+requires three independent passes under the documented two-CPU test profile,
+not retries of failed operations or changes to the default 1/4/20 workload.
+This is local simulator evidence, not a public-edge or production SLO claim.
+
 The Linux container install profile has a separate destructive-to-owned-fixture
 gate. It builds from the clean source-free archive, generates synthetic secrets
 and Ed25519 keys at runtime, creates a random Compose project, explicitly prepares

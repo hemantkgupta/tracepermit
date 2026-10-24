@@ -13,9 +13,47 @@ import java.util.concurrent.RunnableFuture;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
 final class ApprovalAdmissionExecutorsTest {
+
+  @Test
+  void idleLaneReservationsMustSurviveWorkerWakeupDelay() throws Exception {
+    var workersCreated = new CountDownLatch(8);
+    var allowWorkers = new CountDownLatch(1);
+    var ran = new AtomicInteger();
+    var pool = ApprovalAdmissionExecutors.newDispatchPool(8, 16, worker -> {
+      var thread = new Thread(() -> {
+        workersCreated.countDown();
+        try {
+          if (!allowWorkers.await(5, TimeUnit.SECONDS)) throw new AssertionError("WORKER_GATE_TIMEOUT");
+        } catch (InterruptedException interrupted) {
+          Thread.currentThread().interrupt();
+        }
+        worker.run();
+      });
+      thread.setDaemon(true);
+      return thread;
+    });
+    try {
+      // Model already-created, idle workers whose wakeup is delayed. Their
+      // scheduler state must not collapse eight lane reservations into queue16.
+      if (pool instanceof ThreadPoolExecutor legacy) legacy.prestartAllCoreThreads();
+      assertThat(workersCreated.await(2, TimeUnit.SECONDS)).isTrue();
+      for (int i = 0; i < 24; i++) pool.execute(ran::incrementAndGet);
+      assertThat(ran).as("no task runs before a worker is released").hasValue(0);
+      assertThatThrownBy(() -> pool.execute(ran::incrementAndGet))
+          .isInstanceOf(java.util.concurrent.RejectedExecutionException.class);
+      allowWorkers.countDown();
+      pool.shutdown();
+      assertThat(pool.awaitTermination(2, TimeUnit.SECONDS)).isTrue();
+      assertThat(ran).as("all and only the 24 admitted tasks run once").hasValue(24);
+    } finally {
+      allowWorkers.countDown(); pool.shutdownNow();
+      assertThat(pool.awaitTermination(2, TimeUnit.SECONDS)).isTrue();
+    }
+  }
 
   @Test
   void completedFuturesMustNotReportQuiescenceBeforeTheirWorkersLeave() throws Exception {
