@@ -1,27 +1,35 @@
 # TracePermit implementation handoff
 
-GitHub is authoritative. No private customer planning, provider material, raw
-identity values or credentials are included. This record supersedes the released
-cloud helper-only handoff; the historical failures remain in the diagnostic runbook.
+GitHub is authoritative. Credentials, private customer/provider planning and local
+operator values remain outside Git. Historical receipts are not fresh results.
 
 TRACEPERMIT HANDOFF
 
-- Task: Explicitly approved bounded dispatch/handoff repair after the helper-only checkpoint, retaining capacity and qualification/security gates.
-- Repository: https://github.com/hemantkgupta/tracepermit — Mac checkout /Users/hemantkgupta/code-all/tracepermit-enterprise-operation.
-- Branch: codex/latency-qualification-transport-diagnostics.
-- Base commit: 2883eb6dc9c40f88c231ddc6cec7df5f016b2add; origin/main unchanged at the checkpoint.
-- Latest pushed commit: implementation/test/evidence checkpoint 064d97cef8c5b04b31632a6f798d047a071918d3; this documentation-only handoff commit follows. Resolve the final exact head from PR102 before taking ownership.
-- PR URL: https://github.com/hemantkgupta/tracepermit/pull/102 — draft, open, unmerged.
-- Branch owner now: Mac Codex writer retains sole ownership through hosted checks and independent read-only review. Cloud has no write ownership. Further writer transfer requires explicit release and verified clean expected head.
-- Working tree status: clean after the documentation checkpoint; normal push follows. Prior released cloud head0ed639a was fetched and verified before the Mac took ownership. No reset, rebase, force-push or merge.
-- Completed: Deterministic actual-factory wakeup probe failed on old queue-first dispatch. Explicit lane reservations retain defaults 8/16, at most 24 outstanding; no handler executes before admission. Startup precedes binding; bind failure closes owned workers. Independent cloud review found checked-throwable task/observer defects; the Mac reproduced both plus the worker-start variant before repair. All three callback boundaries now contain Throwable without logging or retry. Permanent successor-progress, truthful-termination, fixed-refusal and startup-cleanup regressions pass. ADR0074, specs, learning, traceability and dated historical/current evidence are updated.
-- Remaining: Exact-head hosted CI and bounded independent read-only closure review, then integrator decision; no merge authorized. PRs100/101 remain untouched. The two local broad-check limit is exhausted with two passes; do not run a third without explicit direction.
-- Files materially changed: ApprovalAdmissionExecutors; new BoundedDispatchExecutor; SimulatorApprovalServer startup/cleanup only; helper/new executor/HTTP admission/observer diagnostics tests; ADR0050 update and new ADR0074; learning note; public plan; diagnostic and admission runbooks; specs README/11/12; HANDOFF.
-- Tests passed: Frozen pnpm install; 34 focused two-CPU cases (6 helper, 13 executor, 5 diagnostics, 10 real HTTP admission), no failures/errors/skips. Three new independent forced complete post-review runs, 16/16 each on identical final runtime (2026-10-24 UTC 05:39:01.135, 05:39:25.190, 05:39:48.895). Second/final allowed local pnpm check passed: 124 React; Java 1381 recorded cases across 138 suites, 0 failures/errors, 1 existing archive-absent installed/native-PTY skip. HTTP 428 freshly ran; unchanged modules reused valid outputs (61 tasks: 4 executed, 57 up-to-date). Coverage 94.34% line/77.75% branch, unchanged gates. Formatting, 1035 links, 13 synchronized flows and diff checks passed. Pre-review head33cb1ac separately passed all four hosted checks in run40066110415; that is not exact-head evidence for this newer fix.
-- Tests failed/not run: Expected original factory, startup-socket and all three checked-throwable negative regressions failed before their repairs; compilation-finally warning and CPU launch error corrected without weakening gates. Historical incomplete helper/hosted failures remain recorded. Current exact-head hosted CI and independent closure check remain pending at this documentation checkpoint. Separate installed-archive/native-client, live-provider, public-edge and production-load qualifications are not supplied by the local passes.
-- Exact next command: gh pr checks 102 --repo hemantkgupta/tracepermit
-- Required environment: Java21 via scripts/configure-java-environment.sh; Node22+ (Mac used25.6.1), pnpm11.25.0; Docker PostgreSQL16.4-alpine; one Gradle worker. Apply optional JAVA_TOOL_OPTIONS=-XX:ActiveProcessorCount=2 only after sourcing Java configuration.
-- Local-only/manual steps: Ignored build/test/coverage/cache outputs remain locally. Exact commands, counts and limitations are transferable in Git; no credentials or private configuration are needed. Remote phone pairing/keep-awake is user-managed and does not transfer branch ownership.
-- Security constraints: Simulator fixtures/numeric loopback only; no live provider or target actions, private agentcore-work input, paid fallback, HTTP/DB/action retry, capacity increase, deadline increase, workload reduction, weakened success/negative/state-delta gate or altered authentication/policy/permit/effect logic. No merge/rebase/force-push and no other writer's checkout edits.
-- Known limitations: Reserved includes assigned-before-worker-wakeup, not already-running handlers. Bounds are per-listener tasks, not TCP/bytes/shared abuse state/fairness or a production SLO. Close is not a drain/cancellation/outcome guarantee. Current local proof does not reconstruct every old hosted failure or retroactively make sampled counters atomic. Owned quiescence excludes unowned concurrent submitters. No production-readiness or whole-requirement promotion.
-- Safe for another environment to continue: yes, read-only review of the exact pushed head; writing requires an explicit ownership release first.
+- Task: Finish PR103 CI scheduling optimization against current main, preserving every required gate and leaving the PR unmerged.
+- Repository: https://github.com/hemantkgupta/tracepermit; Mac /Users/hemantkgupta/code-all/tracepermit-parallel-ci.
+- Branch: codex/parallel-ci-verification.
+- Base commit: 3eadd8220cd0a78dc07d9830d3f0959515cddf16 (main, merged94/100/102).
+- Latest pushed commit: preceding producer checkpoint365d5dd1c54e3eab2155537f2ffe3d86357fbe46; this normal reconciliation checkpoint follows. Resolve the final SHA from PR103 and the final GitHub handoff.
+- PR URL: https://github.com/hemantkgupta/tracepermit/pull/103 (open/unmerged; existing draft/review-ready state unchanged).
+- Branch owner now: Mac coordinator sole writer under the human assignment, after producer completion/idle and clean exact-head verification. Final GitHub handoff must release writing.
+- Working tree status: clean365d5dd with upstream0/0 before normal merge of current main; workflow and quality-spec conflicts resolved preserving both changes. No reset/discard/rebase or other-checkout edits.
+- Completed: retained six independent clean-runner jobs and final fail-closed verify; required core now contains the aggregate suite and both forced PostgreSQL/MariaDB gates. Preserved runtime, action pins, permissions, triggers, database workload/coverage and independent browser/registration jobs. Added current-main command-inventory and MariaDB-ordering regressions plus unknown-result cases. Updated README, quality specification, traceability and handoff.
+- Remaining: finish local full checks and exact-head hosted qualification/timing; normal commit/push first after focused/lint/docs checks. Both local and hosted gates must pass before final completion. No guaranteed speed or production claim.
+- Files materially changed: workflow and quality-spec conflict resolution, workflow regressions, README clarification, traceability and this handoff. Incoming main code is unchanged.
+- Tests passed: fresh 37/37 workflow cases; actionlint 1.7.12; frozen install; format; 1,067 documentation links; 13 synchronized flow tests/drift; diff checks. Applying the new suite to frozen 365d5dd gives exactly two expected failures for the newly required MariaDB gate/inventory (35 pass), then all 37 pass after reconciliation. Independent current-main comparison retains 29 distinct verification commands/31 occurrences, adding only the workflow regression step; triggers, permissions and action pins match, browser/registration job bodies are unchanged. Initial producer all-six-job/final-verify run 8m39s is historical; not qualification of this head.
+- Tests failed/not run: expected frozen negative-control failures only; fresh broad local and hosted checks are pending. No live or production qualification.
+- Exact next command: pnpm check
+- Required environment: Java21, Node22+, pnpm11.25.0, Docker/disposable fixtures, actionlint and GitHub access. One Gradle worker for local broad checks.
+- Local-only/manual steps: frozen counterexample fixture and logs stay outside Git under /tmp/tracepermit-pr103-qualification.8dRhmM; source and final sanitized handoff are transferable without these files. No private agentcore-work files read/published.
+- Security constraints: no missing/skipped/allowed-failure gate, lower coverage, reduced workload, runtime or branch-protection change, artifact trust shortcut, privileged token permissions, live action, public ingress/tunnel, paid fallback, Docker restart, force-push or PR merge.
+- Known limitations: this changes scheduling only. Both PostgreSQL passes and forced MariaDB remain required; runner minutes may rise. One historical faster run is not a guaranteed speedup. Existing installation/live-provider/production limitations remain unchanged.
+- Safe for another environment to continue: read-only review only until final GitHub handoff releases the Mac at a verified clean pushed SHA.
+
+## Preserved prior evidence
+
+- [Producer CI run](https://github.com/hemantkgupta/tracepermit/actions/runs/40093825438)
+  passed at365d5dd before MariaDB integration, with an observed8m39s completion.
+- [Merged MariaDB handoff](https://github.com/hemantkgupta/tracepermit/pull/94#issuecomment-6384587169)
+  and [PR100 handoff](https://github.com/hemantkgupta/tracepermit/pull/100#issuecomment-6384195456)
+  preserve their original evidence and limits. These receipts do not replace this
+  reconciled workflow's exact-head qualification.

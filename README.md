@@ -78,9 +78,10 @@ and model-driven rehearsal are separate from protocol tests.
 ## Continuous integration
 
 Pull-request updates and pushes to `main` run the [CI workflow](.github/workflows/ci.yml).
-Core console/Java tests (including the forced PostgreSQL pass), packaging and
-installation checks, simulator qualification, documentation, browser approvals,
-and the operation repository contract run in six independent jobs. The final
+Core console/Java tests (including forced PostgreSQL and MariaDB qualification),
+packaging and installation checks, simulator qualification, documentation,
+browser approvals, and the operation repository contract run in six independent
+jobs. The final
 `verify` check passes only when all six succeed; a failed, cancelled, or skipped
 job cannot produce a passing gate. Each job uses its own checkout and runner.
 

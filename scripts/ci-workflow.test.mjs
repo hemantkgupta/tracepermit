@@ -73,8 +73,74 @@ test("core retains exactly one aggregate check followed by the forced PostgreSQL
   );
 });
 
+test("core retains forced MariaDB qualification exactly once after PostgreSQL", () => {
+  assert.equal(
+    [...workflow.matchAll(/run: pnpm test:java-mariadb --rerun-tasks$/gm)]
+      .length,
+    1,
+  );
+  assert.match(
+    jobs.get("core"),
+    /run: pnpm check[\s\S]*run: pnpm test:java-postgres --rerun-tasks[\s\S]*run: pnpm test:java-mariadb --rerun-tasks/,
+  );
+});
+
+test("parallel scheduling preserves every current verification command and the workflow tests", () => {
+  const commands = workflow
+    .split("\n")
+    .map((line) => line.trim().replace(/^run: /, ""));
+  const expected = [
+    ["pnpm check", 1],
+    ["pnpm test:java-postgres --rerun-tasks", 1],
+    ["pnpm test:java-mariadb --rerun-tasks", 1],
+    ["pnpm test:endpoint-launcher", 1],
+    ["npm --prefix site ci", 2],
+    ["npm --prefix site audit --audit-level=low", 1],
+    ["pnpm site:build", 2],
+    ["node --test scripts/site-search-compatibility.test.mjs", 1],
+    ["node --test scripts/site-verification.test.mjs", 1],
+    ["node --test scripts/intro-visuals.test.mjs", 1],
+    ["node --test scripts/security-domain-guide.test.mjs", 1],
+    ["pnpm test:gate-c", 1],
+    ["pnpm demo:gate-c", 1],
+    ["pnpm demo:verify", 1],
+    ["pnpm build:distribution", 1],
+    ["pnpm test:distribution", 1],
+    ["pnpm build:container-profile", 1],
+    ["pnpm test:container-profile", 1],
+    ["pnpm build:endpoint-distribution", 1],
+    ["pnpm test:endpoint-distribution", 1],
+    ["pnpm format:check", 1],
+    ["pnpm docs:links", 1],
+    ["pnpm docs:flows:check", 1],
+    [
+      'TRACEPERMIT_GRADLE_USER_HOME="$HOME/.gradle" bash scripts/run-java-operation-tests.sh --rerun-tasks',
+      1,
+    ],
+    ["pnpm exec playwright install --with-deps chromium", 1],
+    ["pnpm test:approvals:browser", 1],
+    ["pnpm test:approval-export:browser", 1],
+    ["node --test scripts/site-onboarding-browser.test.mjs", 1],
+    ["node --test scripts/site-verification-browser.test.mjs", 1],
+    ["node --test scripts/ci-workflow.test.mjs", 1],
+  ];
+  for (const [command, count] of expected) {
+    assert.equal(
+      commands.filter((line) => line === command).length,
+      count,
+      command,
+    );
+  }
+});
+
 for (const job of required) {
-  for (const outcome of ["failure", "cancelled", "skipped", "missing"]) {
+  for (const outcome of [
+    "failure",
+    "cancelled",
+    "skipped",
+    "missing",
+    "unknown",
+  ]) {
     test(`verify rejects ${job} when its result is ${outcome}`, () => {
       const results = successfulResults();
       if (outcome === "missing") {

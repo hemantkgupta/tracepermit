@@ -17,7 +17,7 @@ concurrency:
 jobs:
   core:
     runs-on: ubuntu-latest
-    # Retain both the aggregate suite and the forced PostgreSQL pass.
+    # Retain the aggregate suite and both forced database qualifications.
     timeout-minutes: 22
 
     steps:
@@ -51,6 +51,9 @@ jobs:
 
       - name: Verify durable PostgreSQL enforcement state
         run: pnpm test:java-postgres --rerun-tasks
+
+      - name: Verify MariaDB standalone permit consumption
+        run: pnpm test:java-mariadb --rerun-tasks
 
   packaging:
     runs-on: ubuntu-latest

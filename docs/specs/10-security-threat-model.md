@@ -111,6 +111,16 @@ may already represent a committed PR, so it records `unknown` and blocks another
 POST. A rejected/unavailable lookup (401/403/404, redirect, oversize or transport
 failure) cannot prove that earlier effect absent. It returns `unknown` with a
 fixed reason, no confirmed result and no effect retry (SEC-015/019; REL-003/008).
+ADR0073 additionally requires a separate trusted immutable target/precondition
+record, exact production origin/platform TLS/public DNS pinning and GET
+installation-access/repository/ref checks before dispatch. Contradictory target
+aliases cannot hide behind one allowlisted field. Positive confirmation requires
+typed IDs, full repository/owner, exact refs/SHAs/draft/state/content. Empty,
+duplicate, paginated, unavailable and incomplete lookup results remain unknown;
+no older cached result is exposed after a failed lookup. The installation ID
+still depends on trusted credential provenance, and mutable refs can race after
+GET. The process-local ledger is not durable or an exactly-once service. See
+[ADR0073](../architecture/0073-github-pilot-target-preflight.md).
 This is automated fake-server qualification, not production GitHub assurance.
 
 Opt-in endpoint observation capture introduces a local diagnostic-file privacy
@@ -180,14 +190,17 @@ Authenticated rollout and pending-approval integration remain separate work. See
 The standalone Java consumption authority uses a private, hash-verified action
 snapshot for tenant routing and rejects an explicit tenant mismatch before
 storage. The PostgreSQL adapter requires action provenance and commits its own
-bounded consumption/pruning transaction before success, including on initially
-manual-transaction connections. Commit/close uncertainty is failure, not retry
-authority; a row may already exist. Tests cover partition switching and
-transaction failures with no reported-success effect. The existing durable
+bounded consumption/pruning transaction before success. The unwired MariaDB
+adapter provides the same standalone claim boundary for two exact qualified
+engine versions but deliberately omits pruning until referenced state exists.
+Commit/close uncertainty is failure, not retry authority; a row may already
+exist. Tests cover partition switching, concurrent claims and transaction
+failures with no reported-success effect. The existing durable
 execution/approval claim path is unchanged and remains atomic with evidence;
 the standalone adapter must not pre-consume its permit. These trusted Java APIs
 are not remote authentication or database-admin isolation. See
-[ADR 0041](../architecture/0041-postgres-durable-permit-consumption.md)
+[ADR 0041](../architecture/0041-postgres-durable-permit-consumption.md) and
+[ADR 0066](../architecture/0066-mariadb-permit-consumption-foundation.md)
 (FR-008, SEC-005/006/009, REL-004).
 
 The separate authenticated loopback approval API adds verified access tokens

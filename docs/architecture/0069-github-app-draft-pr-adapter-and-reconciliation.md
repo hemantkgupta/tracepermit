@@ -1,6 +1,9 @@
 # ADR 0069: GitHub App draft pull request adapter and external reconciliation
 
 - Status: Accepted
+- Current qualification: [ADR0073](0073-github-pilot-target-preflight.md)
+  supersedes the transport, confirmation and empty-list absence behavior below.
+  This record retains the original foundation context; it is not live evidence.
 - Date: 2026-10-23
 - Affected Requirements: FR-001, FR-002, FR-008, FR-009, FR-012, FR-015, SEC-001, SEC-002, SEC-003, SEC-012, SEC-015, SEC-019
 
@@ -50,7 +53,10 @@ TracePermit introduces a dedicated Java adapter foundation in `adapters-remote`:
 - **Stable Operation Key**:
   Because GitHub PR creation lacks a native idempotency key, TracePermit derives an explicit deterministic operation key:
   $$\text{operationKey} = \text{sha256}("github.pull\_request.create:" + \text{installationId} + ":" + \text{repository} + ":" + \text{head} + ":" + \text{base})$$
-  Because GitHub enforces that only one open pull request may exist for a given `head` and `base` branch within a repository, this tuple uniquely identifies the external logical effect.
+  This tuple identifies the process-local logical operation, not one globally
+  unique historical creation. It is not a GitHub idempotency key or an
+  exactly-once guarantee; ADR0073 additionally binds immutable resource/ref
+  observations and prevents changed content borrowing cached success.
 - **Ledger Claim**:
   Before network dispatch, the adapter claims the operation key in `InMemoryExecutionLedger`. Concurrent duplicates are blocked (`CONCURRENT_EXECUTION_IN_PROGRESS`). Subsequent calls after success return the stored result without calling GitHub. This foundation has process-local state only: no restart/replica protection or composed durable reconciliation worker is claimed.
 - **Ambiguous Outcome Handling**:
@@ -58,10 +64,15 @@ TracePermit introduces a dedicated Java adapter foundation in `adapters-remote`:
   An oversized HTTP 201 confirmation also records `unknown` (`RESPONSE_TOO_LARGE`): the target may already have committed the effect. A later permit cannot bypass the unknown attempt and send another POST.
 - **Read-Only Reconciliation Lookup**:
   `GitHubPullRequestOutcomeResolver` implements `TargetOutcomeResolver`. When executed by `ExecutionReconciliationWorker`, it performs a read-only `GET /repos/{owner}/{repo}/pulls?head={owner}:{head}&base={base}&state=all`:
-  - If a pull request matching `head` and `base` is returned: outcome is confirmed as `succeeded` (`PR_CONFIRMED_SUCCESS`).
-  - If an empty array is returned: outcome is confirmed as `failed` (`PR_CONFIRMED_ABSENT`).
+  - Current ADR0073 behavior: only one unpaginated, complete, open draft matching
+    the pinned repository/owner/ref/SHA and original content confirms observed
+    logical-effect presence (`PR_CONFIRMED_SUCCESS`), not original causality.
+  - Empty, duplicate, incomplete, historical or mismatching results remain
+    `unknown`. Empty arrays cannot prove absence or confirm failure.
   - If lookup returns 401/403, 404, a redirect, an oversized body, a timeout, or another unavailable/invalid response: outcome remains `unknown`, with a fixed reason code. These responses describe lookup availability, not whether the earlier effect occurred. No confirmed result is cached and no POST is retried.
-  - Successful empty-array handling is the existing bounded lookup contract, not a general guarantee about pagination, eventual visibility, or arbitrary GitHub history. Those semantics and the durable production composition require separate qualification.
+  - The old empty-array failure behavior is superseded. Durable production
+    composition, business-operation precondition/hash bridging and live target
+    qualification remain separate.
 
 ### 5. Simulator vs. Live Qualification Boundary (FR-012)
 
