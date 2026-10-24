@@ -208,6 +208,17 @@ A timeout after send never authorizes an automatic tool retry. See
 
 ## Performance and release qualification
 
+The simulator [transport diagnostic evidence](../runbooks/latency-qualification-transport-diagnostics.md)
+preserves default concurrency1/4/20, warmup5/8/20, measured20/32/40, zero-effect,
+exact25/40/60 per-sweep deltas and the full real success gate. Fixed transport,
+consequential missing-ID and admission categories must never turn a failure
+into success or publish arbitrary exception messages/classes. A controlled
+negative executor/HTTP probe is separate from qualification: it demonstrates
+the frozen barrier's worker-release gap, not the cause of every hosted failure.
+Runtime repair requires separate authorization and independent regression
+evidence; a passing rerun or empty asynchronous SQL map is not root-cause proof
+(PERF-001/002/003; OPS-002/003/004; REL-001/005/009; SEC-003/005/006/012).
+
 Measure classifier/policy time separately from token/JWKS, persistence,
 network, and simulator time. Record p50/p95/p99, contention, expiry, outage,
 and overload behavior without disabling security checks. Local scenario

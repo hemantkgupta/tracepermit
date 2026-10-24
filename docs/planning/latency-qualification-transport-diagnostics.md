@@ -1,6 +1,7 @@
 # Bounded simulator latency transport diagnosis
 
-Status: plan only; no cause, repair or reliability qualification is claimed.
+Status: diagnostic-only checkpoint; see the [evidence and repair proposal](../runbooks/latency-qualification-transport-diagnostics.md).
+No runtime repair or reliability qualification is claimed.
 
 - Frozen base: `2883eb6dc9c40f88c231ddc6cec7df5f016b2add`.
 - Exclusive cloud writer: `codex/latency-qualification-transport-diagnostics`.
@@ -41,7 +42,7 @@ categories cannot exclude a database failure. A single green rerun is not proof.
 
 ## Invariants and stopping bounds
 
-Keep concurrency1/5/20, every warmup/measurement count, the default real success
+Keep the frozen concurrency 1/4/20, every warmup/measurement count, the default real success
 gate, zero-effect controls, all 60-operation deltas, failure/timeout/unknown
 accounting and permit/replay/auth/admission assertions. No automatic retry,
 deadline increase, assertion weakening, silent catch or mock replacement of the
@@ -53,4 +54,5 @@ Stop after three attempts without meaningful progress on a blocker, at most two
 broad checks, or about 90 minutes of active work. Stop on unsafe scope, sensitive
 input, required live authority or unconfirmed cleanup. No merge, rebase or
 force-push. `agentcore-work/**` is excluded before checkout and remains unread,
-unstaged and unpublished. Logs/probes/caches stay outside tracked source.
+unstaged and unpublished. Logs, caches and scratch probes stay outside tracked
+source; a sanitized opt-in negative reproducer is retained with the runbook.

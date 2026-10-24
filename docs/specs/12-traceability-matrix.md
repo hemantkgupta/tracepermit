@@ -687,6 +687,17 @@ OPS-003). It does not establish PERF-003 scale validation, a latency SLO, an
 authoritative database-error count or successful qualification of a failed run.
 See the [latency runbook](../runbooks/simulator-approval-latency-qualification.md#reading-a-failed-qualification).
 
+The [transport/admission diagnostic checkpoint](../runbooks/latency-qualification-transport-diagnostics.md)
+adds test-only fixed cause categories, a delegating admission observer, bounded
+final-client cleanup and a controlled negative barrier/HTTP probe.
+`LatencyTransportDiagnosticsTest` covers redaction, bounded/cyclic causes,
+terminal accounting, downstream missing-ID categories, saturation and unchanged
+rejection/handler restoration (OPS-002/003/004; SEC-003/005/006/012;
+REL-001/005/009). The unchanged frozen runtime can report barrier completion
+before workers are released; the controlled 20-attempt probe observed16 handled
+and four refused/reset exchanges. Hosted causality, production repair and
+reliability remain unresolved. No PERF-001/002/003 completion or promotion.
+
 ## Data and privacy requirements
 
 | ID       | Current evidence                                                                                                                                              | Status                                                               |

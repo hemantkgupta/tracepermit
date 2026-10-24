@@ -17,7 +17,7 @@ public final class SimulatorApprovalLatencyQualificationMain {
 
   /**
    * Testable runner that executes the full latency qualification suite and returns an exit code.
-   * Guarantees resource cleanup (container, server, client, executors) before returning.
+   * Runs owned fixture cleanup before returning; this is not a universal process/engine termination guarantee.
    *
    * @param out output stream for reports and progress
    * @param err error stream for failure diagnostics
@@ -40,7 +40,7 @@ public final class SimulatorApprovalLatencyQualificationMain {
 
       out.println("Running closed-loop simulator approval latency qualification...");
       ApprovalLatencyMeasurements.LatencyQualificationReport report =
-          ApprovalLatencyMeasurements.runQualification(postgres, concurrencyLevels, warmupCounts, measuredCounts);
+          ApprovalLatencyMeasurements.runQualification(postgres, concurrencyLevels, warmupCounts, measuredCounts, diagnostics);
 
       out.println(report.toConsoleSummary());
       out.println("\nJSON Report:");
@@ -59,7 +59,7 @@ public final class SimulatorApprovalLatencyQualificationMain {
       return 0;
     } catch (Throwable t) {
       failed = true;
-      err.println("\n[FATAL] Error during latency qualification: " + t.getClass().getSimpleName());
+      err.println("\n[FATAL] Error during latency qualification: " + ApprovalLatencyMeasurements.classifySafeErrorCode(t));
       return 1;
     } finally {
       if (postgres != null) {
@@ -68,6 +68,7 @@ public final class SimulatorApprovalLatencyQualificationMain {
         } catch (Throwable ignored) {}
       }
       if (failed) {
+        err.println("[DIAGNOSTIC] Observed admission categories: " + diagnostics.admissionCategories());
         err.println("[DIAGNOSTIC] Observed database error categories: " + diagnostics.databaseCategories());
         err.println("[DIAGNOSTIC] Log observation is asynchronous; an empty category set does not exclude a database error.");
       }
