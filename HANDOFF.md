@@ -3,7 +3,34 @@
 GitHub is authoritative. Credentials, private customer/provider planning and local
 operator values remain outside Git. Historical receipts are not fresh results.
 
-## Current PR104 reconciliation
+## Current PR107 design-only review repair
+
+Mac claimed exclusive writer ownership from clean published PR107 head
+`04faf76f4bb2b556cd189a5a30fdbfa1125f0170` and normally merged pinned main
+`0bc6b618aa9eac7df3bacf7a6d4bcafe2a824c4f` (PR101/104). No merge conflicts.
+The design/runbook corrections preserve pending-only withdrawal, sample database
+time after every authority lock wait, distinguish admission fences from paused
+post-commit dispatch, restrict recovery release, correct SQL/padding/time claims
+and requirement mappings, and replace cross-session destructive cleanup with
+task-owned cleanup. Future schema/API/tests remain explicitly proposed.
+
+Only documentation is manually changed; main runtime, tests, migrations,
+contracts and CI bytes are preserved. Existing foundation test commands do not
+qualify the proposed full authority composition. No live RDS, Okta, GitHub or
+customer action is performed. Final checks/results and exact pushed SHA will be
+recorded in the GitHub handoff; PR107 remains draft/open/unmerged. Writer release
+is explicit only after the coherent commit/push.
+
+Fresh merged-tree `pnpm check` passed:124 React tests;1,825 recorded Java cases/
+145 suites, zero failures/errors, one existing archive-absent native-PTY skip.
+Gradle9m30s:37 executed/28 from cache, not all forced executions. Coverage94.41%
+line/78.29% branch passed unchanged thresholds. Frozen install, formatting,
+1,127 documentation links/3 helper tests,13 flows/drift and both diff checks
+passed. Final documentation checks are repeated before push. These existing
+foundation results do not execute the proposed authority-transaction cases;
+there is no new MariaDB parity, RDS or live target qualification claim.
+
+## Historical PR104 reconciliation — now merged into main
 
 The user requested a normal merge of current main
 `6b7de90bf9f07b0307ff61a6038fac3383404d7f` (merged PR101) into clean published
