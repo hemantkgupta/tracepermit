@@ -34,8 +34,20 @@ retries a write. Both confirmation paths require an exact JSON string body;
 explicit null is accepted only for an empty expected body. Missing, boolean,
 numeric and container bodies never match through coercion; invalid lookup
 observations remove previous cached confirmation. Numeric-loopback injection is explicitly package-private/test
-only; all public constructors reject it. This is not a business-operation API
-or a frozen-hash bridge. See [ADR0073](../architecture/0073-github-pilot-target-preflight.md).
+only; all public constructors reject it. This is not a business-operation API.
+See [ADR0073](../architecture/0073-github-pilot-target-preflight.md).
+
+The separate pure `GitHubBusinessOperationBinding.bind` accepts internal stored
+operation data, separately supplied trusted scope and an operator/service-owned
+expected profile. Its explicit `tracepermit-github-draft-pr-binding-v1` hash
+recipe joins exact installation/repository/owner and both ref/SHA preconditions
+with scope, adapter, generation, policy and artifacts. It refuses split aliases
+and trimming/case repair; the generic frozen vector is not silently adapted.
+Output is defensive data only, including original identities and hashes; it is
+not a permit, approval or execution claim. Errors expose only
+`GITHUB_OPERATION_BINDING_INVALID`, with no retained causes/suppression. No public
+deserializer/listener or execute overload is added. See
+[ADR0075](../architecture/0075-github-business-operation-binding.md).
 
 ### Authenticated simulator approval API foundation
 
