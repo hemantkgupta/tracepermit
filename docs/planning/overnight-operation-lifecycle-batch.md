@@ -75,3 +75,20 @@ No model/API billing route, overage or fallback is enabled by this plan.
 Shared specification/traceability edits may require later reconciliation after
 review. They do not authorize simultaneous writes to a branch. ADR 0072 is
 reserved for the Mac lifecycle slice; ADR 0073 for cloud target preflight.
+
+## Observed checkpoints
+
+- Mac [PR #101](https://github.com/hemantkgupta/tracepermit/pull/101): runtime
+  `fc5a7e0a444b269bc97f303b1dd3d1c7c0954c33`, then fixed-diagnostic repair
+  `d17fc90ef478d57a3cac8015b25375c25a0a4b4e`. The shared database suite and
+  full local check passed. Fresh exact-head CI/review is a separate gate.
+- Cloud [PR #100](https://github.com/hemantkgupta/tracepermit/pull/100): original
+  green head `119df5cc4039a993008885232e09806f96c9d034`; review found a large-ID
+  cache-binding alias, independently reproduced by cloud. Cloud owns its repair.
+- Independent Mac review found suppressed JDBC-close diagnostics, reproduced
+  before repair. Two other removed-deadline controls failed as expected. These
+  are observed review/repair outcomes, not production certification.
+- First local broad check had an unchanged contention timeout under severe
+  load; unchanged single-worker rerun passed. Original-head hosted verify
+  separately failed the unchanged latency harness. Neither failure was hidden
+  by removing tests, raising deadlines or reducing internal concurrency.

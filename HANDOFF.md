@@ -1,32 +1,31 @@
 # TracePermit implementation handoff
 
-GitHub is authoritative. This record contains transferable product state only;
-no private customer documents, raw client keys or provider credentials.
+GitHub is authoritative. No private customer inputs or credentials are included.
 
 TRACEPERMIT HANDOFF
 
-- Task: Implement an uncommitted, scope/state-bound lifecycle proposal primitive and record one observed bounded advisory batch.
-- Repository: https://github.com/hemantkgupta/tracepermit
-- Branch: codex/operation-transition-proposals
-- Base commit: b84b5ee904a20348e169f32b8b453e397c9b0935 (merged PR #98)
-- Latest pushed commit: validated runtime checkpoint `c98f0d94048d23a67685d465cd51ecd0723493b3`; a documentation-only handoff commit follows. Verify the exact PR head before taking ownership.
-- PR URL: https://github.com/hemantkgupta/tracepermit/pull/99
-- Branch owner now: unassigned after final push; this Mac thread has stopped editing. Draft PR #99 is the coordination point.
-- Working tree status: clean and synced after handoff commit/push; no merge, rebase or force-push.
+- Task: Durable pending-operation withdrawal, immutable journal and bounded overnight parallel work.
+- Repository: https://github.com/hemantkgupta/tracepermit; Mac checkout `/Users/hemantkgupta/code-all/tracepermit-enterprise-operation`.
+- Branch: codex/durable-operation-lifecycle
+- Base commit: 2883eb6dc9c40f88c231ddc6cec7df5f016b2add (merged PR #99).
+- Latest pushed commit: runtime repair checkpoint `d17fc90ef478d57a3cac8015b25375c25a0a4b4e`; a handoff-only commit follows. Resolve/verify the exact PR head before ownership transfer.
+- PR URL: https://github.com/hemantkgupta/tracepermit/pull/101 — draft, open, unmerged.
+- Branch owner now: unassigned after handoff push; this Mac thread has stopped editing. CI diagnosis does not grant concurrent writing ownership.
+- Working tree status: clean and synced after handoff push; no merge/rebase/force-push or existing-change cleanup.
 - Completed:
-  - Added pure Java BusinessOperationTransitionPlanner, redacted fixed-code exception, exact whole-state token and defensively copied uncommitted Proposal.
-  - One validated append preserves immutable fields/history, all unrelated dimension projections and the frozen v1 graph/canonicalization contract. Stale scope/state, invalid edges/reasons/time and 256-KiB overflow fail closed.
-  - No database, signing, credentials, clock, network, target or publication port is present. A candidate status is not proof of authority, an atomic winner or a real event.
-  - Added nine unit cases plus a shared registration-rejection regression on all three databases. Removing the stale guard made all three selected regressions fail; it was restored before the passing full check.
-  - Added ADR 0071, specifications, learning/traceability and a sanitized bounded-advisory receipt.
-  - Ran one Flash request and one GLM request using existing subscription routes only. Flash test advice accepted; GLM response rejected by closed-schema validation, no retry and no accepted review. Neither worker edited or tested product files.
-- Remaining: Exact-head hosted CI and independent implementation review. Leave draft PR #99 open/unmerged. Next product slice is a trusted durable lifecycle command with atomic state/authority rechecks; no public API/executor wiring yet. A versioned independently reviewed controller, containment/negative-permission probes and bounded repair leases remain prerequisites for an unattended writer loop.
-- Files materially changed: application planner/exception and unit test; shared OperationRepositoryContract test; ADR 0071; bounded-lifecycle-advisory-trial receipt; business-operation learning module; specifications 03/05/07/10/12 and index; HANDOFF.
-- Tests passed: focused nine proposal cases and 111 database cases (37 each on PostgreSQL 16.4, MariaDB 11.4.13 and 10.6.25), zero failures/errors/skips; pnpm check (124 React tests; 1,359 Java cases recorded, zero failures/errors, one existing installed-archive skip); aggregate 94.29% line / 77.63% branch, unchanged gates; formatting, 1,016 documentation links, 13 flow tests and diff checks. Local advisory-helper unit tests: 17 passed (not product CI).
-- Tests failed/not run: expected stale-guard negative control: three failures; restored implementation passed. Installed archive/native-PTY E2E skipped because its archive was absent. GLM advisory schema failure is not an audit pass. No live provider, RDS/TLS/failover, AgentCore, S3, real target or production qualification.
-- Exact next command: gh pr checks 99 --repo hemantkgupta/tracepermit --watch
-- Required environment: Java 21 via scripts/configure-java-environment.sh; Node.js 22+, pnpm 11.25.0; Docker for pinned database tests. Subscription CLIs are optional local development advisers, not product/runtime dependencies.
-- Local-only/manual steps: CLI helper/controller and detailed advisory report remain local and unversioned; the sanitized receipt is in Git. Existing provider authentication stays private. Ignored caches and disposable test credentials are not transferable state.
-- Security constraints: proposals/tokens grant no authority; registration still rejects progressed aggregates; no API route, effect retry, permit/policy relaxation, merge or force-push. No private customer input supplied to workers. No paid API fallback/credit overage enabled by the controller; upstream billing/model identity and complete native containment are not independently attested.
-- Known limitations: pure candidate construction only, not atomic CAS, authentication/authorization, lifecycle persistence, verified target outcome, evidence receipt or production readiness. Observed advisory assistance is not an unattended coding loop or independent final-code audit.
-- Safe for another environment to continue: yes, after fetching/verifying the exact PR head, confirming a clean tree and explicitly taking branch ownership. Only read-only review may run concurrently.
+  - Closed pending-only withdrawal command; locked expected-state and trusted owner/role/scope/deadline checks using database time; coherent MVCC current reads; no generic desired-state/proposal write.
+  - Separate current heads/hash-linked actor journal; atomic head/fact commit; commit uncertainty; original snapshot/three facts and original-return retries preserved.
+  - Explicit additive V1→V2 upgrade, validate-only runtime, and column-scoped head update grants. PostgreSQL guidance informed short single-row transactions and least privilege.
+  - ADR0072, runbooks, learning/specifications/traceability and public parallel packets added.
+  - Two removed-deadline controls failed as expected and were restored. Independent cloud review identified suppressed JDBC close diagnostics; three new real-DB regressions failed before the fixed-exception repair and passed afterward.
+  - Cloud produced separate draft PR #100. Integrator review found a large-integer target-binding/cache alias; cloud independently reproduced it and owns that repair. No completed Gemini audit is asserted.
+- Remaining: Fresh exact-head hosted CI and final-repair review. Original-head hosted verify failed the unchanged latency harness at concurrency20: two HTTP IO failures and downstream 58/60 deltas; operation-repository/browser/Pages passed. Do not declare merge readiness until fresh checks and this issue are resolved.
+- Files materially changed: application lifecycle command/port/exception/tests; JDBC registration/database/lifecycle journal, additive PostgreSQL/MariaDB V2 migrations and shared tests; ADR0072, runbooks, learning note, specs README/03/05/07/10/12, plan/worker packets and HANDOFF.
+- Tests passed: final `GRADLE_OPTS='-Dorg.gradle.workers.max=1' pnpm check`: 124 React tests; 1,457 Java cases recorded, zero failures/errors and one existing installed-archive/native-PTY skip; 94.36% line /77.69% branch, unchanged gates. Shared suite: 204 cases, 68 each on PostgreSQL16.4 and MariaDB11.4.13/10.6.25, no failures/errors/skips. Five new application cases. Formatting, 1,028 links, 13 flow checks and diff checks passed before the handoff-only commit.
+- Tests failed/not run: two deliberate removed-guard failures and three pre-repair close-diagnostic failures; all repaired/restored before the passing final check. First broad local run hit an unchanged policy-contention query timeout under severe shared-host load; unchanged single-worker rerun passed. Hosted latency failure remains recorded, not a pass. No live IdP/GitHub/RDS/AgentCore/S3/EKS or production qualification.
+- Exact next command: gh pr checks 101 --repo hemantkgupta/tracepermit
+- Required environment: Java21 through scripts/configure-java-environment.sh; Node.js22+, pnpm11.25.0; Docker. Bound Gradle workers on a shared Mac rather than concurrent broad suites; never weaken deadlines/assertions.
+- Local-only/manual steps: credentials, CLI helpers/caches stay local. Gemini must be launched with its public packet if not already running. Stop all writers/verify backup before a separately approved real-store upgrade; MariaDB partial DDL requires operator recovery.
+- Security constraints: no public route, target/permit/approval/publication call, private customer file access, sensitive output, billed API fallback/credit overage, shared writer or automatic merge. Constructor flags/state tokens are not identity proofs; a future trusted adapter must verify enrollment and derive workspace scope.
+- Known limitations: closed initial-evaluating→cancelled composition only; no generic trusted lifecycle service, instant revocation, restored-backup fence, signed journal/DBA attestation, encryption/redaction, retention, live deployment or production readiness. Durable operation-to-GitHub authority integration remains separate.
+- Safe for another environment to continue: yes, after fetching/verifying the exact PR head, clean tree, reading this handoff and explicitly taking exclusive ownership. Read-only audits may run concurrently.
