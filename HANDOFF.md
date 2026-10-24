@@ -1,41 +1,35 @@
 # TracePermit implementation handoff
 
-GitHub is authoritative. Private customer/provider planning, credentials and
-connection values remain outside Git. Historical failures are not successful
-qualification samples.
+GitHub is authoritative. Credentials, private customer/provider planning and local
+operator values remain outside Git. Historical receipts are not fresh results.
 
 TRACEPERMIT HANDOFF
 
-- Task: Approved PR94 conflict reconciliation, exact-image MariaDB qualification and full gates; leave unmerged.
-- Repository: https://github.com/hemantkgupta/tracepermit; Mac /Users/hemantkgupta/code-all/tracepermit-mariadb-foundation.
-- Branch: codex/mariadb-durable-state-foundation
-- Base commit: 592e2baefca9d6baac1567f8b29736981526a57a (main, merged100/102).
-- Latest pushed commit: preceding published checkpoint 1a9df3952daf3d3a2d0c81218c7f828ea682b92d; this normal main-merge/qualification checkpoint follows. Resolve its exact SHA from PR94 and the final GitHub handoff.
-- PR URL: https://github.com/hemantkgupta/tracepermit/pull/94 (open/unmerged; review-ready/draft setting unchanged).
-- Branch owner now: Mac sole writer after cloud release, verified published head/clean worktree and explicit public ownership claim. Final GitHub handoff must release writing.
-- Working tree status: existing clean c3c5a18 worktree fast-forwarded normally to published 1a9df39, then main merged normally and qualified. Only HANDOFF conflicted; this record retains both histories. Final handoff verifies clean local/upstream equality after normal push. No reset, discard, rebase or other checkout modification.
-- Completed: imported main's reviewed typed GitHub confirmation and bounded dispatch repairs unchanged; retained MariaDB module/script and mandatory CI gate, main's operation-repository job and both specifications. Three existing schema/transaction-fault tests now exercise both exact database profiles instead of only 11.4.13; no weakened assertion or production-code change. Exact-image qualification, full local checks, formatting, workflow lint and documentation gates pass.
-- Remaining: commit/normal push and exact-head hosted qualification. No prior cloud or historical pass substitutes for these new results. PR103's CI optimization remains separate; later reconciliation must retain the mandatory MariaDB permit-consumption gate, not confuse registration tests with this store's qualification.
-- Files materially changed: manual HANDOFF conflict resolution; MariaDB test parameterization and matching qualification documentation/traceability. Main supplies its existing changes through normal merge; no runtime, dependency, migration-byte or frozen-contract modification.
-- Tests passed: forced exact-image matrix 17/17 (14 store cases across MariaDB 10.6.25/11.4.13 plus 3 profile unit cases), zero failures/errors/skips, 33 seconds; both disposable containers removed. One pnpm check passed in 9m25s: 124 React tests; 1,584 recorded Java cases across 141 suites, zero failures/errors and one existing archive-absent skip. Unchanged valid outputs reused (65 tasks: 36 executed, 29 up-to-date); the 17-case MariaDB receipt is the preceding forced run, not a fresh second run. Coverage 94.27% line/78.01% branch passes unchanged 94%/75% gates. Frozen install, actionlint 1.7.12, runner Bash syntax, formatting, 1,064 documentation links, 13 flow tests/drift and diff checks pass.
-- Tests failed/not run: no new local qualification failure. One existing installed-archive/native-PTY case skipped because its archive was absent. Cloud Java/Docker/tooling blockers and earlier hosted latency failure remain historical, not relabeled. New-head hosted checks are still pending. No live RDS/provider/target, server crash/restart, failover, external diagnostic-redaction or production qualification.
-- Exact next command: gh pr checks 94 --repo hemantkgupta/tracepermit
-- Required environment: Java21 via repository Bash setup, Node22+, pnpm11.25.0, Docker/disposable mariadb:10.6.25 and mariadb:11.4.13 fixtures, actionlint and GitHub access. One Gradle worker.
-- Local-only/manual steps: ignored cache/build/test outputs stay local; transferable code and final sanitized results will be pushed. Four private agentcore-work files remain unread/unpublished. Other active lanes and worktrees are untouched.
-- Security constraints: standalone tenant-bound single-use foundation remains unwired; exact engine/schema/checksum checks, InnoDB primary authority, explicit empty initialization, duplicate1062-only handling and commit/close uncertainty retained. No live action, credentials, public listener/tunnel, paid fallback, Docker restart, gate weakening, capacity/deadline/workload relaxation, force-push or PR merge.
-- Known limitations: no PostgreSQL approval/evidence parity, MariaDB runtime/launcher wiring, RDS/TLS/failover/backup/least-privilege or production-readiness claim.
-- Safe for another environment to continue: read-only review only until final GitHub handoff releases the Mac at a clean, verified pushed SHA.
+- Task: Finish PR103 CI scheduling optimization against current main, preserving every required gate and leaving the PR unmerged.
+- Repository: https://github.com/hemantkgupta/tracepermit; Mac /Users/hemantkgupta/code-all/tracepermit-parallel-ci.
+- Branch: codex/parallel-ci-verification.
+- Base commit: 3eadd8220cd0a78dc07d9830d3f0959515cddf16 (main, merged94/100/102).
+- Latest pushed commit: preceding producer checkpoint365d5dd1c54e3eab2155537f2ffe3d86357fbe46; this normal reconciliation checkpoint follows. Resolve the final SHA from PR103 and the final GitHub handoff.
+- PR URL: https://github.com/hemantkgupta/tracepermit/pull/103 (open/unmerged; existing draft/review-ready state unchanged).
+- Branch owner now: Mac coordinator sole writer under the human assignment, after producer completion/idle and clean exact-head verification. Final GitHub handoff must release writing.
+- Working tree status: clean365d5dd with upstream0/0 before normal merge of current main; workflow and quality-spec conflicts resolved preserving both changes. No reset/discard/rebase or other-checkout edits.
+- Completed: retained six independent clean-runner jobs and final fail-closed verify; required core now contains the aggregate suite and both forced PostgreSQL/MariaDB gates. Preserved runtime, action pins, permissions, triggers, database workload/coverage and independent browser/registration jobs. Added current-main command-inventory and MariaDB-ordering regressions plus unknown-result cases. Updated README, quality specification, traceability and handoff.
+- Remaining: finish local full checks and exact-head hosted qualification/timing; normal commit/push first after focused/lint/docs checks. Both local and hosted gates must pass before final completion. No guaranteed speed or production claim.
+- Files materially changed: workflow and quality-spec conflict resolution, workflow regressions, README clarification, traceability and this handoff. Incoming main code is unchanged.
+- Tests passed: fresh 37/37 workflow cases; actionlint 1.7.12; frozen install; format; 1,067 documentation links; 13 synchronized flow tests/drift; diff checks. Applying the new suite to frozen 365d5dd gives exactly two expected failures for the newly required MariaDB gate/inventory (35 pass), then all 37 pass after reconciliation. Independent current-main comparison retains 29 distinct verification commands/31 occurrences, adding only the workflow regression step; triggers, permissions and action pins match, browser/registration job bodies are unchanged. Initial producer all-six-job/final-verify run 8m39s is historical; not qualification of this head.
+- Tests failed/not run: expected frozen negative-control failures only; fresh broad local and hosted checks are pending. No live or production qualification.
+- Exact next command: pnpm check
+- Required environment: Java21, Node22+, pnpm11.25.0, Docker/disposable fixtures, actionlint and GitHub access. One Gradle worker for local broad checks.
+- Local-only/manual steps: frozen counterexample fixture and logs stay outside Git under /tmp/tracepermit-pr103-qualification.8dRhmM; source and final sanitized handoff are transferable without these files. No private agentcore-work files read/published.
+- Security constraints: no missing/skipped/allowed-failure gate, lower coverage, reduced workload, runtime or branch-protection change, artifact trust shortcut, privileged token permissions, live action, public ingress/tunnel, paid fallback, Docker restart, force-push or PR merge.
+- Known limitations: this changes scheduling only. Both PostgreSQL passes and forced MariaDB remain required; runner minutes may rise. One historical faster run is not a guaranteed speedup. Existing installation/live-provider/production limitations remain unchanged.
+- Safe for another environment to continue: read-only review only until final GitHub handoff releases the Mac at a verified clean pushed SHA.
 
-## Preserved historical records
+## Preserved prior evidence
 
-- [Published cloud checkpoint](https://github.com/hemantkgupta/tracepermit/blob/1a9df3952daf3d3a2d0c81218c7f828ea682b92d/HANDOFF.md)
-  and [cloud final handoff](https://github.com/hemantkgupta/tracepermit/pull/94#issuecomment-6381103834)
-  preserve the reconciliation, differing cloud metadata and missing Java/Docker
-  qualification. That environment's blocked checks are not relabeled.
-- [Merged PR100 reconciliation checkpoint](https://github.com/hemantkgupta/tracepermit/blob/41df5894cadd5e0662bd8f5ea43920a7e4a1b470/HANDOFF.md)
-  and [final hosted results](https://github.com/hemantkgupta/tracepermit/pull/100#issuecomment-6384195456)
-  retain the independent validation closure and dispatch integration evidence.
-  [ADR0074](docs/architecture/0074-reserved-lane-bounded-dispatch.md) and its
-  [diagnostic runbook](docs/runbooks/latency-qualification-transport-diagnostics.md)
-  retain earlier dispatch failures, repairs and limitations. These older receipts
-  do not qualify this new MariaDB composition.
+- [Producer CI run](https://github.com/hemantkgupta/tracepermit/actions/runs/40093825438)
+  passed at365d5dd before MariaDB integration, with an observed8m39s completion.
+- [Merged MariaDB handoff](https://github.com/hemantkgupta/tracepermit/pull/94#issuecomment-6384587169)
+  and [PR100 handoff](https://github.com/hemantkgupta/tracepermit/pull/100#issuecomment-6384195456)
+  preserve their original evidence and limits. These receipts do not replace this
+  reconciled workflow's exact-head qualification.

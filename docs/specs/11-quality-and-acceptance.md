@@ -26,6 +26,19 @@ pnpm demo:verify
 
 `pnpm check` builds, typechecks, and tests the React console, verifies the
 Node/Java environment, and runs the Java aggregate test and coverage gates.
+CI runs six independent jobs: core tests (including the unchanged forced
+PostgreSQL second pass and forced MariaDB qualification), packaging/install
+checks, simulator qualification, documentation, browser approvals, and the
+operation repository contract. The
+existing `verify` check waits for all six and explicitly fails if any result is
+failed, cancelled, skipped, or missing. Its inline gate is exercised by
+`node --test scripts/ci-workflow.test.mjs` in the documentation job. Its current
+command inventory includes the forced MariaDB gate; unknown results also fail.
+Workflow
+concurrency cancels only superseded runs for the same PR; pushes to `main` are
+not cancelled by newer runs. This changes scheduling, not acceptance criteria,
+coverage thresholds, simulator isolation, or production qualification.
+
 PostgreSQL and the unwired MariaDB permit-consumption integration tests use
 disposable Testcontainers; Docker is needed for those checks. The MariaDB gate
 runs the same bounded replay cases on exact 10.6.25 and 11.4.13 images; it does

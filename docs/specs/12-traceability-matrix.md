@@ -1,5 +1,20 @@
 # Requirements traceability matrix
 
+## CI scheduling and required completion gate
+
+Requirements: OPS-002/004; REL-001 (qualification process only; no whole-ID or
+production status promotion). Six independent jobs retain the current console,
+Java/coverage, forced PostgreSQL/MariaDB, package/install, simulator, documentation,
+browser and registration checks. Final `verify` requires every declared job to
+report success, including rejecting failed, cancelled, skipped, missing and
+unknown results. `scripts/ci-workflow.test.mjs` checks the complete command
+inventory, mandatory database ordering, PR-only cancellation scope and actual
+inline gate execution. Each lane builds its own prerequisites; no artifact trust
+shortcut or runtime behavior is introduced. Speed is measured per exact-head run,
+not guaranteed; repeated setup can increase runner minutes. See
+[quality acceptance](11-quality-and-acceptance.md) and the
+[workflow](../../.github/workflows/ci.yml).
+
 ## MariaDB standalone permit-consumption qualification
 
 Requirements: FR-008; SEC-005/006/009; REL-004; OPS-002; DATA-001. The unwired
