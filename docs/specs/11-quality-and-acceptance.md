@@ -26,9 +26,34 @@ pnpm demo:verify
 
 `pnpm check` builds, typechecks, and tests the React console, verifies the
 Node/Java environment, and runs the Java aggregate test and coverage gates.
-PostgreSQL integration tests use disposable Testcontainers; Docker is needed
-for those checks. Runtime-affecting changes also need the closest numbered
+CI runs six independent jobs: core tests (including the unchanged forced
+PostgreSQL second pass and forced MariaDB qualification), packaging/install
+checks, simulator qualification, documentation, browser approvals, and the
+operation repository contract. The
+existing `verify` check waits for all six and explicitly fails if any result is
+failed, cancelled, skipped, or missing. Its inline gate is exercised by
+`node --test scripts/ci-workflow.test.mjs` in the documentation job. Its current
+command inventory includes the forced MariaDB gate; unknown results also fail.
+Workflow
+concurrency cancels only superseded runs for the same PR; pushes to `main` are
+not cancelled by newer runs. This changes scheduling, not acceptance criteria,
+coverage thresholds, simulator isolation, or production qualification.
+
+PostgreSQL and the unwired MariaDB permit-consumption integration tests use
+disposable Testcontainers; Docker is needed for those checks. The MariaDB gate
+runs the same bounded replay cases on exact 10.6.25 and 11.4.13 images; it does
+not qualify RDS, replication or the PostgreSQL approval/evidence composition.
+Runtime-affecting changes also need the closest numbered
 simulator scenario or an equivalent protocol smoke test.
+
+Simulator listener admission also requires the bounded dispatch controls in
+[ADR0074](../architecture/0074-reserved-lane-bounded-dispatch.md): delayed
+worker wakeup cannot collapse eight lane reservations into only queue16;
+overflow, concurrent producers, failure/interrupt/cancellation and bounded
+shutdown remain fail closed. The unchanged complete latency qualification
+requires three independent passes under the documented two-CPU test profile,
+not retries of failed operations or changes to the default 1/4/20 workload.
+This is local simulator evidence, not a public-edge or production SLO claim.
 
 The Linux container install profile has a separate destructive-to-owned-fixture
 gate. It builds from the clean source-free archive, generates synthetic secrets
@@ -53,6 +78,22 @@ shutdown must stop children and remove the local endpoint key and session.
 `pnpm demo:verify` runs subprocess regressions for both launcher profiles.
 
 ## Behavior acceptance
+
+GitHub target-preflight acceptance (FR-008/009/012/015; SEC-001/002/003/012/015/019;
+REL-001/003/004/005/008/009; OPS-002/004) uses only numeric-loopback fake peers and
+runtime-generated keys. The focused remote adapter suite must prove zero POST
+for destination/credential/preflight mismatch; strict typed 201 identity;
+read-only exact-positive lookup and unknown for absent/duplicate/incomplete/
+unavailable observations; no retry, cross-origin credential forwarding or stale
+confirmation reuse; bounded chunked reads, time and cleanup; and concurrent
+single dispatch. Permanent POST/lookup body-type regressions must reject scalar
+coercion and empty containers, retain unknown/no-redispatch and remove stale
+confirmation, while exact strings and explicit null for empty bodies still pass.
+Guard-removal controls must fail before restoration and the
+final gates. The suite replaces ADR0069's permissive/empty-list success/failure
+fixtures, without weakening permit or target allowlists. No live target or
+durable executor is qualified. See the
+[runbook](../runbooks/github-pilot-target-preflight.md).
 
 | Boundary         | Required evidence                                                                                                                       |
 | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
@@ -222,6 +263,20 @@ A timeout after send never authorizes an automatic tool retry. See
 [ADR 0057](../architecture/0057-endpoint-io-deadlines.md).
 
 ## Performance and release qualification
+
+The simulator [transport diagnostic evidence](../runbooks/latency-qualification-transport-diagnostics.md)
+preserves default concurrency1/4/20, warmup5/8/20, measured20/32/40, zero-effect,
+exact25/40/60 per-sweep deltas and the full real success gate. Fixed transport,
+consequential missing-ID and admission categories must never turn a failure
+into success or publish arbitrary exception messages/classes. A controlled
+negative executor/HTTP probe is separate from qualification: it demonstrates
+the frozen barrier's worker-release gap, not the cause of every hosted failure.
+The separately authorized package-private qualification helper additionally
+waits for worker release under its original total deadline; it changes no
+request/runtime enforcement or admission policy. Held-after-Future regression,
+budget/interrupt/shutdown cases and three independent unchanged complete
+qualification runs are required. A passing rerun or empty asynchronous SQL map is not root-cause proof
+(PERF-001/002/003; OPS-002/003/004; REL-001/005/009; SEC-003/005/006/012).
 
 Measure classifier/policy time separately from token/JWKS, persistence,
 network, and simulator time. Record p50/p95/p99, contention, expiry, outage,

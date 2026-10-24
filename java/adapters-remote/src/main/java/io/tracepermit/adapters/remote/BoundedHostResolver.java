@@ -100,6 +100,17 @@ public final class BoundedHostResolver implements AutoCloseable {
     return maxWorkers;
   }
 
+  /** Resolve once, reject the entire set on unsafe/mixed answers, and return connect-pinnable IPs. */
+  public List<InetAddress> resolvePublic(String hostname, Duration timeout) {
+    List<InetAddress> addresses = resolve(
+        name -> List.of(InetAddress.getAllByName(name)), hostname, timeout);
+    if (addresses == null || addresses.isEmpty() || addresses.size() > 8
+        || addresses.stream().anyMatch(address -> !SsrfSafeHttpsJwkSetSource.isPublicAddress(address))) {
+      throw new JwksFetchException();
+    }
+    return List.copyOf(addresses);
+  }
+
   public int maxPending() {
     return maxPending;
   }

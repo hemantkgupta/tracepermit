@@ -24,6 +24,13 @@ the boundary for public-adapter abuse controls.
 
 ## Decision
 
+Update 2026-10-24: [ADR0074](0074-reserved-lane-bounded-dispatch.md) supersedes
+the queue-first executor mechanism below with explicit lane reservations and
+the same pending FIFO bound. The 8/16 defaults, pre-handler admission, overflow
+transport refusal and bounded server close are preserved. The original
+mechanism and dated evidence below are historical, not a description of the
+replacement's internals.
+
 The dispatch pool is the admission control. It is a fixed pool of exactly
 `activeLanes` daemon lanes over a queue bounded at `pendingBound`
 (`ThreadPoolExecutor` with `AbortPolicy`). A lane only starts a handler after
