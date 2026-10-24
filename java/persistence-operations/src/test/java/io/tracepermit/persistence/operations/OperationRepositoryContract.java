@@ -710,6 +710,53 @@ abstract class OperationRepositoryContract {
   }
 
   @Test
+  void rejectedCommandPlusCloseFailureHasNoSuppressedDriverDiagnostic() {
+    ObjectNode initial = operation();
+    repository.createOrGet(SCOPE, initial);
+    var lifecycle = new JdbcBusinessOperationLifecycleRepository(source);
+    var t = new BusinessOperationTransitionPlanner().observe(SCOPE, initial);
+    var wrong = new BusinessOperationTransitionPlanner.StateToken(t.operationId(), t.recoveryGeneration() + 1,
+        t.lastSequence(), t.authorizationVersion(), t.executionVersion(), t.evidenceVersion(), t.snapshotHash());
+    var command = new BusinessOperationWithdrawal(SCOPE, id(initial), wrong, requester(Instant.now().plusSeconds(60)));
+    source.fault = Fault.CLOSE_ALWAYS;
+    try {
+      assertSafeFailure(() -> lifecycle.withdraw(command), OPERATION_STATE_STALE);
+    } finally { source.fault = Fault.NONE; }
+    assertLifecycleCounts(1, 0);
+  }
+
+  @Test
+  void corruptCurrentReadPlusCloseFailureHasNoSuppressedDriverDiagnostic() throws SQLException {
+    ObjectNode initial = operation();
+    repository.createOrGet(SCOPE, initial);
+    var lifecycle = new JdbcBusinessOperationLifecycleRepository(source);
+    execute("UPDATE tp_operation_lifecycle_heads SET snapshot_hash = '{}'");
+    source.fault = Fault.CLOSE_ALWAYS;
+    try {
+      assertSafeFailure(() -> lifecycle.findCurrent(SCOPE, id(initial)), OPERATION_STORAGE_CORRUPT);
+    } finally { source.fault = Fault.NONE; }
+  }
+
+  @Test
+  void corruptRegistrationReadPlusCloseFailureHasNoSuppressedDriverDiagnostic() throws SQLException {
+    ObjectNode initial = operation();
+    repository.createOrGet(SCOPE, initial);
+    execute("UPDATE tp_business_operations SET snapshot_hash = '{}'");
+    source.fault = Fault.CLOSE_ALWAYS;
+    try {
+      assertSafeFailure(() -> repository.find(SCOPE, id(initial)), OPERATION_STORAGE_CORRUPT);
+    } finally { source.fault = Fault.NONE; }
+  }
+
+  private static void assertSafeFailure(org.assertj.core.api.ThrowableAssert.ThrowingCallable call,
+      BusinessOperationStorageException.Code code) {
+    assertThatThrownBy(call).isInstanceOfSatisfying(BusinessOperationStorageException.class, failure -> {
+      assertThat(failure.code()).isEqualTo(code);
+      assertThat(failure.getSuppressed()).isEmpty();
+    }).hasMessage(code.name()).hasNoCause();
+  }
+
+  @Test
   void runtimeDetectsMissingLifecycleUniquenessAndNeverRepairsIt() throws SQLException {
     boolean postgres = database.getJdbcUrl().startsWith("jdbc:postgresql:");
     // InnoDB requires a supporting child-FK index even while this synthetic PK is absent.
@@ -917,7 +964,7 @@ abstract class OperationRepositoryContract {
   }
 
   private enum Fault { NONE, SECOND_FACT, BEFORE_COMMIT, AFTER_COMMIT, CLOSE_AFTER_COMMIT, NOT_A_DUPLICATE, ROLLBACK,
-    UNKNOWN_ENGINE, READ_ONLY, LIFECYCLE_FACT, HEAD_UPDATE, PAUSE_HEAD_UPDATE, HEAD_INSERT }
+    UNKNOWN_ENGINE, READ_ONLY, LIFECYCLE_FACT, HEAD_UPDATE, PAUSE_HEAD_UPDATE, HEAD_INSERT, CLOSE_ALWAYS }
 
   private static final class TestSource implements DataSource {
     private final String url;
@@ -953,7 +1000,8 @@ abstract class OperationRepositoryContract {
               delegate.rollback();
               throw synthetic("08006", 0);
             }
-            if (method.getName().equals("close") && committed.get() && fault == Fault.CLOSE_AFTER_COMMIT) {
+            if (method.getName().equals("close") && (fault == Fault.CLOSE_ALWAYS
+                || committed.get() && fault == Fault.CLOSE_AFTER_COMMIT)) {
               delegate.close();
               throw synthetic("08006", 0);
             }

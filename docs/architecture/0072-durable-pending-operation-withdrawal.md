@@ -71,6 +71,13 @@ loss is `OPERATION_COMMIT_UNKNOWN`, regardless of actual durability. No automati
 retry or false success occurs. A separate explicit lookup can inform an operator;
 it never redispatches a target.
 
+Fixed-code storage exceptions explicitly disable cause initialization and
+suppression: otherwise try-with-resources can retain a raw JDBC close diagnostic
+on a rejected-command or corrupt-read exception. Independent review identified
+this combined-failure case; three regressions failed before the repair and are
+included in the shared engine suite. This does not convert cleanup failure after
+commit into success; that still reports commit unknown.
+
 ## Migration and privilege boundary
 
 Runtime validates exact V2 inventory/history/keys/FKs and supported writer/engine;

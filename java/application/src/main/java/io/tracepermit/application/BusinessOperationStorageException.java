@@ -29,7 +29,9 @@ public final class BusinessOperationStorageException extends RuntimeException {
   private final Code code;
 
   public BusinessOperationStorageException(Code code) {
-    super(code.name());
+    // try-with-resources otherwise attaches a raw JDBC close failure to a fixed-code primary
+    // exception. Disable cause initialization/suppression so diagnostics cannot retain driver data.
+    super(code.name(), null, false, true);
     this.code = code;
   }
 
