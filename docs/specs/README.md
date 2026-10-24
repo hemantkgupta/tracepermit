@@ -68,3 +68,9 @@ is not wired into the simulator, an operations API or a target executor.
 a pure, scope/state-bound transition proposal helper. A candidate label is not
 authority or a committed event; durable lifecycle service composition remains
 pending.
+
+[ADR0072](../architecture/0072-durable-pending-operation-withdrawal.md) adds the
+separate durable current head/withdrawal journal and an explicit V1→V2 upgrade.
+Pending-only owner withdrawal uses locked whole-state/database-time authority
+checks. Initial registration/retry semantics stay unchanged. There is no generic
+proposed-state write, operations API, approval/permit or target wiring.

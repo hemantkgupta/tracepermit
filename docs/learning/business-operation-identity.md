@@ -45,3 +45,13 @@ and the current registration repository rejects both as lifecycle updates.
 Future actor/policy/approval checks and an atomic durable command must precede
 any authority or target effect. Cancelling authorization does not stop an
 already executing target; unknown never becomes permission to try again.
+
+The [durable withdrawal command](../architecture/0072-durable-pending-operation-withdrawal.md)
+now closes one small lifecycle boundary: pending/not-started work can be cancelled
+by the verified owner with explicit role/scope, unexpired authority and an exact
+expected token. Those checks repeat after a database row lock using store time;
+one fact and its separate current head commit together. A consistent inspection
+replays the journal, while registration retries still return the immutable
+initial record. This distinction matters: the initial `evaluating` snapshot is
+not the current state and cannot authorize execution. The new command is not a
+generic lifecycle service, body-authentication shortcut, permit or target call.

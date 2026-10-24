@@ -102,6 +102,14 @@ service must recheck current authority and state under its transaction before
 committing an append; no executor may trust a caller-supplied proposal. See
 [ADR 0071](../architecture/0071-uncommitted-operation-transition-proposals.md).
 
+The closed [pending-operation withdrawal store](../architecture/0072-durable-pending-operation-withdrawal.md)
+does not accept desired JSON/state/reason/clock. It compares exact current state
+and repeats trusted owner/role/scope/deadline checks after a head-row lock. Initial
+snapshots/facts remain immutable; journal/head commit atomically. Current reads
+use one MVCC snapshot and replay a fingerprint-only actor-bound journal. Limits:
+trusted adapter/enrollment still required, no instant revocation or restored-backup
+fence, no protection against a coherently rewriting DBA, and no target/API wiring.
+
 ### GitHub confirmation and lookup bounds
 
 POST confirmation and GET reconciliation read at most 65,536 decoded bytes plus

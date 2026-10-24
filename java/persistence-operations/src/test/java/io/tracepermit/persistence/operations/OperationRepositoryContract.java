@@ -10,9 +10,12 @@ import io.tracepermit.application.BusinessOperationRegistration;
 import io.tracepermit.application.BusinessOperationScope;
 import io.tracepermit.application.BusinessOperationStorageException;
 import io.tracepermit.application.BusinessOperationTransitionPlanner;
+import io.tracepermit.application.BusinessOperationWithdrawal;
+import io.tracepermit.application.TrustedRequesterContext;
 import io.tracepermit.contracts.BusinessOperationValidator;
 import io.tracepermit.contracts.CanonicalJson;
 import io.tracepermit.contracts.JsonSupport;
+import io.tracepermit.execution.TenantPartition;
 import java.io.PrintWriter;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Proxy;
@@ -23,9 +26,11 @@ import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.sql.SQLFeatureNotSupportedException;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -70,6 +75,9 @@ abstract class OperationRepositoryContract {
   @BeforeEach
   void reset() throws SQLException {
     source.fault = Fault.NONE;
+    grantLifecycleRuntime();
+    execute("DELETE FROM tp_operation_lifecycle_facts");
+    execute("DELETE FROM tp_operation_lifecycle_heads");
     execute("DELETE FROM tp_business_operation_facts");
     execute("DELETE FROM tp_business_operations");
     repository = new JdbcBusinessOperationRepository(source);
@@ -267,6 +275,7 @@ abstract class OperationRepositoryContract {
     execute("UPDATE tp_business_operations SET snapshot_hash = 'sha256:" + "f".repeat(64) + "'");
     assertCode(() -> repository.find(SCOPE, first.path("operationId").asText()), OPERATION_STORAGE_CORRUPT);
     assertCode(() -> repository.createOrGet(SCOPE, operation()), OPERATION_STORAGE_CORRUPT);
+    execute("DELETE FROM tp_operation_lifecycle_heads");
     execute("DELETE FROM tp_business_operation_facts");
     execute("DELETE FROM tp_business_operations");
     repository.createOrGet(SCOPE, first);
@@ -324,6 +333,447 @@ abstract class OperationRepositoryContract {
     assertCounts(0, 0);
   }
 
+  @Test
+  void withdrawalIsAtomicDurableAndNeverReplacesOriginalRegistrationOrOtherDimensions() throws SQLException {
+    ObjectNode initial = operation();
+    repository.createOrGet(SCOPE, initial);
+    var lifecycle = new JdbcBusinessOperationLifecycleRepository(runtimeSource);
+    assertThat(lifecycle.findCurrent(SCOPE, id(initial))).contains(initial);
+    JsonNode cancelled = lifecycle.withdraw(withdrawal(initial, Instant.now().plusSeconds(60)));
+    assertThat(cancelled.path("authorization").path("status").asText()).isEqualTo("cancelled");
+    assertThat(cancelled.path("authorization").path("version").asInt()).isEqualTo(2);
+    assertThat(cancelled.path("transitions")).hasSize(4);
+    assertThat(cancelled.path("execution")).isEqualTo(initial.path("execution"));
+    assertThat(cancelled.path("evidence")).isEqualTo(initial.path("evidence"));
+    var restarted = new JdbcBusinessOperationLifecycleRepository(runtimeSource);
+    assertThat(restarted.findCurrent(SCOPE, id(initial)).map(CanonicalJson::canonicalize))
+        .contains(CanonicalJson.canonicalize(cancelled));
+    assertThat(repository.find(SCOPE, id(initial))).contains(initial);
+    assertThat(repository.createOrGet(SCOPE, operation()).operation()).isEqualTo(initial);
+    assertCounts(1, 3);
+    assertLifecycleCounts(1, 1);
+    ((ObjectNode) cancelled).put("operationId", "mutated-copy");
+    assertThat(restarted.findCurrent(SCOPE, id(initial)).orElseThrow().path("operationId").asText()).isEqualTo(id(initial));
+    try (Connection connection = source.getConnection(); var statement = connection.createStatement();
+        var rows = statement.executeQuery("SELECT actor_json FROM tp_operation_lifecycle_facts")) {
+      assertThat(rows.next()).isTrue();
+      JsonNode actor = JsonSupport.MAPPER.readTree(rows.getString(1));
+      assertThat(actor.path("credentialFingerprint").asText()).isEqualTo("sha256:" + "b".repeat(64));
+      assertThat(actor.has("token")).isFalse();
+    } catch (java.io.IOException failure) {
+      throw new AssertionError("synthetic actor JSON invalid");
+    }
+  }
+
+  @org.junit.jupiter.api.RepeatedTest(10)
+  void sixteenLifecycleContendersHaveExactlyOneWinnerWithoutRebaseOrRetry() throws Exception {
+    ObjectNode initial = operation();
+    repository.createOrGet(SCOPE, initial);
+    var command = withdrawal(initial, Instant.now().plusSeconds(60));
+    var stores = List.of(new JdbcBusinessOperationLifecycleRepository(source),
+        new JdbcBusinessOperationLifecycleRepository(source));
+    var outcomes = race(16, index -> {
+      try {
+        stores.get(index % stores.size()).withdraw(command);
+        return "cancelled";
+      } catch (BusinessOperationStorageException failure) {
+        assertThat(failure.code()).isEqualTo(OPERATION_STATE_STALE);
+        return "stale";
+      }
+    });
+    assertThat(outcomes.stream().filter("cancelled"::equals)).hasSize(1);
+    assertThat(outcomes.stream().filter("stale"::equals)).hasSize(15);
+    assertCounts(1, 3);
+    assertLifecycleCounts(1, 1);
+  }
+
+  @Test
+  void staleWholeStateAndTerminalCancellationCannotBecomeAnIdempotentSuccess() {
+    ObjectNode initial = operation();
+    repository.createOrGet(SCOPE, initial);
+    var lifecycle = new JdbcBusinessOperationLifecycleRepository(source);
+    var planner = new BusinessOperationTransitionPlanner();
+    var token = planner.observe(SCOPE, initial);
+    var wrong = new BusinessOperationTransitionPlanner.StateToken(token.operationId(), token.recoveryGeneration() + 1,
+        token.lastSequence(), token.authorizationVersion(), token.executionVersion(), token.evidenceVersion(), token.snapshotHash());
+    var context = requester(Instant.now().plusSeconds(60));
+    assertCode(() -> lifecycle.withdraw(new BusinessOperationWithdrawal(SCOPE, id(initial), wrong, context)), OPERATION_STATE_STALE);
+    JsonNode cancelled = lifecycle.withdraw(withdrawal(initial, Instant.now().plusSeconds(60)));
+    assertCode(() -> lifecycle.withdraw(withdrawal(initial, Instant.now().plusSeconds(60))), OPERATION_STATE_STALE);
+    assertCode(() -> lifecycle.withdraw(withdrawal(cancelled, Instant.now().plusSeconds(60))), OPERATION_NOT_WITHDRAWABLE);
+    assertLifecycleCounts(1, 1);
+  }
+
+  @Test
+  void wrongScopeAndAbsentOperationReturnNoCurrentStateOrCrossWorkspaceMutation() {
+    ObjectNode initial = operation();
+    repository.createOrGet(SCOPE, initial);
+    var lifecycle = new JdbcBusinessOperationLifecycleRepository(source);
+    for (var scope : List.of(new BusinessOperationScope(SCOPE.tenantId(), "other", SCOPE.requesterPrincipalId()),
+        new BusinessOperationScope("other", SCOPE.workspaceId(), SCOPE.requesterPrincipalId()),
+        new BusinessOperationScope(SCOPE.tenantId(), SCOPE.workspaceId(), "principal:other"))) {
+      assertThat(lifecycle.findCurrent(scope, id(initial))).isEmpty();
+    }
+    var other = new BusinessOperationScope(SCOPE.tenantId(), "other", SCOPE.requesterPrincipalId());
+    var command = new BusinessOperationWithdrawal(other, id(initial), new BusinessOperationTransitionPlanner().observe(SCOPE, initial),
+        requester(Instant.now().plusSeconds(60)));
+    assertCode(() -> lifecycle.withdraw(command), OPERATION_NOT_FOUND);
+    assertThat(lifecycle.findCurrent(SCOPE, UUID.randomUUID().toString())).isEmpty();
+    assertCode(() -> lifecycle.withdraw(null), OPERATION_COMMAND_INVALID);
+    assertLifecycleCounts(1, 0);
+  }
+
+  @Test
+  void expiredAuthorityAndFutureProjectionTimeCauseZeroWrites() {
+    ObjectNode initial = operation();
+    repository.createOrGet(SCOPE, initial);
+    var lifecycle = new JdbcBusinessOperationLifecycleRepository(source);
+    assertCode(() -> lifecycle.withdraw(withdrawal(initial, Instant.now().minusSeconds(10))), OPERATION_AUTHENTICATION_EXPIRED);
+    ObjectNode future = operation();
+    future.put("clientRequestKeyHash", "sha256:" + "c".repeat(64));
+    Instant later = Instant.now().plusSeconds(3600);
+    future.put("createdAt", later.toString());
+    for (int index = 0; index < 3; index++) {
+      ObjectNode fact = (ObjectNode) future.path("transitions").get(index);
+      String time = later.plusMillis(index).toString();
+      fact.put("at", time);
+      ((ObjectNode) future.path(fact.path("dimension").asText())).put("updatedAt", time);
+    }
+    future.put("updatedAt", later.plusMillis(2).toString());
+    repository.createOrGet(SCOPE, future);
+    assertCode(() -> lifecycle.withdraw(withdrawal(future, Instant.now().plusSeconds(60))), OPERATION_CLOCK_REGRESSION);
+    assertLifecycleCounts(2, 0);
+  }
+
+  @Test
+  void authenticationDeadlineIsRecheckedAfterAnActualHeadRowLockWait() throws Exception {
+    ObjectNode initial = operation();
+    repository.createOrGet(SCOPE, initial);
+    var lifecycle = new JdbcBusinessOperationLifecycleRepository(source);
+    Instant deadline = Instant.now().plusMillis(800);
+    var command = withdrawal(initial, deadline);
+    source.lockAttempt = new CountDownLatch(1);
+    var executor = Executors.newSingleThreadExecutor();
+    try (Connection held = source.getConnection()) {
+      held.setAutoCommit(false);
+      try (var statement = held.prepareStatement("SELECT * FROM tp_operation_lifecycle_heads WHERE operation_id = ? FOR UPDATE")) {
+        statement.setString(1, id(initial));
+        try (var rows = statement.executeQuery()) { assertThat(rows.next()).isTrue(); }
+      }
+      // The first signal above is our lock holder; only the actual contender counts below.
+      source.lockAttempt = new CountDownLatch(1);
+      var result = executor.submit(() -> {
+        assertCode(() -> lifecycle.withdraw(command), OPERATION_AUTHENTICATION_EXPIRED);
+      });
+      assertThat(source.lockAttempt.await(5, TimeUnit.SECONDS)).isTrue();
+      long stop = System.nanoTime() + Duration.ofSeconds(4).toNanos();
+      while (Instant.now().isBefore(deadline.plusMillis(150))) {
+        if (System.nanoTime() > stop) throw new AssertionError("deadline wait exceeded bound");
+        Thread.sleep(20);
+      }
+      held.rollback();
+      result.get(10, TimeUnit.SECONDS);
+    } finally {
+      source.lockAttempt = null;
+      executor.shutdownNow();
+      assertThat(executor.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
+    }
+    assertLifecycleCounts(1, 0);
+  }
+
+  @Test
+  void readersNeverCombineAnUncommittedFactWithTheOldOrNewHead() throws Exception {
+    ObjectNode initial = operation();
+    repository.createOrGet(SCOPE, initial);
+    var lifecycle = new JdbcBusinessOperationLifecycleRepository(source);
+    source.updateReached = new CountDownLatch(1);
+    source.updateRelease = new CountDownLatch(1);
+    source.fault = Fault.PAUSE_HEAD_UPDATE;
+    var executor = Executors.newSingleThreadExecutor();
+    try {
+      var result = executor.submit(() -> lifecycle.withdraw(withdrawal(initial, Instant.now().plusSeconds(60))));
+      assertThat(source.updateReached.await(5, TimeUnit.SECONDS)).isTrue();
+      assertThat(lifecycle.findCurrent(SCOPE, id(initial))).contains(initial);
+      source.updateRelease.countDown();
+      JsonNode cancelled = result.get(10, TimeUnit.SECONDS);
+      assertThat(lifecycle.findCurrent(SCOPE, id(initial)).map(CanonicalJson::canonicalize))
+          .contains(CanonicalJson.canonicalize(cancelled));
+    } finally {
+      source.updateRelease.countDown();
+      source.fault = Fault.NONE;
+      executor.shutdownNow();
+      assertThat(executor.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
+    }
+  }
+
+  @Test
+  void journalOrHeadWriteFailureRollsBackBothAndKeepsOriginalFacts() {
+    for (Fault fault : List.of(Fault.LIFECYCLE_FACT, Fault.HEAD_UPDATE, Fault.ROLLBACK)) {
+      ObjectNode initial = operation();
+      repository.createOrGet(SCOPE, initial);
+      var lifecycle = new JdbcBusinessOperationLifecycleRepository(source);
+      source.fault = fault;
+      assertCode(() -> lifecycle.withdraw(withdrawal(initial, Instant.now().plusSeconds(60))), OPERATION_STORAGE_UNAVAILABLE);
+      source.fault = Fault.NONE;
+      assertThat(lifecycle.findCurrent(SCOPE, id(initial))).contains(initial);
+      assertLifecycleCounts(1, 0);
+      try {
+        execute("DELETE FROM tp_operation_lifecycle_heads");
+        execute("DELETE FROM tp_business_operation_facts");
+        execute("DELETE FROM tp_business_operations");
+      } catch (SQLException failure) { throw new AssertionError("synthetic cleanup failed"); }
+    }
+  }
+
+  @Test
+  void commitOrCleanupAcknowledgementLossIsUnknownRegardlessOfActualCommit() throws SQLException {
+    for (Fault fault : List.of(Fault.BEFORE_COMMIT, Fault.AFTER_COMMIT, Fault.CLOSE_AFTER_COMMIT)) {
+      ObjectNode initial = operation();
+      repository.createOrGet(SCOPE, initial);
+      var lifecycle = new JdbcBusinessOperationLifecycleRepository(source);
+      source.fault = fault;
+      assertCode(() -> lifecycle.withdraw(withdrawal(initial, Instant.now().plusSeconds(60))), OPERATION_COMMIT_UNKNOWN);
+      source.fault = Fault.NONE;
+      JsonNode observed = lifecycle.findCurrent(SCOPE, id(initial)).orElseThrow();
+      assertThat(observed.path("authorization").path("status").asText())
+          .isEqualTo(fault == Fault.BEFORE_COMMIT ? "evaluating" : "cancelled");
+      assertLifecycleCounts(1, fault == Fault.BEFORE_COMMIT ? 0 : 1);
+      execute("DELETE FROM tp_operation_lifecycle_facts");
+      execute("DELETE FROM tp_operation_lifecycle_heads");
+      execute("DELETE FROM tp_business_operation_facts");
+      execute("DELETE FROM tp_business_operations");
+    }
+  }
+
+  @Test
+  void currentHeadFactChainAndActorIntegrityAreValidatedWithoutTrustingDesiredLabels() throws SQLException {
+    ObjectNode initial = operation();
+    repository.createOrGet(SCOPE, initial);
+    var lifecycle = new JdbcBusinessOperationLifecycleRepository(source);
+    JsonNode cancelled = lifecycle.withdraw(withdrawal(initial, Instant.now().plusSeconds(60)));
+    for (String change : List.of("snapshot_hash", "snapshot_json")) {
+      execute("UPDATE tp_operation_lifecycle_heads SET " + change + " = '{}' ");
+      assertCode(() -> lifecycle.findCurrent(SCOPE, id(initial)), OPERATION_STORAGE_CORRUPT);
+      restoreHead(cancelled);
+    }
+    for (String field : List.of("fact_json", "actor_json", "previous_snapshot_hash", "result_snapshot_hash", "actor_hash")) {
+      String original;
+      try (Connection connection = source.getConnection(); var statement = connection.createStatement();
+          var rows = statement.executeQuery("SELECT " + field + " FROM tp_operation_lifecycle_facts")) {
+        assertThat(rows.next()).isTrue();
+        original = rows.getString(1);
+      }
+      execute("UPDATE tp_operation_lifecycle_facts SET " + field + " = '{}' ");
+      assertCode(() -> lifecycle.findCurrent(SCOPE, id(initial)), OPERATION_STORAGE_CORRUPT);
+      try (Connection connection = source.getConnection(); var statement = connection.prepareStatement(
+          "UPDATE tp_operation_lifecycle_facts SET " + field + " = ?")) {
+        statement.setString(1, original); statement.executeUpdate();
+      }
+    }
+    execute("DELETE FROM tp_operation_lifecycle_facts");
+    assertCode(() -> lifecycle.findCurrent(SCOPE, id(initial)), OPERATION_STORAGE_CORRUPT);
+    assertThat(repository.find(SCOPE, id(initial))).contains(initial);
+  }
+
+  @Test
+  void structurallyValidApprovedHeadWithoutItsTrustedJournalNeverBecomesCurrentAuthority() throws SQLException {
+    ObjectNode initial = operation();
+    repository.createOrGet(SCOPE, initial);
+    var planner = new BusinessOperationTransitionPlanner();
+    JsonNode proposal = planner.propose(SCOPE, initial, planner.observe(SCOPE, initial),
+        BusinessOperationTransitionPlanner.Dimension.AUTHORIZATION, "approved", "SYNTHETIC_SHAPE_ONLY",
+        Instant.parse(initial.path("updatedAt").asText())).snapshot();
+    restoreHead(proposal);
+    var lifecycle = new JdbcBusinessOperationLifecycleRepository(source);
+    assertCode(() -> lifecycle.findCurrent(SCOPE, id(initial)), OPERATION_STORAGE_CORRUPT);
+    assertCode(() -> lifecycle.withdraw(withdrawal(initial, Instant.now().plusSeconds(60))), OPERATION_STORAGE_CORRUPT);
+    assertLifecycleCounts(1, 0);
+    assertThat(repository.find(SCOPE, id(initial))).contains(initial);
+  }
+
+  @Test
+  void actorBindingCannotBeChangedEvenWithARecomputedActorHash() throws SQLException {
+    ObjectNode initial = operation();
+    repository.createOrGet(SCOPE, initial);
+    var lifecycle = new JdbcBusinessOperationLifecycleRepository(source);
+    var command = withdrawal(initial, Instant.now().plusSeconds(60));
+    lifecycle.withdraw(command);
+    for (String field : List.of("scopeHash", "principalId", "authenticationMethod", "credentialFingerprint", "authorityExpiresAt", "extra")) {
+      ObjectNode actor = command.actor();
+      actor.put(field, field.equals("authorityExpiresAt") ? initial.path("createdAt").asText() : "invalid value");
+      try (Connection connection = source.getConnection(); var statement = connection.prepareStatement(
+          "UPDATE tp_operation_lifecycle_facts SET actor_hash = ?, actor_json = ?")) {
+        statement.setString(1, CanonicalJson.sha256(actor));
+        statement.setString(2, CanonicalJson.canonicalize(actor));
+        statement.executeUpdate();
+      }
+      assertCode(() -> lifecycle.findCurrent(SCOPE, id(initial)), OPERATION_STORAGE_CORRUPT);
+    }
+  }
+
+  @Test
+  void columnScopedRuntimeGrantAllowsHeadLockButNoRegistrationFactOrIdentityRewrite() throws SQLException {
+    ObjectNode initial = operation();
+    var registrar = new JdbcBusinessOperationRepository(runtimeSource);
+    registrar.createOrGet(SCOPE, initial);
+    var lifecycle = new JdbcBusinessOperationLifecycleRepository(runtimeSource);
+    lifecycle.withdraw(withdrawal(initial, Instant.now().plusSeconds(60)));
+    try (Connection connection = runtimeSource.getConnection(); var statement = connection.createStatement()) {
+      for (String sql : List.of("UPDATE tp_business_operations SET snapshot_json = '{}'",
+          "UPDATE tp_business_operation_facts SET fact_json = '{}'",
+          "UPDATE tp_operation_lifecycle_facts SET fact_json = '{}'",
+          "UPDATE tp_operation_lifecycle_heads SET operation_id = operation_id",
+          "DELETE FROM tp_operation_lifecycle_facts", "DELETE FROM tp_operation_lifecycle_heads",
+          "CREATE TABLE unauthorized_table (id INTEGER)")) {
+        assertThatThrownBy(() -> statement.executeUpdate(sql)).isInstanceOf(SQLException.class);
+      }
+    }
+    assertCounts(1, 3);
+    assertLifecycleCounts(1, 1);
+  }
+
+  @Test
+  void explicitV1UpgradePreservesPopulatedOriginalRowsAndAddsNoAuthority() throws SQLException {
+    ObjectNode initial = operation();
+    repository.createOrGet(SCOPE, initial);
+    makeV1Fixture();
+    try {
+      assertCode(() -> new JdbcBusinessOperationRepository(source), OPERATION_SCHEMA_NOT_READY);
+      assertCode(() -> new JdbcBusinessOperationLifecycleRepository(source), OPERATION_SCHEMA_NOT_READY);
+      assertThat(tableCount()).isEqualTo(3);
+      OperationDatabase.upgradeFromV1(source);
+      assertThat(new JdbcBusinessOperationRepository(source).find(SCOPE, id(initial))).contains(initial);
+      assertThat(new JdbcBusinessOperationLifecycleRepository(source).findCurrent(SCOPE, id(initial))).contains(initial);
+      assertThat(repository.createOrGet(SCOPE, operation()).operation()).isEqualTo(initial);
+      assertLifecycleCounts(1, 0);
+      assertCounts(1, 3);
+      assertCode(() -> OperationDatabase.upgradeFromV1(source), OPERATION_SCHEMA_NOT_READY);
+    } finally {
+      if (tableCount() == 3) OperationDatabase.upgradeFromV1(source);
+    }
+  }
+
+  @Test
+  void upgradeRefusesPartialObjectsAndDoesNotRepairOrAdoptThem() throws SQLException {
+    makeV1Fixture();
+    execute("CREATE TABLE tp_operation_lifecycle_heads (wrong_column INTEGER)");
+    try {
+      assertCode(() -> OperationDatabase.upgradeFromV1(source), OPERATION_SCHEMA_NOT_READY);
+      assertCode(() -> new JdbcBusinessOperationLifecycleRepository(source), OPERATION_SCHEMA_NOT_READY);
+      assertThat(tableCount()).isEqualTo(4);
+    } finally {
+      execute("DROP TABLE tp_operation_lifecycle_heads");
+      OperationDatabase.upgradeFromV1(source);
+    }
+  }
+
+  @Test
+  void upgradeRejectsCorruptPopulatedPredecessorBeforeAnyDdl() throws SQLException {
+    ObjectNode initial = operation();
+    repository.createOrGet(SCOPE, initial);
+    makeV1Fixture();
+    execute("UPDATE tp_business_operations SET snapshot_hash = 'sha256:" + "f".repeat(64) + "'");
+    try {
+      assertCode(() -> OperationDatabase.upgradeFromV1(source), OPERATION_SCHEMA_NOT_READY);
+      assertThat(tableCount()).isEqualTo(3);
+    } finally {
+      execute("UPDATE tp_business_operations SET snapshot_hash = '" + CanonicalJson.sha256(initial) + "'");
+      OperationDatabase.upgradeFromV1(source);
+    }
+  }
+
+  @Test
+  void upgradeRejectsChangedMigrationChecksumWithoutRepair() throws SQLException {
+    makeV1Fixture();
+    int checksum;
+    try (Connection connection = source.getConnection(); var statement = connection.createStatement();
+        var rows = statement.executeQuery("SELECT checksum FROM tp_operation_schema_history WHERE version = '1'")) {
+      assertThat(rows.next()).isTrue(); checksum = rows.getInt(1);
+    }
+    execute("UPDATE tp_operation_schema_history SET checksum = 12345 WHERE version = '1'");
+    try {
+      assertCode(() -> OperationDatabase.upgradeFromV1(source), OPERATION_SCHEMA_NOT_READY);
+      assertThat(tableCount()).isEqualTo(3);
+    } finally {
+      execute("UPDATE tp_operation_schema_history SET checksum = " + checksum + " WHERE version = '1'");
+      OperationDatabase.upgradeFromV1(source);
+    }
+  }
+
+  @Test
+  void registrationHeadFailureCannotLeaveAnUnanchoredRegistration() {
+    source.fault = Fault.HEAD_INSERT;
+    assertCode(() -> repository.createOrGet(SCOPE, operation()), OPERATION_STORAGE_UNAVAILABLE);
+    source.fault = Fault.NONE;
+    assertCounts(0, 0);
+    assertLifecycleCounts(0, 0);
+  }
+
+  @Test
+  void runtimeDetectsMissingLifecycleUniquenessAndNeverRepairsIt() throws SQLException {
+    boolean postgres = database.getJdbcUrl().startsWith("jdbc:postgresql:");
+    // InnoDB requires a supporting child-FK index even while this synthetic PK is absent.
+    if (!postgres) execute("CREATE INDEX synthetic_fk_support ON tp_operation_lifecycle_facts (operation_id)");
+    execute(postgres ? "ALTER TABLE tp_operation_lifecycle_facts DROP CONSTRAINT tp_operation_lifecycle_facts_pkey"
+        : "ALTER TABLE tp_operation_lifecycle_facts DROP PRIMARY KEY");
+    try {
+      assertCode(() -> new JdbcBusinessOperationLifecycleRepository(source), OPERATION_SCHEMA_NOT_READY);
+    } finally {
+      execute("ALTER TABLE tp_operation_lifecycle_facts ADD PRIMARY KEY (operation_id, sequence_number)");
+      if (!postgres) execute("DROP INDEX synthetic_fk_support ON tp_operation_lifecycle_facts");
+    }
+    OperationDatabase.validateExisting(source);
+  }
+
+  private void makeV1Fixture() throws SQLException {
+    // Only these disposable test-container tables are removed; immutable V1 bytes/data stay intact.
+    execute("DROP TABLE tp_operation_lifecycle_facts");
+    execute("DROP TABLE tp_operation_lifecycle_heads");
+    execute("DELETE FROM tp_operation_schema_history WHERE version = '2'");
+  }
+
+  private int tableCount() throws SQLException {
+    try (Connection connection = source.getConnection(); var rows = connection.getMetaData().getTables(
+        connection.getCatalog(), database.getJdbcUrl().startsWith("jdbc:postgresql:") ? "public" : null,
+        "%", new String[] {"TABLE"})) {
+      int count = 0;
+      while (rows.next()) count++;
+      return count;
+    }
+  }
+
+  private void restoreHead(JsonNode snapshot) throws SQLException {
+    try (Connection connection = source.getConnection(); var statement = connection.prepareStatement(
+        "UPDATE tp_operation_lifecycle_heads SET snapshot_hash = ?, snapshot_json = ?")) {
+      statement.setString(1, CanonicalJson.sha256(snapshot));
+      statement.setString(2, CanonicalJson.canonicalize(snapshot));
+      statement.executeUpdate();
+    }
+  }
+
+  private static String id(JsonNode operation) { return operation.path("operationId").asText(); }
+
+  private static TrustedRequesterContext requester(Instant expires) {
+    return new TrustedRequesterContext(new TenantPartition(SCOPE.tenantId()), SCOPE.requesterPrincipalId(),
+        true, Set.of(BusinessOperationWithdrawal.ROLE), Set.of(BusinessOperationWithdrawal.SCOPE),
+        "synthetic-test", "sha256:" + "b".repeat(64), expires);
+  }
+
+  private static BusinessOperationWithdrawal withdrawal(JsonNode before, Instant expires) {
+    return new BusinessOperationWithdrawal(SCOPE, id(before), new BusinessOperationTransitionPlanner().observe(SCOPE, before), requester(expires));
+  }
+
+  private void assertLifecycleCounts(int heads, int facts) {
+    try (Connection connection = source.getConnection(); var statement = connection.createStatement()) {
+      for (var expected : java.util.Map.of("tp_operation_lifecycle_heads", heads, "tp_operation_lifecycle_facts", facts).entrySet()) {
+        try (var rows = statement.executeQuery("SELECT COUNT(*) FROM " + expected.getKey())) {
+          assertThat(rows.next()).isTrue();
+          assertThat(rows.getInt(1)).isEqualTo(expected.getValue());
+        }
+      }
+    } catch (SQLException failure) { throw new AssertionError("synthetic count query failed"); }
+  }
+
   private void provisionRuntimeUser() {
     boolean postgres = database.getJdbcUrl().startsWith("jdbc:postgresql:");
     String password = UUID.randomUUID().toString();
@@ -334,18 +784,41 @@ abstract class OperationRepositoryContract {
         statement.execute("CREATE ROLE tp_operation_runtime LOGIN PASSWORD '" + password + "'");
         statement.execute("GRANT USAGE ON SCHEMA public TO tp_operation_runtime");
         statement.execute("GRANT SELECT, INSERT ON tp_business_operations, tp_business_operation_facts TO tp_operation_runtime");
+        statement.execute("GRANT SELECT, INSERT ON tp_operation_lifecycle_heads, tp_operation_lifecycle_facts TO tp_operation_runtime");
+        statement.execute("GRANT UPDATE (snapshot_hash, snapshot_json) ON tp_operation_lifecycle_heads TO tp_operation_runtime");
         statement.execute("GRANT SELECT ON tp_operation_schema_history TO tp_operation_runtime");
       } else {
         statement.execute("CREATE USER 'tp_operation_runtime'@'%' IDENTIFIED BY '" + password + "'");
         String databaseName = database.getDatabaseName();
-        for (String table : List.of("tp_business_operations", "tp_business_operation_facts")) {
+        for (String table : List.of("tp_business_operations", "tp_business_operation_facts",
+            "tp_operation_lifecycle_heads", "tp_operation_lifecycle_facts")) {
           statement.execute("GRANT SELECT, INSERT ON `" + databaseName + "`." + table + " TO 'tp_operation_runtime'@'%'");
         }
+        statement.execute("GRANT UPDATE (snapshot_hash, snapshot_json) ON `" + databaseName
+            + "`.tp_operation_lifecycle_heads TO 'tp_operation_runtime'@'%'");
         statement.execute("GRANT SELECT ON `" + databaseName + "`.tp_operation_schema_history TO 'tp_operation_runtime'@'%'");
       }
       runtimeSource = new TestSource(database.getJdbcUrl(), "tp_operation_runtime", password);
     } catch (SQLException failure) {
       throw new AssertionError("synthetic runtime user provisioning failed");
+    }
+  }
+
+  private void grantLifecycleRuntime() throws SQLException {
+    boolean postgres = database.getJdbcUrl().startsWith("jdbc:postgresql:");
+    TestSource owner = postgres ? source : new TestSource(database.getJdbcUrl(), "root", database.getPassword());
+    try (Connection connection = owner.getConnection(); var statement = connection.createStatement()) {
+      if (postgres) {
+        statement.execute("GRANT SELECT, INSERT ON tp_operation_lifecycle_heads, tp_operation_lifecycle_facts TO tp_operation_runtime");
+        statement.execute("GRANT UPDATE (snapshot_hash, snapshot_json) ON tp_operation_lifecycle_heads TO tp_operation_runtime");
+      } else {
+        String name = database.getDatabaseName();
+        for (String table : List.of("tp_operation_lifecycle_heads", "tp_operation_lifecycle_facts")) {
+          statement.execute("GRANT SELECT, INSERT ON `" + name + "`." + table + " TO 'tp_operation_runtime'@'%'");
+        }
+        statement.execute("GRANT UPDATE (snapshot_hash, snapshot_json) ON `" + name
+            + "`.tp_operation_lifecycle_heads TO 'tp_operation_runtime'@'%'");
+      }
     }
   }
 
@@ -443,13 +916,17 @@ abstract class OperationRepositoryContract {
         failure -> assertThat(failure.code()).isEqualTo(code));
   }
 
-  private enum Fault { NONE, SECOND_FACT, BEFORE_COMMIT, AFTER_COMMIT, CLOSE_AFTER_COMMIT, NOT_A_DUPLICATE, ROLLBACK, UNKNOWN_ENGINE, READ_ONLY }
+  private enum Fault { NONE, SECOND_FACT, BEFORE_COMMIT, AFTER_COMMIT, CLOSE_AFTER_COMMIT, NOT_A_DUPLICATE, ROLLBACK,
+    UNKNOWN_ENGINE, READ_ONLY, LIFECYCLE_FACT, HEAD_UPDATE, PAUSE_HEAD_UPDATE, HEAD_INSERT }
 
   private static final class TestSource implements DataSource {
     private final String url;
     private final String user;
     private final String password;
     private volatile Fault fault = Fault.NONE;
+    private volatile CountDownLatch lockAttempt;
+    private CountDownLatch updateReached;
+    private CountDownLatch updateRelease;
     private final java.util.Set<String> sqlCategories = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     TestSource(String url, String user, String password) {
@@ -499,14 +976,26 @@ abstract class OperationRepositoryContract {
                     return queryResult;
                   });
             }
-            if (method.getName().equals("prepareStatement") && args[0] instanceof String sql && sql.stripLeading().startsWith("INSERT")) {
+            if (method.getName().equals("prepareStatement") && args[0] instanceof String sql) {
               PreparedStatement statement = (PreparedStatement) result;
               return Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[] {PreparedStatement.class},
                   (ignored, statementMethod, statementArgs) -> {
+                    if (statementMethod.getName().equals("executeQuery") && sql.contains("FOR UPDATE") && lockAttempt != null) {
+                      lockAttempt.countDown();
+                    }
                     if (statementMethod.getName().equals("executeUpdate")) {
-                      if (fault == Fault.NOT_A_DUPLICATE || fault == Fault.ROLLBACK) throw synthetic("23503", 1452);
+                      if ((fault == Fault.NOT_A_DUPLICATE || fault == Fault.ROLLBACK) && sql.stripLeading().startsWith("INSERT")) throw synthetic("23503", 1452);
                       if (fault == Fault.SECOND_FACT && sql.contains("tp_business_operation_facts") && facts.incrementAndGet() == 2) {
                         throw synthetic("HY000", 1644);
+                      }
+                      if (fault == Fault.LIFECYCLE_FACT && sql.contains("INSERT INTO tp_operation_lifecycle_facts")) throw synthetic("HY000", 1644);
+                      if (fault == Fault.HEAD_INSERT && sql.contains("INSERT INTO tp_operation_lifecycle_heads")) throw synthetic("HY000", 1644);
+                      if (sql.contains("UPDATE tp_operation_lifecycle_heads")) {
+                        if (fault == Fault.HEAD_UPDATE) throw synthetic("HY000", 1644);
+                        if (fault == Fault.PAUSE_HEAD_UPDATE) {
+                          updateReached.countDown();
+                          if (!updateRelease.await(10, TimeUnit.SECONDS)) throw synthetic("HY000", 1644);
+                        }
                       }
                     }
                     return invoke(statementMethod, statement, statementArgs);

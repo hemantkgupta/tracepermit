@@ -18,8 +18,11 @@ import org.flywaydb.core.Flyway;
 
 /** Isolated operation store lifecycle; it never adopts or migrates the existing enforcement DB. */
 public final class OperationDatabase {
-  private static final Set<String> TABLES = Set.of(
+  private static final Set<String> V1_TABLES = Set.of(
       "tp_operation_schema_history", "tp_business_operations", "tp_business_operation_facts");
+  private static final Set<String> V2_TABLES = Set.of(
+      "tp_operation_schema_history", "tp_business_operations", "tp_business_operation_facts",
+      "tp_operation_lifecycle_heads", "tp_operation_lifecycle_facts");
 
   enum Engine {
     POSTGRESQL("postgresql"), MARIADB("mariadb");
@@ -56,37 +59,77 @@ public final class OperationDatabase {
 
   /** Validate only: no automatic migrate, baseline, repair, clean or adoption. */
   public static void validateExisting(DataSource source) {
+    validateSchema(source, "2");
+  }
+
+  /**
+   * Explicit additive upgrade, with writers stopped by the operator. Never repairs/resumes partial
+   * MariaDB DDL and never changes V1 migration bytes, original snapshots or original facts.
+   */
+  public static void upgradeFromV1(DataSource source) {
+    validateSchema(source, "1");
     try (Connection connection = source.getConnection()) {
       Engine engine = inspectWriter(connection);
-      if (!tables(connection).equals(TABLES)) throw error(OPERATION_SCHEMA_NOT_READY);
+      // Check the populated predecessor, not just Flyway's version label, before any DDL.
+      try (PreparedStatement statement = JdbcBusinessOperationRepository.prepare(connection, """
+          SELECT operation_id, snapshot_json FROM tp_business_operations
+          """); ResultSet rows = statement.executeQuery()) {
+        while (rows.next()) {
+          String stored = rows.getString(2);
+          if (stored == null || stored.getBytes(java.nio.charset.StandardCharsets.UTF_8).length
+              > JdbcBusinessOperationRepository.MAX_BYTES) throw error(OPERATION_SCHEMA_NOT_READY);
+          var json = io.tracepermit.contracts.JsonSupport.MAPPER.readTree(stored);
+          if (json == null) throw error(OPERATION_SCHEMA_NOT_READY);
+          var context = json.path("trustedContext");
+          var scope = new io.tracepermit.application.BusinessOperationScope(
+              context.path("tenantId").asText(), context.path("workspaceId").asText(),
+              context.path("requesterPrincipalId").asText());
+          if (JdbcBusinessOperationRepository.read(connection, scope, "operation_id", rows.getString(1)).isEmpty()) {
+            throw error(OPERATION_SCHEMA_NOT_READY);
+          }
+        }
+      }
+      flyway(source, engine).migrate();
+      validateExisting(source);
+    } catch (java.io.IOException | SQLException | RuntimeException failure) {
+      throw error(OPERATION_SCHEMA_NOT_READY);
+    }
+  }
+
+  private static void validateSchema(DataSource source, String version) {
+    try (Connection connection = source.getConnection()) {
+      Engine engine = inspectWriter(connection);
+      boolean lifecycle = "2".equals(version);
+      if (!tables(connection).equals(lifecycle ? V2_TABLES : V1_TABLES)) throw error(OPERATION_SCHEMA_NOT_READY);
       requireNoExecutableObjects(connection, engine);
-      Flyway flyway = flyway(source, engine);
+      Flyway flyway = flyway(source, engine, version);
       flyway.validate();
       if (flyway.info().current() == null
-          || !"1".equals(flyway.info().current().getVersion().getVersion())
+          || !version.equals(flyway.info().current().getVersion().getVersion())
           || flyway.info().pending().length != 0) {
         throw error(OPERATION_SCHEMA_NOT_READY);
       }
       requireUnique(connection, "tp_business_operations", List.of("operation_id"));
       requireUnique(connection, "tp_business_operations", List.of("scope_hash", "request_key_hash"));
       requireUnique(connection, "tp_business_operation_facts", List.of("operation_id", "sequence_number"));
-      try (ResultSet keys = connection.getMetaData().getImportedKeys(
-          connection.getCatalog(), schema(connection), "tp_business_operation_facts")) {
-        if (!keys.next() || !"tp_business_operations".equals(keys.getString("PKTABLE_NAME"))
-            || !"operation_id".equals(keys.getString("PKCOLUMN_NAME"))
-            || !"operation_id".equals(keys.getString("FKCOLUMN_NAME")) || keys.next()) {
-          throw error(OPERATION_SCHEMA_NOT_READY);
-        }
+      requireForeignKey(connection, "tp_business_operation_facts", "tp_business_operations");
+      if (lifecycle) {
+        requireUnique(connection, "tp_operation_lifecycle_heads", List.of("operation_id"));
+        requireUnique(connection, "tp_operation_lifecycle_facts", List.of("operation_id", "sequence_number"));
+        requireForeignKey(connection, "tp_operation_lifecycle_heads", "tp_business_operations");
+        requireForeignKey(connection, "tp_operation_lifecycle_facts", "tp_operation_lifecycle_heads");
       }
       if (engine == Engine.MARIADB) {
         try (PreparedStatement statement = connection.prepareStatement("""
             SELECT COUNT(*) FROM information_schema.tables
              WHERE table_schema = DATABASE() AND table_name IN
-               ('tp_business_operations', 'tp_business_operation_facts') AND engine = 'InnoDB'
-            """)) {
+               (%s) AND engine = 'InnoDB'
+            """.formatted(lifecycle
+                ? "'tp_business_operations', 'tp_business_operation_facts', 'tp_operation_lifecycle_heads', 'tp_operation_lifecycle_facts'"
+                : "'tp_business_operations', 'tp_business_operation_facts'"))) {
           statement.setQueryTimeout(5);
           try (ResultSet rows = statement.executeQuery()) {
-            if (!rows.next() || rows.getInt(1) != 2) throw error(OPERATION_SCHEMA_NOT_READY);
+            if (!rows.next() || rows.getInt(1) != (lifecycle ? 4 : 2)) throw error(OPERATION_SCHEMA_NOT_READY);
           }
         }
       }
@@ -94,6 +137,18 @@ public final class OperationDatabase {
       throw failure;
     } catch (SQLException | RuntimeException failure) {
       throw error(OPERATION_SCHEMA_NOT_READY);
+    }
+  }
+
+  private static void requireForeignKey(Connection connection, String table, String parent)
+      throws SQLException {
+    try (ResultSet keys = connection.getMetaData().getImportedKeys(
+        connection.getCatalog(), schema(connection), table)) {
+      if (!keys.next() || !parent.equals(keys.getString("PKTABLE_NAME"))
+          || !"operation_id".equals(keys.getString("PKCOLUMN_NAME"))
+          || !"operation_id".equals(keys.getString("FKCOLUMN_NAME")) || keys.next()) {
+        throw error(OPERATION_SCHEMA_NOT_READY);
+      }
     }
   }
 
@@ -188,9 +243,14 @@ public final class OperationDatabase {
   }
 
   private static Flyway flyway(DataSource source, Engine engine) {
+    return flyway(source, engine, "2");
+  }
+
+  private static Flyway flyway(DataSource source, Engine engine, String target) {
     return Flyway.configure()
         .dataSource(source)
         .table("tp_operation_schema_history")
+        .target(target)
         .locations("classpath:db/operations/" + engine.directory)
         .createSchemas(false)
         .cleanDisabled(true)

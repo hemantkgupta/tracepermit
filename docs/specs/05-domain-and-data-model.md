@@ -75,8 +75,11 @@ The application layer can construct an
 against the exact current snapshot/versions/generation. It preserves immutable
 fields and the old history prefix, but does not commit, arbitrate two callers or
 establish authority. The existing registration port cannot persist a progressed
-proposal. Durable lifecycle mutation and current actor/policy/approval checks
-remain separate service responsibilities.
+proposal. The [closed withdrawal store](../architecture/0072-durable-pending-operation-withdrawal.md)
+now persists a separate current head/journal with an atomic expected-state check,
+pending-only owner/role/scope/deadline rechecks and no target authority. The
+registration remains immutable and returns its original state on retry. Generic
+transitions and current policy/approval/service integration remain separate.
 
 ### Approval aggregate
 
