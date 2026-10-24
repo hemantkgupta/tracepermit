@@ -3,6 +3,37 @@
 GitHub is authoritative. Credentials, private customer/provider planning and local
 operator values remain outside Git. Historical receipts are not fresh results.
 
+## Current wave-one binding checkpoint
+
+TRACEPERMIT HANDOFF
+
+- Task: Implement a pure business-operation-to-GitHub target binding bridge and distribute isolated wave-one packets; leave all PRs unmerged.
+- Repository: https://github.com/hemantkgupta/tracepermit; isolated Mac `/Users/hemantkgupta/code-all/tracepermit-operation-binding`.
+- Branch: `codex/github-operation-binding`.
+- Base commit: `f23dc22f056058d7977715e0878c284728d10d17` (merged PR103).
+- Latest pushed commit: packet checkpoint `f239d89a49d0f5b150684175c9a2128a42445ed1`; the implementation checkpoint follows. Verify exact final SHA in PR104 and its final GitHub handoff before another writer resumes.
+- PR URL: https://github.com/hemantkgupta/tracepermit/pull/104 — draft/open/unmerged.
+- Branch owner now: released to user/review owner after the final normal push; this Mac thread stops editing the branch. Separate PR101 is already pushed/released at `ceb3ae565f6e1cab531ceab9d06a141f49ecf4d4` with all exact-head checks green.
+- Working tree status: clean and synced after the final implementation push; exact SHA is in the final GitHub handoff. No other checkout reset, discarded or cleaned; no rebase/force-push/PR merge.
+- Completed: pure scope/profile/target/precondition join, defensive data result, fixed no-cause/no-suppression rejection, 256KiB UTF-8 ceiling; independent language-neutral golden recipe; strict non-production exact dispatch profile. Generic canonical schema/vector and existing adapter/permit/repository behavior unchanged. ADR0075/runbook/learning/specifications/traceability and isolated Gemini/credential/cloud-setup/read-only-audit packets added. Shared contract inventory explicitly adds the single new vector without weakening its exact assertion.
+- Remaining: exact-final-head hosted checks and independent/operator integration review; leave PR104 draft/unmerged. No execution/API/AgentCore/MariaDB authority wiring belongs to this bridge.
+- Files materially changed: new GitHubBusinessOperationBinding and its tests; new bridge vector; one conformance inventory entry; ADR0075/runbook/learning/specifications/traceability/HANDOFF and public coordination packets/board. No existing production adapter/transport/permit/lifecycle/database/CI behavior changed.
+- Tests passed: 102 focused binding cases and complete 402-case/12-suite remote adapter tests, zero failures/errors/skips. Golden hashes independently calculated/checked; removing scope/generation/resource guards made 11 of43 selected cases fail, restored guards pass. Focused inventory and repaired pnpm check passed:124 React tests,1686 recorded Java cases/142 suites, zero failures/errors, one existing archive-absent native-PTY skip. Repaired Gradle run3m7s:26 executed/10 from cache/29 up-to-date; final13s incremental gate after tightening golden-input verification:4 executed/61 up-to-date. These are not all fresh test executions. Coverage94.33% line/78.16% branch, unchanged thresholds. Frozen install, formatting, documentation links,13 flows/drift and diff checks passed; final result-only document edits checked separately.
+- Tests failed/not run: real parsed policy-version positive failed before exact IntNode/LongNode comparison repair (97/98, then98/98). Initial broad check failed because the new vector lacked its exact inventory entry; explicitly adding that single filename preserved the strict assertion and repaired gates. Eleven deliberate guard-removal failures are expected controls, not current failures. Hosted exact-final-head checks are pending at this documentation checkpoint. Native-PTY skip is archive-absent, not merely noninteractive. No live provider/target or deployment qualification.
+- Exact next command: `gh pr checks 104 --repo hemantkgupta/tracepermit`.
+- Required environment: Node22+, pnpm11.25.0, Java21 via repository setup, Docker for broad database fixtures. One local Gradle worker; no reduction of test-internal concurrency.
+- Local-only/manual steps: ignored logs/build artifacts under `/tmp/tracepermit-pr104-*` and local caches. Cloud sessions must verify their own published environment; Mac files/sign-ins/Docker do not transfer. Reuse a suitable existing TracePermit environment; shared publication/settings changes require owner review and a new-task check.
+- Security constraints: synthetic data only; no private customer planning access, credentials, live provider/target/AWS, public listener/tunnel, paid API fallback, automatic retry, gate weakening or PR merge. Public/native identity clients stay secretless. Full operation snapshots are sensitive data, not redacted exports.
+- Known limitations: bound data is not authentication, database-origin proof, current policy/approval, a permit, claim, fencing token or execution authority. Generic and process-local target keys remain distinct; no exactly-once or authoritative absence claim. Trusted ingress, atomic executor/MariaDB authority, durable reconciliation, credentials, S3/EKS/RDS/live sandbox and older-backup protection remain separate gates.
+- Safe for another environment to continue: yes, after fetching/verifying the final pushed SHA and clean tree, reading the handoff and explicitly claiming exclusive ownership. No automatic merge or live action is authorized.
+
+## Historical PR103 checkpoint — superseded by its final GitHub handoff
+
+The following scheduling receipt is retained for provenance, not current branch
+ownership or fresh binding qualification. PR103 was subsequently merged; its
+[final public handoff](https://github.com/hemantkgupta/tracepermit/pull/103#issuecomment-6384860027)
+contains the exact final qualification and timing.
+
 TRACEPERMIT HANDOFF
 
 - Task: Finish PR103 CI scheduling optimization against current main, preserving every required gate and leaving the PR unmerged.

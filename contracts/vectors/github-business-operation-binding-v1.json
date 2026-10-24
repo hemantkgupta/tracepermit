@@ -1,0 +1,50 @@
+{
+  "schemaVersion": "1.0",
+  "profile": "tracepermit-github-draft-pr-binding-v1",
+  "baseVector": "business-operation-v1.json",
+  "description": "Synthetic binding recipe, not a public request or an authority artifact. Copy the base operation, remove arguments.owner, use the full repository in arguments.repository and target.accountId, set target.resourceType to pull_request, use the resource binding below, order artifactDigests by kind, and recompute the four existing operation hashes.",
+  "targetBinding": {
+    "installationId": 71,
+    "repositoryId": 101,
+    "ownerId": 201,
+    "repository": "tracepermit/agentcore-pr-pilot",
+    "head": "synthetic-change",
+    "base": "main",
+    "headSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "baseSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "expectedProfile": {
+    "adapterId": "github-draft-pr-v1",
+    "environment": "test",
+    "recoveryGeneration": 1,
+    "policyRelease": {
+      "policyId": "synthetic-github-draft-pr",
+      "version": 1,
+      "contentHash": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+    },
+    "artifactDigests": {
+      "adapter_release": "sha256:7777777777777777777777777777777777777777777777777777777777777777",
+      "policy_bundle": "sha256:6666666666666666666666666666666666666666666666666666666666666666"
+    }
+  },
+  "resourceBinding": {
+    "system": "github",
+    "environment": "test",
+    "resourceType": "pull_request",
+    "resourceIdHash": "sha256:45c874a6e359c13d08fcceffe64429e449857ccb8d64cdb1e02b5104dc4615d1",
+    "precondition": {
+      "kind": "resource_state_digest",
+      "valueHash": "sha256:5c0f95bfffbf33e477b00835dc06e1d536c6dc0eed61ae3fc12321f68a9195fd"
+    }
+  },
+  "expected": {
+    "targetBindingHash": "sha256:8c9741623369e6b8a0c8dbddb0595145f1efea8b1877788d55c6a29efced1014",
+    "profileFingerprint": "sha256:24d759928dbc544033d7da9ba0031f74f07670b9fa4ee1ea6c7a79931812d6eb",
+    "resourceBindingHash": "sha256:a0e2b960a46ab87984625f21640464b0edfb173667ac5eb724bffb2bb79edbeb",
+    "canonicalActionHash": "sha256:9991843f7db422a9b498692eb49c93e39120dedc67ae46666a45d432b1a05b9e",
+    "semanticPayloadDigest": "sha256:88f66396a48c3792f77c7ca507ebe21d00622c7585e511eee9811a0efa02ff10",
+    "targetIdempotencyKeyHash": "sha256:953e64ef70e9433f0f63b2c0b23aa658609199f1dca04dcf50a363d2821694a4",
+    "operationSnapshotHash": "sha256:1306a7ef84caf4e60589809925a8d2751dae17ed2c1b43049aa48598b47c4e13",
+    "bindingDigest": "sha256:ab688dfea8fb5a72d1c0a115acfce0cb5ce16826a05504ebd4e21cddbeeb4421"
+  }
+}

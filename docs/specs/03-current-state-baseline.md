@@ -1,6 +1,6 @@
 # Current-state capability matrix
 
-**As of:** 2026-10-23
+**As of:** 2026-10-24
 **Scope:** public Java-backend/React-console proof of concept
 
 This is the authoritative boundary between running POC behavior and product
@@ -49,8 +49,11 @@ remain unknown. Legacy unbound construction cannot dispatch/certify. See
 [ADR0073](../architecture/0073-github-pilot-target-preflight.md). The token's
 installation provenance remains a trusted credential-provider responsibility;
 GET visibility alone cannot prove it. Ref races and process-local state remain:
-there is no native CAS, exactly-once claim, durable executor or business-operation
-resource/precondition hash bridge.
+there is no native CAS, exactly-once claim or durable executor. The separate
+pure [binding bridge](../architecture/0075-github-business-operation-binding.md)
+checks operation scope/policy/artifacts/generation and exact target/precondition
+hashes using a strict non-production profile. It returns data only and does not
+compose the existing permit, claim transaction or adapter execution.
 In-memory simulator target executions (`mode: "simulated"`) remain explicitly distinguished
 from live pilot operations (`mode: "pilot"`). See the [operator runbook](../runbooks/agentcore-github-pr-pilot.md).
 
