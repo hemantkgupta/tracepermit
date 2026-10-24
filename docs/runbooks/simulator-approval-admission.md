@@ -14,14 +14,19 @@ holds its connection while it waits. An offer beyond the pending bound is
 rejected by the executor before any handler runs and surfaces as a closed
 connection with no response; a closed or closing foundation answers
 `503 SERVER_SHUTDOWN` during the race window or refuses connections. See
-[ADR 0050](../architecture/0050-bounded-simulator-approval-admission.md).
+[ADR 0050](../architecture/0050-bounded-simulator-approval-admission.md) and its
+queue-first mechanism replacement,
+[ADR0074](../architecture/0074-reserved-lane-bounded-dispatch.md). A reserved
+lane includes one assigned task before its worker wakes. Assignment uses free
+lanes before pending slots, preserving the same total 8+16 outstanding ceiling
+without depending on idle-worker dequeue timing.
 
 ---
 
 ## Guarantees under qualification
 
 1. **Admission precedes every handler statement.** A lane only starts a
-   handler after taking an exchange from the bounded queue, so a queued or
+   handler after receiving a lane reservation, so a queued or
    rejected exchange runs no handler code at all — no host or URI validation,
    no key resolution, no body parsing, no database work, no target dispatch.
    The host/URI/closed checks themselves run inside an admitted lane: a

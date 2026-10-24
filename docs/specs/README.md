@@ -25,6 +25,12 @@ the traceability matrix, and add positive and negative tests. The
 [simulator scenarios](../demo-scenarios/README.md) show qualified POC paths.
 No demo path may contact a real destructive target.
 
+[ADR0073](../architecture/0073-github-pilot-target-preflight.md) and the
+[target-preflight runbook](../runbooks/github-pilot-target-preflight.md) qualify
+the GitHub adapter's explicit operator binding, fixed production transport,
+GET preflight and conservative lookup with synthetic servers only. They do not
+compose the business-operation executor or authorize a live target.
+
 Proposed product work is separate from the current implementation index. The
 [pending-request cancellation contract](../design/pending-approval-cancellation.md)
 and [ADR 0058](../architecture/0058-pending-approval-cancellation-contract.md)
@@ -73,3 +79,11 @@ is not wired into the simulator, an operations API or a target executor.
 a pure, scope/state-bound transition proposal helper. A candidate label is not
 authority or a committed event; durable lifecycle service composition remains
 pending.
+
+[ADR0074](../architecture/0074-reserved-lane-bounded-dispatch.md) replaces
+queue-first simulator listener dispatch with explicit lane reservations and the
+same bounded pending FIFO. It retains the eight-lane/sixteen-pending default,
+pre-handler refusal and bounded close; see the
+[handoff explanation](../learning/bounded-dispatch-handoff.md) and
+[qualification record](../runbooks/latency-qualification-transport-diagnostics.md).
+This does not qualify production load or a public abuse-control boundary.

@@ -163,12 +163,11 @@ public final class SimulatorApprovalServer implements AutoCloseable {
     this.approvals = new HumanApprovalService(new PolicyEvaluator(), policy, permits, state, state,
         simulator, () -> SecurityReadiness.allReady(clock.instant()), clock,
         () -> UUID.randomUUID().toString(), "urn:tracepermit:approval-api:simulator", "simulator", 300);
-    this.server = HttpServer.create(address, 32);
     // Bounded admission; this local foundation is not a public abuse-control layer.
-    this.workers = ApprovalAdmissionExecutors.newDispatchPool(activeLanes, pendingBound);
-    server.setExecutor(workers);
-    server.createContext("/", this::handle);
-    server.start();
+    var listener = bindListener(address, activeLanes, pendingBound, Thread::new);
+    this.server = listener.server();
+    this.workers = listener.workers();
+    startListener();
   }
 
   private SimulatorApprovalServer(
@@ -187,12 +186,37 @@ public final class SimulatorApprovalServer implements AutoCloseable {
     this.approvals = new HumanApprovalService(new PolicyEvaluator(), policyStore, workspaceId, policyId,
         permits, state, state, simulator, () -> SecurityReadiness.allReady(clock.instant()), clock,
         () -> UUID.randomUUID().toString(), "urn:tracepermit:approval-api:simulator", "simulator", 300);
-    this.server = HttpServer.create(address, 32);
     // Bounded admission; this local foundation is not a public abuse-control layer.
-    this.workers = ApprovalAdmissionExecutors.newDispatchPool(activeLanes, pendingBound);
-    server.setExecutor(workers);
-    server.createContext("/", this::handle);
-    server.start();
+    var listener = bindListener(address, activeLanes, pendingBound, Thread::new);
+    this.server = listener.server();
+    this.workers = listener.workers();
+    startListener();
+  }
+
+  record BoundListener(HttpServer server, ExecutorService workers) {}
+
+  static BoundListener bindListener(InetSocketAddress address, int activeLanes, int pendingBound,
+      java.util.concurrent.ThreadFactory factory) throws IOException {
+    // Eager worker startup must succeed before allocating the listener socket.
+    var dispatch = ApprovalAdmissionExecutors.newDispatchPool(activeLanes, pendingBound, factory);
+    try {
+      return new BoundListener(HttpServer.create(address, 32), dispatch);
+    } catch (IOException | RuntimeException | Error startupFailure) {
+      dispatch.shutdownNow();
+      throw startupFailure;
+    }
+  }
+
+  private void startListener() {
+    try {
+      server.setExecutor(workers);
+      server.createContext("/", this::handle);
+      server.start();
+    } catch (RuntimeException | Error startupFailure) {
+      server.stop(0);
+      workers.shutdownNow();
+      throw startupFailure;
+    }
   }
 
   public int port() { return server.getAddress().getPort(); }

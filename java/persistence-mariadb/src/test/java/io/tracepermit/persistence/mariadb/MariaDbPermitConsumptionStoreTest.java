@@ -21,7 +21,6 @@ import java.util.stream.Stream;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -142,9 +141,10 @@ final class MariaDbPermitConsumptionStoreTest {
     assertThat(store.isConsumed(permitId)).isFalse();
   }
 
-  @Test
-  void nonEmptyDatabaseCannotBeInitializedOrSilentlyAdopted() throws SQLException {
-    QualifiedDatabase database = databases.getLast();
+  @ParameterizedTest(name = "{0}: non-empty schema is never adopted")
+  @MethodSource("qualifiedDatabases")
+  void nonEmptyDatabaseCannotBeInitializedOrSilentlyAdopted(QualifiedDatabase database)
+      throws SQLException {
     assertThatThrownBy(() -> MariaDbDatabaseLifecycle.initializeEmpty(database.source()))
         .isInstanceOf(IllegalStateException.class)
         .hasMessage("DATABASE_INITIALIZATION_REQUIRES_EMPTY_DATABASE");
@@ -166,9 +166,10 @@ final class MariaDbPermitConsumptionStoreTest {
     MariaDbDatabaseLifecycle.validateExisting(database.source());
   }
 
-  @Test
-  void commitFailureRollsBackAndLostAcknowledgementRemainsUncertain() throws SQLException {
-    QualifiedDatabase database = databases.getLast();
+  @ParameterizedTest(name = "{0}: commit failure and acknowledgement uncertainty")
+  @MethodSource("qualifiedDatabases")
+  void commitFailureRollsBackAndLostAcknowledgementRemainsUncertain(QualifiedDatabase database)
+      throws SQLException {
     clear(database.source());
     FaultSource source = faultSource(database.source());
     var store = new MariaDbPermitConsumptionStore(source.dataSource(), ACME);
@@ -189,9 +190,9 @@ final class MariaDbPermitConsumptionStoreTest {
     assertThat(independent.consume(uncertain, NOW.plusSeconds(60), ACTION_HASH, NOW)).isFalse();
   }
 
-  @Test
-  void acquisitionAndCloseFailuresNeverReportSuccess() throws SQLException {
-    QualifiedDatabase database = databases.getLast();
+  @ParameterizedTest(name = "{0}: acquisition and close failures never succeed")
+  @MethodSource("qualifiedDatabases")
+  void acquisitionAndCloseFailuresNeverReportSuccess(QualifiedDatabase database) throws SQLException {
     clear(database.source());
     FaultSource source = faultSource(database.source());
     var store = new MariaDbPermitConsumptionStore(source.dataSource(), ACME);

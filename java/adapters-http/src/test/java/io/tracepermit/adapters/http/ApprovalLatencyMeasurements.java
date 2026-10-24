@@ -704,6 +704,11 @@ public final class ApprovalLatencyMeasurements {
       int[] concurrencyLevels,
       int[] warmupCounts,
       int[] measuredCounts) throws Exception {
+    return runQualification(postgres, concurrencyLevels, warmupCounts, measuredCounts, new LatencyFailureDiagnostics());
+  }
+
+  static LatencyQualificationReport runQualification(PostgreSQLContainer<?> postgres,
+      int[] concurrencyLevels, int[] warmupCounts, int[] measuredCounts, LatencyFailureDiagnostics diagnostics) throws Exception {
 
     Objects.requireNonNull(postgres, "PostgreSQL container must not be null");
     if (!postgres.isRunning()) {
@@ -830,6 +835,7 @@ public final class ApprovalLatencyMeasurements {
 
     SimulatorApprovalServer server = null;
     HttpClient client = null;
+    LatencyAdmissionObservation admissionObservation = null;
 
     List<SweepMetrics> sweepResults = new ArrayList<>();
     List<String> failures = new ArrayList<>();
@@ -852,6 +858,7 @@ public final class ApprovalLatencyMeasurements {
           clock);
 
       client = newQualificationHttpClient();
+      admissionObservation = LatencyAdmissionObservation.attach(server, diagnostics);
 
       performMcpHandshake(server.port(), requesterToken, client);
 
@@ -1019,15 +1026,28 @@ public final class ApprovalLatencyMeasurements {
       failures.add("Execution exception: " + classifySafeErrorCode(e));
       overallPassed = false;
     } finally {
+      if (admissionObservation != null) {
+        try { admissionObservation.close(); }
+        catch (RuntimeException failure) {
+          failures.add("ADMISSION_DIAGNOSTIC_CLEANUP_FAILED"); overallPassed = false;
+        }
+      }
       if (server != null) {
         try {
           server.close();
-        } catch (Throwable ignored) {}
+        } catch (Throwable failure) {
+          failures.add("FIXTURE_SERVER_CLEANUP_FAILED"); overallPassed = false;
+        }
       }
       if (client != null) {
         try {
-          client.close();
-        } catch (Throwable ignored) {}
+          retireQualificationHttpClient(client);
+        } catch (InterruptedException interrupted) {
+          Thread.currentThread().interrupt();
+          failures.add("HTTP_CLIENT_CLEANUP_INTERRUPTED"); overallPassed = false;
+        } catch (RuntimeException failure) {
+          failures.add("HTTP_CLIENT_SHUTDOWN_TIMEOUT"); overallPassed = false;
+        }
       }
     }
 
@@ -1400,12 +1420,12 @@ public final class ApprovalLatencyMeasurements {
     if (t instanceof HttpTimeoutException || t instanceof TimeoutException) {
       return "TIMEOUT";
     }
+    if (t instanceof java.io.IOException) return LatencyFailureDiagnostics.transportCategory(t);
     String msg = t.getMessage();
-    if (msg != null && (msg.startsWith("MCP_") || msg.startsWith("HTTP_") || msg.startsWith("TOOL_ERROR_")
-        || msg.startsWith("UNEXPECTED_") || msg.startsWith("JSON_") || msg.startsWith("MISSING_"))) {
-      return msg;
-    }
-    return "OPERATION_FAILED_" + t.getClass().getSimpleName();
+    if (msg != null && LatencyFailureDiagnostics.isFixedOperationCode(msg)) return msg;
+    if (t instanceof IllegalStateException) return "OPERATION_FAILED_IllegalStateException";
+    if (t instanceof IllegalArgumentException) return "OPERATION_FAILED_IllegalArgumentException";
+    return "OTHER_OPERATION_FAILURE";
   }
 
   static Map<String, String> getGitProvenance(Path root) {

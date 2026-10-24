@@ -65,11 +65,18 @@ single-use decision under concurrency and restart.
 
 `MariaDbPermitConsumptionStoreTest` runs the same behavior against real
 `mariadb:10.6.25` and `mariadb:11.4.13` containers. It covers exact-once and
-tenant isolation, 32 concurrent claims across four store instances, restart
-persistence, exact expiry, malformed bindings, validate-only startup, non-empty
+tenant isolation, 32 contending claim attempts across four store instances using
+16 workers, store-reconstruction persistence, exact expiry, malformed bindings,
+validate-only startup, non-empty
 schema rejection, and commit/acquisition/close uncertainty. Engine-profile unit
 tests reject unknown engines, versions, storage engines, system databases and
 malformed version strings.
+
+All seven store cases, including non-empty-schema and injected transaction-fault
+cases, run on each exact image; the three profile unit cases bring the matrix to
+seventeen invocations. Store reconstruction observes the existing database and
+does not establish database crash/restart or failover recovery. Synthetic fault
+assertions are not qualification of an external diagnostic-redaction boundary.
 
 ## Limits and next steps
 

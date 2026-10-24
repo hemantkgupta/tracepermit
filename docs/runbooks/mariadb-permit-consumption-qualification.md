@@ -29,6 +29,32 @@ empty dedicated database, validates the migration and executes the same
 concurrency, restart, isolation and failure-boundary cases. It must leave no
 container running.
 
+The matrix contains seven store cases per engine (fourteen total), plus three
+engine-profile unit cases. Non-empty/schema adoption, commit/acknowledgement
+uncertainty and acquisition/close faults are parameterized across **both** exact
+images; none is inferred from the primary version alone. Store reconstruction
+uses the same running database: it is not a database restart, crash-recovery or
+failover test. Synthetic transaction faults do not qualify an external error
+redaction boundary or production driver diagnostics.
+
+## Mac requalification — 2026-10-24
+
+The normal reconciliation with main (including merged PR100/102) retained all
+production MariaDB code, migration bytes, engine pins and assertions. Three
+previously primary-only schema/transaction-fault cases now run on both profiles.
+`pnpm test:java-mariadb --rerun-tasks` passed all 17 invocations in 33 seconds,
+with zero failures/errors/skips; both disposable containers were removed.
+
+One `pnpm check` passed in 9m25s: 124 React tests and 1,584 recorded Java cases
+across 141 suites, zero failures/errors and one existing archive-absent native-PTY
+skip. Gradle reused valid unchanged outputs (65 tasks: 36 executed, 29 up-to-date);
+the MariaDB test output came from the preceding forced run, not a second fresh
+run. Coverage was 94.27% line/78.01% branch under unchanged 94%/75% gates.
+Formatting, actionlint 1.7.12, runner syntax, 1,064 documentation links and
+13 synchronized flow tests also passed. Exact-head hosted checks are recorded
+separately in PR94's final handoff; these local results do not imply hosted or
+production success.
+
 ## Deployment candidate constraints
 
 For a later private Amazon RDS qualification, use a dedicated TracePermit

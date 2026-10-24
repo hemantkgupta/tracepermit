@@ -1,7 +1,6 @@
 package io.tracepermit.adapters.remote.github;
 
 import java.util.Objects;
-import java.util.regex.Pattern;
 
 /**
  * Redacted exception for bounded GitHub pull request adapter operations.
@@ -9,18 +8,17 @@ import java.util.regex.Pattern;
  */
 public final class GitHubPullRequestException extends RuntimeException {
   private static final long serialVersionUID = 1L;
-  private static final Pattern TOKEN_PATTERN = Pattern.compile("(ghs_[a-zA-Z0-9_]{10,}|Bearer\\s+[a-zA-Z0-9_.-]+)", Pattern.CASE_INSENSITIVE);
   private final String errorCode;
   private final String reasonCode;
 
   public GitHubPullRequestException(String errorCode, String reasonCode, String message) {
-    super(sanitize(message));
+    super("GitHub pull request operation rejected.");
     this.errorCode = Objects.requireNonNull(errorCode, "errorCode must not be null");
     this.reasonCode = Objects.requireNonNull(reasonCode, "reasonCode must not be null");
   }
 
   public GitHubPullRequestException(String errorCode, String reasonCode, String message, Throwable cause) {
-    super(sanitize(message), sanitizeCause(cause));
+    super("GitHub pull request operation rejected.");
     this.errorCode = Objects.requireNonNull(errorCode, "errorCode must not be null");
     this.reasonCode = Objects.requireNonNull(reasonCode, "reasonCode must not be null");
   }
@@ -33,21 +31,4 @@ public final class GitHubPullRequestException extends RuntimeException {
     return reasonCode;
   }
 
-  static String sanitize(String message) {
-    if (message == null) {
-      return "An error occurred during GitHub pull request processing.";
-    }
-    return TOKEN_PATTERN.matcher(message).replaceAll("[REDACTED_CREDENTIAL]");
-  }
-
-  static Throwable sanitizeCause(Throwable cause) {
-    if (cause == null) {
-      return null;
-    }
-    String message = cause.getMessage();
-    if (message != null && TOKEN_PATTERN.matcher(message).find()) {
-      return new RuntimeException(sanitize(message));
-    }
-    return cause;
-  }
 }
