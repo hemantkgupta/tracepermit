@@ -75,6 +75,19 @@ Follow the [Codex approval runbook](docs/runbooks/codex-durable-approvals.md);
 no personal IdP login or real target is required. Native client qualification
 and model-driven rehearsal are separate from protocol tests.
 
+## Continuous integration
+
+Pull-request updates and pushes to `main` run the [CI workflow](.github/workflows/ci.yml).
+Core console/Java tests (including the forced PostgreSQL pass), packaging and
+installation checks, simulator qualification, documentation, browser approvals,
+and the operation repository contract run in six independent jobs. The final
+`verify` check passes only when all six succeed; a failed, cancelled, or skipped
+job cannot produce a passing gate. Each job uses its own checkout and runner.
+
+A newer update to the same PR cancels its older CI run. Different PRs and pushes
+to `main` keep their own runs. Parallel jobs reduce waiting time while retaining
+every check; they can use more runner minutes because setup and builds are repeated.
+
 ## What is qualified
 
 - Java 21 is the sole backend. The React/TypeScript console is a
