@@ -155,3 +155,112 @@ recorded without repeating the mutation to obtain a favored count.
 All raw local logs, official-source downloads and temporary control backup are
 outside Git. Only bounded sanitized facts are published. Hosted exact-head
 checks remain separate; earlier source/other-lane results are not substituted.
+
+## Wave 2 independent review and synthetic composition
+
+The approved Cloud 1 packet was read at planning commit
+`305c777d69462bfd46179ff6aae6829188e8604c`. The prepared
+`tracepermit-java21-docker` environment passed two preflights and all nine setup
+tests after activating its saved Java selector: Java/javac21.0.8, Node24.19.0,
+pnpm11.25.0, Gradle8.14.3 and managed Unix Docker28.4.0. No setup rebuild,
+daemon change, live credential installation or provider/target call occurred.
+
+PR105 ownership was claimed from its released `9405c0e` head. A normal merge of
+main `0bc6b618aa9eac7df3bacf7a6d4bcafe2a824c4f` produced
+`6c999a8ea9e9efeb6e9e47cd08b235fd757b2125`, preserving both parents and the
+complete other-lane handoffs. Only HANDOFF required conflict resolution.
+The initial tracked switch could not infer tracking from this checkout's
+main-only fetch mapping; a no-track switch completed against the verified exact
+PR tree without reset, discard or rewriting any source. No other chat's local
+work or private planning file was used.
+
+Review repaired one local buffer-lifecycle gap: rejected HTTP status/pagination
+replies now erase their owned decoded bytes in the same `finally` as JSON parse.
+The public production surface and all existing target, permit, action, allowlist
+and unknown-outcome semantics remain unchanged. Internal client-policy assembly
+can be tested with literal public DNS answers; no production DNS/TLS request is
+made by those policy tests. They establish retained configuration and rejection
+of untrusted certificates, not live handshake/provider compatibility.
+
+The test-source `SyntheticInstallationCredentialFixture` constructs the concrete
+provider using generated RSA material and fake in-memory GET/token exchanges.
+`GitHubCredentialCompositionTest` supplies it to the unchanged synthetic adapter
+and numeric-loopback fake target. It proves successful fingerprint-only result
+handling, permit consumption/request binding, allowlist, wrong-App/installation,
+failed/expired cleanup, target repository/ref/expiry preflight, process-local
+success replay and unknown-outcome refusal to dispatch again. Fresh explicit
+adapter invocations may mint another credential even when a local result is
+reused or unknown; there is no effectful retry or credential cache. This is a
+composition fixture, not a shipped factory, launcher or business-operation
+executor, and its in-memory ledger provides no durable authority.
+
+### Review validation
+
+Run with the saved selector and bounded Gradle workers, preserving the test
+workloads, assertions and deadlines:
+
+```bash
+export TRACEPERMIT_JAVA_HOME=/workspace/.local/jdk-21
+export XDG_DATA_HOME=/workspace/.local/share XDG_CACHE_HOME=/workspace/.cache
+source scripts/configure-java-environment.sh
+pnpm install --frozen-lockfile
+/usr/local/bin/docker-init -s -- java/gradlew -p java :adapters-remote:test \
+  --offline --no-daemon --max-workers=2 --no-build-cache \
+  --no-configuration-cache --rerun-tasks --console=plain
+GRADLE_OPTS="${GRADLE_OPTS:-} -Dorg.gradle.workers.max=2" \
+  /usr/local/bin/docker-init -s -- pnpm check
+/usr/local/bin/docker-init -s -- bash scripts/run-java-operation-tests.sh \
+  --no-daemon --max-workers=2 --no-build-cache --no-configuration-cache --rerun-tasks
+pnpm format:check
+pnpm docs:links
+pnpm docs:flows:check
+git diff --check
+```
+
+- PASS merged baseline:143 focused credential cases, fresh test execution.
+- PASS complete remote suite:673 cases/17 suites, zero failures/errors/skips,
+  all17 Gradle tasks executed without build or configuration cache. This includes
+  the402 merged-main remote cases,143 original credential cases and128 new
+  review/composition cases (105 assurance/policy/cleanup, eight transport bounds,
+  15 composition). Fresh XML was recorded after successful runner exit.
+- Negative control: temporarily restoring only the old status/pagination guard
+  yielded exactly two expected failures among four response-buffer cases;
+  success and malformed-JSON erasure still passed. The repair was restored
+  before the fresh673-case passing run. These expected failures are retained.
+- Two intermediate composition-suite runs each had one new fixture assertion
+  failure: the expected installation-list URL omitted query parameters, then
+  assumed a stable map iteration order for them. The test now verifies exact
+  request paths/order plus both named query parameters independently. The
+  runtime query semantics and retained tests were unchanged.
+- Full repository and forced database results, final documentation checks and
+  exact-head hosted results are recorded in the final handoff below/PR105.
+
+The prepared-environment full check passed on the reviewed source:124 React
+tests and2,096 recorded Java cases across150 suites, zero failures/errors and
+one existing installed-archive/native-PTY skip. Gradle took4m8s with six tasks
+executed and59 up-to-date; this is not an all-fresh receipt. Coverage was94.5357%
+line/78.5294% branch with unchanged thresholds. Forced operation qualification
+then executed all14 tasks without cache in1m12s:78 cases on each of the three
+exact database fixtures plus11 strict-reader cases,245 total, zero failures/
+errors/skips. Forced standalone MariaDB qualification executed all10 tasks in23s:
+17 cases including both exact versions, zero failures/errors/skips. Fresh XML
+timestamps/modification times were captured after each successful runner exit.
+All three retained image IDs matched the prepared manifest. Formatting,1,130
+documentation links/three helper tests,13 flows/drift and whitespace passed;
+final documentation-only edits receive the same checks before publication.
+
+Source-control publication uses the scoped GitHub Git Data API rather than
+moving the personal network secret to a Git host. Blob, tree and commit IDs are
+checked against local Git, including both ordered merge parents; ref updates
+are non-forced and guarded by the expected published head. An initial tree
+assembly rejected missing auto-merged public-document blobs; uploading those
+four blobs produced the exact local merge tree/commit before any ref update.
+No source history was rewritten. Exact-final-head hosted results and writer
+release belong to the authoritative PR105 final handoff.
+
+The original PR105 local three native process-cleanup failures remain historical
+failures. A result obtained in this prepared environment is a separate receipt;
+neither it nor hosted success relabels that earlier run. The installed-archive
+native-PTY case and any reused test/cache results must be reported separately.
+No live installation compatibility, key custody/rotation, durable authority or
+production readiness is certified by this work.

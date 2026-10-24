@@ -120,9 +120,10 @@ public final class GitHubInstallationCredentialProvider implements GitHubAppCred
     }
   }
   private static JsonNode parse(CredentialExchange.Reply reply, int expected) {
-    if (reply == null || reply.status() != expected || reply.paginated() || reply.bytes() == null) throw reject(RESPONSE_INVALID);
+    if (reply == null || reply.bytes() == null) throw reject(RESPONSE_INVALID);
     byte[] bytes = reply.bytes();
     try {
+      if (reply.status() != expected || reply.paginated()) throw reject(RESPONSE_INVALID);
       if (bytes.length > 65_536) throw reject(RESPONSE_TOO_LARGE);
       JsonNode parsed = JSON.readTree(bytes);
       if (parsed == null || !parsed.isObject()) throw reject(RESPONSE_INVALID);

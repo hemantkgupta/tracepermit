@@ -52,8 +52,12 @@ final class GitHubCredentialTransport implements CredentialExchange.Factory {
     long deadline = System.nanoTime() + timeout.toNanos();
     List<InetAddress> addresses = synthetic ? List.of()
         : BoundedHostResolver.defaultResolver().resolvePublic("api.github.com", timeout);
-    List<InetAddress> pinned = List.copyOf(addresses);
     if (deadline - System.nanoTime() <= 0) throw reject(TRANSPORT_UNAVAILABLE);
+    return new Session(clientForPinnedAddresses(addresses), deadline);
+  }
+  /** Internal policy assembly; production supplies only resolvePublic's approved snapshot. */
+  OkHttpClient clientForPinnedAddresses(List<InetAddress> addresses) {
+    List<InetAddress> pinned = List.copyOf(addresses);
     var builder = new OkHttpClient.Builder().proxy(Proxy.NO_PROXY).followRedirects(false).followSslRedirects(false)
         .retryOnConnectionFailure(false).connectTimeout(timeout).readTimeout(timeout).writeTimeout(timeout).callTimeout(timeout);
     if (!synthetic) builder.dns(host -> {
@@ -65,7 +69,7 @@ final class GitHubCredentialTransport implements CredentialExchange.Factory {
       if (once == null || !once.compareAndSet(false, true)) throw new IOException("REPEATED_EXCHANGE_REJECTED");
       return chain.proceed(chain.request());
     });
-    return new Session(builder.build(), deadline);
+    return builder.build();
   }
   private final class Session implements CredentialExchange {
     private final OkHttpClient client;

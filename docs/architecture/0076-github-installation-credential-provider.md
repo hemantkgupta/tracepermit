@@ -105,3 +105,33 @@ The [runbook](../runbooks/github-app-installation-credentials.md) records exact
 commands, official sources, results and untested boundaries. This is not live
 GitHub installation, target execution, durable operation composition,
 exactly-once behavior, production custody or release readiness.
+
+## Wave 2 review and test-only adapter composition
+
+Review closes a response-buffer ownership gap: status and pagination rejection
+now occur inside the same erasure `finally` as parsing. Both rejected responses
+and accepted responses erase the owned decoded bytes. This is best-effort local
+buffer handling, not secure erasure of Java strings, parsed nodes or key objects.
+
+Production client policy assembly is package-private and separately inspectable
+without resolving or connecting. Production still supplies only the shared
+bounded public resolver's snapshot; the public factory has no DNS, origin, clock
+or trust override. Review tests verify immutable fixed-host pinning, platform
+hostname verification/trust, rejection of an untrusted synthetic certificate,
+no proxy/redirect/retry and unchanged ten-second bounds. These are policy tests,
+not a live TLS handshake or GitHub compatibility qualification.
+
+`SyntheticInstallationCredentialFixture` is a test-source factory for the
+concrete provider with in-memory fake installation/token exchanges and generated
+RSA signing material. `GitHubCredentialCompositionTest` supplies that provider
+to the existing synthetic adapter with a numeric-loopback fake target. It checks
+the real request-bound, consumed permit; exact four-GET preflight; draft-only
+write; credential/time rejection; and conservative unknown-outcome handling.
+Its in-memory ledger remains process-local test state, with no durable authority
+claim. Replay may mint another credential for an explicit adapter invocation;
+it does not repeat the target write or turn unknown into permission to retry.
+
+No shipped launcher, business-operation executor, authority interface, durable
+store or target/permit semantics is composed or changed. ADR0079 is not needed
+for a test-only fixture under this existing decision. Live key custody, response
+compatibility and an authorized durable runtime composition remain separate gates.

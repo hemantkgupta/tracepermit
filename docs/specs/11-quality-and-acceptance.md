@@ -310,3 +310,14 @@ cache reuse. A missing optional GitHub assurance field is a compatibility stop,
 not permission to substitute request data or weaken existing preflight. No
 live-provider, installed-custody, durable dispatch or production claim follows.
 See the [runbook](../runbooks/github-app-installation-credentials.md).
+
+Wave 2 adds `CredentialReviewRegressionTest` for each required omitted/null/
+mistyped assurance, exact identity, clock-after-wait/cleanup and response-buffer
+erasure. `CredentialTransportBudgetTest` checks exact decoded limits, compressed
+overflow, one total GET/POST budget and no status/redirect follow-up. Production
+client policy is inspected with literal DNS answers and an untrusted generated
+certificate, without a provider call. `GitHubCredentialCompositionTest` uses the
+test-only `SyntheticInstallationCredentialFixture` to exercise the concrete
+provider against unchanged permit, allowlist, target preflight and unknown-outcome
+guards. All target observations are fake loopback responses. This does not
+certify durable authority, launcher wiring or a live provider/target.

@@ -958,3 +958,16 @@ remains dependent on GitHub's authenticated minting contract. Exact results and
 limits belong in the [runbook](../runbooks/github-app-installation-credentials.md),
 [ADR0076](../architecture/0076-github-installation-credential-provider.md) and
 final handoff. This library is unwired; no live App/target or production claim.
+
+Wave 2 evidence for the same IDs: `CredentialReviewRegressionTest` adds 105
+typed/omitted assurance, identity, clock/cleanup, owned-buffer and production
+client-policy cases; `CredentialTransportBudgetTest` adds eight decoded-byte,
+compression, total-deadline and one-exchange cases. `GitHubCredentialCompositionTest`
+adds 15 concrete-provider/adapter cases through the test-source
+`SyntheticInstallationCredentialFixture`: permit/request/allowlist failures
+stop before credential acquisition, provider/expiry failures stop before target
+access, successful minting retains exact target preflight, and ambiguous writes
+remain unknown without another dispatch. The fixture uses only fake exchanges
+and a numeric-loopback fake target. The process-local ledger is test state;
+durable business-operation authority and shipped-runtime integration remain
+unimplemented by this lane. No other requirement status or lane claim changes.
