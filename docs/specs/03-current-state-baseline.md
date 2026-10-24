@@ -25,10 +25,11 @@ validation. See [ADR0064](../architecture/0064-unsigned-approval-review-export.m
 
 The Java backend adds `GitHubDraftPullRequestAdapter` and `GitHubPullRequestOutcomeResolver`
 in `adapters-remote` for the first AgentCore pilot operation `github.pull_request.create`.
-The adapter strictly allowlists destination host HTTPS `api.github.com`, repository
+The adapter strictly pins the production origin HTTPS `api.github.com`, repository
 `tracepermit/agentcore-pr-pilot`, base branch `main`, and enforces mandatory `draft: true`.
-Transport invariants enforce `Proxy.NO_PROXY`, disabled redirects, disabled connection
-retries, bounded connect (5s) and call (10s) timeouts, and a 65,536-byte decoded
+Transport invariants enforce public-only pinned DNS, platform TLS, `Proxy.NO_PROXY`,
+disabled redirects/retries, bounded connect/read/write and a ten-second total
+preflight/write or lookup budget, and a 65,536-byte decoded
 response limit enforced while reading (at most one overflow byte beyond the limit).
 GitHub App installation credentials are provided via a trusted provider port and masked in
 memory; audit evidence stores only the cryptographic `credentialFingerprint` (`sha256:...`)
@@ -39,8 +40,17 @@ support uncertain timeouts and transport disconnects without re-execution
 ([ADR 0069](../architecture/0069-github-app-draft-pr-adapter-and-reconciliation.md)).
 Oversized HTTP 201 confirmations and unavailable lookups (including 401/403/404,
 redirects and oversized lookup bodies) retain `unknown`; they do not prove failure.
-This foundation is process-local, not a composed durable production executor or
-a general qualification of pagination/eventual-visibility absence semantics.
+An explicit operator record pins installation/repository/owner IDs and exact
+head/base refs and SHAs. GET installation-access/repository/ref observations
+must match before POST. Typed 201 identity and original content must match;
+malformed success remains unknown. GET lookup confirms only one complete exact
+open draft; empty, duplicate, paginated, unavailable or mismatching results
+remain unknown. Legacy unbound construction cannot dispatch/certify. See
+[ADR0073](../architecture/0073-github-pilot-target-preflight.md). The token's
+installation provenance remains a trusted credential-provider responsibility;
+GET visibility alone cannot prove it. Ref races and process-local state remain:
+there is no native CAS, exactly-once claim, durable executor or business-operation
+resource/precondition hash bridge.
 In-memory simulator target executions (`mode: "simulated"`) remain explicitly distinguished
 from live pilot operations (`mode: "pilot"`). See the [operator runbook](../runbooks/agentcore-github-pr-pilot.md).
 

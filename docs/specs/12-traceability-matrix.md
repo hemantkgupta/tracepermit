@@ -1,5 +1,53 @@
 # Requirements traceability matrix
 
+## GitHub target preflight and conservative lookup
+
+Requirements: FR-001/002/008/009/012/015; SEC-001/002/003/012/015/019;
+REL-001/003/004/005/008/009; OPS-002/004. No whole-ID status promotion.
+
+`GitHubPilotTargetBinding`, `GitHubTargetPreflight` and `GitHubApiTransport`
+add explicit immutable operator identity/ref pins, public-only pinned resolution,
+fixed production origin/platform TLS, total sequence/read/write time bounds and
+deterministic close. Public constructors cannot select loopback/test trust.
+Adapter/resolver verify credentials, GET installation-access/repository/refs and
+strict positive typed PR identity/content; registration cannot overwrite a
+different payload. Lookup never proves absence, follows Link/redirects, changes
+execution state or sends POST. Unbound compatibility construction fails closed.
+
+`GitHubDraftPullRequestAdapterTest` replaces permissive legacy fixtures with
+positive/adversarial destination, credential, action, preflight, typed response,
+pagination, absence, duplicate, key/permit, concurrency, byte/time, redaction and
+cleanup controls. `BoundedGitHubResponseTest` retains limit+1 stream evidence;
+existing SSRF/TLS tests retain the shared address policy evidence. Guard-removal
+controls and exact-head results are recorded in the PR.
+
+`postBodyMustMatchWithoutJsonTypeCoercion`,
+`lookupBodyMustMatchWithoutJsonTypeCoercionOrStaleConfirmation`, and
+`exactTextAndExplicitNullForEmptyBodyConfirmPostAndLookup` qualify the shared
+typed-body matcher (FR-008/015; SEC-003/019; REL-003/008): scalar/container/missing
+acknowledgements cannot become success, invalid POST blocks redispatch, invalid
+lookup drops an older receipt, and exact textual/empty-null compatibility remains.
+Fourteen cases failed before repair; all twenty-three body-type cases pass after.
+See the [learning note](../learning/github-confirmation-types.md).
+
+The operator ID ceiling (`1..9007199254740991`) and regressions
+`operatorIdsOutsideFrozenSafeIntegerRangeAreRejected`,
+`maximumSafeOperatorIdsRemainExactAndDistinct`, and
+`adjacentSafeIdentityCannotBorrowAnActualReceiptAfterResolverReconstruction` ensure
+overflow IDs are refused before transport, upper-bound neighbors remain exact,
+and a reconstructed adapter cannot borrow another immutable identity's genuine
+HTTP-confirmed receipt. Global canonical JSON v1 is unchanged. See
+[ADR0073](../architecture/0073-github-pilot-target-preflight.md) and the
+[runbook](../runbooks/github-pilot-target-preflight.md).
+
+The provider port still vouches for opaque-token installation provenance. The
+single-repository visibility/strict response profile is deliberately narrow.
+Positive lookup observes desired-effect presence, not original POST causality.
+Refs can race after reads; there is no native ref CAS/idempotency guarantee.
+Process-local state, uncomposed business-operation hash/precondition bridge,
+durable lifecycle, credential minting, live provider/target and deployment remain
+unqualified. The Mac-owned lifecycle and persistence files are unchanged.
+
 ## Uncommitted operation transition proposals
 
 | Requirements                                                   | Implementation and evidence                                                                                                                                                                                                                                                                                                                          | Remaining boundary                                                                                                                                                                                                          |
