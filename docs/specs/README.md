@@ -25,6 +25,13 @@ the traceability matrix, and add positive and negative tests. The
 [simulator scenarios](../demo-scenarios/README.md) show qualified POC paths.
 No demo path may contact a real destructive target.
 
+[ADR0075](../architecture/0075-github-business-operation-binding.md) adds a pure
+operation/target hash join with an explicit strict GitHub profile and independent
+golden recipe. Separately supplied scope/policy/generation/target expectations
+are checked without normalizing a stored action. Returned data is not approval,
+a permit, an execution claim or a composed durable executor; see the
+[binding runbook](../runbooks/github-business-operation-binding.md).
+
 [ADR0073](../architecture/0073-github-pilot-target-preflight.md) and the
 [target-preflight runbook](../runbooks/github-pilot-target-preflight.md) qualify
 the GitHub adapter's explicit operator binding, fixed production transport,
