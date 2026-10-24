@@ -102,3 +102,10 @@ pre-handler refusal and bounded close; see the
 [handoff explanation](../learning/bounded-dispatch-handoff.md) and
 [qualification record](../runbooks/latency-qualification-transport-diagnostics.md).
 This does not qualify production load or a public abuse-control boundary.
+
+[ADR0078](../architecture/0078-agentcore-execution-disabled-registration.md) adds
+an unwired, execution-disabled enrolled-workload registration adapter. Its strict
+body derives no authority from client flags and rejects human/OBO token pairs.
+Synthetic token/recording-port tests do not qualify live AgentCore/Okta token
+compatibility, a provider delegation relationship or composed durable ingress;
+see the [ingress runbook](../runbooks/agentcore-trusted-ingress.md).
