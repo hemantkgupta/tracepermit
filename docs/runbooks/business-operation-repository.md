@@ -39,7 +39,10 @@ inventories are intentionally incompatible.
 Configure a pool against the writer endpoint. Grant the runtime user SELECT and
 INSERT on `tp_business_operations` and `tp_business_operation_facts`, plus SELECT on
 `tp_operation_schema_history`. PostgreSQL also requires USAGE on the public schema.
-Migration ownership stays with a separate operator. Runtime needs no UPDATE,
+V2 also needs SELECT/INSERT on lifecycle head/fact tables and column-scoped UPDATE
+of head snapshot/hash only. Original registration/fact UPDATE is still forbidden;
+see the [withdrawal and upgrade runbook](business-operation-withdrawal.md).
+Migration ownership stays with a separate operator. Runtime needs no
 DELETE, DDL or administrative grant. Live RDS/TLS/replication qualification and
 deployment-ready provisioning remain future work.
 

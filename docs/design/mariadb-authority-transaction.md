@@ -1,18 +1,20 @@
 # MariaDB authority transaction and durable lifecycle composition
 
 - Status: Proposed design for coordinator review; implementation pending.
-- Requirements: FR-003, FR-007, FR-008, FR-010, FR-012, FR-015;
-  SEC-001, SEC-002, SEC-003, SEC-005, SEC-006, SEC-009, SEC-012;
+- Requirements: FR-003, FR-007, FR-008, FR-009, FR-010, FR-012, FR-015;
+  SEC-001, SEC-002, SEC-003, SEC-004, SEC-005, SEC-006, SEC-009, SEC-010, SEC-012, SEC-019;
   REL-001, REL-002, REL-004, REL-005;
-  DATA-001, DATA-002, DATA-004;
+  DATA-001, DATA-004;
   OPS-002, OPS-004;
   PORT-001, PORT-002, PORT-003.
 - Decision records: [ADR 0066](../architecture/0066-mariadb-permit-consumption-foundation.md),
   [ADR 0068](../architecture/0068-versioned-business-operation-contract.md),
   [ADR 0070](../architecture/0070-durable-business-operation-registration.md),
   [ADR 0071](../architecture/0071-uncommitted-operation-transition-proposals.md).
-- Dependencies: Unmerged [PR #101](https://github.com/hemantkgupta/tracepermit/pull/101)
-  (`codex/durable-operation-lifecycle`, pending withdrawal and additive lifecycle journal).
+- Dependencies: Merged [ADR 0072](../architecture/0072-durable-pending-operation-withdrawal.md)
+  (internal pending withdrawal/journal library) and
+  [ADR0075](../architecture/0075-github-business-operation-binding.md)
+  (pure GitHub data-binding bridge). Neither grants execution authority.
 - Qualification runbook: [MariaDB authority transaction qualification plan](../runbooks/mariadb-authority-transaction-qualification-plan.md).
 
 ---
@@ -32,20 +34,19 @@ MariaDB**. However, changing a JDBC URL or mapping SQL syntax does not preserve
 transactional isolation, locking semantics, timestamp resolution, or failure
 recovery modes. Specifically:
 
-1. **Locking semantics**: MariaDB InnoDB uses gap locks and next-key locks under
-   its default `REPEATABLE READ` isolation, creating severe deadlock risks under
-   concurrent approval and claim patterns. Under `READ COMMITTED`, gap locking is
-   disabled for non-unique lookups, but row-lock acquisition order across disparate
-   tables must remain strictly canonical.
-2. **DDL non-transactionality**: Unlike PostgreSQL, MariaDB automatically issues
-   an implicit `COMMIT` before and after any DDL statement (`CREATE TABLE`,
-   `ALTER TABLE`, etc.). A failed migration cannot be rolled back by Flyway;
-   schema corruption leaves an unrecoverable partial migration.
+1. **Locking semantics**: InnoDB's `REPEATABLE READ` gap/next-key locking differs
+   from PostgreSQL. `READ COMMITTED` reduces gap locking, but uniqueness and
+   foreign-key checks can still acquire locks. Canonical application lock order
+   reduces risk; it does not prove deadlock freedom.
+2. **DDL non-transactionality**: Many MariaDB DDL statements implicitly commit.
+   Flyway cannot roll back an already committed preceding DDL statement. Partial
+   migrations require stopped-writer investigation and explicit recovery, not
+   automatic repair or a blanket claim of unrecoverable corruption.
 3. **Clock semantics**: PostgreSQL `clock_timestamp()` reflects real-time statement
    execution within a transaction, whereas MariaDB `NOW()` or `CURRENT_TIMESTAMP()`
-   freezes at the start of the transaction. Evaluating authorization expiry during
-   or after lock contention requires MariaDB `UTC_TIMESTAMP(6)` or an explicit
-   clock re-sample.
+   is constant within a statement, not an entire transaction. `UTC_TIMESTAMP(6)`
+   is also statement-time: use a **new statement after every authority lock has
+   been acquired**, not a timestamp expression in a statement that may wait.
 4. **Error mapping**: Duplicate key violations produce MariaDB vendor error code
    `1062` (SQLState `23000`), whereas PostgreSQL yields SQLState `23505`. Lock
    wait timeouts produce MariaDB vendor error code `1205` (SQLState `40001` or
@@ -54,14 +55,20 @@ recovery modes. Specifically:
    persistence designs: the legacy PostgreSQL approval/execution/outbox engine
    ([`PostgresDurableEnforcementState`](../../java/persistence-postgres/src/main/java/io/tracepermit/persistence/postgres/PostgresDurableEnforcementState.java)),
    and the modern multi-engine operations repository ([ADR 0070](../architecture/0070-durable-business-operation-registration.md)
-   and unmerged PR #101 / ADR 0072). Merely creating a duplicate MariaDB enforcement
+   and merged ADR 0072). Merely creating a duplicate MariaDB enforcement
    state without reconciling these contracts would fragment the lifecycle model.
 
 This design specifies a unified, dialect-portable authority transaction contract
 for MariaDB 11.4.13 (primary), MariaDB 10.6.25 (transitional), and PostgreSQL 16.4
 (parity control). It unifies business operations, approval decisions, permit
 replay claims, execution attempts, and the evidence outbox into an atomic,
-deadlock-free, fail-closed transaction boundary.
+fail-closed transaction boundary. This is a proposal, not a migration, runtime
+provider, RDS qualification, parity result or production-readiness claim.
+
+All table/column names, new result codes and coordinator methods below are
+**logical design placeholders** unless linked to existing source. They are not
+copy/paste DDL or executable APIs. Preserve existing V1/V2 migration bytes and
+contract limits; decide any new additive schema in an implementation ADR.
 
 ---
 
@@ -69,7 +76,7 @@ deadlock-free, fail-closed transaction boundary.
 
 ### 2.1 Engine matrix and configuration
 
-TracePermit mandates the following database engine profiles:
+The proposed qualification matrix pins the following database engine profiles:
 
 | Role                | Database product | Exact engine version | Default storage engine |
 | :------------------ | :--------------- | :------------------- | :--------------------- |
@@ -85,16 +92,19 @@ closed during startup validation.
 1. **InnoDB storage engine**: Every TracePermit table explicitly declares
    `ENGINE=InnoDB`. Tables using MyISAM, Aria, Memory, or system engines are
    strictly rejected.
-2. **Binary ASCII keys and identifiers**: All primary keys, foreign keys, UUIDs,
-   content hashes, and tenant/workspace identifiers use:
-   `VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin` or
-   `CHAR(64) CHARACTER SET ascii COLLATE ascii_bin`. This eliminates collation
-   mismatches, trailing-space insensitivity, and case-folding vulnerabilities.
+2. **Exact keys and identifiers**: Choose widths/encodings from the existing
+   canonical contract and migration, not a universal 64-character column. A
+   prefixed SHA-256 digest alone occupies 71 ASCII characters. `ascii_bin` is
+   case-sensitive but does **not** by itself guarantee trailing-space distinction
+   under PAD SPACE comparisons. Require canonical input validation plus proven
+   byte-exact or supported NO PAD comparisons and matching FK definitions.
+   Reject whitespace/case aliases rather than normalizing identity after hashing.
 3. **Strict SQL mode**: The database connection pool and server configuration must
    enforce:
    `STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION`.
-4. **Microsecond UTC wall-clock**: All timestamp columns are defined as
-   `DATETIME(6) NOT NULL`. Timestamps are generated using MariaDB `UTC_TIMESTAMP(6)`.
+4. **Microsecond UTC wall-clock**: Required authority timestamps use
+   `DATETIME(6) NOT NULL`; optional completion fields follow their explicit state
+   contract. Authority time is sampled using MariaDB `UTC_TIMESTAMP(6)`.
    Time-zone-dependent types (`TIMESTAMP`) that perform implicit local conversions
    are prohibited.
 5. **Binary logging and durability**:
@@ -108,12 +118,18 @@ closed during startup validation.
    - `REPLACE INTO` is strictly prohibited: it executes an implicit `DELETE`
      followed by `INSERT`, breaking foreign key cascades and audit history.
    - Broad exception catching that masks vendor error codes is prohibited.
+7. **Authoritative writer connection**: Admission, current authority reads,
+   quarantine/generation and lock-time samples use the single primary writer,
+   not asynchronous read replicas. Require certificate/hostname-verified TLS and
+   bounded connection/socket behavior. A version string or successful SELECT
+   alone does not qualify RDS topology, primary routing, failover or replication
+   durability. Replica lag must never resurrect approval/permit authority.
 
 ---
 
 ## 3. Composed entity model and lock ordering
 
-To prevent deadlock under high concurrency, all transactions that mutate or read
+To reduce deadlock risk under high concurrency, all transactions that mutate or read
 with intent must acquire row locks in a strictly ascending order across entity
 tiers.
 
@@ -129,7 +145,7 @@ flowchart TD
         L3["Tier 3: Active Policy Version<br/><code>tp_active_policies</code> (FOR SHARE)"]
         L4["Tier 4: Permit Replay Claim<br/><code>tp_permit_consumptions</code> (INSERT)"]
         L5["Tier 5: Execution Attempt<br/><code>tp_execution_attempts</code> (INSERT)"]
-        L6["Tier 6: Lifecycle Journal Fact<br/><code>tp_operation_lifecycle_facts</code> (INSERT)"]
+        L6["Tier 6: Journal / Evidence Stream Heads and Facts<br/>Scoped head locks, ordered fact INSERTs"]
         L7["Tier 7: Evidence Outbox<br/><code>tp_evidence_outbox</code> (INSERT)"]
     end
 
@@ -154,16 +170,31 @@ flowchart TD
 3. **Shared policy lock**: Active policy verification uses `FOR SHARE` (or MariaDB
    `LOCK IN SHARE MODE`). This prevents policy administrators from deactivating or
    altering a policy version while an authority transaction is validating it.
-4. **Query timeout**: Every SQL statement enforces a strict query timeout of
-   5,000 milliseconds (`Statement.setQueryTimeout(5)`). This prevents thread
-   exhaustion in the event of unforeseen lock contention or network stalling.
+4. **Bounded waits**: Retain five-second statement query timeouts, but do not
+   describe them as a whole-operation or network deadline. Separately bound and
+   qualify connection acquisition, socket, lock-wait and worker cleanup behavior.
+5. **Scoped point lookups**: Every read/update/lock includes trusted tenant and
+   workspace plus the exact operation identity; pseudocode below abbreviates
+   these predicates. Order multiple keys deterministically. Test implicit index,
+   uniqueness and FK locks too; a deadlock aborts fail closed, never authorizes
+   an automatic effectful retry.
+6. **Complete lock graph**: Before implementation, include evidence-stream heads,
+   policy activation, reviewer decisions, quarantine/recovery and outbox leasing
+   in the same reviewed graph. Lock shared stream heads before appending their
+   hash-linked evidence; order multiple stream keys deterministically. Outbox
+   workers must not hold later-tier leases while acquiring an earlier head lock.
+   Table names/tiers here do not by themselves prove compatibility with existing
+   PostgreSQL transaction paths.
 
 ---
 
 ## 4. Authority transaction mechanics: permit consumption and attempt claim
 
-The core authority transaction binds approval verification, permit issuance,
-replay prevention, and execution attempt creation into a single atomic commit.
+The proposed authority transaction atomically binds persisted approval, policy,
+replay consumption, execution attempt and evidence. Existing permit issuance is
+a separate boundary: do not claim signing is committed by JDBC or mint authority
+merely because the pure ADR0075 binding validates. A future permit/claim contract
+must bind all business-operation/profile fields before executor wiring.
 
 ### 4.1 Transaction execution sequence
 
@@ -184,24 +215,22 @@ sequenceDiagram
     DB->>DB: SELECT * FROM tp_operation_lifecycle_heads WHERE operation_id = ? FOR UPDATE
     DB->>DB: SELECT * FROM tp_approval_requests WHERE approval_id = ? FOR UPDATE
 
-    Note over DB: Database-Time Recheck Under Row Lock
-    DB->>DB: SELECT UTC_TIMESTAMP(6) AS db_now
-    alt db_now > approval.expires_at
-        DB->>DB: Transition approval to 'expired'
-        DB->>DB: Append 'approval.expired' outbox event
-        DB->>DB: COMMIT TRANSACTION
-        DB-->>Worker: Return APPROVAL_EXPIRED
-    end
-
     Note over DB: Tier 3: Verify Policy Generation Under Share Lock
     DB->>DB: SELECT active_version, activation_sequence, content_hash FROM tp_active_policies FOR SHARE
     alt Policy altered or generation mismatch
         DB-->>Worker: Throws STALE_POLICY_GENERATION (Rollback)
     end
 
+    Note over DB: Fresh time statement AFTER ALL authority lock waits
+    DB->>DB: SELECT UTC_TIMESTAMP(6) AS db_now
+    DB->>DB: Recheck trusted actor, scope, owner, state, binding, policy and deadlines
+    alt Any deadline is equal to or before db_now, or another check fails
+        DB-->>Worker: Fail closed; no permit claim or attempt (Rollback)
+    end
+
     Note over DB: Tier 4: Atomic Permit Replay Claim
     DB->>DB: INSERT INTO tp_permit_consumptions (permit_id, action_hash, created_at, expires_at)
-    alt Error 1062 (Duplicate Key)
+    alt Duplicate on the exact scoped permit replay key
         DB-->>Worker: Return APPROVAL_REPLAYED / PERMIT_ALREADY_CONSUMED (Rollback)
     end
 
@@ -209,6 +238,7 @@ sequenceDiagram
     DB->>DB: INSERT INTO tp_execution_attempts (attempt_id, operation_id, permit_id, status='executing')
 
     Note over DB: Tier 6: Append Additive Lifecycle Fact
+    DB->>DB: Lock required scoped evidence heads in deterministic order
     DB->>DB: UPDATE tp_operation_lifecycle_heads SET snapshot_json = ?, snapshot_hash = ?
     DB->>DB: INSERT INTO tp_operation_lifecycle_facts (sequence, fact_json, actor_hash)
 
@@ -227,61 +257,59 @@ sequenceDiagram
 
 To eliminate race conditions caused by thread scheduling or lock-wait latency:
 
-1. **Clock re-sampling**: Immediately after acquiring the `FOR UPDATE` lock on
-   `tp_approval_requests`, the transaction executes:
+1. **Clock re-sampling**: After acquiring **all** quarantine, operation, approval
+   and policy locks, including any policy-share-lock wait, execute a new statement:
    ```sql
    SELECT UTC_TIMESTAMP(6) AS current_db_time;
    ```
-2. **Expiration evaluation**: If `current_db_time > approval.expires_at`:
-   - The pending approval has expired while waiting for the lock.
-   - The transaction transitions the approval to `expired` with reason `APPROVAL_EXPIRED`.
-   - An `approval.expired` evidence record is inserted into `tp_evidence_outbox`.
-   - The transaction commits the expiration and returns `ApprovalConsumptionStatus.APPROVAL_EXPIRED`.
-   - **No permit is issued and no execution attempt is created.**
+2. **Authority recheck**: Revalidate verified requester/reviewer context, exact
+   tenant/workspace/owner, role/scope/audience, operation/approval state and hash,
+   independent reviewer, current policy/content/artifact binding and generation.
+   Every required deadline must be **strictly after** the sampled time: equality
+   is expired (`db_now >= expires_at`). A failed check creates no permit claim or
+   attempt and conveys no dispatch authority. Any separately designed durable
+   expiry fact must use the same atomic journal/evidence boundary, not an ad hoc
+   status-only commit. Current role snapshots do not establish instant revocation.
 3. **Monotonicity assertion**: If `current_db_time < approval.updated_at`, the
    database clock has regressed. The transaction immediately rolls back and raises
    `DATABASE_CLOCK_REGRESSION` fail-closed.
+4. **Replay classification**: A vendor duplicate code alone is insufficient.
+   Only the intended scoped permit-key conflict maps to replay. An unrelated
+   unique/FK/check failure aborts as a fixed storage failure. No suppressed SQL
+   diagnostic or raw connection/argument string may escape.
 
 ---
 
-## 5. Cancellation vs. claim races (exactly-one-winner semantics)
+## 5. Pending-only withdrawal and admissible races
 
-A critical security vulnerability in distributed systems is the race condition
-between an owner withdrawing a request and a reviewer or automated worker claiming
-it for execution.
+Do not broaden ADR 0072 or the existing approval API: withdrawal applies only to
+evaluating/awaiting-approval authorization with **not-started** execution.
+An approved request is not cancellable merely because no target call has begun.
+The currently reachable operation-library write is evaluating → cancelled;
+entering awaiting approval and admission remain future composition work.
 
 ### 5.1 Race arbitration via Tier 1 lock
 
-Both operations contend for the same Tier 1 lock on `tp_operation_lifecycle_heads`:
+The proposed composed commands share the same scoped Tier 1 head lock:
 
 ```mermaid
 flowchart TD
-    Start["Concurrent Requests:<br/>1. Requester calls withdraw()<br/>2. Worker calls consumeAndClaim()"] --> Contention["Contend for Tier 1 Row Lock on Head<br/><code>tp_operation_lifecycle_heads FOR UPDATE</code>"]
-
-    Contention -->|withdraw() acquires lock first| PathA["Path A: Requester Wins Lock"]
-    PathA --> CheckPendingA{"Is authorization status<br/>'evaluating' or 'pending'?"}
-    CheckPendingA -->|Yes| CancelSuccess["1. Set status = 'cancelled'<br/>2. Append withdrawal fact<br/>3. Enqueue 'operation.cancelled' outbox<br/>4. COMMIT"]
-    CheckPendingA -->|No| CancelFail["Return 409 APPROVAL_NOT_CANCELLABLE<br/>ROLLBACK"]
-    CancelSuccess --> WorkerLockA["Worker acquires lock second"]
-    WorkerLockA --> WorkerCheckA{"Is status 'approved'?"}
-    WorkerCheckA -->|No, it is 'cancelled'| WorkerRejectA["Worker refused:<br/>APPROVAL_NOT_EXECUTABLE<br/>Permit NOT claimed, Target NOT called"]
-
-    Contention -->|consumeAndClaim() acquires lock first| PathB["Path B: Worker Wins Lock"]
-    PathB --> CheckApprB{"Is status 'approved'<br/>and unexpired?"}
-    CheckApprB -->|Yes| ClaimSuccess["1. Set status = 'consumed'<br/>2. Insert permit claim (Tier 4)<br/>3. Insert attempt (Tier 5)<br/>4. Append fact & outbox<br/>5. COMMIT"]
-    CheckApprB -->|No| ClaimFail["Return APPROVAL_NOT_EXECUTABLE<br/>ROLLBACK"]
-    ClaimSuccess --> RequesterLockB["Requester acquires lock second"]
-    RequesterLockB --> RequesterCheckB{"Is status 'evaluating'/'pending'?"}
-    RequesterCheckB -->|No, it is 'consumed'| RequesterRejectB["Requester refused:<br/>409 APPROVAL_NOT_CANCELLABLE<br/>Cancellation rejected"]
+    Pending["Pending, not started"] --> Race["withdraw vs reviewer decision<br/>same scoped head lock"]
+    Race --> Cancelled["withdraw wins: cancelled<br/>decision and claim refused"]
+    Race --> Decided["decision wins: approved or denied<br/>withdraw refused"]
+    Decided --> Approved["If approved and all authority checks pass"]
+    Approved --> Claim["claim vs claim: at most one admission<br/>withdraw still refused"]
 ```
 
 ### 5.2 Elimination of partial states
 
-Because both operations are fully enclosed within their respective transactions,
-there is **zero possibility** of a partial state where:
-
-- A permit is claimed, but the request is marked `cancelled`.
-- A request is marked `cancelled`, but the target side effect is dispatched.
+Required tests force both actual lock schedules for withdrawal vs approve/deny,
+and duplicate claims on an already approved request. On pending work every claim
+must fail regardless of who acquires the lock first. A stale duplicate withdrawal
+must fail the expected-state token; no path reverses already admitted work.
+Atomicity/fault tests must show no cancelled state combined with an admitted
+attempt. This is a required invariant, not proof of all distributed schedules or
+exactly-once target execution.
 
 ---
 
@@ -323,7 +351,7 @@ TracePermit strictly mandates a four-phase execution pattern:
                                        │
 ┌──────────────────────────────────────▼──────────────────────────────────────┐
 │ Phase 4: Completion Transaction (Atomic DB Commit)                          │
-│ - Open new DB connection and acquire Tier 1 lock.                           │
+│ - Open connection; acquire Tier 0 then Tier 1 and remaining required locks.  │
 │ - Transition attempt to 'succeeded', 'failed', or 'unknown'.                │
 │ - Append completion lifecycle fact and outbox event.                        │
 │ - COMMIT transaction.                                                       │
@@ -332,6 +360,14 @@ TracePermit strictly mandates a four-phase execution pattern:
 
 **Rule**: Under no circumstances may an HTTP call to GitHub, Okta, Auth0, AWS,
 or any external API be invoked while a database transaction is open.
+
+`STARTED`/an existing attempt's `executing` label denotes durable admission, not
+proof that the target received the request. Preserve the generic operation's
+separate authorization/execution/outcome dimensions and explicitly map them in
+the future coordinator contract. Do not change frozen lifecycle enums or report
+confirmed success based on a claim label. Phase 3 still needs executor-verifiable
+authority and exact ADR0075 target/precondition checks; Phase 4 must atomically
+record only the actually observed result or uncertainty.
 
 ---
 
@@ -346,32 +382,30 @@ When `connection.commit()` fails or times out:
 2. The outcome is classified strictly as **`OPERATION_COMMIT_UNKNOWN`**.
 3. **Fail-Closed Rule**: A return of `OPERATION_COMMIT_UNKNOWN` **never conveys
    dispatch authority**. The dispatcher must abort and not proceed to Phase 3.
-4. **Reconciliation**: A subsequent retry by the client using the same scoped
-   idempotency key will re-query the durable database state. If the prior
-   transaction committed, the store returns the existing record; if it rolled
-   back, the retry proceeds cleanly.
+4. **Reconciliation**: A separate explicit read may establish durable state.
+   ADR 0070 registration retries return the immutable initial registration, not
+   current authority; use lifecycle reads for progress. Neither lookup, a failed
+   acknowledgement nor read-only target reconciliation grants resend authority.
+   Never automatically re-enter claim/dispatch after an ambiguous commit.
 
 ### 7.2 Stale-worker and recovery-generation fences
 
-When a node crashes or a network partition occurs, a paused or partitioned
-worker must not wake up and execute stale authority.
+The proposed generation check fences **new admission transactions**, not every
+instruction a paused worker can execute after a previously acknowledged commit.
 
-1. **Monotonic recovery generation**: The database maintains a cluster-wide
-   generation counter in `tp_recovery_quarantine`:
-   ```sql
-   CREATE TABLE tp_recovery_quarantine (
-       tenant_id VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL PRIMARY KEY,
-       current_generation BIGINT UNSIGNED NOT NULL,
-       quarantine_status VARCHAR(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
-       fenced_at DATETIME(6) NOT NULL,
-       reason_code VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL
-   ) ENGINE=InnoDB;
-   ```
+1. **Recovery generation**: A separately administered durable fence records
+   trusted scope, current generation, quarantine state and fixed reason metadata.
+   Exact schema and release mechanism require an implementation ADR and tests;
+   no new DDL is approved by this document.
 2. **Generation verification**: Every authority transaction checks `current_generation`
    against the worker's startup generation under Tier 0.
-3. **Restart fence**: On service restart or crash recovery, an administrative
-   command increments `current_generation`. Any in-flight worker holding an
-   older generation counter is fenced out immediately upon its next statement.
+3. **Restart fence and gap**: Stop/isolate old dispatchers before recovery. A
+   stale worker is rejected when it next enters a checked authority transaction.
+   A check at admission, or even immediately before a network call, cannot
+   atomically fence a pause between that check and the target effect. GitHub PR
+   creation supplies no native idempotency/fencing token in this design. Stronger
+   isolation, dispatch ownership and conservative unknown-outcome handling remain
+   gates, not an instantaneous revocation or exactly-once guarantee.
 
 ### 7.3 Older-backup resurrection limitation
 
@@ -384,95 +418,52 @@ worker must not wake up and execute stale authority.
 A database cannot internally detect that it was restored to an older physical
 snapshot. Therefore, TracePermit mandates an **operational recovery boundary**:
 
-- **Mandatory post-restore fence**: Immediately following any backup restoration,
-  and prior to admitting any network traffic, an operator must run:
-  ```bash
-  tracepermit-admin --force-quarantine --bump-generation
-  ```
-- This invalidates all worker generation tokens and places the system into
-  fail-closed quarantine until an audit of external target systems (e.g. GitHub PR
-  activity) can reconcile unconfirmed states.
+- **Proposed post-restore procedure**: Before admitting traffic, independently
+  quarantine restored state, stop/isolate old dispatchers and reconcile target
+  observations. A database-local counter may itself roll back with the backup;
+  it cannot prove externally monotonic authority. External recovery anchoring and
+  explicit operator release are unresolved implementation gates.
+- No `tracepermit-admin` command implementing this proposal exists. Do not run
+  invented recovery commands or clear quarantine based only on a local lookup.
 
 ---
 
 ## 8. Least-privilege database user grants
 
 To prevent privilege escalation and protect data integrity, TracePermit requires
-two distinct database credentials.
+separate migration, runtime and narrowly scoped recovery-operator credentials.
+The table below is grant intent, not a deployable provisioning script;
+use a dedicated schema, restricted host/network scope and separately supplied
+secrets. Validate exact deployed columns and engine-specific privilege semantics.
 
 ### 8.1 Migration user (`tracepermit_migration`)
 
 Used exclusively during stopped-service installation and explicit additive upgrades.
 
-```sql
--- MariaDB Migration Grants
-GRANT SELECT, INSERT, UPDATE, CREATE, ALTER, INDEX
-  ON `tracepermit`.*
-  TO 'tracepermit_migration'@'%' IDENTIFIED BY '...';
-```
+Grant only DDL/DML needed by reviewed explicit migrations in the dedicated schema,
+with restricted host/network scope. Keep that credential unavailable to runtime.
+Provisioning and TLS enforcement need separate exact-version qualification.
 
 ### 8.2 Runtime user (`tracepermit_runtime`)
 
 Used by running application instances. **`DELETE`, `DROP`, and administrative
 privileges are strictly denied.**
 
-```sql
--- MariaDB Runtime Grants
--- 1. Base read/write on append-only and attempt tables
-GRANT SELECT, INSERT
-  ON `tracepermit`.`tp_business_operations`
-  TO 'tracepermit_runtime'@'%';
+| Logical data                                                           | Proposed runtime intent                                                                             |
+| :--------------------------------------------------------------------- | :-------------------------------------------------------------------------------------------------- |
+| Initial registration, initial/lifecycle facts, consumed-permit records | SELECT/INSERT, never UPDATE/DELETE                                                                  |
+| Operation heads                                                        | SELECT/INSERT; UPDATE only snapshot hash/JSON, preserving existing ADR 0072 column limits           |
+| Approval/attempt state                                                 | Only reviewed mutable state columns; never identities, scope, binding or immutable approval content |
+| Outbox                                                                 | INSERT immutable event/payload/hash; only separately reviewed lease/delivery fields may be updated  |
+| Active policy, policy versions, quarantine/generation, Flyway history  | SELECT only                                                                                         |
 
-GRANT SELECT, INSERT
-  ON `tracepermit`.`tp_business_operation_facts`
-  TO 'tracepermit_runtime'@'%';
-
-GRANT SELECT, INSERT
-  ON `tracepermit`.`tp_operation_lifecycle_facts`
-  TO 'tracepermit_runtime'@'%';
-
-GRANT SELECT, INSERT
-  ON `tracepermit`.`tp_permit_consumptions`
-  TO 'tracepermit_runtime'@'%';
-
-GRANT SELECT, INSERT
-  ON `tracepermit`.`tp_execution_permits`
-  TO 'tracepermit_runtime'@'%';
-
-GRANT SELECT, INSERT, UPDATE
-  ON `tracepermit`.`tp_execution_attempts`
-  TO 'tracepermit_runtime'@'%';
-
-GRANT SELECT, INSERT, UPDATE
-  ON `tracepermit`.`tp_evidence_outbox`
-  TO 'tracepermit_runtime'@'%';
-
-GRANT SELECT, INSERT, UPDATE
-  ON `tracepermit`.`tp_approval_requests`
-  TO 'tracepermit_runtime'@'%';
-
--- 2. Column-scoped update on lifecycle heads (only snapshot json and hash)
-GRANT SELECT, INSERT, UPDATE (snapshot_hash, snapshot_json, updated_at)
-  ON `tracepermit`.`tp_operation_lifecycle_heads`
-  TO 'tracepermit_runtime'@'%';
-
--- 3. Read-only access to policies, quarantine, and schema history
-GRANT SELECT
-  ON `tracepermit`.`tp_active_policies`
-  TO 'tracepermit_runtime'@'%';
-
-GRANT SELECT
-  ON `tracepermit`.`tp_policy_versions`
-  TO 'tracepermit_runtime'@'%';
-
-GRANT SELECT, UPDATE (quarantine_status, fenced_at, reason_code)
-  ON `tracepermit`.`tp_recovery_quarantine`
-  TO 'tracepermit_runtime'@'%';
-
-GRANT SELECT
-  ON `tracepermit`.`flyway_schema_history`
-  TO 'tracepermit_runtime'@'%';
-```
+Runtime must not change generation or clear quarantine. If runtime may mark a
+failure quarantined, design a separate monotonic mark-only mechanism that cannot
+set ready; do not grant a generic status UPDATE. A recovery operator, not the
+application, performs reviewed release. Append-only evidence grants must prevent
+payload/hash rewriting; delivery-lease columns need separate bounded privileges.
+The existing ADR 0072 library needs only its documented four-table grants; this
+proposal does not expand those grants on a running installation.
 
 ---
 
@@ -480,7 +471,7 @@ GRANT SELECT
 
 ### 9.1 MariaDB implicit commit hazard
 
-In MariaDB, any DDL statement implicitly commits the current transaction. If a
+Many MariaDB DDL statements implicitly commit the current transaction. If a
 migration contains two statements:
 
 ```sql
@@ -490,7 +481,8 @@ ALTER TABLE invalid_table ADD COLUMN foo INT; -- Fails!
 
 The first statement commits immediately. The second fails, but the first **cannot
 be rolled back**. Flyway records the migration as failed, leaving the schema in a
-corrupt intermediate state.
+partially upgraded state requiring investigation. Do not equate every interrupted
+migration with corruption or silently repair Flyway history.
 
 ### 9.2 Safe migration protocol
 
@@ -511,62 +503,55 @@ corrupt intermediate state.
 ## 10. Reuse of existing ports vs. new components
 
 To maintain architectural integrity and avoid maintaining two divergent lifecycle
-engines, the MariaDB implementation reuses existing ports from main and PR #101:
+engines, the proposed implementation reuses existing ports from main:
 
 | Component / Port                       | Origin                              | Proposed MariaDB reuse                                                                                    |
 | :------------------------------------- | :---------------------------------- | :-------------------------------------------------------------------------------------------------------- |
 | `BusinessOperationRepository`          | ADR 0070 / `persistence-operations` | **Direct reuse**: Shared across PostgreSQL and MariaDB.                                                   |
-| `BusinessOperationLifecycleRepository` | PR #101 / ADR 0072                  | **Direct reuse**: Head lock and withdrawal journal are portable.                                          |
+| `BusinessOperationLifecycleRepository` | Merged ADR 0072                     | **Reuse its limited contract**: Current reads and pending-only withdrawal, not generic admission writes.  |
 | `BusinessOperationTransitionPlanner`   | ADR 0071 / `application`            | **Direct reuse**: Pure Java state transitions, zero DB code.                                              |
-| `MariaDbPermitConsumptionStore`        | ADR 0066 / `persistence-mariadb`    | **Incorporate into composed transaction**: Replay store primitives remain valid.                          |
+| `MariaDbPermitConsumptionStore`        | ADR 0066 / `persistence-mariadb`    | **Reuse semantics, not separate commits**: Transaction participation needs a reviewed new contract.       |
 | `DurableEnforcementState`              | `execution`                         | **Implement MariaDB provider**: Port PostgreSQL implementation to use composed Tier 0–7 lock coordinator. |
-| `EvidenceOutboxPublisher`              | `application`                       | **Direct reuse**: Outbox polling and publication logic is engine-agnostic.                                |
+| `EvidenceOutboxPublisher`              | `application`                       | **Reuse port semantics**: Engine-specific lease/storage behavior still needs qualification.               |
+| `GitHubBusinessOperationBinding`       | ADR0075 / `adapters-remote`         | **Pure binding only**: Load persisted data independently; never treat returned data as a claim or permit. |
 
 ### 10.1 Unresolved decisions for coordinator review
 
 1. **Module location**: Should the composed MariaDB authority engine reside in
    `persistence-mariadb` or should `persistence-operations` expand to become the
    sole multi-engine persistence provider?
-   - _Recommendation_: Expand `persistence-mariadb` to host the full composed
-     `MariaDbDurableEnforcementState`, keeping `persistence-operations` focused on
-     operation registration.
+   - _Decision pending_: Preserve a single lifecycle/transaction owner. The
+     operations module already owns registration **and withdrawal**. A provider
+     must not call independently committing stores and describe that as atomic.
+     Review the transaction-participation API and module ownership first.
 2. **Outbox leasing mechanism**: PostgreSQL uses `FOR UPDATE SKIP LOCKED` for
    concurrent outbox consumers. MariaDB 10.6+ supports `SKIP LOCKED`. Should
    TracePermit standardize on `SKIP LOCKED` across both engines?
-   - _Recommendation_: Yes. Both MariaDB 11.4.13 and 10.6.25 fully support
-     `SELECT ... FOR UPDATE SKIP LOCKED`, enabling identical outbox polling.
+   - _Candidate_: Test `SKIP LOCKED` on both exact versions. Syntax availability
+     alone does not prove identical lease, fairness, expiry or recovery semantics.
 
 ---
 
 ## 11. Requirement-to-test traceability matrix
 
-| Requirement ID | Description                       | Test Verification Case                        | Expected Engine Coverage            |
-| :------------- | :-------------------------------- | :-------------------------------------------- | :---------------------------------- |
-| **FR-003**     | Approval lifecycle transitions    | `testApprovalLifecycleTransitions`            | PG 16.4, MariaDB 11.4, MariaDB 10.6 |
-| **FR-007**     | Execution attempt tracking        | `testExecutionAttemptStateRecording`          | PG 16.4, MariaDB 11.4, MariaDB 10.6 |
-| **FR-008**     | Atomic replay prevention          | `testPermitReplayRejectionUnderConcurrency`   | PG 16.4, MariaDB 11.4, MariaDB 10.6 |
-| **FR-010**     | Pending request withdrawal        | `testPendingOperationWithdrawal`              | PG 16.4, MariaDB 11.4, MariaDB 10.6 |
-| **FR-012**     | Evidence outbox capture           | `testEvidenceOutboxAtomicityWithAttempt`      | PG 16.4, MariaDB 11.4, MariaDB 10.6 |
-| **FR-015**     | Policy generation binding         | `testStalePolicyGenerationRejection`          | PG 16.4, MariaDB 11.4, MariaDB 10.6 |
-| **SEC-001**    | Trusted context isolation         | `testCrossTenantScopeRejection`               | PG 16.4, MariaDB 11.4, MariaDB 10.6 |
-| **SEC-002**    | Requester owner validation        | `testNonOwnerWithdrawalRejection`             | PG 16.4, MariaDB 11.4, MariaDB 10.6 |
-| **SEC-003**    | Distinct reviewer rule            | `testSelfReviewRejection`                     | PG 16.4, MariaDB 11.4, MariaDB 10.6 |
-| **SEC-005**    | Database-time recheck & expiry    | `testLockWaitDeadlineExpiry`                  | PG 16.4, MariaDB 11.4, MariaDB 10.6 |
-| **SEC-006**    | Tenant partition isolation        | `testTenantDataIsolation`                     | PG 16.4, MariaDB 11.4, MariaDB 10.6 |
-| **SEC-009**    | Recovery generation fencing       | `testStaleGenerationWorkerRejection`          | PG 16.4, MariaDB 11.4, MariaDB 10.6 |
-| **SEC-012**    | Least-privilege grants            | `testRuntimeUserPermissionsBoundaries`        | MariaDB 11.4, MariaDB 10.6          |
-| **REL-001**    | Multi-entity atomicity            | `testPartialWriteRollbackIntegrity`           | PG 16.4, MariaDB 11.4, MariaDB 10.6 |
-| **REL-002**    | Deterministic conflict resolution | `testConcurrentWithdrawalVsClaimRace`         | PG 16.4, MariaDB 11.4, MariaDB 10.6 |
-| **REL-004**    | Exactly-one-winner concurrency    | `testHighConcurrencyClaimContention32Workers` | PG 16.4, MariaDB 11.4, MariaDB 10.6 |
-| **REL-005**    | Commit uncertainty handling       | `testLostCommitAcknowledgementFailClosed`     | PG 16.4, MariaDB 11.4, MariaDB 10.6 |
-| **DATA-001**   | Schema & engine constraints       | `testDatabaseEngineProfileValidation`         | MariaDB 11.4, MariaDB 10.6          |
-| **DATA-002**   | Immutable audit journal           | `testLifecycleJournalTamperResistance`        | PG 16.4, MariaDB 11.4, MariaDB 10.6 |
-| **DATA-004**   | Byte bounds & strict JSON reader  | `testStrictStoredJsonParsing`                 | PG 16.4, MariaDB 11.4, MariaDB 10.6 |
-| **OPS-002**    | Explicit migration boundaries     | `testValidateExistingRejectsUnmigrated`       | PG 16.4, MariaDB 11.4, MariaDB 10.6 |
-| **OPS-004**    | Credential-safe diagnostics       | `testStorageExceptionDiagnosticSanitization`  | PG 16.4, MariaDB 11.4, MariaDB 10.6 |
-| **PORT-001**   | Multi-engine portability          | `testFullSuiteAcrossAllThreeEngines`          | PG 16.4, MariaDB 11.4, MariaDB 10.6 |
-| **PORT-002**   | Storage engine verification       | `testInnoDBStorageEngineEnforcement`          | MariaDB 11.4, MariaDB 10.6          |
-| **PORT-003**   | Portable locking semantics        | `testLockOrderDeadlockAbsence`                | PG 16.4, MariaDB 11.4, MariaDB 10.6 |
+These are **proposed acceptance cases**, not existing test method names or passing
+evidence. Descriptions follow [the authoritative requirements](../specs/02-system-requirements.md).
+All three engines need equivalent semantic tests; syntax/grant checks are
+engine-specific. No requirement-wide implementation status is promoted.
+
+| Requirement IDs           | Actual requirement boundary                                                   | Proposed verification                                                                       |
+| :------------------------ | :---------------------------------------------------------------------------- | :------------------------------------------------------------------------------------------ |
+| FR-003; SEC-001/004       | Adapter authentication; no body-asserted authority; verified token time/scope | Independently derived context, expired role/token after lock waits, no body escalation      |
+| FR-007; SEC-005           | Exact request-bound human approval and canonical hash                         | Independent reviewer, changed action/profile/policy/artifact rejection, expiry equality     |
+| FR-008/009; SEC-006       | Executor-verifiable authority; immediate target checks; atomic single use     | Approved-only admission, 32-way replay contention, no dispatch on uncertain commit          |
+| FR-010; SEC-010; DATA-004 | Correlated append-only evidence, including corrections                        | Attempt/head/fact/outbox atomicity and rollback; append reconciliation facts                |
+| FR-012                    | Simulator-first effectful adapters                                            | Deterministic synthetic target; zero live side effects in this suite                        |
+| FR-015; SEC-019; REL-005  | Unknown outcomes reconciled by bound read-only lookup, not effect retry       | Lost acknowledgement, paused post-commit worker and non-authorizing lookup                  |
+| SEC-002/009; REL-001      | Conservative states and scope isolation; explicit fail-safe outcomes          | Cross-tenant/workspace refusal, unsupported engine/state, generation rejection              |
+| SEC-003/012; DATA-001     | No reusable credentials in storage/diagnostics; fingerprints only             | Redacted fixed errors, cause/suppression fault paths, no raw JDBC input                     |
+| REL-002/004               | Distinct lifecycle outcomes and correct concurrent transitions                | Pending withdraw-vs-decision schedules; approved claim-vs-claim; coherent reads             |
+| OPS-002/004               | Active version inventory and recovery runbooks                                | Exact schema/history/engine validation, restricted grants, explicit stopped-writer recovery |
+| PORT-001/002/003          | Versioned contracts, canonical vectors and Java conformance                   | Preserve frozen artifacts/migration bytes; strict stored JSON and exact binding vectors     |
 
 ---
 
@@ -588,7 +573,8 @@ flowchart LR
 ```
 
 1. **Stage 1 (Storage & Migrations)**:
-   - Deliver additive Flyway migrations for MariaDB `persistence-mariadb`.
+   - Decide single transaction/module ownership, then deliver reviewed additive
+     migrations without rewriting existing V1/V2 bytes.
    - Implement empty-only database initialization and `validateExisting()` startup checks.
    - Add automated test verifying runtime user grant restrictions (no DELETE/DROP/ALTER).
 2. **Stage 2 (Authority Transaction Coordinator)**:
@@ -601,5 +587,17 @@ flowchart LR
    - Implement commit-uncertainty mapping (`OPERATION_COMMIT_UNKNOWN`).
 4. **Stage 4 (Qualification & Adversarial Hardening)**:
    - Execute full concurrency suite across MariaDB 11.4.13, 10.6.25, and PostgreSQL 16.4.
-   - Run fault injection tests: network drops during commit, lock wait timeouts, and deadlock absence.
+   - Run fault injection tests: network drops during commit, actual lock waits,
+     policy-lock deadline expiry and deadlock rollback. Zero observed deadlocks
+     in selected schedules is not a deadlock-freedom proof.
    - Coordinate final merge and update traceability matrix.
+
+## 13. SQL reference boundaries
+
+The proposal relies on MariaDB's documented
+[statement-time NOW behavior](https://mariadb.com/docs/server/reference/sql-functions/date-time-functions/sysdate),
+[padding-sensitive CHAR comparisons](https://mariadb.com/docs/server/reference/data-types/string-data-types/char),
+[implicit-commit statement list and exceptions](https://mariadb.com/docs/server/reference/sql-statements/transactions/sql-statements-that-cause-an-implicit-commit),
+and [column-scoped GRANT syntax](https://mariadb.com/docs/server/reference/sql-statements/account-management-sql-statements/grant).
+Documentation is not qualification of our composed transaction: verify the exact
+11.4.13/10.6.25 profiles, schema and driver behavior with the planned tests.

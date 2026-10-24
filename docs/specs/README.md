@@ -25,6 +25,13 @@ the traceability matrix, and add positive and negative tests. The
 [simulator scenarios](../demo-scenarios/README.md) show qualified POC paths.
 No demo path may contact a real destructive target.
 
+[ADR0075](../architecture/0075-github-business-operation-binding.md) adds a pure
+operation/target hash join with an explicit strict GitHub profile and independent
+golden recipe. Separately supplied scope/policy/generation/target expectations
+are checked without normalizing a stored action. Returned data is not approval,
+a permit, an execution claim or a composed durable executor; see the
+[binding runbook](../runbooks/github-business-operation-binding.md).
+
 [ADR0073](../architecture/0073-github-pilot-target-preflight.md) and the
 [target-preflight runbook](../runbooks/github-pilot-target-preflight.md) qualify
 the GitHub adapter's explicit operator binding, fixed production transport,
@@ -79,6 +86,14 @@ is not wired into the simulator, an operations API or a target executor.
 a pure, scope/state-bound transition proposal helper. A candidate label is not
 authority or a committed event; durable lifecycle service composition remains
 pending.
+
+[ADR0072](../architecture/0072-durable-pending-operation-withdrawal.md) adds the
+separate durable current head/withdrawal journal and an explicit V1→V2 upgrade.
+Pending-only owner withdrawal uses locked whole-state/database-time authority
+checks. Initial registration/retry semantics stay unchanged. There is no generic
+proposed-state write, operations API, approval/permit or target wiring.
+Stored operation JSON and populated upgrade inputs reject duplicate keys and
+trailing data without changing global JSON/canonical semantics.
 
 [ADR0074](../architecture/0074-reserved-lane-bounded-dispatch.md) replaces
 queue-first simulator listener dispatch with explicit lane reservations and the

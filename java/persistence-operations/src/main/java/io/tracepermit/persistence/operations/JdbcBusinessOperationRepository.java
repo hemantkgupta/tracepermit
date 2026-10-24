@@ -23,7 +23,7 @@ import javax.sql.DataSource;
 
 /** Immutable registration store. No method issues authority, advances execution or invokes a target. */
 public final class JdbcBusinessOperationRepository implements BusinessOperationRepository {
-  private static final int MAX_BYTES = 262_144;
+  static final int MAX_BYTES = 262_144;
   private final DataSource source;
 
   public JdbcBusinessOperationRepository(DataSource source) {
@@ -82,6 +82,15 @@ public final class JdbcBusinessOperationRepository implements BusinessOperationR
             statement.executeUpdate();
           }
         }
+        try (PreparedStatement statement = prepare(connection, """
+            INSERT INTO tp_operation_lifecycle_heads (operation_id, snapshot_hash, snapshot_json)
+            VALUES (?, ?, ?)
+            """)) {
+          statement.setString(1, id);
+          statement.setString(2, CanonicalJson.sha256(operation));
+          statement.setString(3, snapshot);
+          statement.executeUpdate();
+        }
         commitAttempted = true;
         connection.commit();
       } catch (SQLException | RuntimeException failure) {
@@ -116,7 +125,7 @@ public final class JdbcBusinessOperationRepository implements BusinessOperationR
     }
   }
 
-  private static Optional<JsonNode> read(
+  static Optional<JsonNode> read(
       Connection connection, BusinessOperationScope scope, String field, String value)
       throws SQLException {
     // field is one of two private constant call sites, never an input or identifier from a request.
@@ -133,12 +142,9 @@ public final class JdbcBusinessOperationRepository implements BusinessOperationR
         String binding = rows.getString(3);
         String hash = rows.getString(4);
         String json = rows.getString(5);
-        if (json == null || json.getBytes(StandardCharsets.UTF_8).length > MAX_BYTES) {
-          throw error(OPERATION_STORAGE_CORRUPT);
-        }
         JsonNode operation;
         try {
-          operation = BusinessOperationValidator.validate(JsonSupport.MAPPER.readTree(json));
+          operation = BusinessOperationValidator.validate(StoredOperationJson.read(json, MAX_BYTES));
           requireScope(scope, operation);
           requireInitial(operation);
           if (!storedId.equals(normalizeId(operation.path("operationId").asText()))
@@ -147,7 +153,7 @@ public final class JdbcBusinessOperationRepository implements BusinessOperationR
               || !hash.equals(CanonicalJson.sha256(operation)) || rows.next()) {
             throw error(OPERATION_STORAGE_CORRUPT);
           }
-        } catch (java.io.IOException | RuntimeException failure) {
+        } catch (RuntimeException failure) {
           throw error(OPERATION_STORAGE_CORRUPT);
         }
         requireFacts(connection, storedId, operation);
@@ -199,7 +205,7 @@ public final class JdbcBusinessOperationRepository implements BusinessOperationR
     }
   }
 
-  private static String normalizeId(String id) {
+  static String normalizeId(String id) {
     try {
       String normalized = java.util.UUID.fromString(id).toString();
       if (!normalized.equals(id.toLowerCase(Locale.ROOT))) throw error(OPERATION_ID_INVALID);
@@ -209,7 +215,7 @@ public final class JdbcBusinessOperationRepository implements BusinessOperationR
     }
   }
 
-  private static PreparedStatement prepare(Connection connection, String sql) throws SQLException {
+  static PreparedStatement prepare(Connection connection, String sql) throws SQLException {
     PreparedStatement statement = connection.prepareStatement(sql);
     statement.setQueryTimeout(5);
     return statement;
