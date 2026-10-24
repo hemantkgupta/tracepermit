@@ -17,6 +17,13 @@ must expose only this single dedicated repository in its installation listing.
 Production uses only `https://api.github.com`, public pinned DNS and platform
 TLS. There is no custom host/port/trust or localhost override.
 
+All three operator IDs must be positive integers at most
+`9,007,199,254,740,991` (the frozen v1 safe-integer ceiling). Out-of-range values
+fail `TARGET_BINDING_INVALID` before any request; do not round, truncate or
+substitute an ID. Larger values can alias in v1 numeric fingerprints and are
+outside this qualified adapter profile. Supporting them requires a separately
+versioned exact-identifier contract; no global canonicalization change is made.
+
 `GitHubAppCredentialProvider` must be trusted to bind the short-lived opaque
 credential to the exact installation and minimal repository permissions. The
 adapter compares its installation ID to the operator record and checks expiry

@@ -28,7 +28,7 @@ client executor close on every path. JSON rejects duplicate fields and trailing
 documents. Diagnostics use fixed messages/codes and omit dependency causes.
 
 Require a separate, trusted `GitHubPilotTargetBinding`: positive installation,
-repository and owner IDs, exact existing repository/base allowlists, one head,
+repository and owner IDs no greater than `9,007,199,254,740,991`, exact existing repository/base allowlists, one head,
 and explicit 40-character head/base commit SHAs. It is operator input, not a
 field added to the canonical action, a caller assertion, or execution authority.
 Legacy construction without this record and optional upstream-only permit
@@ -82,6 +82,18 @@ Cached receipts also bind the full operator target record and canonical action
 payload hashes, preventing a reconstructed resolver or changed SHA/identity
 configuration from borrowing an earlier receipt. These local comparison hashes
 are neither the ADR0068 bridge nor independently authenticated evidence.
+
+The explicit ID ceiling is required because the frozen canonical JSON v1
+numeric profile converts through double precision. IDs `9007199254740992` and
+`9007199254740993` previously aliased in the target fingerprint, allowing a
+changed repository/owner binding to borrow an old cached receipt after resolver
+reconstruction. Reject every operator ID outside the safe-integer range before
+construction/dispatch. The largest allowed value and its neighbor remain distinct;
+HTTP-confirmed cache regressions cover both repository and owner changes there.
+This deliberately narrows the adapter profile; larger GitHub IDs require a
+separately versioned exact-identifier design, not a fallback or global canonical
+profile change. Fingerprints and cache comparisons for already permitted IDs
+keep their existing representation.
 
 ## Frozen-contract and residual boundaries
 

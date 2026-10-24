@@ -537,6 +537,67 @@ final class GitHubDraftPullRequestAdapterTest {
         .isInstanceOf(IllegalArgumentException.class);
   }
 
+  @ParameterizedTest @ValueSource(strings = {"installationId", "repositoryId", "ownerId"})
+  void operatorIdsOutsideFrozenSafeIntegerRangeAreRejected(String field) {
+    for (long unsafe : new long[] {9_007_199_254_740_992L, 9_007_199_254_740_993L, Long.MAX_VALUE}) {
+      assertThatThrownBy(() -> new GitHubPilotTargetBinding(
+          field.equals("installationId") ? unsafe : 71, field.equals("repositoryId") ? unsafe : 101,
+          field.equals("ownerId") ? unsafe : 201, REPO, HEAD, "main", BINDING.headSha(), BINDING.baseSha()))
+          .hasFieldOrPropertyWithValue("errorCode", "TARGET_BINDING_INVALID").hasNoCause();
+    }
+    assertThat(requests).isEmpty();
+  }
+
+  @Test void maximumSafeOperatorIdsRemainExactAndDistinct() {
+    long maximum = 9_007_199_254_740_991L;
+    var maximumBinding = new GitHubPilotTargetBinding(maximum, maximum, maximum, REPO, HEAD, "main",
+        BINDING.headSha(), BINDING.baseSha());
+    var hashes = new java.util.HashSet<String>(); hashes.add(maximumBinding.fingerprint());
+    for (String field : List.of("installationId", "repositoryId", "ownerId")) {
+      var adjacent = new GitHubPilotTargetBinding(field.equals("installationId") ? maximum - 1 : maximum,
+          field.equals("repositoryId") ? maximum - 1 : maximum, field.equals("ownerId") ? maximum - 1 : maximum,
+          REPO, HEAD, "main", BINDING.headSha(), BINDING.baseSha());
+      assertThat(adjacent).isNotEqualTo(maximumBinding); hashes.add(adjacent.fingerprint());
+    }
+    assertThat(hashes).hasSize(4); assertThat(requests).isEmpty();
+  }
+
+  @ParameterizedTest @ValueSource(strings = {"repositoryId", "ownerId"})
+  void adjacentSafeIdentityCannotBorrowAnActualReceiptAfterResolverReconstruction(String field) {
+    long maximum = 9_007_199_254_740_991L;
+    var before = new GitHubPilotTargetBinding(71, field.equals("repositoryId") ? maximum - 1 : 101,
+        field.equals("ownerId") ? maximum - 1 : 201, REPO, HEAD, "main", BINDING.headSha(), BINDING.baseSha());
+    var after = new GitHubPilotTargetBinding(71, field.equals("repositoryId") ? maximum : 101,
+        field.equals("ownerId") ? maximum : 201, REPO, HEAD, "main", BINDING.headSha(), BINDING.baseSha());
+    assertThat(before.fingerprint()).isNotEqualTo(after.fingerprint());
+    var observedRepository = repository().put("id", before.repositoryId());
+    ((ObjectNode) observedRepository.path("owner")).put("id", before.ownerId());
+    override = request -> {
+      String path = request.getRequestUrl().encodedPath();
+      if (path.equals("/installation/repositories")) {
+        var visible = JsonSupport.MAPPER.createObjectNode().put("total_count", 1);
+        visible.putArray("repositories").add(observedRepository); return response(200, visible.toString());
+      }
+      if (path.equals(REPO_PATH)) return response(200, observedRepository.toString());
+      if ("POST".equals(request.getMethod())) {
+        var pr = confirmation();
+        ((ObjectNode) pr.path("head")).set("repo", observedRepository);
+        ((ObjectNode) pr.path("base")).set("repo", observedRepository);
+        return response(201, pr.toString());
+      }
+      return null;
+    };
+    resolver = GitHubPullRequestOutcomeResolver.synthetic(provider, before, transport, clock);
+    adapter = GitHubDraftPullRequestAdapter.synthetic(provider, ledger, resolver, permits, before, transport, clock);
+    var action = action();
+    assertThat(adapter.execute(action, permit(action)).id()).isEqualTo(42001);
+    var reconstructed = GitHubPullRequestOutcomeResolver.synthetic(provider, after, transport, clock);
+    var changed = GitHubDraftPullRequestAdapter.synthetic(provider, ledger, reconstructed, permits, after, transport, clock);
+    assertThatThrownBy(() -> changed.execute(action, permit(action)))
+        .hasFieldOrPropertyWithValue("errorCode", "INVALID_CACHED_RESULT");
+    assertThat(requests).hasSize(5); assertThat(posts()).isEqualTo(1);
+  }
+
   @ParameterizedTest @ValueSource(strings = {"installation", "repository_id", "owner", "repository", "base", "head_same",
       "head_dot", "head_lock", "head_slash", "head_space", "head_colon", "head_sha", "base_sha"})
   void operatorRecordRejectsUnboundOrUnsafePreconditions(String change) {

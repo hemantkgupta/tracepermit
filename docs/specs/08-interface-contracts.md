@@ -23,6 +23,9 @@ operator-owned `GitHubPilotTargetBinding` supplies immutable installation/repo/
 owner IDs and exact allowed head/base/SHA preconditions. It is not a public
 action field or authority artifact. Missing binding/permit authority refuses
 dispatch. Existing repository aliases and target identity must agree.
+The installation/repository/owner ID range is `1..9007199254740991`; larger
+integers fail closed before transport so frozen v1 numeric fingerprints cannot
+alias distinct trusted bindings. No global canonical profile is changed.
 GET installation-access, repository and ref observations precede POST; exact
 typed positive confirmation is required. Reconciliation is GET-only and confirms
 only an unambiguous exact open draft/content observation; empty, paginated,

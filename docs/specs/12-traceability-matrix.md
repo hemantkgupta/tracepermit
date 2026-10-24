@@ -19,7 +19,15 @@ positive/adversarial destination, credential, action, preflight, typed response,
 pagination, absence, duplicate, key/permit, concurrency, byte/time, redaction and
 cleanup controls. `BoundedGitHubResponseTest` retains limit+1 stream evidence;
 existing SSRF/TLS tests retain the shared address policy evidence. Guard-removal
-controls and exact-head results are recorded in the PR. See
+controls and exact-head results are recorded in the PR.
+
+The operator ID ceiling (`1..9007199254740991`) and regressions
+`operatorIdsOutsideFrozenSafeIntegerRangeAreRejected`,
+`maximumSafeOperatorIdsRemainExactAndDistinct`, and
+`adjacentSafeIdentityCannotBorrowAnActualReceiptAfterResolverReconstruction` ensure
+overflow IDs are refused before transport, upper-bound neighbors remain exact,
+and a reconstructed adapter cannot borrow another immutable identity's genuine
+HTTP-confirmed receipt. Global canonical JSON v1 is unchanged. See
 [ADR0073](../architecture/0073-github-pilot-target-preflight.md) and the
 [runbook](../runbooks/github-pilot-target-preflight.md).
 

@@ -4,14 +4,19 @@ package io.tracepermit.adapters.remote.github;
 public record GitHubPilotTargetBinding(
     long installationId, long repositoryId, long ownerId, String repository,
     String head, String base, String headSha, String baseSha) {
+  // Frozen canonical JSON v1 converts numbers through double; identifiers must remain exact.
+  private static final long MAXIMUM_EXACT_ID = 9_007_199_254_740_991L;
+
   public GitHubPilotTargetBinding {
-    require(installationId > 0 && repositoryId > 0 && ownerId > 0);
+    require(exactId(installationId) && exactId(repositoryId) && exactId(ownerId));
     require(GitHubDraftPullRequestAction.ALLOWED_REPOSITORY.equals(repository));
     require(GitHubDraftPullRequestAction.ALLOWED_BASE_BRANCH.equals(base));
     require(validRef(head) && !base.equals(head));
     require(headSha != null && headSha.matches("[a-f0-9]{40}"));
     require(baseSha != null && baseSha.matches("[a-f0-9]{40}"));
   }
+
+  private static boolean exactId(long value) { return value > 0 && value <= MAXIMUM_EXACT_ID; }
 
   static boolean validRef(String ref) {
     if (ref == null || !ref.matches("[A-Za-z0-9_][A-Za-z0-9._/-]{0,254}")
