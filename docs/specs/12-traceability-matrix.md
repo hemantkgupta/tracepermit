@@ -24,6 +24,19 @@ target call, signed evidence, AgentCore ingress or restart-safe reconciliation.
 Constructors and unkeyed hashes grant no authority; a future executor must join
 and recheck those independent boundaries.
 
+## Durable pending-operation withdrawal
+
+Follow-up fail-closed decoding evidence (SEC-003/012; REL-001/004; DATA-001;
+OPS-002/004): package-local `StoredOperationJson` and its focused tests reject
+duplicate/nested keys, trailing data, malformed/null/oversized UTF-8 values and
+parser-diagnostic retention. The shared engine contract exercises originals,
+heads, journal facts/actors and populated pre-DDL upgrades. No global canonical
+change, DBA authenticity claim or whole-requirement completion follows.
+
+| Requirements                                                                                    | Implementation and evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Remaining boundary                                                                                                                                                                                                                      |
+| ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| FR-003/007/009/010/012; SEC-002/003/005/006/009/012; REL-001/002/004/005; DATA-001; OPS-002/004 | Closed `BusinessOperationWithdrawal`/lifecycle port; Java JDBC head/journal transaction, locked whole-state/database-time checks, coherent MVCC reads, immutable registration retry and explicit additive V2 upgrade. `BusinessOperationWithdrawalTest` and shared three-engine `OperationRepositoryContract` cover authority rejection, lock-wait expiry, single winner, rollback/ack loss, corruption/migration/grants. [ADR 0072](../architecture/0072-durable-pending-operation-withdrawal.md), [runbook](../runbooks/business-operation-withdrawal.md). | Internal pending-only withdrawal, not generic lifecycle authority, authenticated API, policy/approval/permit/target integration, global recovery fencing, S3, live RDS or production qualification. Whole requirement status unchanged. |
+
 ## CI scheduling and required completion gate
 
 Requirements: OPS-002/004; REL-001 (qualification process only; no whole-ID or

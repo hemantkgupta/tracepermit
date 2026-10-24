@@ -87,6 +87,14 @@ a pure, scope/state-bound transition proposal helper. A candidate label is not
 authority or a committed event; durable lifecycle service composition remains
 pending.
 
+[ADR0072](../architecture/0072-durable-pending-operation-withdrawal.md) adds the
+separate durable current head/withdrawal journal and an explicit V1→V2 upgrade.
+Pending-only owner withdrawal uses locked whole-state/database-time authority
+checks. Initial registration/retry semantics stay unchanged. There is no generic
+proposed-state write, operations API, approval/permit or target wiring.
+Stored operation JSON and populated upgrade inputs reject duplicate keys and
+trailing data without changing global JSON/canonical semantics.
+
 [ADR0074](../architecture/0074-reserved-lane-bounded-dispatch.md) replaces
 queue-first simulator listener dispatch with explicit lane reservations and the
 same bounded pending FIFO. It retains the eight-lane/sixteen-pending default,

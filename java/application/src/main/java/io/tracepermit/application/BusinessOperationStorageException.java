@@ -16,13 +16,22 @@ public final class BusinessOperationStorageException extends RuntimeException {
     OPERATION_STORAGE_CORRUPT,
     OPERATION_SCHEMA_NOT_READY,
     OPERATION_DATABASE_UNSUPPORTED,
-    OPERATION_WRITER_REQUIRED
+    OPERATION_WRITER_REQUIRED,
+    OPERATION_COMMAND_INVALID,
+    OPERATION_REQUESTER_NOT_AUTHORIZED,
+    OPERATION_AUTHENTICATION_EXPIRED,
+    OPERATION_NOT_FOUND,
+    OPERATION_STATE_STALE,
+    OPERATION_NOT_WITHDRAWABLE,
+    OPERATION_CLOCK_REGRESSION
   }
 
   private final Code code;
 
   public BusinessOperationStorageException(Code code) {
-    super(code.name());
+    // try-with-resources otherwise attaches a raw JDBC close failure to a fixed-code primary
+    // exception. Disable cause initialization/suppression so diagnostics cannot retain driver data.
+    super(code.name(), null, false, true);
     this.code = code;
   }
 

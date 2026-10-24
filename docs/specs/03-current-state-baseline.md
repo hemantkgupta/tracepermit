@@ -64,7 +64,10 @@ The Java application layer also provides an
 It checks exact scope and optimistic state identity, appends one valid v1 fact,
 and preserves other fields/history. It neither commits nor authorizes anything;
 the registration repository rejects progressed candidates. Atomic lifecycle
-persistence, actor/policy/approval checks and service/API wiring remain pending.
+persistence exists only for the closed pending-owner withdrawal command in
+[ADR 0072](../architecture/0072-durable-pending-operation-withdrawal.md): separate
+heads/journal, locked token/authority checks and explicit V2 migration. Generic
+transitions, policy/approval decisions and service/API wiring remain pending.
 
 ## Assurance vocabulary
 
