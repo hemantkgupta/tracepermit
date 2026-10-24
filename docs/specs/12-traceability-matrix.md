@@ -695,8 +695,14 @@ terminal accounting, downstream missing-ID categories, saturation and unchanged
 rejection/handler restoration (OPS-002/003/004; SEC-003/005/006/012;
 REL-001/005/009). The unchanged frozen runtime can report barrier completion
 before workers are released; the controlled 20-attempt probe observed16 handled
-and four refused/reset exchanges. Hosted causality, production repair and
-reliability remain unresolved. No PERF-001/002/003 completion or promotion.
+and four refused/reset exchanges. The narrowly authorized package-private
+qualification helper now waits for worker release under its original total
+deadline; `ApprovalAdmissionExecutorsTest` covers the held-after-Future gap,
+timeout, interrupt and shutdown. No request enforcement or admission changes.
+Hosted causality/reliability remain unproved. No PERF-001/002/003 completion or promotion.
+The three-independent-pass qualification was not achieved: a post-repair full
+run still failed with one status-phase reset and one actual exchange rejection.
+Further runtime/admission repair is outside this helper-only checkpoint.
 
 ## Data and privacy requirements
 

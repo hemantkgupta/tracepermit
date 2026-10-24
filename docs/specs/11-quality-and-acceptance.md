@@ -215,8 +215,11 @@ consequential missing-ID and admission categories must never turn a failure
 into success or publish arbitrary exception messages/classes. A controlled
 negative executor/HTTP probe is separate from qualification: it demonstrates
 the frozen barrier's worker-release gap, not the cause of every hosted failure.
-Runtime repair requires separate authorization and independent regression
-evidence; a passing rerun or empty asynchronous SQL map is not root-cause proof
+The separately authorized package-private qualification helper additionally
+waits for worker release under its original total deadline; it changes no
+request/runtime enforcement or admission policy. Held-after-Future regression,
+budget/interrupt/shutdown cases and three independent unchanged complete
+qualification runs are required. A passing rerun or empty asynchronous SQL map is not root-cause proof
 (PERF-001/002/003; OPS-002/003/004; REL-001/005/009; SEC-003/005/006/012).
 
 Measure classifier/policy time separately from token/JWKS, persistence,

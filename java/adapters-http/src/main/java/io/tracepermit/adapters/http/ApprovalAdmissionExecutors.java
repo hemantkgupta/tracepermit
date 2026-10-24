@@ -54,8 +54,11 @@ final class ApprovalAdmissionExecutors {
    * Establishes a bounded test/qualification barrier behind every exchange already
    * accepted by this fixed dispatch pool. Each lane must reach and hold one barrier
    * task before the barrier is released, which proves that all earlier active and
-   * queued handler tasks have returned. This does not retry an exchange, alter the
-   * admission bounds, or expose a runtime endpoint.
+   * queued handler tasks have returned. Future completion precedes executor worker
+   * release, so also wait for idle workers under the same total deadline. The
+   * qualification caller must own submissions across this boundary: this is not
+   * global quiescence in the presence of concurrent unowned submitters. This does
+   * not retry an exchange, alter admission bounds, or expose a runtime endpoint.
    */
   static boolean awaitQuiescence(ExecutorService executor, int activeLanes, Duration timeout) {
     Objects.requireNonNull(executor, "Executor must not be null.");
@@ -100,7 +103,14 @@ final class ApprovalAdmissionExecutors {
       for (Future<?> barrier : barriers) {
         barrier.get(remainingNanos(deadline), TimeUnit.NANOSECONDS);
       }
-      return true;
+      if (!(executor instanceof ThreadPoolExecutor pool)) return false;
+      while (!pool.isShutdown()) {
+        long remaining = remainingNanos(deadline);
+        if (remaining == 0) return false;
+        if (pool.getActiveCount() == 0 && pool.getQueue().isEmpty()) return true;
+        TimeUnit.NANOSECONDS.sleep(Math.min(remaining, TimeUnit.MILLISECONDS.toNanos(1)));
+      }
+      return false;
     } catch (RejectedExecutionException | ExecutionException | TimeoutException failure) {
       return false;
     } catch (InterruptedException interrupted) {

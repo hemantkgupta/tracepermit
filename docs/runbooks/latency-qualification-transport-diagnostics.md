@@ -1,9 +1,10 @@
-# Simulator latency transport diagnosis (diagnostic-only)
+# Simulator latency transport diagnosis and qualification barrier
 
 Requirements: PERF-001/002/003; OPS-002/003/004; REL-001/005/009;
-SEC-003/005/006/012. This is bounded test observability and counterexample
-evidence, not a runtime repair, completed requirement, production SLO or
-reliability qualification. No ADR or production source changes are included.
+SEC-003/005/006/012. This is bounded test observability, counterexample evidence
+and a narrowly authorized qualification-helper repair, not a completed
+requirement, production SLO or hosted reliability qualification. No public
+runtime or enforcement contract changes; no new ADR.
 
 ## Frozen scope
 
@@ -11,6 +12,8 @@ reliability qualification. No ADR or production source changes are included.
 - Runtime base: `2883eb6dc9c40f88c231ddc6cec7df5f016b2add`.
 - Branch: `codex/latency-qualification-transport-diagnostics`.
 - Initial public plan: `e8ab7a222d64aab4ee428b90e02783591e13d305`.
+- Diagnostic-only checkpoint, before the helper repair:
+  `4901774a5c492cd3656e6006ff5c53aa34acb2b1`.
 - Default concurrency remains **1/4/20**, warmup **5/8/20**, measured
   **20/32/40**. Every zero-effect, exact effect/permit/attempt delta (25/40/60
   per sweep), failure/timeout/unknown, replay, authentication and admission
@@ -65,20 +68,26 @@ Each POST has a three-second budget, the synthetic batch four seconds, and
 the hold five seconds. No credential, database, provider or target is involved.
 
 The original observed counts were exactly 20/16/4 and four `HTTP_IO_RESET`.
+The repeated frozen-helper control also confirmed executor/client retirement
+and explicit numeric-loopback port release with the same counts.
 The probe asserts at least four rejections/failures and complete terminal
 accounting; a slower machine may fail the probe's finite bounds or reject
 more. It never retries until a favorable result. This is a scheduling
 counterexample, not a surrogate success path or a latency measurement.
 
-### Run the opt-in negative probe
+### Run the frozen pre-repair negative probe
 
-Prerequisites: trusted checkout of this diagnostic branch, Java21 and the
-normal Gradle dependencies. Docker is needed for the separate complete
-qualification, not this negative probe. From the repository root:
+Prerequisites: a separate trusted detached checkout at the **diagnostic-only
+checkpoint** `4901774a5c492cd3656e6006ff5c53aa34acb2b1`, Java21 and the normal
+Gradle dependencies. Never reset another writer's checkout. Docker is needed
+for the separate complete qualification, not this negative probe. The old
+counterexample intentionally expects the old defect; it must not be run as a
+success test of the repaired helper. From that repository root:
 
 ```bash
 (
   set -euo pipefail
+  test "$(git rev-parse HEAD)" = 4901774a5c492cd3656e6006ff5c53aa34acb2b1
   source scripts/configure-java-environment.sh
   qualification_probe_root="$(mktemp -d)"
   trap 'rm -rf "$qualification_probe_root"' EXIT
@@ -87,7 +96,7 @@ qualification, not this negative probe. From the repository root:
     "$qualification_probe_root/io/tracepermit/adapters/http/"
   TRACEPERMIT_LATENCY_PROBE_ROOT="$qualification_probe_root" \
     ./java/gradlew -p java --no-configuration-cache --max-workers=1 \
-    -I docs/runbooks/probes/latency-barrier.gradle :adapters-http:test \
+    -I "$PWD/docs/runbooks/probes/latency-barrier.gradle" :adapters-http:test \
     --tests '*LatencyBarrierProbeTest' --console=plain
 )
 ```
@@ -108,7 +117,8 @@ archive raw test streams, environment dumps or provider material as evidence.
 
 ## Diagnostic implementation
 
-All Java edits are on the test classpath:
+All diagnostic Java edits are on the test classpath. The only main-source
+exception is the explicitly authorized qualification helper described below:
 
 - `LatencyFailureDiagnostics`: inspect at most eight distinct cause links,
   with cycle detection. Only fixed cause types / exact constant markers can
@@ -138,22 +148,99 @@ not correlate a particular refusal with a particular approval or SQL action.
 The observer changes scheduling slightly and cannot certify that the same
 interleaving occurred in earlier hosted runs.
 
-## Smallest proposed repair for separate authorization
+## Narrowly authorized helper repair
 
-Review the quiescence contract in
+After preserving the diagnostic-only checkpoint, explicit integration
+authorization permitted the smallest repair to the quiescence contract in
 `java/adapters-http/src/main/java/io/tracepermit/adapters/http/ApprovalAdmissionExecutors.java`:
-future completion is insufficient proof of worker release. A repair candidate
-needs bounded worker-release/idle acknowledgement under the **existing**
-deadline, including the interval after the barrier's future completes. Review
-the bridge in `SimulatorApprovalServer.java` and test caller
-`ApprovalLatencyMeasurements.java`; add a deterministic lifecycle regression
-in `ApprovalAdmissionExecutorsTest.java` and repeat the unchanged complete
-success gate under a two-CPU profile. That implementation is **not** authorized
-or included here.
+future completion is insufficient proof of worker release. After all futures
+complete, the helper now observes zero active workers and an empty queue,
+with bounded one-millisecond sleeps under the **original total deadline**.
+Shutdown, unsupported executor observation, timeout and interruption return
+false; interruption remains set. Existing barrier cancellation/release cleanup
+is retained. Neither `newDispatchPool` nor admission capacity/policy changes.
+
+Call-graph inspection found only the package-private bridge
+`SimulatorApprovalServer.awaitDispatchQuiescence` and qualification/test
+callers. No request route invokes this helper. The qualification caller must
+own submissions throughout this boundary; these sampled observations are not
+a global quiescence protocol with concurrent unowned submitters.
+
+`ApprovalAdmissionExecutorsTest.completedFuturesMustNotReportQuiescenceBeforeTheirWorkersLeave`
+uses the same eight held `afterExecute` lanes. It failed before the repair
+because the future had already returned, then passed with the repair: the
+observer remains blocked until the held workers are released. Additional
+tests cover the original total budget, retained interrupt and shutdown refusal.
+All waits and owned executor joins are finite. The historical HTTP probe is
+kept opt-in outside the default test source root; the new regression belongs
+to the real default suite.
+
+### Repair qualification outcome: incomplete
+
+The first post-repair focused run passed 30 cases, including the held-lane,
+budget/interrupt/shutdown cases, diagnostic tests and all 16 latency tests
+(with the unchanged full real default success run). The next independent
+two-CPU full run failed in measured concurrency20 `mcp_status`: one
+`HTTP_IO_RESET`, one exchange rejection, zero barrier rejections, sampled
+active2/queued16, empty asynchronous SQL set. Fourteen other focused cases
+passed. The three-pass sequence stopped on that first failure; later passes
+were not launched. No outcome was retried or relabeled successful.
+
+Thus the helper repair is correct for the demonstrated held-worker interval
+but **insufficient** to qualify reliability. The queue's 16 pending slots do
+not guarantee acceptance of a 20-offer burst, even after observing idle workers:
+at least four workers must dequeue promptly. Sampled active maxima at rejection
+are not synchronized occupancy proofs. No queue, dispatch policy or admission
+repair is included or authorized by the helper-only decision. Further runtime
+work needs separate integration direction, not another green rerun.
+
+The repeated pre-repair HTTP control used the exact frozen helper temporarily,
+with trap-based restoration and byte comparison to the repaired helper. It
+reported 20 attempts, 16 handled, four reset failures/rejections and explicit
+client/executor/loopback-port cleanup. One initial probe launch failed before
+execution because Gradle resolves a relative `-I` beneath `-p java`; the
+documented command now uses an absolute init-script path. No gate was changed.
 
 Do not assume that waiting for idle alone guarantees an arbitrary 20-offer
 burst: ThreadPoolExecutor queueing/scheduling still needs independent proof.
 Eight active plus16 pending is an upper bound, not a minimum guaranteed burst
 acceptance. Do not fix this by enlarging admission, retrying an effect,
 lowering concurrency, raising deadlines or weakening success/count assertions.
-The exact smallest correct implementation remains an integration decision.
+The patch addresses the demonstrated worker-release gap only. The natural
+pre-repair failure proves admission/reset co-occurrence, not that this gap
+explains all hosted failures. Independent full qualification passes and the
+unchanged broad gate are required; neither a locally green run nor this repair
+certifies production readiness.
+
+## Recorded validation commands and outcomes
+
+Commands ran with Java21, Node22.23.4, pnpm11.25.0 and one Gradle worker
+(`-Dorg.gradle.workers.max=1`). The focused profile additionally applied this
+external temporary init script; it did not change default client concurrency:
+
+```groovy
+allprojects {
+  tasks.withType(Test).configureEach { jvmArgs '-XX:ActiveProcessorCount=2' }
+}
+```
+
+`$qualification_cpu_init` below denotes the absolute path to that script.
+The public frozen-probe recipe above separately records its exact command.
+
+| Command                                                                                                                                                                                                                                                                              | Outcome                                                                                                                                                                                                                                                                                                                                 |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `corepack enable && pnpm install --frozen-lockfile`                                                                                                                                                                                                                                  | PASS, frozen installation.                                                                                                                                                                                                                                                                                                              |
+| `./java/gradlew -p java :adapters-http:test --tests '*ApprovalAdmissionExecutorsTest.completedFuturesMustNotReportQuiescenceBeforeTheirWorkersLeave' --console=plain` before repair                                                                                                  | Expected FAIL: future returned while all eight lanes were still held.                                                                                                                                                                                                                                                                   |
+| `./java/gradlew -p java -I "$qualification_cpu_init" :adapters-http:test --tests '*ApprovalAdmissionExecutorsTest' --tests '*LatencyTransportDiagnosticsTest' --tests '*LatencyFailureDiagnosticsTest' --tests '*ApprovalLatencyMeasurementsTest' --console=plain` after repair      | PASS, 30 cases including unchanged complete default success.                                                                                                                                                                                                                                                                            |
+| Same profile, `:adapters-http:test --rerun-tasks --tests '*ApprovalAdmissionExecutorsTest' --tests '*LatencyTransportDiagnosticsTest' --tests '*LatencyFailureDiagnosticsTest' --tests '*ApprovalLatencyMeasurementsTest.mainRunnerReportsFullQualificationSuccess' --console=plain` | FAIL, 14/15 passed; status reset/rejection described above. Planned second/third repeats were not run.                                                                                                                                                                                                                                  |
+| `pnpm check`                                                                                                                                                                                                                                                                         | FAIL, one broad attempt only. Build/typecheck and 124 React cases passed; HTTP414 =412 passed, one latency failure, one existing absent-archive skip. Resume warmup had two `HTTP_IO_RESET`, two exchange rejections, sampled active2/queued16, deltas18/60. Later Java module/aggregate coverage gates did not run after HTTP failure. |
+| `pnpm docs:links`                                                                                                                                                                                                                                                                    | PASS, 1023 local Markdown links and link-target tests.                                                                                                                                                                                                                                                                                  |
+| `pnpm docs:flows:check`                                                                                                                                                                                                                                                              | PASS, 13 tests and synchronized generated guides.                                                                                                                                                                                                                                                                                       |
+
+After the broad run, the local Docker listing reported zero running
+Testcontainers-labelled containers. The controlled probe independently
+asserted joined executors, retired client and released loopback port. These
+are observed local cleanup facts, not a universal host/process guarantee.
+Temporary probe source/init/backup artifacts are removed after use; bounded
+local logs/results are not published. Formatting and whitespace outcomes are
+recorded in HANDOFF and the draft PR. No production reliability claim follows.

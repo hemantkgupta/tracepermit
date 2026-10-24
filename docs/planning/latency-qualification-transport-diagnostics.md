@@ -1,7 +1,31 @@
 # Bounded simulator latency transport diagnosis
 
-Status: diagnostic-only checkpoint; see the [evidence and repair proposal](../runbooks/latency-qualification-transport-diagnostics.md).
-No runtime repair or reliability qualification is claimed.
+Status: diagnostic checkpoint preserved; narrowly authorized qualification-helper
+repair demonstrated but insufficient for reliability. See the [evidence and repair limits](../runbooks/latency-qualification-transport-diagnostics.md).
+No public-runtime change or hosted reliability qualification is claimed.
+
+The held-after-Future regression failed before the repair and passed after;
+one full two-CPU qualification passed after the repair. The next independent
+run failed with one concurrency20 status reset and one actual HTTP admission
+rejection (sampled active2/queued16). The required three independent full passes
+were **not** achieved. Stop further runtime repair and do not rerun until green;
+admission behavior beyond this helper remains outside the authorization.
+
+## Narrow integration authorization after the diagnostic checkpoint
+
+Diagnostic sources and the unrepaired counterexample are preserved at
+`4901774a5c492cd3656e6006ff5c53aa34acb2b1`. Call-graph inspection found only
+`SimulatorApprovalServer.awaitDispatchQuiescence` and qualification/test
+callers of the package-private `ApprovalAdmissionExecutors.awaitQuiescence`.
+The coordinator explicitly authorized the smallest repair in that helper,
+tests and docs. This is an exception only to the earlier main-source boundary:
+no `newDispatchPool`, capacity, rejection policy, handler, endpoint, authority,
+permit, deadline, workload/count or success-gate changes. Preserve the original
+total barrier deadline, interrupts, timeout/shutdown cleanup and the assumption
+that the qualification caller owns submissions. Do not claim global quiescence
+with concurrent unowned submitters. Show the same held-after-Future regression
+failing before and passing after, followed by three independent unchanged full
+qualification passes and proportionate gates within the original work bounds.
 
 - Frozen base: `2883eb6dc9c40f88c231ddc6cec7df5f016b2add`.
 - Exclusive cloud writer: `codex/latency-qualification-transport-diagnostics`.
@@ -46,7 +70,8 @@ Keep the frozen concurrency 1/4/20, every warmup/measurement count, the default 
 gate, zero-effect controls, all 60-operation deltas, failure/timeout/unknown
 accounting and permit/replay/auth/admission assertions. No automatic retry,
 deadline increase, assertion weakening, silent catch or mock replacement of the
-complete success run. No production behavior, global canonicalization, live
+complete success run. No request/runtime enforcement behavior (only the explicit
+qualification-helper allowance above), global canonicalization, live
 service/provider, Docker configuration, other worker, dependency or paid-API
 change. No new ADR: a changed production trust boundary requires a separate task.
 

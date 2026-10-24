@@ -64,11 +64,13 @@ Synthetic access tokens, review lifetimes, and execution permits require tempora
   in waves no larger than the reported client concurrency. After each wave, one
   bounded barrier task per server lane waits behind every previously admitted
   exchange. The next wave starts after all eight barrier futures complete.
-  This does not prove that executor workers have left their completion path:
-  the [controlled counterexample](latency-qualification-transport-diagnostics.md)
-  demonstrates admission refusal in that interval. Barrier time is excluded
+  The qualification-only helper then waits for zero active workers and an
+  empty queue under the same total deadline. Future completion alone was
+  insufficient, as the [controlled counterexample](latency-qualification-transport-diagnostics.md)
+  demonstrates. The caller must own submissions; this does not promise global
+  quiescence with concurrent unowned submitters. Barrier time is excluded
   from operation wall time and per-request samples and performs no HTTP retry.
-  Reliability and the runtime helper repair remain unresolved.
+  Hosted reliability and burst-acceptance guarantees remain unproved.
 - **Sweep Transport Isolation**: After the last phase in a concurrency sweep has
   quiesced, the harness retires that sweep's Java HTTP client within a fixed
   five-second graceful bound (plus a fixed five-second forced bound) and creates
@@ -139,8 +141,8 @@ known HTTP statuses, unknown-message canaries, and PostgreSQL log projection.
 `LatencyTransportDiagnosticsTest` adds bounded cause-chain projection,
 consequential missing-ID separation and unchanged rejection-handler delegation.
 The [diagnostic evidence/runbook](latency-qualification-transport-diagnostics.md)
-records the frozen runtime, opt-in counterexample, bounded cleanup and proposed
-separately authorized repair. These diagnostics do not repair hosted reliability.
+records the frozen runtime, opt-in counterexample, bounded cleanup and narrowly
+authorized qualification-helper repair. It does not certify hosted reliability.
 
 ### Historical measurements
 

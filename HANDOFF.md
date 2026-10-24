@@ -1,32 +1,26 @@
 # TracePermit implementation handoff
 
-GitHub is authoritative. This record contains transferable product state only;
-no private customer documents, raw client keys or provider credentials.
+GitHub is authoritative. This checkpoint contains no private customer planning,
+provider material, raw identity values or credentials.
 
 TRACEPERMIT HANDOFF
 
-- Task: Implement an uncommitted, scope/state-bound lifecycle proposal primitive and record one observed bounded advisory batch.
+- Task: Diagnose simulator approval transport/admission failures and repair only the separately authorized package-private qualification barrier. Reliability remains unresolved.
 - Repository: https://github.com/hemantkgupta/tracepermit
-- Branch: codex/operation-transition-proposals
-- Base commit: b84b5ee904a20348e169f32b8b453e397c9b0935 (merged PR #98)
-- Latest pushed commit: validated runtime checkpoint `c98f0d94048d23a67685d465cd51ecd0723493b3`; a documentation-only handoff commit follows. Verify the exact PR head before taking ownership.
-- PR URL: https://github.com/hemantkgupta/tracepermit/pull/99
-- Branch owner now: unassigned after final push; this Mac thread has stopped editing. Draft PR #99 is the coordination point.
-- Working tree status: clean and synced after handoff commit/push; no merge, rebase or force-push.
-- Completed:
-  - Added pure Java BusinessOperationTransitionPlanner, redacted fixed-code exception, exact whole-state token and defensively copied uncommitted Proposal.
-  - One validated append preserves immutable fields/history, all unrelated dimension projections and the frozen v1 graph/canonicalization contract. Stale scope/state, invalid edges/reasons/time and 256-KiB overflow fail closed.
-  - No database, signing, credentials, clock, network, target or publication port is present. A candidate status is not proof of authority, an atomic winner or a real event.
-  - Added nine unit cases plus a shared registration-rejection regression on all three databases. Removing the stale guard made all three selected regressions fail; it was restored before the passing full check.
-  - Added ADR 0071, specifications, learning/traceability and a sanitized bounded-advisory receipt.
-  - Ran one Flash request and one GLM request using existing subscription routes only. Flash test advice accepted; GLM response rejected by closed-schema validation, no retry and no accepted review. Neither worker edited or tested product files.
-- Remaining: Exact-head hosted CI and independent implementation review. Leave draft PR #99 open/unmerged. Next product slice is a trusted durable lifecycle command with atomic state/authority rechecks; no public API/executor wiring yet. A versioned independently reviewed controller, containment/negative-permission probes and bounded repair leases remain prerequisites for an unattended writer loop.
-- Files materially changed: application planner/exception and unit test; shared OperationRepositoryContract test; ADR 0071; bounded-lifecycle-advisory-trial receipt; business-operation learning module; specifications 03/05/07/10/12 and index; HANDOFF.
-- Tests passed: focused nine proposal cases and 111 database cases (37 each on PostgreSQL 16.4, MariaDB 11.4.13 and 10.6.25), zero failures/errors/skips; pnpm check (124 React tests; 1,359 Java cases recorded, zero failures/errors, one existing installed-archive skip); aggregate 94.29% line / 77.63% branch, unchanged gates; formatting, 1,016 documentation links, 13 flow tests and diff checks. Local advisory-helper unit tests: 17 passed (not product CI).
-- Tests failed/not run: expected stale-guard negative control: three failures; restored implementation passed. Installed archive/native-PTY E2E skipped because its archive was absent. GLM advisory schema failure is not an audit pass. No live provider, RDS/TLS/failover, AgentCore, S3, real target or production qualification.
-- Exact next command: gh pr checks 99 --repo hemantkgupta/tracepermit --watch
-- Required environment: Java 21 via scripts/configure-java-environment.sh; Node.js 22+, pnpm 11.25.0; Docker for pinned database tests. Subscription CLIs are optional local development advisers, not product/runtime dependencies.
-- Local-only/manual steps: CLI helper/controller and detailed advisory report remain local and unversioned; the sanitized receipt is in Git. Existing provider authentication stays private. Ignored caches and disposable test credentials are not transferable state.
-- Security constraints: proposals/tokens grant no authority; registration still rejects progressed aggregates; no API route, effect retry, permit/policy relaxation, merge or force-push. No private customer input supplied to workers. No paid API fallback/credit overage enabled by the controller; upstream billing/model identity and complete native containment are not independently attested.
-- Known limitations: pure candidate construction only, not atomic CAS, authentication/authorization, lifecycle persistence, verified target outcome, evidence receipt or production readiness. Observed advisory assistance is not an unattended coding loop or independent final-code audit.
-- Safe for another environment to continue: yes, after fetching/verifying the exact PR head, confirming a clean tree and explicitly taking branch ownership. Only read-only review may run concurrently.
+- Branch: codex/latency-qualification-transport-diagnostics
+- Base commit: 2883eb6dc9c40f88c231ddc6cec7df5f016b2add (frozen).
+- Latest pushed commit: diagnostic-only checkpoint `4901774a5c492cd3656e6006ff5c53aa34acb2b1`; a coherent tested helper/evidence checkpoint follows. Resolve the final exact head from the draft PR before taking ownership.
+- PR URL: Draft PR is created after the coherent checkpoint; the final documentation handoff records its URL.
+- Branch owner now: cloud writer through checkpoint delivery; release is recorded in the final handoff. PRs #100/#101 remain untouched.
+- Working tree status: scoped helper/tests/docs pending checkpoint commit; no merge, rebase or force-push.
+- Completed: Preserved public plan and diagnostic-only checkpoint. Added fixed bounded transport causes, downstream missing-ID categories and a delegating admission observer. Controlled frozen-helper HTTP probe:20 attempts,16 handled, four refusals/resets, exact cleanup confirmation. Held-after-Future regression failed before repair and passed after. The qualification-only helper now waits for worker release under its original total deadline; budget/interrupt/shutdown tests pass. Final client cleanup uses existing bounded retirement and reports fixed cleanup failures. Requirements: PERF-001/002/003; OPS-002/003/004; REL-001/005/009; SEC-003/005/006/012; no whole-ID promotion.
+- Remaining: Independent integration review and separately authorized work on persistent admission refusal. Three independent complete passes were NOT achieved. One post-repair pass was followed by a failure; the sequence stopped. Do not retry until green, merge this draft or treat the helper fix as a reliability qualification.
+- Files materially changed: ApprovalAdmissionExecutors qualification helper; ApprovalAdmissionExecutorsTest; test-source ApprovalLatencyMeasurements, LatencyFailureDiagnostics, SimulatorApprovalLatencyQualificationMain, new LatencyAdmissionObservation and LatencyTransportDiagnosticsTest; public plan; dedicated diagnostic runbook/evidence matrix and opt-in probe/init; existing latency runbook; specs11/12; HANDOFF.
+- Tests passed: Frozen pnpm install;30 focused post-repair Java cases including the unchanged full default qualification; held-lane/budget/interrupt/shutdown and nine diagnostic cases; controlled negative HTTP probe with20/16/4 accounting and explicit client/executor/port cleanup;124 React cases, build/typecheck and Java environment check; docs:links1023 and docs:flows13. Final formatting/diff results follow in the draft PR/handoff.
+- Tests failed/not run: Expected original-helper regression failure. Natural pre-repair full run: one resume reset/rejection,19/60. Next independent repaired two-CPU run: one measured status reset/rejection,14/15 passed. One pnpm check FAILED: HTTP414 cases,412 passed, one latency failure, one existing absent-archive skip; two resume warmup resets/rejections and18/60 deltas. Later Java/aggregate coverage gates not reached. Three-pass acceptance unmet; no second broad attempt. One early serialVersionUID compile warning and a relative Gradle init-path launch error were corrected without relaxing gates. No hosted exact-head, live provider/target, production load or unowned-concurrent-submitter qualification.
+- Exact next command: git fetch origin codex/latency-qualification-transport-diagnostics (read-only review); verify the draft PR exact head before taking branch ownership. Further runtime repair requires integration direction.
+- Required environment: Java21; Node22+ and Corepack pnpm11.25.0; Docker for disposable PostgreSQL16.4-alpine; one Gradle worker. Two-CPU profile is process-local test configuration only.
+- Local-only/manual steps: Bounded logs and XML remain outside Git; no transferable credentials/configuration. The opt-in historical probe requires the documented separate frozen diagnostic checkout. No live action is needed or performed.
+- Security constraints: Simulators only. No private agentcore-work input, real providers, paid fallback, HTTP/DB/action retry, changed admission capacity/policy, handler/endpoint/auth/permit change, raised deadlines, lowered concurrency1/4/20, count or success-gate weakening. Helper ownership excludes concurrent unowned submitters. No new ADR/public runtime contract.
+- Known limitations: Barrier worker-release gap is demonstrated and narrowly repaired, but actual reset/admission failures persist afterward. Queue16 is not a guaranteed20-offer burst acceptance contract. Sampled counters are not atomic snapshots; empty asynchronous SQL diagnostics do not exclude DB error. Historic hosted causes are not proved. No runtime readiness or reliability claim. Broad-run cleanup observed zero running Testcontainers-labelled containers; controlled probe asserts executor/client/port release, not universal host cleanup.
+- Safe for another environment to continue: yes, for read-only review; writing requires explicit ownership after final release and further admission/runtime repair requires separate authorization.

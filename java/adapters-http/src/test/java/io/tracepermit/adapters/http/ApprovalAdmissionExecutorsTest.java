@@ -8,9 +8,95 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.RunnableFuture;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
 final class ApprovalAdmissionExecutorsTest {
+
+  @Test
+  void completedFuturesMustNotReportQuiescenceBeforeTheirWorkersLeave() throws Exception {
+    var pool = new PostCompletionPool(8);
+    var observer = Executors.newSingleThreadExecutor();
+    try {
+      var quiet = observer.submit(() -> ApprovalAdmissionExecutors.awaitQuiescence(pool, 8, Duration.ofSeconds(5)));
+      assertThat(pool.completed.await(5, TimeUnit.SECONDS)).isTrue();
+      assertThatThrownBy(() -> quiet.get(50, TimeUnit.MILLISECONDS)).isInstanceOf(TimeoutException.class);
+      pool.release.countDown();
+      assertThat(quiet.get(5, TimeUnit.SECONDS)).isTrue();
+      assertThat(pool.getActiveCount()).isZero();
+    } finally {
+      pool.release.countDown(); observer.shutdownNow(); pool.shutdownNow();
+      assertThat(observer.awaitTermination(2, TimeUnit.SECONDS)).isTrue();
+      assertThat(pool.awaitTermination(2, TimeUnit.SECONDS)).isTrue();
+    }
+    assertThat(pool.holdTimedOut).isFalse();
+  }
+
+  @Test
+  void completedFutureHoldCannotExtendTheOriginalBarrierBudget() throws Exception {
+    var pool = new PostCompletionPool(1);
+    try {
+      long started = System.nanoTime();
+      assertThat(ApprovalAdmissionExecutors.awaitQuiescence(pool, 1, Duration.ofMillis(100))).isFalse();
+      assertThat(pool.completed.getCount()).isZero();
+      assertThat(Duration.ofNanos(System.nanoTime() - started)).isLessThan(Duration.ofSeconds(2));
+    } finally {
+      pool.release.countDown(); pool.shutdownNow();
+      assertThat(pool.awaitTermination(2, TimeUnit.SECONDS)).isTrue();
+    }
+  }
+
+  @Test
+  void completedFutureHoldPreservesInterruptionAndRefusesShutdown() throws Exception {
+    var pool = new PostCompletionPool(1);
+    var observer = Executors.newSingleThreadExecutor();
+    var thread = new AtomicReference<Thread>();
+    var interrupted = new AtomicBoolean();
+    try {
+      var quiet = observer.submit(() -> {
+        thread.set(Thread.currentThread());
+        boolean result = ApprovalAdmissionExecutors.awaitQuiescence(pool, 1, Duration.ofSeconds(5));
+        interrupted.set(Thread.currentThread().isInterrupted());
+        return result;
+      });
+      assertThat(pool.completed.await(5, TimeUnit.SECONDS)).isTrue();
+      thread.get().interrupt();
+      assertThat(quiet.get(2, TimeUnit.SECONDS)).isFalse();
+      assertThat(interrupted).isTrue();
+      pool.shutdown();
+      assertThat(ApprovalAdmissionExecutors.awaitQuiescence(pool, 1, Duration.ofSeconds(5))).isFalse();
+    } finally {
+      pool.release.countDown(); observer.shutdownNow(); pool.shutdownNow();
+      assertThat(observer.awaitTermination(2, TimeUnit.SECONDS)).isTrue();
+      assertThat(pool.awaitTermination(2, TimeUnit.SECONDS)).isTrue();
+    }
+  }
+
+  /** Widen the exact Future-complete/worker-release interval without changing admission. */
+  private static final class PostCompletionPool extends ThreadPoolExecutor {
+    private final CountDownLatch completed;
+    private final CountDownLatch release = new CountDownLatch(1);
+    private final AtomicBoolean holdTimedOut = new AtomicBoolean();
+
+    private PostCompletionPool(int lanes) {
+      super(lanes, lanes, 60, TimeUnit.SECONDS, new ArrayBlockingQueue<>(16), new AbortPolicy());
+      completed = new CountDownLatch(lanes);
+    }
+
+    @Override protected void afterExecute(Runnable task, Throwable failure) {
+      super.afterExecute(task, failure);
+      if (task instanceof RunnableFuture<?>) {
+        completed.countDown();
+        try {
+          if (!release.await(5, TimeUnit.SECONDS)) holdTimedOut.set(true);
+        } catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); }
+      }
+    }
+  }
 
   @Test
   void quiescenceBarrierWaitsForEveryEarlierAcceptedTask() throws Exception {
