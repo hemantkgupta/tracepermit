@@ -158,6 +158,23 @@ bounded close does not depend on cooperative cancellation. See
 [ADR 0050](../architecture/0050-bounded-simulator-approval-admission.md) and the
 [runbook](../runbooks/simulator-approval-admission.md).
 
+[ADR0074](../architecture/0074-reserved-lane-bounded-dispatch.md) replaces the
+queue-first mechanism with monitor-serialized lane reservation and a bounded
+pending FIFO, retaining defaults 8/16 and all pre-handler/overflow/close gates.
+`BoundedDispatchExecutorTest` adds concurrent 24-admitted/overflow controls,
+pending promotion, startup failure, cancellation, interruption and shutdown
+accounting; `ApprovalAdmissionExecutorsTest` adds a delayed-worker regression
+that failed on the old factory. A reserved lane includes handoff before worker
+wakeup; it is not an additional pending slot or authority to execute an action.
+The subsequent recorded candidate passed 34 focused cases and three independent
+complete two-CPU qualification runs (16 cases each, unchanged workload/gates).
+Worker startup precedes binding and bind failure stops the owned workers.
+Independent review's checked-throwable task/observer findings and the Mac's
+startup variant each failed a permanent pre-repair control; all three invocation
+boundaries now contain every throwable without retry, raw diagnostic or false
+termination. The earlier green candidate receipt is retained as history.
+This does not promote PERF-003, SEC-017 or a production/public-edge SLO.
+
 Counting key-resolution/database probes plus unchanged simulator state qualify
 no expensive handler work during overflow. Simulator rule cardinality is not
 an invocation count because identical rules deduplicate; application-level
@@ -734,6 +751,25 @@ projection, category cardinality and failure accounting (SEC-003; REL-001/005;
 OPS-003). It does not establish PERF-003 scale validation, a latency SLO, an
 authoritative database-error count or successful qualification of a failed run.
 See the [latency runbook](../runbooks/simulator-approval-latency-qualification.md#reading-a-failed-qualification).
+
+The [transport/admission diagnostic checkpoint](../runbooks/latency-qualification-transport-diagnostics.md)
+adds test-only fixed cause categories, a delegating admission observer, bounded
+final-client cleanup and a controlled negative barrier/HTTP probe.
+`LatencyTransportDiagnosticsTest` covers redaction, bounded/cyclic causes,
+terminal accounting, downstream missing-ID categories, saturation and unchanged
+rejection/handler restoration (OPS-002/003/004; SEC-003/005/006/012;
+REL-001/005/009). The unchanged frozen runtime can report barrier completion
+before workers are released; the controlled 20-attempt probe observed16 handled
+and four refused/reset exchanges. The narrowly authorized package-private
+qualification helper now waits for worker release under its original total
+deadline; `ApprovalAdmissionExecutorsTest` covers the held-after-Future gap,
+timeout, interrupt and shutdown. No request enforcement or admission changes.
+Hosted causality/reliability remain unproved. No PERF-001/002/003 completion or promotion.
+The three-independent-pass qualification was not achieved: a post-repair full
+run still failed with one status-phase reset and one actual exchange rejection.
+The helper-only checkpoint remains historical. Subsequent explicit approval
+authorizes the bounded dispatch repair in ADR0074; current qualification results
+are recorded separately in the diagnostic runbook without erasing these failures.
 
 ## Data and privacy requirements
 

@@ -30,6 +30,15 @@ PostgreSQL integration tests use disposable Testcontainers; Docker is needed
 for those checks. Runtime-affecting changes also need the closest numbered
 simulator scenario or an equivalent protocol smoke test.
 
+Simulator listener admission also requires the bounded dispatch controls in
+[ADR0074](../architecture/0074-reserved-lane-bounded-dispatch.md): delayed
+worker wakeup cannot collapse eight lane reservations into only queue16;
+overflow, concurrent producers, failure/interrupt/cancellation and bounded
+shutdown remain fail closed. The unchanged complete latency qualification
+requires three independent passes under the documented two-CPU test profile,
+not retries of failed operations or changes to the default 1/4/20 workload.
+This is local simulator evidence, not a public-edge or production SLO claim.
+
 The Linux container install profile has a separate destructive-to-owned-fixture
 gate. It builds from the clean source-free archive, generates synthetic secrets
 and Ed25519 keys at runtime, creates a random Compose project, explicitly prepares
@@ -223,6 +232,20 @@ A timeout after send never authorizes an automatic tool retry. See
 [ADR 0057](../architecture/0057-endpoint-io-deadlines.md).
 
 ## Performance and release qualification
+
+The simulator [transport diagnostic evidence](../runbooks/latency-qualification-transport-diagnostics.md)
+preserves default concurrency1/4/20, warmup5/8/20, measured20/32/40, zero-effect,
+exact25/40/60 per-sweep deltas and the full real success gate. Fixed transport,
+consequential missing-ID and admission categories must never turn a failure
+into success or publish arbitrary exception messages/classes. A controlled
+negative executor/HTTP probe is separate from qualification: it demonstrates
+the frozen barrier's worker-release gap, not the cause of every hosted failure.
+The separately authorized package-private qualification helper additionally
+waits for worker release under its original total deadline; it changes no
+request/runtime enforcement or admission policy. Held-after-Future regression,
+budget/interrupt/shutdown cases and three independent unchanged complete
+qualification runs are required. A passing rerun or empty asynchronous SQL map is not root-cause proof
+(PERF-001/002/003; OPS-002/003/004; REL-001/005/009; SEC-003/005/006/012).
 
 Measure classifier/policy time separately from token/JWKS, persistence,
 network, and simulator time. Record p50/p95/p99, contention, expiry, outage,
