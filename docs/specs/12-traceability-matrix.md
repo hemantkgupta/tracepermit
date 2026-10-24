@@ -1,5 +1,42 @@
 # Requirements traceability matrix
 
+## Pure GitHub business-operation binding
+
+Requirements: FR-002/010/012; SEC-001/002/003/005/009/012; REL-003/005/008;
+PORT-001; OPS-002/004. No whole-ID status promotion.
+
+`GitHubBusinessOperationBinding` joins separately supplied scope and exact
+operator/service profile to a copied/revalidated operation and existing target
+tuple. Versioned domain-separated identity/precondition/profile/data hashes bind
+immutable IDs, both refs/SHAs, policy/artifacts and generation. Strict raw dispatch
+interpretation rejects aliases/normalization; the frozen generic vector remains
+unchanged. An independent golden recipe and `GitHubBusinessOperationBindingTest`
+cover parsed numeric widths, positive profiles/body, valid rehashed mismatches,
+tenant/target/policy/generation substitutions, UTF-8 bounds, safe integer neighbors,
+defensive copies, lifecycle labels as data and cause/suppression-safe errors.
+See [ADR0075](../architecture/0075-github-business-operation-binding.md),
+[runbook](../runbooks/github-business-operation-binding.md) and
+[learning note](../learning/operation-binding-is-not-authority.md).
+
+This is an unwired, pure data library: no caller authentication, authoritative
+database-origin proof, current policy/approval, permit consumption, atomic claim,
+target call, signed evidence, AgentCore ingress or restart-safe reconciliation.
+Constructors and unkeyed hashes grant no authority; a future executor must join
+and recheck those independent boundaries.
+
+## Durable pending-operation withdrawal
+
+Follow-up fail-closed decoding evidence (SEC-003/012; REL-001/004; DATA-001;
+OPS-002/004): package-local `StoredOperationJson` and its focused tests reject
+duplicate/nested keys, trailing data, malformed/null/oversized UTF-8 values and
+parser-diagnostic retention. The shared engine contract exercises originals,
+heads, journal facts/actors and populated pre-DDL upgrades. No global canonical
+change, DBA authenticity claim or whole-requirement completion follows.
+
+| Requirements                                                                                    | Implementation and evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Remaining boundary                                                                                                                                                                                                                      |
+| ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| FR-003/007/009/010/012; SEC-002/003/005/006/009/012; REL-001/002/004/005; DATA-001; OPS-002/004 | Closed `BusinessOperationWithdrawal`/lifecycle port; Java JDBC head/journal transaction, locked whole-state/database-time checks, coherent MVCC reads, immutable registration retry and explicit additive V2 upgrade. `BusinessOperationWithdrawalTest` and shared three-engine `OperationRepositoryContract` cover authority rejection, lock-wait expiry, single winner, rollback/ack loss, corruption/migration/grants. [ADR 0072](../architecture/0072-durable-pending-operation-withdrawal.md), [runbook](../runbooks/business-operation-withdrawal.md). | Internal pending-only withdrawal, not generic lifecycle authority, authenticated API, policy/approval/permit/target integration, global recovery fencing, S3, live RDS or production qualification. Whole requirement status unchanged. |
+
 ## CI scheduling and required completion gate
 
 Requirements: OPS-002/004; REL-001 (qualification process only; no whole-ID or
@@ -73,9 +110,11 @@ The provider port still vouches for opaque-token installation provenance. The
 single-repository visibility/strict response profile is deliberately narrow.
 Positive lookup observes desired-effect presence, not original POST causality.
 Refs can race after reads; there is no native ref CAS/idempotency guarantee.
-Process-local state, uncomposed business-operation hash/precondition bridge,
-durable lifecycle, credential minting, live provider/target and deployment remain
-unqualified. The Mac-owned lifecycle and persistence files are unchanged.
+Process-local state and the uncomposed durable executor/authority join remain
+limitations; ADR0075 implements a separate pure hash/precondition data bridge.
+Durable lifecycle, credential minting, live provider/target and deployment remain
+separate qualifications. The lifecycle and persistence files are unchanged by
+the binding library.
 
 ## Uncommitted operation transition proposals
 

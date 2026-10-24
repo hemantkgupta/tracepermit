@@ -46,6 +46,7 @@ final class LanguageNeutralContractArtifactsTest {
           "vectors/business-operation-v1.json",
           "vectors/development-access-token-v1.json",
           "vectors/execution-permit-v1.json",
+          "vectors/github-business-operation-binding-v1.json",
           "vectors/oauth-access-token-v1.json",
           "vectors/policy-v1.json",
           "vectors/scheduled-workload-delegation-v1.json",
