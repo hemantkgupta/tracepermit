@@ -169,8 +169,7 @@ public final class GitHubDraftPullRequestAdapter {
       var result = GitHubTargetPreflight.confirmation(response.json(), binding, key, credentials);
       var confirmed = response.json();
       if (!action.title().equals(GitHubTargetPreflight.text(confirmed, "title"))
-          || !(action.body().equals(confirmed.path("body").asText(null))
-              || (action.body().isEmpty() && confirmed.path("body").isNull()))) {
+          || !GitHubTargetPreflight.bodyMatches(confirmed.get("body"), action.body())) {
         throw GitHubApiTransport.rejected("INVALID_TARGET_CONFIRMATION");
       }
       executionLedger.succeed(begin.attempt().attemptId(), clock.instant(), result.toJsonNode()

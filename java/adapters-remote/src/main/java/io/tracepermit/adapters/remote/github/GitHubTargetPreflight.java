@@ -81,6 +81,11 @@ final class GitHubTargetPreflight {
   static String text(JsonNode node, String field) {
     require(node != null && node.path(field).isTextual()); return node.path(field).textValue();
   }
+  /** Never coerce scalars/containers; explicit null is compatible only with an empty body. */
+  static boolean bodyMatches(JsonNode body, String expected) {
+    return body != null && ((body.isTextual() && expected.equals(body.textValue()))
+        || (body.isNull() && expected.isEmpty()));
+  }
   private static boolean isBoolean(JsonNode node, String field, boolean value) {
     return node.path(field).isBoolean() && node.path(field).booleanValue() == value;
   }

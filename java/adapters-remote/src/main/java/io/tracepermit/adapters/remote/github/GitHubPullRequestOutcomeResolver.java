@@ -95,8 +95,7 @@ public final class GitHubPullRequestOutcomeResolver implements TargetOutcomeReso
       var pr = array.get(0);
       var result = GitHubTargetPreflight.confirmation(pr, binding, operation.idempotencyKey(), credentials);
       if (!operation.title().equals(GitHubTargetPreflight.text(pr, "title"))
-          || !(operation.body().equals(pr.path("body").asText(null))
-              || (operation.body().isEmpty() && pr.path("body").isNull()))) {
+          || !GitHubTargetPreflight.bodyMatches(pr.get("body"), operation.body())) {
         return unknown("LOOKUP_PAYLOAD_MISMATCH");
       }
       confirmedResults.put(operation.idempotencyKey(), result);

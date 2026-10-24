@@ -70,6 +70,12 @@ Expected controls:
 - Positive typed IDs, URL, repository/owner, ref/SHA, draft/state and original
   content must match in a 201. Malformed/contradictory 201 is unknown, with no
   retry, repair or second POST. Known refusal remains blocked too.
+- Body confirmation never coerces JSON types. Exact strings match; explicit null
+  matches only an empty expected body. Missing, boolean, numeric, array and object
+  bodies stay unknown on both POST and lookup, even when `asText` would yield the
+  expected text or an empty string. A failed lookup removes any older receipt.
+  The [typed-confirmation explanation](../learning/github-confirmation-types.md)
+  describes this distinction and the permanent before/after regressions.
 - Concurrent identical calls dispatch at most once in the current process.
   A fresh valid permit does not reset unknown/failed attempts; changed content
   cannot reuse an existing logical tuple's success.

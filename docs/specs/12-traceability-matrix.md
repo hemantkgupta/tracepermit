@@ -21,6 +21,15 @@ cleanup controls. `BoundedGitHubResponseTest` retains limit+1 stream evidence;
 existing SSRF/TLS tests retain the shared address policy evidence. Guard-removal
 controls and exact-head results are recorded in the PR.
 
+`postBodyMustMatchWithoutJsonTypeCoercion`,
+`lookupBodyMustMatchWithoutJsonTypeCoercionOrStaleConfirmation`, and
+`exactTextAndExplicitNullForEmptyBodyConfirmPostAndLookup` qualify the shared
+typed-body matcher (FR-008/015; SEC-003/019; REL-003/008): scalar/container/missing
+acknowledgements cannot become success, invalid POST blocks redispatch, invalid
+lookup drops an older receipt, and exact textual/empty-null compatibility remains.
+Fourteen cases failed before repair; all twenty-three body-type cases pass after.
+See the [learning note](../learning/github-confirmation-types.md).
+
 The operator ID ceiling (`1..9007199254740991`) and regressions
 `operatorIdsOutsideFrozenSafeIntegerRangeAreRejected`,
 `maximumSafeOperatorIdsRemainExactAndDistinct`, and

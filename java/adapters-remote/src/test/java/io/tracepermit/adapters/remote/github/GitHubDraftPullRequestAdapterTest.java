@@ -249,6 +249,61 @@ final class GitHubDraftPullRequestAdapterTest {
     assertThat(requests).hasSize(count);
   }
 
+  @ParameterizedTest @ValueSource(strings = {"true", "false", "0", "123", "1.5", "null", "missing", "[]", "{}"})
+  void postBodyMustMatchWithoutJsonTypeCoercion(String encodedBody) throws Exception {
+    String expectedBody = java.util.Set.of("missing", "[]", "{}").contains(encodedBody) ? "" : encodedBody;
+    ObjectNode action = action(); args(action).put("body", expectedBody);
+    var confirmation = confirmation();
+    if (encodedBody.equals("missing")) confirmation.remove("body");
+    else confirmation.set("body", JsonSupport.MAPPER.readTree(encodedBody));
+    override = request -> "POST".equals(request.getMethod()) ? response(201, confirmation.toString()) : null;
+
+    assertThatThrownBy(() -> adapter.execute(action, permit(action)))
+        .hasFieldOrPropertyWithValue("errorCode", "INVALID_TARGET_CONFIRMATION").hasNoCause();
+    assertThat(status()).isEqualTo("unknown"); assertThat(posts()).isEqualTo(1);
+    int count = requests.size();
+    assertThatThrownBy(() -> adapter.execute(action, permit(action)))
+        .hasFieldOrPropertyWithValue("errorCode", "EXECUTION_OUTCOME_UNKNOWN");
+    assertThat(requests).hasSize(count); assertThat(posts()).isEqualTo(1);
+  }
+
+  @ParameterizedTest @ValueSource(strings = {"true", "false", "0", "123", "1.5", "null", "missing", "[]", "{}"})
+  void lookupBodyMustMatchWithoutJsonTypeCoercionOrStaleConfirmation(String encodedBody) throws Exception {
+    String expectedBody = java.util.Set.of("missing", "[]", "{}").contains(encodedBody) ? "" : encodedBody;
+    resolver.registerOperation(key(), BINDING, "Synthetic draft", expectedBody);
+    var confirmation = confirmation().put("body", expectedBody);
+    override = request -> request.getRequestUrl().encodedPath().equals(REPO_PATH + "/pulls")
+        ? response(200, "[" + confirmation + "]") : null;
+    assertThat(resolver.lookup(candidate()).outcome()).isEqualTo("succeeded");
+    assertThat(resolver.getConfirmedResult(key())).isNotNull();
+
+    if (encodedBody.equals("missing")) confirmation.remove("body");
+    else confirmation.set("body", JsonSupport.MAPPER.readTree(encodedBody));
+    var observation = resolver.lookup(candidate());
+    assertThat(observation.outcome()).isEqualTo("unknown");
+    assertThat(observation.reasonCode()).isEqualTo("LOOKUP_PAYLOAD_MISMATCH");
+    assertThat(resolver.getConfirmedResult(key())).isNull();
+    assertThat(posts()).isZero(); assertThat(requests).hasSize(10);
+    assertThat(requests).allMatch(request -> request.startsWith("GET "));
+  }
+
+  @ParameterizedTest @ValueSource(strings = {"true", "123", "1.5", "empty_text", "empty_null"})
+  void exactTextAndExplicitNullForEmptyBodyConfirmPostAndLookup(String kind) {
+    String expectedBody = kind.startsWith("empty_") ? "" : kind;
+    ObjectNode action = action(); args(action).put("body", expectedBody);
+    var confirmation = confirmation().put("body", expectedBody);
+    if (kind.equals("empty_null")) confirmation.putNull("body");
+    override = request -> request.getRequestUrl().encodedPath().equals(REPO_PATH + "/pulls")
+        ? response("POST".equals(request.getMethod()) ? 201 : 200,
+            "POST".equals(request.getMethod()) ? confirmation.toString() : "[" + confirmation + "]") : null;
+
+    assertThat(adapter.execute(action, permit(action)).id()).isEqualTo(42001);
+    assertThat(status()).isEqualTo("succeeded");
+    assertThat(resolver.lookup(candidate()).outcome()).isEqualTo("succeeded");
+    assertThat(resolver.getConfirmedResult(key()).id()).isEqualTo(42001);
+    assertThat(posts()).isEqualTo(1);
+  }
+
   @ParameterizedTest @ValueSource(strings = {"empty", "duplicate", "pagination", "malformed", "object", "null", "mismatch",
       "missing_id", "wrong_owner", "wrong_sha", "not_draft", "old_closed", "wrong_title", "wrong_body", "unauthorized", "denied", "missing",
       "server_error", "unexpected_status", "oversized", "redirect"})

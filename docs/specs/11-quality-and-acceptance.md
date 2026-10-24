@@ -61,7 +61,10 @@ for destination/credential/preflight mismatch; strict typed 201 identity;
 read-only exact-positive lookup and unknown for absent/duplicate/incomplete/
 unavailable observations; no retry, cross-origin credential forwarding or stale
 confirmation reuse; bounded chunked reads, time and cleanup; and concurrent
-single dispatch. Guard-removal controls must fail before restoration and the
+single dispatch. Permanent POST/lookup body-type regressions must reject scalar
+coercion and empty containers, retain unknown/no-redispatch and remove stale
+confirmation, while exact strings and explicit null for empty bodies still pass.
+Guard-removal controls must fail before restoration and the
 final gates. The suite replaces ADR0069's permissive/empty-list success/failure
 fixtures, without weakening permit or target allowlists. No live target or
 durable executor is qualified. See the

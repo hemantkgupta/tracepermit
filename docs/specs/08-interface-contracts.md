@@ -30,7 +30,10 @@ GET installation-access, repository and ref observations precede POST; exact
 typed positive confirmation is required. Reconciliation is GET-only and confirms
 only an unambiguous exact open draft/content observation; empty, paginated,
 duplicate or inaccessible lists remain unknown. No lookup mutates a ledger or
-retries a write. Numeric-loopback injection is explicitly package-private/test
+retries a write. Both confirmation paths require an exact JSON string body;
+explicit null is accepted only for an empty expected body. Missing, boolean,
+numeric and container bodies never match through coercion; invalid lookup
+observations remove previous cached confirmation. Numeric-loopback injection is explicitly package-private/test
 only; all public constructors reject it. This is not a business-operation API
 or a frozen-hash bridge. See [ADR0073](../architecture/0073-github-pilot-target-preflight.md).
 

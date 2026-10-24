@@ -66,6 +66,14 @@ is `unknown`: a POST might have committed. Explicit 401/403/404/422 rejection
 remains failed; redirect/other unexpected status remains unknown. Neither state
 automatically re-executes. Preflight failure, before any POST, is failed locally.
 
+Both POST confirmation and lookup require the response body to be a JSON string
+exactly equal to the expected body, or explicit JSON null only when that expected
+body is empty. Missing, boolean, numeric, array and object values cannot confirm
+success. A shared typed matcher must not use `asText` coercion: matching boolean/
+numeric text, or containers coerced to an empty string, previously produced false
+positive acknowledgements. Invalid POST confirmation stays unknown and blocks
+redispatch; an invalid lookup clears any older cached confirmation.
+
 Lookup revalidates credentials and the same GET preflight. It queries pulls
 with explicit head/base/state/page bounds and never follows a Link. Only one
 unpaginated, complete, open draft with exact pinned identities, SHAs and original
@@ -121,6 +129,9 @@ runtime-generated permit keys and certificate material. It exercises positive
 preflight/confirmation, strict negative identity/credential/destination/ref
 cases, zero-POST rejection, ambiguous confirmation, conservative lookup,
 chunked size bounds, cleanup, no cross-origin authorization and concurrent
-single dispatch. Guard-removal positive controls are recorded in the PR; guards
+single dispatch. Twenty-three body-type/compatibility cases cover both paths,
+unknown/no-redispatch, stale-cache removal, exact strings and explicit null for
+empty content. Fourteen failed before the typed matcher; all pass with it.
+Guard-removal positive controls are recorded in the PR; guards
 are restored before mandatory gates. Official source facts and operator limits
 are in the [dedicated runbook](../runbooks/github-pilot-target-preflight.md).
