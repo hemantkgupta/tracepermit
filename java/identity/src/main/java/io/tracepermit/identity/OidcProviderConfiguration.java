@@ -22,7 +22,18 @@ public record OidcProviderConfiguration(
     ConnectorOrigin origin,
     Duration maximumTokenLifetime,
     Duration jwksCacheLifetime,
-    Duration forcedRefreshCooldown) {
+    Duration forcedRefreshCooldown,
+    OidcTokenProfile tokenProfile) {
+
+  public OidcProviderConfiguration(URI issuer, String resourceAudience, URI jwksUri,
+      URI resourceMetadataUri, List<URI> authorizationServers, String resourceName,
+      Map<String, String> clientNames, String tenantClaim, Map<String, String> tenantMappings,
+      Set<ConnectorScope> supportedScopes, ConnectorOrigin origin, Duration maximumTokenLifetime,
+      Duration jwksCacheLifetime, Duration forcedRefreshCooldown) {
+    this(issuer, resourceAudience, jwksUri, resourceMetadataUri, authorizationServers,
+        resourceName, clientNames, tenantClaim, tenantMappings, supportedScopes, origin,
+        maximumTokenLifetime, jwksCacheLifetime, forcedRefreshCooldown, OidcTokenProfile.standard());
+  }
 
   private static final Pattern CLAIM_NAME = Pattern.compile("^[A-Za-z][A-Za-z0-9_.-]{0,63}$");
   private static final Duration MAXIMUM_CACHE_LIFETIME = Duration.ofMinutes(15);
@@ -51,6 +62,10 @@ public record OidcProviderConfiguration(
           nonEmpty(clientName, "clientName", 128);
         });
     tenantClaim = claimName(tenantClaim);
+    Objects.requireNonNull(tokenProfile).validateTenantClaim(tenantClaim);
+    if (tokenProfile.isOkta() && clientNames.containsKey(resourceAudience)) {
+      throw new IllegalArgumentException("API audience and client audience must be distinct.");
+    }
     tenantMappings = Map.copyOf(tenantMappings);
     if (tenantMappings.isEmpty()) {
       throw new IllegalArgumentException("tenantMappings must not be empty.");

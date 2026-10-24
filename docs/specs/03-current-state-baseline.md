@@ -128,6 +128,18 @@ A missing/unsupported response still fails closed. The
 bound that result. It does not qualify the container preparation profile,
 a public edge, arbitrary OIDC providers or production identity.
 
+## Okta public/native foundation
+
+The separate [Okta foundation](../architecture/0067-bounded-okta-oidc-qualification.md)
+adds schema1.2 code/S256 public login, pinned custom-server token grammar and
+tenant/group binding, with mapped groups attenuating operator enrollment.
+Generated-signature HTTP/PostgreSQL tests cover role boundaries and adversarial
+inputs. It preserves schema1.0/1.1 behavior and the existing bounded JWKS/TLS
+path. No live Okta, EKS/public ingress, installed Okta helper, instantaneous
+group revocation or general IdP compatibility is qualified. The
+[operator runbook](../runbooks/okta-oidc-qualification.md) defines the separate
+interactive gate; no real provider mutation/login was performed.
+
 ## OIDC refresh isolation
 
 The Java key resolver serves fresh cached keys without waiting for unrelated
