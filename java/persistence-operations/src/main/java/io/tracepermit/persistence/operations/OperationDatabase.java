@@ -76,10 +76,7 @@ public final class OperationDatabase {
           """); ResultSet rows = statement.executeQuery()) {
         while (rows.next()) {
           String stored = rows.getString(2);
-          if (stored == null || stored.getBytes(java.nio.charset.StandardCharsets.UTF_8).length
-              > JdbcBusinessOperationRepository.MAX_BYTES) throw error(OPERATION_SCHEMA_NOT_READY);
-          var json = io.tracepermit.contracts.JsonSupport.MAPPER.readTree(stored);
-          if (json == null) throw error(OPERATION_SCHEMA_NOT_READY);
+          var json = StoredOperationJson.read(stored, JdbcBusinessOperationRepository.MAX_BYTES);
           var context = json.path("trustedContext");
           var scope = new io.tracepermit.application.BusinessOperationScope(
               context.path("tenantId").asText(), context.path("workspaceId").asText(),
@@ -91,7 +88,7 @@ public final class OperationDatabase {
       }
       flyway(source, engine).migrate();
       validateExisting(source);
-    } catch (java.io.IOException | SQLException | RuntimeException failure) {
+    } catch (SQLException | RuntimeException failure) {
       throw error(OPERATION_SCHEMA_NOT_READY);
     }
   }

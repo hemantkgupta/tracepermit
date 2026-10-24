@@ -74,3 +74,5 @@ separate durable current head/withdrawal journal and an explicit V1→V2 upgrade
 Pending-only owner withdrawal uses locked whole-state/database-time authority
 checks. Initial registration/retry semantics stay unchanged. There is no generic
 proposed-state write, operations API, approval/permit or target wiring.
+Stored operation JSON and populated upgrade inputs reject duplicate keys and
+trailing data without changing global JSON/canonical semantics.

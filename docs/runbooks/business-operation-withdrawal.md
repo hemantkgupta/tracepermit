@@ -70,3 +70,9 @@ Registration `createOrGet`/`find` return the **initial** snapshot. Lifecycle
 `findCurrent` returns progress. No status/hash is a signed approval, verified
 target result, S3 receipt or restored-backup fence. RDS/TLS/failover, AgentCore,
 GitHub/IdP, EKS and production use remain independently gated.
+
+Duplicate-key or trailing-data stored JSON is corruption even when a permissive
+parse would reproduce the expected hash. Reads return the fixed corruption code;
+an explicit upgrade refuses that predecessor before DDL. Do not strip/normalize
+the stored value, recompute hashes or retry migration to make it pass. Investigate
+privately and recover through the operator's verified recovery procedure.

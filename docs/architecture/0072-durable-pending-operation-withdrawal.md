@@ -66,6 +66,16 @@ across serialization without changing the frozen v1 profile or its numeric
 limits. Hashes provide neither confidentiality nor authenticity against a DBA
 who can rewrite the data and hashes coherently.
 
+Stored originals, current heads, journal facts and actor metadata use a private,
+byte-bounded strict reader: duplicate keys (including nested keys), trailing
+tokens/data, null and malformed values fail closed before semantic/hash checks.
+The populated V1 upgrade uses the same reader before any DDL. A permissive
+last-key-wins/prefix parse could otherwise accept damaged stored bytes whose
+parsed value still has the expected hash. This is corruption detection, not a
+new database-administrator authenticity guarantee. Global JSON settings, the
+canonical profile, V1 migration bytes and hashes for valid values stay unchanged;
+parser exceptions/input fragments are discarded in favor of fixed error codes.
+
 Partial writes roll back together. Commit/post-commit cleanup acknowledgement
 loss is `OPERATION_COMMIT_UNKNOWN`, regardless of actual durability. No automatic
 retry or false success occurs. A separate explicit lookup can inform an operator;
@@ -105,7 +115,9 @@ retries, durable restart, concurrent winner/stale losers, coherent in-flight
 reads, real row-lock deadline expiry, partial-write rollback, lost commit/cleanup
 acknowledgement, chain/actor/head corruption, migration refusal/preservation and
 restricted grants. Application tests cover owner/tenant/role/scope/flag/deadline/
-ID/token rejection. All fixtures are synthetic/disposable.
+ID/token rejection. Ten strict-stored-JSON cases failed before the repair on
+PostgreSQL; the same original/head/fact/actor and pre-DDL matrix runs on all
+three engines. All fixtures are synthetic/disposable.
 
 Not implemented: a generic trusted lifecycle service, policy/approval decisions,
 global recovery fencing or backup resurrection protection, claims/permits,

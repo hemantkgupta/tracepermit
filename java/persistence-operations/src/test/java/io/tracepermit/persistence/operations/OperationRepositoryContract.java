@@ -575,6 +575,42 @@ abstract class OperationRepositoryContract {
     assertThat(repository.find(SCOPE, id(initial))).contains(initial);
   }
 
+  @org.junit.jupiter.params.ParameterizedTest(name = "{0}/{1}")
+  @org.junit.jupiter.params.provider.MethodSource("ambiguousStoredJsonCases")
+  void ambiguousStoredJsonNeverBecomesAValidCurrentProjection(String location, String ambiguity) throws Exception {
+    ObjectNode initial = operation();
+    repository.createOrGet(SCOPE, initial);
+    var lifecycle = new JdbcBusinessOperationLifecycleRepository(source);
+    lifecycle.withdraw(withdrawal(initial, Instant.now().plusSeconds(60)));
+    String table = switch (location) {
+      case "original" -> "tp_business_operations";
+      case "head" -> "tp_operation_lifecycle_heads";
+      default -> "tp_operation_lifecycle_facts";
+    };
+    String column = switch (location) {
+      case "fact" -> "fact_json";
+      case "actor" -> "actor_json";
+      default -> "snapshot_json";
+    };
+    String stored = readStoredJson(table, column, id(initial));
+    writeStoredJson(table, column, id(initial), ambiguousJson(stored, ambiguity));
+    assertCode(() -> lifecycle.findCurrent(SCOPE, id(initial)), OPERATION_STORAGE_CORRUPT);
+    if (location.equals("original")) {
+      assertCode(() -> repository.find(SCOPE, id(initial)), OPERATION_STORAGE_CORRUPT);
+      assertCode(() -> repository.createOrGet(SCOPE, operation()), OPERATION_STORAGE_CORRUPT);
+    } else {
+      assertThat(repository.find(SCOPE, id(initial))).contains(initial);
+    }
+    assertCounts(1, 3);
+    assertLifecycleCounts(1, 1);
+  }
+
+  static java.util.stream.Stream<org.junit.jupiter.params.provider.Arguments> ambiguousStoredJsonCases() {
+    return java.util.stream.Stream.of("original", "head", "fact", "actor")
+        .flatMap(location -> java.util.stream.Stream.of("trailing", "duplicate")
+            .map(ambiguity -> org.junit.jupiter.params.provider.Arguments.of(location, ambiguity)));
+  }
+
   @Test
   void structurallyValidApprovedHeadWithoutItsTrustedJournalNeverBecomesCurrentAuthority() throws SQLException {
     ObjectNode initial = operation();
@@ -682,6 +718,23 @@ abstract class OperationRepositoryContract {
     }
   }
 
+  @org.junit.jupiter.params.ParameterizedTest
+  @org.junit.jupiter.params.provider.ValueSource(strings = {"trailing", "duplicate"})
+  void upgradeRejectsAmbiguousPredecessorJsonBeforeAnyDdl(String ambiguity) throws Exception {
+    ObjectNode initial = operation();
+    repository.createOrGet(SCOPE, initial);
+    makeV1Fixture();
+    String original = readStoredJson("tp_business_operations", "snapshot_json", id(initial));
+    try {
+      writeStoredJson("tp_business_operations", "snapshot_json", id(initial), ambiguousJson(original, ambiguity));
+      assertCode(() -> OperationDatabase.upgradeFromV1(source), OPERATION_SCHEMA_NOT_READY);
+      assertThat(tableCount()).isEqualTo(3);
+    } finally {
+      writeStoredJson("tp_business_operations", "snapshot_json", id(initial), original);
+      if (tableCount() == 3) OperationDatabase.upgradeFromV1(source);
+    }
+  }
+
   @Test
   void upgradeRejectsChangedMigrationChecksumWithoutRepair() throws SQLException {
     makeV1Fixture();
@@ -770,6 +823,35 @@ abstract class OperationRepositoryContract {
       if (!postgres) execute("DROP INDEX synthetic_fk_support ON tp_operation_lifecycle_facts");
     }
     OperationDatabase.validateExisting(source);
+  }
+
+  private static String ambiguousJson(String original, String ambiguity) throws java.io.IOException {
+    if (ambiguity.equals("trailing")) return original + " false";
+    String field = JsonSupport.MAPPER.readTree(original).fieldNames().next();
+    return "{\"" + field + "\":null," + original.substring(1);
+  }
+
+  private String readStoredJson(String table, String column, String id) throws SQLException {
+    // Identifiers are fixed test-source cases, never external input.
+    try (Connection connection = source.getConnection();
+        var statement = connection.prepareStatement("SELECT " + column + " FROM " + table + " WHERE operation_id = ?")) {
+      statement.setString(1, id);
+      try (var rows = statement.executeQuery()) {
+        assertThat(rows.next()).isTrue();
+        String value = rows.getString(1);
+        assertThat(rows.next()).isFalse();
+        return value;
+      }
+    }
+  }
+
+  private void writeStoredJson(String table, String column, String id, String value) throws SQLException {
+    try (Connection connection = source.getConnection();
+        var statement = connection.prepareStatement("UPDATE " + table + " SET " + column + " = ? WHERE operation_id = ?")) {
+      statement.setString(1, value);
+      statement.setString(2, id);
+      assertThat(statement.executeUpdate()).isEqualTo(1);
+    }
   }
 
   private void makeV1Fixture() throws SQLException {

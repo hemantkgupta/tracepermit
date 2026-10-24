@@ -11,8 +11,6 @@ import io.tracepermit.application.BusinessOperationTransitionPlanner;
 import io.tracepermit.application.BusinessOperationWithdrawal;
 import io.tracepermit.contracts.BusinessOperationValidator;
 import io.tracepermit.contracts.CanonicalJson;
-import io.tracepermit.contracts.JsonSupport;
-import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -147,7 +145,7 @@ public final class JdbcBusinessOperationLifecycleRepository implements BusinessO
       try (ResultSet rows = statement.executeQuery()) {
         if (!rows.next()) throw error(OPERATION_STORAGE_CORRUPT);
         hash = rows.getString(1);
-        head = parse(rows.getString(2), MAX_BYTES);
+        head = StoredOperationJson.read(rows.getString(2), MAX_BYTES);
         if (rows.next()) throw error(OPERATION_STORAGE_CORRUPT);
       }
     }
@@ -163,8 +161,8 @@ public final class JdbcBusinessOperationLifecycleRepository implements BusinessO
         statement.setString(1, id);
         try (ResultSet rows = statement.executeQuery()) {
           while (rows.next()) {
-            JsonNode fact = parse(rows.getString(4), MAX_BYTES);
-            JsonNode actor = parse(rows.getString(6), 4096);
+            JsonNode fact = StoredOperationJson.read(rows.getString(4), MAX_BYTES);
+            JsonNode actor = StoredOperationJson.read(rows.getString(6), 4096);
             if (rows.getInt(1) != replay.path("transitions").size() + 1
                 || !CanonicalJson.sha256(replay).equals(rows.getString(2))
                 || !CanonicalJson.sha256(actor).equals(rows.getString(5))
@@ -229,17 +227,6 @@ public final class JdbcBusinessOperationLifecycleRepository implements BusinessO
         if (value == null || rows.next()) throw error(OPERATION_STORAGE_UNAVAILABLE);
         return value.toInstant();
       }
-    }
-  }
-
-  private static JsonNode parse(String json, int maxBytes) {
-    if (json == null || json.getBytes(StandardCharsets.UTF_8).length > maxBytes) throw error(OPERATION_STORAGE_CORRUPT);
-    try {
-      JsonNode parsed = JsonSupport.MAPPER.readTree(json);
-      if (parsed == null) throw error(OPERATION_STORAGE_CORRUPT);
-      return parsed;
-    } catch (java.io.IOException failure) {
-      throw error(OPERATION_STORAGE_CORRUPT);
     }
   }
 
