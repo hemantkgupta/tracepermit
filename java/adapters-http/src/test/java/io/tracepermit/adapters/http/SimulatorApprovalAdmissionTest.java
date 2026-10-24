@@ -47,7 +47,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.RejectedExecutionException;
-import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -340,14 +339,14 @@ final class SimulatorApprovalAdmissionTest {
     assertThat(firstStarted.await(15, TimeUnit.SECONDS)).isTrue();
     pool.submit(parkedTask);
     pool.submit(parkedTask);
-    assertThat(((ThreadPoolExecutor) pool).getQueue().size())
+    assertThat(((BoundedDispatchExecutor) pool).occupancy().pending())
         .as("exactly the pending bound of tasks is queued").isEqualTo(2);
     assertThatThrownBy(() -> pool.submit(() -> {}))
         .as("an offer beyond the pending bound must be rejected before any handler runs")
         .isInstanceOf(RejectedExecutionException.class);
-    assertThat(((ThreadPoolExecutor) pool).getMaximumPoolSize())
+    assertThat(((BoundedDispatchExecutor) pool).activeLanes())
         .as("active work is exactly the lane count").isEqualTo(1);
-    assertThat(((ThreadPoolExecutor) pool).getActiveCount()).isEqualTo(1);
+    assertThat(((BoundedDispatchExecutor) pool).occupancy().reserved()).isEqualTo(1);
     assertThat(laneSeen.get().isDaemon()).as("dispatch lanes must be daemon threads").isTrue();
     assertThat(laneSeen.get().getName()).startsWith("approval-dispatch-");
     release.countDown();
