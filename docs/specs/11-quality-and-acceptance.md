@@ -26,8 +26,11 @@ pnpm demo:verify
 
 `pnpm check` builds, typechecks, and tests the React console, verifies the
 Node/Java environment, and runs the Java aggregate test and coverage gates.
-PostgreSQL integration tests use disposable Testcontainers; Docker is needed
-for those checks. Runtime-affecting changes also need the closest numbered
+PostgreSQL and the unwired MariaDB permit-consumption integration tests use
+disposable Testcontainers; Docker is needed for those checks. The MariaDB gate
+runs the same bounded replay cases on exact 10.6.25 and 11.4.13 images; it does
+not qualify RDS, replication or the PostgreSQL approval/evidence composition.
+Runtime-affecting changes also need the closest numbered
 simulator scenario or an equivalent protocol smoke test.
 
 Simulator listener admission also requires the bounded dispatch controls in
