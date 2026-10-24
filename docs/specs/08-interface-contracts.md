@@ -490,6 +490,33 @@ clientClaims
 Adapters construct trusted fields. Policy and executors consume the canonical
 contract and do not reinterpret raw transport input.
 
+### Business-operation contract foundation
+
+`contracts/json-schema/business-operation-v1.schema.json` defines a strict
+internal aggregate around one already-normalized canonical action. It requires
+server operation identity; trusted tenant, workspace and requester context;
+separate client-key, canonical-event, semantic-payload, resource-binding and
+target-idempotency digests; exact policy/artifact versions; recovery generation;
+explicit retention; and independent authorization, execution and evidence
+snapshots backed by append-only transitions.
+
+`BusinessOperationValidator` recomputes every derivable binding and rejects
+unknown fields/states, unnormalized actions, invalid state edges, discontinuous
+versions/sequences and inconsistent snapshot projections. Trusted context is
+never accepted as proof from a public request body. The frozen vector uses only
+synthetic simulator data.
+
+No operations HTTP API is implemented. Same-key/same-payload return and
+same-key/different-payload conflict are provided
+by the isolated `BusinessOperationRepository` port and JDBC registration library
+in [ADR 0070](../architecture/0070-durable-business-operation-registration.md).
+It atomically stores only the initial evaluating/not_started/pending snapshot
+and three facts. Registration returns the original snapshot without overwriting
+policy/artifact/retention proposals. Read visibility is scoped by trusted tenant,
+workspace and requester; authentication and authorization remain adapter duties.
+See [ADR 0068](../architecture/0068-versioned-business-operation-contract.md) for
+the underlying document contract.
+
 ## 3A. Java development control-plane reads
 
 The Java development adapter exposes these loopback-only reads:

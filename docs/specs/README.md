@@ -56,3 +56,20 @@ incomplete. The console download is exercised against the real Java route by a
 required browser gate, which also passes the saved file to the installed Java
 offline checker. Live-provider qualification retains a separate gate in the
 [delivery plan](../planning/audit-ready-approval-workspace.md).
+
+[ADR0068](../architecture/0068-versioned-business-operation-contract.md) adds
+the persistence-neutral business-operation schema, frozen synthetic draft-PR
+vector and Java lifecycle/binding validator. It does not implement durable
+request deduplication, an operations API, a database adapter, AgentCore ingress
+or a real target.
+
+[ADR0070](../architecture/0070-durable-business-operation-registration.md) adds
+the isolated registration port/library and a shared MariaDB/PostgreSQL contract
+suite. Scoped-key uniqueness, changed-content conflict, snapshot/initial-fact
+atomicity and commit uncertainty are implemented for registration. The module
+is not wired into the simulator, an operations API or a target executor.
+
+[ADR0071](../architecture/0071-uncommitted-operation-transition-proposals.md) adds
+a pure, scope/state-bound transition proposal helper. A candidate label is not
+authority or a committed event; durable lifecycle service composition remains
+pending.

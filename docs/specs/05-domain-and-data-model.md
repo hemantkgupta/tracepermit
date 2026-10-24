@@ -5,27 +5,28 @@
 
 ## 1. Domain language
 
-| Term               | Meaning                                                       |
-| ------------------ | ------------------------------------------------------------- |
-| Principal          | Human or workload identity                                    |
-| Subject            | Principal whose authority is evaluated                        |
-| Actor              | Immediate agent, service, orchestrator, or tool acting        |
-| Trigger            | Human, service, or scheduled cause                            |
-| Action event       | Canonical observed request before classification and decision |
-| Identity evidence  | Verification metadata and non-secret credential fingerprint   |
-| Source attestation | Short-lived signed endpoint observations bound to one request |
-| Source evidence    | Safe verified device/process/trigger projection on an action  |
-| Workload identity  | Scheduler-signed principal/run/action binding                 |
-| Lineage hop        | Causal observation linking components in a request path       |
-| Delegation grant   | Signed, verifiable, parent-linked authority transfer          |
-| Classification     | Derived action class, severity, operation, and risk signals   |
-| Evaluation         | Policy decision for one action event and policy version       |
-| Approval request   | Pending request for a human decision on an exact action hash  |
-| Approval decision  | Approver's allow or deny attestation                          |
-| Execution permit   | Short-lived capability for one subject, action, and executor  |
-| Execution attempt  | One claimed attempt to invoke a target                        |
-| Evidence event     | Append-only lifecycle fact                                    |
-| Reconciliation     | Later determination of an initially uncertain outcome         |
+| Term               | Meaning                                                            |
+| ------------------ | ------------------------------------------------------------------ |
+| Principal          | Human or workload identity                                         |
+| Subject            | Principal whose authority is evaluated                             |
+| Actor              | Immediate agent, service, orchestrator, or tool acting             |
+| Trigger            | Human, service, or scheduled cause                                 |
+| Action event       | Canonical observed request before classification and decision      |
+| Business operation | Durable business intent spanning requests and lifecycle dimensions |
+| Identity evidence  | Verification metadata and non-secret credential fingerprint        |
+| Source attestation | Short-lived signed endpoint observations bound to one request      |
+| Source evidence    | Safe verified device/process/trigger projection on an action       |
+| Workload identity  | Scheduler-signed principal/run/action binding                      |
+| Lineage hop        | Causal observation linking components in a request path            |
+| Delegation grant   | Signed, verifiable, parent-linked authority transfer               |
+| Classification     | Derived action class, severity, operation, and risk signals        |
+| Evaluation         | Policy decision for one action event and policy version            |
+| Approval request   | Pending request for a human decision on an exact action hash       |
+| Approval decision  | Approver's allow or deny attestation                               |
+| Execution permit   | Short-lived capability for one subject, action, and executor       |
+| Execution attempt  | One claimed attempt to invoke a target                             |
+| Evidence event     | Append-only lifecycle fact                                         |
+| Reconciliation     | Later determination of an initially uncertain outcome              |
 
 V10 storage additionally recognizes terminal `cancelled` and separate requester
 cancellation provenance on pending→cancelled transitions, never reviewer fields.
@@ -43,6 +44,39 @@ revocation or interruption of a target operation. The React mutation is separate
 Owns the immutable canonical action, identity evidence references, lineage,
 classification, and evaluations. The original normalized event is never edited
 to reflect later decisions.
+
+### Business-operation aggregate
+
+Owns a server operation ID, trusted tenant/workspace/requester context, client
+request-key fingerprint, immutable normalized action and hash, semantic payload
+digest, resource/precondition binding, policy/artifact releases, recovery
+generation, retention policy and independent authorization/execution/evidence
+projections. Its append-only transitions are globally ordered and versioned per
+dimension. Transport request, event, operation, semantic, resource and target
+idempotency identities are deliberately distinct.
+
+The implemented v1 contract and Java validator are a persistence-neutral
+foundation only. They do not provide repository uniqueness, access control,
+encryption, retention deletion, resume/cancel APIs, target dispatch or
+reconciliation. See [ADR 0068](../architecture/0068-versioned-business-operation-contract.md).
+
+The separate [durable registration library](../architecture/0070-durable-business-operation-registration.md)
+persists only the initial aggregate and its three facts in one transaction.
+Its unique key is the trusted tenant/workspace/requester fingerprint plus the client
+request-key fingerprint. A duplicate with matching adapter, semantic action,
+resource/precondition and recovery generation returns the original aggregate;
+a changed binding conflicts. The first snapshot's policy, artifacts and retention
+remain immutable. Authority-bearing transitions and retention deletion are pending.
+The dedicated registration database is separate from existing approval and
+permit-consumption databases.
+
+The application layer can construct an
+[uncommitted transition proposal](../architecture/0071-uncommitted-operation-transition-proposals.md)
+against the exact current snapshot/versions/generation. It preserves immutable
+fields and the old history prefix, but does not commit, arbitrate two callers or
+establish authority. The existing registration port cannot persist a progressed
+proposal. Durable lifecycle mutation and current actor/policy/approval checks
+remain separate service responsibilities.
 
 ### Approval aggregate
 
@@ -64,7 +98,11 @@ the exact version used.
 ```mermaid
 erDiagram
   TENANT ||--o{ ACTION_EVENT : owns
+  TENANT ||--o{ BUSINESS_OPERATION : owns
   TENANT ||--o{ POLICY : owns
+  BUSINESS_OPERATION ||--|| ACTION_EVENT : binds
+  BUSINESS_OPERATION ||--o{ EXECUTION_ATTEMPT : attempts
+  BUSINESS_OPERATION ||--o{ EVIDENCE_EVENT : records
   POLICY ||--|{ POLICY_VERSION : versions
   ACTION_EVENT ||--|{ IDENTITY_EVIDENCE : supports
   ACTION_EVENT ||--o| SOURCE_EVIDENCE : observed_from
@@ -87,6 +125,20 @@ erDiagram
     uuid tenant_id PK
     string name
     string status
+  }
+  BUSINESS_OPERATION {
+    uuid operation_id PK
+    uuid tenant_id FK
+    string workspace_id
+    string requester_principal_id
+    string client_request_key_hash
+    string semantic_payload_digest
+    string resource_binding_hash
+    string target_idempotency_key_hash
+    bigint recovery_generation
+    string authorization_status
+    string execution_status
+    string evidence_status
   }
   ACTION_EVENT {
     uuid event_id PK

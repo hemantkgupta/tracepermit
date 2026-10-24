@@ -3,6 +3,7 @@ package io.tracepermit.conformance;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.tracepermit.contracts.ActionValidator;
+import io.tracepermit.contracts.BusinessOperationValidator;
 import io.tracepermit.contracts.CanonicalJson;
 import io.tracepermit.contracts.ContractViolation;
 import io.tracepermit.contracts.JsonSupport;
@@ -41,6 +42,25 @@ final class PortableContractsTest {
         assertThatThrownBy(() -> ActionValidator.validate(action)).isInstanceOf(ContractViolation.class)
             .hasMessageContaining(item.path("expectedMessage").asText());
       }
+    }
+  }
+
+  @Test
+  void businessOperationValidationMatchesSharedVectors() {
+    JsonNode vectors =
+        JsonSupport.read(ROOT.resolve("contracts/vectors/business-operation-v1.json"));
+    JsonNode operation = vectors.path("operation");
+    assertThat(BusinessOperationValidator.validate(operation)).isEqualTo(operation);
+    for (JsonNode mutation : vectors.path("invalidMutations")) {
+      JsonNode candidate = operation.deepCopy();
+      applyMutation(candidate, mutation);
+      assertThatThrownBy(() -> BusinessOperationValidator.validate(candidate))
+          .as(mutation.path("name").asText())
+          .isInstanceOfSatisfying(
+              ContractViolation.class,
+              violation ->
+                  assertThat(violation.path())
+                      .isEqualTo(mutation.path("expectedPath").asText()));
     }
   }
 

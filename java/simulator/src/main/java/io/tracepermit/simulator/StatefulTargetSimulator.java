@@ -24,7 +24,9 @@ public final class StatefulTargetSimulator implements SimulatedTarget {
   private final Map<String, List<ObjectNode>> logGroups = new LinkedHashMap<>();
   private final Map<String, ArrayNode> securityGroupRules = new LinkedHashMap<>();
   private final Map<String, ObjectNode> issues = new LinkedHashMap<>();
+  private final Map<String, ObjectNode> pullRequests = new LinkedHashMap<>();
   private int nextIssueNumber = 1;
+  private int nextPullRequestNumber = 1;
 
   public StatefulTargetSimulator() {
     logGroups.put(
@@ -59,6 +61,7 @@ public final class StatefulTargetSimulator implements SimulatedTarget {
       case "jira.issue.create" -> createIssue(arguments, target);
       case "jira.issue.get" -> getIssue(arguments, target);
       case "jira.issue.transition" -> transitionIssue(arguments, target);
+      case "github.pull_request.create" -> createPullRequest(arguments, target);
       default -> throw error(
           "SIMULATOR_TOOL_NOT_SUPPORTED", "The requested tool is not implemented by the stateful simulator.");
     };
@@ -78,11 +81,17 @@ public final class StatefulTargetSimulator implements SimulatedTarget {
     issues.forEach((key, issue) -> issueSnapshot.set(key, issue.deepCopy()));
     jira.set("issues", issueSnapshot);
 
+    ObjectNode github = JsonSupport.MAPPER.createObjectNode();
+    ObjectNode prSnapshot = JsonSupport.MAPPER.createObjectNode();
+    pullRequests.forEach((key, pr) -> prSnapshot.set(key, pr.deepCopy()));
+    github.set("pullRequests", prSnapshot);
+
     ObjectNode state = JsonSupport.MAPPER.createObjectNode();
     state.put("schemaVersion", "1.0");
     state.put("mode", "simulated");
     state.set("aws", aws);
     state.set("jira", jira);
+    state.set("github", github);
     return state;
   }
 
@@ -210,6 +219,70 @@ public final class StatefulTargetSimulator implements SimulatedTarget {
     ObjectNode issue = issues.get(issueKey);
     require(issue != null, "SIMULATED_RESOURCE_NOT_FOUND", "The simulated Jira issue does not exist.");
     return issue;
+  }
+
+  private JsonNode createPullRequest(JsonNode arguments, JsonNode target) {
+    requireSystem(target, "github");
+    requireOnly(arguments, Set.of("repository", "owner", "repo", "title", "head", "base", "draft", "body"));
+
+    String repository = "";
+    if (arguments.has("repository") && arguments.path("repository").isTextual()) {
+      repository = arguments.path("repository").asText().trim();
+    } else if (arguments.has("owner") && arguments.has("repo")
+        && arguments.path("owner").isTextual() && arguments.path("repo").isTextual()) {
+      repository = arguments.path("owner").asText().trim() + "/" + arguments.path("repo").asText().trim();
+    } else if (target.has("accountId") && target.path("accountId").isTextual()) {
+      repository = target.path("accountId").asText().trim();
+    }
+    require(
+        "tracepermit/agentcore-pr-pilot".equalsIgnoreCase(repository)
+            || "simulated-tracepermit/agentcore-pr-pilot".equalsIgnoreCase(repository)
+            || target.path("accountId").asText().startsWith("simulated-"),
+        "INVALID_SIMULATOR_ARGUMENTS",
+        "The simulator accepts only allowlisted pilot repository tracepermit/agentcore-pr-pilot.");
+
+    String base = requiredText(arguments, "base");
+    require(
+        "main".equals(base),
+        "INVALID_SIMULATOR_ARGUMENTS",
+        "The simulator accepts only base branch main.");
+
+    require(
+        arguments.has("draft") && arguments.path("draft").isBoolean() && arguments.path("draft").booleanValue(),
+        "INVALID_SIMULATOR_ARGUMENTS",
+        "The simulator requires draft=true.");
+
+    String head = requiredText(arguments, "head");
+    require(
+        !head.equals(base) && !head.isBlank(),
+        "INVALID_SIMULATOR_ARGUMENTS",
+        "The head branch must not equal base branch.");
+
+    String title = requiredText(arguments, "title");
+    require(
+        title.length() <= 256,
+        "INVALID_SIMULATOR_ARGUMENTS",
+        "Title exceeds maximum length of 256 characters.");
+
+    String body = optionalText(arguments, "body");
+    int prNumber = nextPullRequestNumber++;
+    String prKey = "PR-" + prNumber;
+
+    ObjectNode pr = JsonSupport.MAPPER.createObjectNode();
+    pr.put("number", prNumber);
+    pr.put("id", 1000L + prNumber);
+    pr.put("htmlUrl", "https://github.com/tracepermit/agentcore-pr-pilot/pull/" + prNumber);
+    pr.put("state", "open");
+    pr.put("draft", true);
+    pr.put("title", title);
+    pr.put("head", head);
+    pr.put("base", base);
+    pr.put("body", body);
+    pullRequests.put(prKey, pr);
+
+    ObjectNode result = baseResult("github", "github.pull_request.create");
+    result.set("pullRequest", pr.deepCopy());
+    return result;
   }
 
   private static ObjectNode baseResult(String system, String operation) {

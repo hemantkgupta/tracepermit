@@ -13,6 +13,7 @@ include(
   "endpoint-connector",
   "review-verifier",
   "persistence-postgres",
+  "persistence-operations",
   "observability-otel",
   "conformance",
 )

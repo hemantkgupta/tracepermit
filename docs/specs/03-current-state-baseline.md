@@ -1,6 +1,6 @@
 # Current-state capability matrix
 
-**As of:** 2026-10-22
+**As of:** 2026-10-23
 **Scope:** public Java-backend/React-console proof of concept
 
 This is the authoritative boundary between running POC behavior and product
@@ -21,6 +21,38 @@ a required browser gate saves the file from the real Java route and passes it to
 the installed Java-only offline checker for closed-structure and checksum
 validation. See [ADR0064](../architecture/0064-unsigned-approval-review-export.md).
 
+## AgentCore GitHub draft pull request adapter foundation
+
+The Java backend adds `GitHubDraftPullRequestAdapter` and `GitHubPullRequestOutcomeResolver`
+in `adapters-remote` for the first AgentCore pilot operation `github.pull_request.create`.
+The adapter strictly allowlists destination host HTTPS `api.github.com`, repository
+`tracepermit/agentcore-pr-pilot`, base branch `main`, and enforces mandatory `draft: true`.
+Transport invariants enforce `Proxy.NO_PROXY`, disabled redirects, disabled connection
+retries, bounded connect (5s) and call (10s) timeouts, and a 65,536-byte decoded
+response limit enforced while reading (at most one overflow byte beyond the limit).
+GitHub App installation credentials are provided via a trusted provider port and masked in
+memory; audit evidence stores only the cryptographic `credentialFingerprint` (`sha256:...`)
+and stable installation/repository identifiers. Because GitHub PR creation lacks a native
+idempotency key, an explicit stable operation key (`sha256(installId:repo:head:base)`) and
+read-only lookup port (`GET /repos/{owner}/{repo}/pulls?head={owner}:{head}&base={base}&state=all`)
+support uncertain timeouts and transport disconnects without re-execution
+([ADR 0069](../architecture/0069-github-app-draft-pr-adapter-and-reconciliation.md)).
+Oversized HTTP 201 confirmations and unavailable lookups (including 401/403/404,
+redirects and oversized lookup bodies) retain `unknown`; they do not prove failure.
+This foundation is process-local, not a composed durable production executor or
+a general qualification of pagination/eventual-visibility absence semantics.
+In-memory simulator target executions (`mode: "simulated"`) remain explicitly distinguished
+from live pilot operations (`mode: "pilot"`). See the [operator runbook](../runbooks/agentcore-github-pr-pilot.md).
+
+## Uncommitted operation transition proposals
+
+The Java application layer also provides an
+[uncommitted transition proposal primitive](../architecture/0071-uncommitted-operation-transition-proposals.md).
+It checks exact scope and optimistic state identity, appends one valid v1 fact,
+and preserves other fields/history. It neither commits nor authorizes anything;
+the registration repository rejects progressed candidates. Atomic lifecycle
+persistence, actor/policy/approval checks and service/API wiring remain pending.
+
 ## Assurance vocabulary
 
 - **Implemented:** code exists in the public tree and passes automated tests.
@@ -29,6 +61,24 @@ validation. See [ADR0064](../architecture/0064-unsigned-approval-review-export.m
   was exercised on a stated date; no broader compatibility is implied.
 - **Target:** an architectural design or port without a qualified production
   implementation.
+
+## Business-operation contract foundation
+
+Java and the checked-in language-neutral artifacts now validate a strict
+business-operation snapshot around an immutable canonical action. Deterministic
+tests bind canonical, semantic, resource/precondition and target-generation
+digests; keep transport/event/operation/request/target identities separate; and
+enforce three independent append-only lifecycle dimensions. The isolated JDBC
+registration library additionally commits an initial snapshot and all three
+initial facts atomically, returns an original scoped-key retry, rejects changed
+bindings and reports commit uncertainty. One shared test suite runs on MariaDB
+11.4.13/10.6.25 and PostgreSQL 16.4, including concurrent repository instances,
+restart, restricted runtime grants and corruption checks. This library remains
+unwired: operation APIs, authority-bearing lifecycle transitions, AgentCore,
+GitHub dispatch, S3 delivery, RDS and production deployment remain pending. See
+[ADR 0068](../architecture/0068-versioned-business-operation-contract.md),
+[ADR 0070](../architecture/0070-durable-business-operation-registration.md) and the
+[repository runbook](../runbooks/business-operation-repository.md).
 
 ## Current capability by boundary
 

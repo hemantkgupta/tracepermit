@@ -65,6 +65,13 @@ live qualification and future scope. Passing one profile does not qualify anothe
 
 ## What is not being claimed
 
+Developers can also run an isolated business-operation registration suite on
+MariaDB and PostgreSQL. It tests scoped request deduplication, changed-content
+conflicts, atomic initial records and commit uncertainty. This foundation is not
+connected to the approval walkthrough or real targets. See the
+[developer runbook](https://github.com/hemantkgupta/tracepermit/blob/main/docs/runbooks/business-operation-repository.md)
+for its qualification boundary.
+
 No real AWS/Jira executor, universal agent interception, host-wide anti-bypass,
 public production gateway, independently signed release, production latency SLO
 or complete recovery/upgrade product is shipped by this preview. A fresh machine
