@@ -118,9 +118,13 @@ pending promotion, startup failure, cancellation, interruption and shutdown
 accounting; `ApprovalAdmissionExecutorsTest` adds a delayed-worker regression
 that failed on the old factory. A reserved lane includes handoff before worker
 wakeup; it is not an additional pending slot or authority to execute an action.
-The subsequent recorded candidate passed 31 focused cases and three independent
+The subsequent recorded candidate passed 34 focused cases and three independent
 complete two-CPU qualification runs (16 cases each, unchanged workload/gates).
 Worker startup precedes binding and bind failure stops the owned workers.
+Independent review's checked-throwable task/observer findings and the Mac's
+startup variant each failed a permanent pre-repair control; all three invocation
+boundaries now contain every throwable without retry, raw diagnostic or false
+termination. The earlier green candidate receipt is retained as history.
 This does not promote PERF-003, SEC-017 or a production/public-edge SLO.
 
 Counting key-resolution/database probes plus unchanged simulator state qualify

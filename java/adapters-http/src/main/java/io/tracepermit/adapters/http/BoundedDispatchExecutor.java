@@ -57,7 +57,7 @@ final class BoundedDispatchExecutor extends AbstractExecutorService {
         lane.thread.start();
         started++;
       }
-    } catch (RuntimeException | Error startupFailure) {
+    } catch (Throwable startupFailure) {
       synchronized (lock) {
         exited += lanes.length - started;
       }
@@ -90,7 +90,7 @@ final class BoundedDispatchExecutor extends AbstractExecutorService {
     }
     try {
       rejected.rejected(task instanceof java.util.concurrent.RunnableFuture<?>, occupancy);
-    } catch (RuntimeException | Error observationFailure) {
+    } catch (Throwable observationFailure) {
       // Observation cannot suppress refusal or expose its throwable to callers.
     }
     throw new RejectedExecutionException("Approval dispatch capacity unavailable.");
@@ -114,7 +114,7 @@ final class BoundedDispatchExecutor extends AbstractExecutorService {
         }
         try {
           task.run();
-        } catch (RuntimeException | Error taskFailure) {
+        } catch (Throwable taskFailure) {
           // A failed task is never retried or reported as a successful exchange.
           // Do not print its potentially sensitive throwable. Keep the lane usable.
         } finally {

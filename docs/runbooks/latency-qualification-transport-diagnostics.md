@@ -99,6 +99,63 @@ Frozen install, format,1035 documentation links,13 synchronized flows and
 Hosted exact-head CI and independent integration review are still required;
 the local results do not erase prior hosted failures or qualify production.
 
+### Independent review findings and bounded repair
+
+The independent read-only cloud review of `33cb1ac` found two invocation-boundary
+defects. A legal generic rethrow of a checked exception escaped a catch limited
+to `RuntimeException | Error`: a raw task could kill its worker, strand accepted
+successors and leave misleading termination accounting. The same mechanism in
+the package-private observer could escape instead of the fixed refusal. This
+is an internal robustness defect; no remote exploit or authority bypass was
+claimed.
+
+The Mac independently reproduced both in permanent tests **before** repair:
+the task case timed out waiting for accepted successors, and the observer case
+received the fixture `IOException` instead of `RejectedExecutionException`.
+Owned cleanup still completed within finite waits. The smallest repair changes
+only those two catches to contain `Throwable`; no logging, retry, capacity,
+deadline, workload, handler, authority or outcome change is introduced. The
+regressions require both successors to run once, zero remaining reservations,
+truthful termination and a fixed refusal with no cause or suppressed throwable.
+
+The Mac also applied the same fault to the worker-start callback. Its permanent
+control failed before repair with an escaping checked startup exception; the
+test's independent release/join still prevented a leaked test thread. The
+startup containment now covers `Throwable` too, so already-started owned workers
+are interrupted before the fixed startup failure is returned. This is a third
+one-line containment repair, not an extra capacity or lifecycle mechanism.
+
+The earlier31-case, three-pass and broad receipt above belongs to the pre-review
+candidate and does not close these findings. Post-repair requalification is a
+separate receipt; no successful old run is substituted for it.
+
+Post-review focused qualification passed34 cases (6 helper,13 executor,
+5 diagnostics,10 real HTTP admission), zero failures/errors/skips. The final
+runtime then passed three new independent forced complete runs,16 cases each:
+
+| Post-review run | JUnit suite start (UTC, 2026-10-24) | Result                                   |
+| --------------- | ----------------------------------- | ---------------------------------------- |
+| 1               | 05:39:01.135                        | 16 passed; complete default success gate |
+| 2               | 05:39:25.190                        | 16 passed; complete default success gate |
+| 3               | 05:39:48.895                        | 16 passed; complete default success gate |
+
+The serial script used `set -e` and checked each XML receipt, stopping on any
+failed command or nonzero failure/error/skip count. Each invocation forced a
+fresh Gradle test JVM with the same two-CPU profile and unchanged workload.
+No source changed between these runs; final executor source SHA-256 is
+`dee0858f4d43764489b5a4525dc0abf4438f9044e31ec2b3135bc27967c3c494`.
+The old candidate's four hosted checks also passed at `33cb1ac`, run40066110415;
+that does not close the later findings or replace exact-head CI for this repair.
+
+The second and final allowed local broad `pnpm check` passed on this repaired
+runtime:124 React tests; Java1381 recorded cases across138 suites, zero failures
+or errors, one unchanged archive-absent installed/native-PTY skip. The HTTP
+suite freshly ran428 cases (427 passed, one skip); unchanged modules reused
+prior valid outputs. Gradle61 tasks:4 executed,57 up-to-date. Coverage gates
+were unchanged and passed. Formatting,1035 links,13 flows and whitespace
+checks passed again. Further hosted exact-head CI and a bounded read-only
+closure check of the independent findings remain separate gates.
+
 ## Frozen scope
 
 - Repository: `hemantkgupta/tracepermit`.

@@ -24,6 +24,11 @@ twenty-fifth before any handler runs, then execute only those admitted tasks
 once after release. Concurrent producers, shutdown, cancellation, failure and
 interruption need their own controls; one successful burst is insufficient.
 
+The invocation boundary must contain every `Throwable`, not just runtime
+exceptions and errors: Java's generic rethrow can let a checked exception escape
+a `Runnable`, observer or worker-start callback. Three permanent negative
+controls demonstrate successor progress, fixed refusal and owned startup cleanup.
+
 Refusal has no guaranteed JSON response and grants no authority. Shutdown is
 not a drain, cancellation or target-outcome promise. A lost response must not
 cause a side effect to be retried. The complete qualification retains its

@@ -20,6 +20,92 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
 final class BoundedDispatchExecutorTest {
+  @Test void checkedTaskThrowableCannotStrandAcceptedSuccessorsOrFalselyTerminate() throws Exception {
+    var escaped = new AtomicBoolean();
+    var pool = pool(1, 2, worker -> {
+      var thread = new Thread(worker);
+      thread.setUncaughtExceptionHandler((owned, failure) -> escaped.set(true));
+      return thread;
+    });
+    var entered = new CountDownLatch(1); var release = new CountDownLatch(1);
+    var gateFailed = new AtomicBoolean(); var ran = new AtomicInteger();
+    try {
+      pool.execute(() -> {
+        entered.countDown(); awaitGate(release, gateFailed);
+        throwUnchecked(new java.io.IOException("fixture checked task failure"));
+      });
+      assertThat(entered.await(2, TimeUnit.SECONDS)).isTrue();
+      var first = pool.submit(ran::incrementAndGet);
+      var second = pool.submit(ran::incrementAndGet);
+      assertThat(pool.occupancy()).isEqualTo(new BoundedDispatchExecutor.Occupancy(1, 2));
+      release.countDown(); pool.shutdown();
+      assertThat(first.get(2, TimeUnit.SECONDS)).isEqualTo(1);
+      assertThat(second.get(2, TimeUnit.SECONDS)).isEqualTo(2);
+      assertThat(pool.awaitTermination(2, TimeUnit.SECONDS)).isTrue();
+      assertThat(ran).hasValue(2);
+      assertThat(pool.occupancy()).isEqualTo(new BoundedDispatchExecutor.Occupancy(0, 0));
+      assertThat(escaped).isFalse();
+    } finally { release.countDown(); stop(pool); }
+    assertThat(gateFailed).isFalse();
+  }
+
+  @Test void checkedObserverThrowableCannotReplaceTheFixedRefusal() throws Exception {
+    var pool = pool(1, 1, Thread::new);
+    var entered = new CountDownLatch(1); var release = new CountDownLatch(1);
+    var gateFailed = new AtomicBoolean(); var ran = new AtomicInteger();
+    var original = pool.rejectionObserver();
+    BoundedDispatchExecutor.RejectionObserver failing = (qualificationTask, occupancy) ->
+        throwUnchecked(new java.io.IOException("fixture checked observer failure"));
+    try {
+      pool.execute(() -> { entered.countDown(); awaitGate(release, gateFailed); });
+      assertThat(entered.await(2, TimeUnit.SECONDS)).isTrue();
+      pool.execute(ran::incrementAndGet);
+      pool.replaceRejectionObserver(original, failing);
+      assertThatThrownBy(() -> pool.execute(() -> ran.addAndGet(99)))
+          .isInstanceOf(RejectedExecutionException.class)
+          .hasMessage("Approval dispatch capacity unavailable.").hasNoCause().hasNoSuppressedExceptions();
+      pool.replaceRejectionObserver(failing, original);
+      release.countDown(); pool.shutdown();
+      assertThat(pool.awaitTermination(2, TimeUnit.SECONDS)).isTrue();
+      assertThat(ran).hasValue(1);
+    } finally { release.countDown(); stop(pool); }
+    assertThat(gateFailed).isFalse();
+  }
+
+  @Test void checkedStartupThrowableCannotAbandonAnAlreadyStartedWorker() throws Exception {
+    var created = new ArrayList<Thread>();
+    var release = new CountDownLatch(1);
+    var interrupted = new CountDownLatch(1);
+    var skipWorkerOnBrokenCleanup = new AtomicBoolean();
+    var index = new AtomicInteger();
+    ThreadFactory factory = worker -> {
+      Thread thread;
+      if (index.incrementAndGet() == 1) {
+        thread = new Thread(() -> {
+          try { release.await(5, TimeUnit.SECONDS); }
+          catch (InterruptedException expected) { interrupted.countDown(); }
+          if (!skipWorkerOnBrokenCleanup.get()) worker.run();
+        });
+      } else {
+        thread = new Thread(worker) {
+          @Override public synchronized void start() {
+            throwUnchecked(new java.io.IOException("fixture checked startup failure"));
+          }
+        };
+      }
+      created.add(thread); return thread;
+    };
+    try {
+      assertThatThrownBy(() -> pool(2, 1, factory)).isInstanceOf(IllegalStateException.class)
+          .hasMessage("DISPATCH_WORKER_START_FAILED").hasNoCause();
+      assertThat(interrupted.await(2, TimeUnit.SECONDS)).isTrue();
+    } finally {
+      // Even the broken constructor must not strand the test's owned thread.
+      skipWorkerOnBrokenCleanup.set(true); release.countDown();
+      for (Thread thread : created) { thread.join(2000); assertThat(thread.isAlive()).isFalse(); }
+    }
+  }
+
   @Test void concurrentOffersCannotExceedEightReservedAndSixteenPending() throws Exception {
     var gate = new CountDownLatch(1);
     var created = new CountDownLatch(8);
@@ -287,5 +373,10 @@ final class BoundedDispatchExecutorTest {
 
   private static void stop(BoundedDispatchExecutor pool) throws InterruptedException {
     pool.shutdownNow(); assertThat(pool.awaitTermination(2, TimeUnit.SECONDS)).isTrue();
+  }
+
+  @SuppressWarnings("unchecked")
+  private static <T extends Throwable> void throwUnchecked(Throwable failure) throws T {
+    throw (T) failure;
   }
 }

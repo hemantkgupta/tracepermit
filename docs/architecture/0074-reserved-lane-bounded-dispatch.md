@@ -53,7 +53,9 @@ validated at 1..64/1..1024; there is no new operator setting.
   admission grants none of those authorities.
 - Task exceptions are not retried or serialized. A failed raw task aborts that
   invocation and releases the lane; a submitted future retains its own failure.
-  A task's interrupt is cleared before serving unrelated work.
+  Containment covers all `Throwable` values, including checked exceptions thrown
+  through a legal generic rethrow despite the `Runnable` signature. A task's
+  interrupt is cleared before serving unrelated work.
 - Graceful executor shutdown refuses offers and drains already accepted work.
   The existing server still stops its listener, waits only two seconds, then
   calls `shutdownNow`; server close is **not** a drain or target-outcome promise.
@@ -70,7 +72,8 @@ validated at 1..64/1..1024; there is no new operator setting.
 - The package-private rejection observer receives only a future-task flag and
   bounded counts, not the task or request. It cannot suppress refusal; a throwing
   observer still yields only the fixed rejection. There is no public metrics or
-  diagnostic surface. Test attachment/restoration verifies exact ownership.
+  diagnostic surface. This includes checked throwables bypassing the observer's
+  declared signature. Test attachment/restoration verifies exact ownership.
 
 ## Qualification and limits
 
