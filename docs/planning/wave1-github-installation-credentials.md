@@ -1,7 +1,7 @@
 # Wave 1 — GitHub installation credential foundation
 
-Status: exclusive cloud writer claim and bounded implementation plan; no runtime
-or live-provider qualification yet.
+Status: implemented candidate; focused/retained tests pass, local full gate is
+blocked by unchanged native cleanup failures. No live-provider qualification.
 
 - Frozen main/base: `f23dc22f056058d7977715e0878c284728d10d17`.
 - Branch: `codex/github-app-installation-credentials`.
@@ -57,3 +57,18 @@ Open PR104 currently contains coordination packets; PR101 owns operation
 lifecycle and PR95 owns OIDC. Potential shared documentation overlap includes
 HANDOFF, specifications index/quality/traceability; append scoped claims only and
 report overlap in the final handoff. No other runtime lane is edited.
+
+## Candidate evidence and stopping point
+
+The new143-case suite and complete443-case remote regression suite pass. Removing
+only the App/repository identity comparisons caused three expected failures among
+44 permanent cases, then byte-for-byte restoration passed443 again. New runtime
+and tests remain entirely in the reserved credentials subpackage; no dependency,
+existing adapter/action/preflight, authority, operation bridge or target code changed.
+
+The single broad `pnpm check` failed three unchanged native process-tree cleanup
+controls; no unrelated repair or retry was attempted. PostgreSQL-backed HTTP428
+ran (424 pass,3 fail,1 existing archive skip); later Java/coverage and forced
+DB-profile gates were not reached. Formatting/docs/flows/diff pass. Final handoff
+records exact source/head, CI states and release; no complete repository or live
+qualification is claimed. See the dedicated runbook for the full evidence matrix.

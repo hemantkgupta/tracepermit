@@ -291,3 +291,22 @@ archive commit, dedicated requester/reviewer identities, numeric loopback only,
 and show request → distinct review → explicit resume → one simulated effect plus
 expiry/re-login and replay rejection. A missing variable, provider mismatch or
 unavailable interactive browser is pending/failed, never an automated pass.
+
+## GitHub installation credential foundation acceptance
+
+FR-001/008/009/012; SEC-001/002/003/012/015/019; REL-001/003/005/009;
+OPS-002/004 require runtime-generated keys and synthetic-only peers for the new
+`github.credentials` library. `GitHubInstallationCredentialProviderTest` must
+verify real RS256 signature/issuer/time, exact two-request scope, typed installation
+and token assurance, JSON/status/byte/clock/expiry failures, no follow-up/unrelated
+request and concurrent result/session isolation. `CredentialBoundaryTest` must
+retain private file/identity/permission/strength limits and nested/suppressed
+sentinel redaction for key, signing, transport and cleanup failures, including
+checked throwables and direct interruption. Expiry is checked after cleanup.
+
+Run these focused cases and the existing remote adapter/SSRF/TLS regressions,
+then mandatory repository/format/docs/flow gates; preserve failures, skips and
+cache reuse. A missing optional GitHub assurance field is a compatibility stop,
+not permission to substitute request data or weaken existing preflight. No
+live-provider, installed-custody, durable dispatch or production claim follows.
+See the [runbook](../runbooks/github-app-installation-credentials.md).
