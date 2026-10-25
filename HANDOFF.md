@@ -33,6 +33,13 @@ permit with explicit issuer/key/audience, no default positive lifetime, maximum
 records this next implementation design only. No operation permit/admission,
 attempt/outbox or target is implemented/enabled by this follow-up.
 
+After publication of ade668a, the human explicitly approved including the original
+evaluator authentication expiry as well as approval, recorded reviewer
+authentication/membership and fresh owner-execute identity deadlines. ADR0087 now
+records the complete minimum-deadline rule; no further applicability choice is
+pending. This results-only design amendment changes no Java or SQL. The next
+implementation must enforce the approved rule, not a default or renewed deadline.
+
 The human confirms Gemini received the new cross-process review qualification
 packet; Gemini uses GitHub-only handoff, not Space read/write. Its new branch is
 separate and frozen at aab5c03; no automatic repin is authorized. Mac Air retains

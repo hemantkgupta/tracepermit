@@ -25,12 +25,14 @@ lifetime is at most 60 seconds. Expiry is also bounded by the original approval
 deadline and all identity deadlines required for the command. Equality is expired.
 No live calls or dispatch are enabled by approval of this contract.
 
-The concrete bound includes the recorded reviewer authentication and membership
-expiries and the fresh owner-execute identity expiry. Fresh exact-owner
-authentication at use cannot extend the already signed expiry. A same-credential
-requirement or live reviewer re-enrollment is not part of the approved contract.
-Whether the original evaluator authentication expiry also limits admission is
-an explicit pending human applicability choice, not an implementation default.
+The human also explicitly approved all identity deadline bounds on 25 October
+2026: original evaluator authentication, recorded reviewer authentication and
+membership, and fresh owner-execute identity expiry. Permit expiry is no later
+than the minimum of those deadlines, the original approval deadline and issue
+time plus the configured lifetime. Fresh exact-owner authentication at use
+cannot extend the already signed expiry. A same-credential requirement or live
+reviewer re-enrollment is not part of the approved contract. These choices are
+settled; the permit/admission implementation remains pending.
 
 ## Versioned binding and issuance boundary
 
