@@ -26,7 +26,7 @@ const sha = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const unpacked = mkdtempSync(path.join(tmpdir(), "tracepermit-pilot-archive-"));
 try {
   // A missing archive is a required-gate failure, never a skip or auto-build.
-  execFileSync("tar", ["-xzf", archive, "-C", unpacked], {
+  execFileSync("tar", ["-xzpf", archive, "-C", unpacked], {
     timeout: 10_000,
     stdio: "pipe",
   });
