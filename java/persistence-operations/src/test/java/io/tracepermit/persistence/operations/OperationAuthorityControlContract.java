@@ -7,6 +7,10 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.tracepermit.application.BusinessOperationAuthorityProfile;
 import io.tracepermit.application.BusinessOperationScope;
 import io.tracepermit.application.BusinessOperationStorageException;
+import io.tracepermit.application.BusinessOperationTransitionPlanner;
+import io.tracepermit.application.BusinessOperationWithdrawal;
+import io.tracepermit.application.TrustedRequesterContext;
+import io.tracepermit.execution.TenantPartition;
 import io.tracepermit.contracts.JsonSupport;
 import io.tracepermit.contracts.CanonicalJson;
 import io.tracepermit.contracts.BusinessOperationValidator;
@@ -18,6 +22,9 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.sql.SQLFeatureNotSupportedException;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -112,6 +119,77 @@ abstract class OperationAuthorityControlContract {
     assertGuard(profile(new BusinessOperationScope(SCOPE.tenantId(), SCOPE.workspaceId(), "principal:other"),
         1, "original"), OPERATION_AUTHORITY_NOT_READY);
     assertCode(() -> OperationAuthorityAdministration.stageNew(source, profile), OPERATION_STORAGE_UNAVAILABLE);
+  }
+
+  @Test
+  void storedGenerationIsCheckedIndependentlyOfTheUnchangedProfileHash() throws Exception {
+    var profile = ready();
+    try (Connection connection = source.getConnection(); var statement = connection.prepareStatement(
+        "UPDATE tp_operation_authority_controls SET recovery_generation = 2 WHERE scope_hash = ?")) {
+      statement.setString(1, SCOPE.fingerprint());
+      assertThat(statement.executeUpdate()).isEqualTo(1);
+    }
+    try (Connection connection = source.getConnection(); var statement = connection.prepareStatement(
+        "SELECT profile_hash, recovery_generation FROM tp_operation_authority_controls WHERE scope_hash = ?")) {
+      statement.setString(1, SCOPE.fingerprint());
+      try (var rows = statement.executeQuery()) {
+        assertThat(rows.next()).isTrue();
+        assertThat(rows.getString(1)).isEqualTo(profile.fingerprint());
+        assertThat(rows.getLong(2)).isEqualTo(2);
+      }
+    }
+    assertGuard(profile, OPERATION_PROFILE_MISMATCH);
+    assertThat(count("tp_business_operations")).isZero();
+    assertThat(count("tp_operation_lifecycle_facts")).isZero();
+  }
+
+  @Test
+  void thirtyTwoConcurrentActivationsAcrossFourDatasourcesHaveOneAcknowledgedWinner() throws Exception {
+    var profile = profile(SCOPE, 1, "original");
+    OperationAuthorityAdministration.stageNew(source, profile);
+    var owners = new ArrayList<TestSource>();
+    for (int index = 0; index < 4; index++) {
+      owners.add(new TestSource(database, database.getUsername(), database.getPassword()));
+    }
+    var arrived = new CountDownLatch(32);
+    var start = new CountDownLatch(1);
+    var pool = Executors.newFixedThreadPool(32);
+    var results = new ArrayList<java.util.concurrent.Future<Boolean>>();
+    try {
+      for (int index = 0; index < 32; index++) {
+        var owner = owners.get(index % owners.size());
+        results.add(pool.submit(() -> {
+          arrived.countDown();
+          if (!start.await(5, TimeUnit.SECONDS)) throw new AssertionError("synthetic start timeout");
+          try {
+            OperationAuthorityAdministration.activateStaged(owner, profile);
+            return true;
+          } catch (BusinessOperationStorageException rejected) {
+            assertThat(rejected.code()).isEqualTo(OPERATION_STATE_STALE);
+            return false;
+          }
+        }));
+      }
+      assertThat(arrived.await(5, TimeUnit.SECONDS)).isTrue();
+      long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+      start.countDown();
+      int winners = 0;
+      for (var result : results) {
+        if (result.get(Math.max(1, deadline - System.nanoTime()), TimeUnit.NANOSECONDS)) winners++;
+      }
+      assertThat(winners).isEqualTo(1);
+      try (Connection connection = writer(runtime)) {
+        OperationAuthorityControl.requireCurrent(connection, profile);
+        connection.rollback();
+      }
+      assertThat(count("tp_operation_authority_controls")).isEqualTo(1);
+      assertThat(count("tp_business_operations")).isZero();
+      assertThat(count("tp_operation_lifecycle_facts")).isZero();
+    } finally {
+      start.countDown();
+      pool.shutdownNow();
+      assertThat(pool.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
+    }
   }
 
   @Test
@@ -363,12 +441,49 @@ abstract class OperationAuthorityControlContract {
         statement.setString(2, initial.path("operationId").asText());
         statement.executeUpdate();
       }
+      var lifecycle = new JdbcBusinessOperationLifecycleRepository(v2);
+      var requester = new TrustedRequesterContext(new TenantPartition(scope.tenantId()), scope.requesterPrincipalId(),
+          true, Set.of(BusinessOperationWithdrawal.ROLE), Set.of(BusinessOperationWithdrawal.SCOPE),
+          "synthetic-test", HASH, Instant.now().plusSeconds(60));
+      var withdrawn = lifecycle.withdraw(new BusinessOperationWithdrawal(scope, initial.path("operationId").asText(),
+          new BusinessOperationTransitionPlanner().observe(scope, initial), requester));
+      assertThat(withdrawn.path("authorization").path("status").asText()).isEqualTo("cancelled");
+      String actorHash;
+      try (Connection connection = v2.getConnection(); var statement = connection.createStatement();
+          var rows = statement.executeQuery("SELECT actor_hash FROM tp_operation_lifecycle_facts")) {
+        assertThat(rows.next()).isTrue();
+        actorHash = rows.getString(1);
+        assertThat(actorHash).isNotEqualTo(HASH);
+        assertThat(rows.next()).isFalse();
+      }
+      try (Connection connection = v2.getConnection(); var statement = connection.prepareStatement(
+          "UPDATE tp_operation_lifecycle_facts SET actor_hash = ?")) {
+        statement.setString(1, HASH);
+        assertThat(statement.executeUpdate()).isEqualTo(1);
+      }
+      assertCode(() -> OperationDatabase.upgradeAuthorityFromV2(v2), OPERATION_SCHEMA_NOT_READY);
+      OperationDatabase.validateExisting(v2);
+      try (Connection connection = v2.getConnection(); var statement = connection.createStatement();
+          var rows = statement.executeQuery("SELECT COUNT(*) FROM tp_operation_schema_history WHERE version = '3'")) {
+        rows.next();
+        assertThat(rows.getInt(1)).isZero();
+      }
+      try (Connection connection = v2.getConnection(); var statement = connection.prepareStatement(
+          "UPDATE tp_operation_lifecycle_facts SET actor_hash = ?")) {
+        statement.setString(1, actorHash);
+        assertThat(statement.executeUpdate()).isEqualTo(1);
+      }
       OperationDatabase.upgradeAuthorityFromV2(v2);
       OperationDatabase.validateExisting(v2);
       var reopened = new JdbcBusinessOperationRepository(v2).find(scope, initial.path("operationId").asText()).orElseThrow();
       assertThat(CanonicalJson.canonicalize(reopened)).isEqualTo(CanonicalJson.canonicalize(initial));
       var current = new JdbcBusinessOperationLifecycleRepository(v2).findCurrent(scope, initial.path("operationId").asText()).orElseThrow();
-      assertThat(CanonicalJson.canonicalize(current)).isEqualTo(CanonicalJson.canonicalize(initial));
+      assertThat(CanonicalJson.canonicalize(current)).isEqualTo(CanonicalJson.canonicalize(withdrawn));
+      try (Connection connection = v2.getConnection(); var statement = connection.createStatement();
+          var rows = statement.executeQuery("SELECT COUNT(*) FROM tp_operation_lifecycle_facts")) {
+        rows.next();
+        assertThat(rows.getInt(1)).isEqualTo(1);
+      }
       OperationAuthorityAdministration.stageNew(v2, profile(SCOPE, 1, "original"));
       assertCode(() -> OperationDatabase.upgradeAuthorityFromV2(v2), OPERATION_SCHEMA_NOT_READY);
     }

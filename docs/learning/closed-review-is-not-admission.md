@@ -23,6 +23,13 @@ older restored database. Its fingerprint is not a signature or current permit.
 The review-only profile rejects `allow`/`sanitize`, so a permissive policy result
 cannot accidentally bypass human review in this unfinished composition.
 
+The [approved next design](../architecture/0084-durable-review-membership-and-lifetime.md)
+also requires exact independently verified group membership, a positive explicit
+approval lifetime of at most five minutes with no default, and separate fresh
+evaluation permission. All settings need current policy/generation pins. These
+rules are not silently implemented by the existing role/scope constructor, and
+their approval does not enable live provider calls or a durable decision route.
+
 An exact content hash also needs exact input bytes. Replacement UTF-8 encoding
 can map malformed Unicode and a valid question mark to the same bytes before
 hashing; the review profile rejects malformed strings first. Valid Unicode is

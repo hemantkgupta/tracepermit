@@ -25,6 +25,12 @@ the traceability matrix, and add positive and negative tests. The
 [simulator scenarios](../demo-scenarios/README.md) show qualified POC paths.
 No demo path may contact a real destructive target.
 
+[ADR0084](../architecture/0084-durable-review-membership-and-lifetime.md)
+records the approved next design: exact independent reviewer-group enrollment,
+explicit approval lifetime capped at five minutes with no default, and separate
+fresh evaluation authority, all requiring current profile/generation pins.
+This is not an implemented durable reviewer transaction or live IdP integration.
+
 [ADR0083](../architecture/0083-writer-locked-operation-authority-control.md)
 adds opt-in V3 current profile/recovery controls, explicit inactive staging and
 new-generation replacement, restricted operator/runtime grants and a guard that

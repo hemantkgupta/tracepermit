@@ -3,6 +3,47 @@
 GitHub is authoritative. Credentials, private customer/provider planning and local
 operator values remain outside Git. Historical receipts are not fresh results.
 
+## Approved next authority slice and independent replay repair
+
+The human approved the strict group/lifetime/evaluation contract in
+[ADR0084](docs/architecture/0084-durable-review-membership-and-lifetime.md).
+This is an approved design, not a newly implemented durable reviewer transaction.
+Mac retains sole PR108 writer ownership. Cloud2's
+[design critique](https://github.com/hemantkgupta/tracepermit/pull/108#issuecomment-6394413528)
+is consumed; every reviewer execution gate was NOT RUN. Closed journal-reader
+compatibility and the strict target-join reuse remain implementation prerequisites.
+
+Current additional test-only qualification passed42 focused cases and a complete
+fresh/cache-disabled287-case operation suite in2m21,14 tasks executed, zero
+failures/errors/skips. It isolates stored generation, races32 operator activations
+across4 datasources on each engine, and upgrades a real withdrawal journal while
+rejecting corrupt actor linkage before DDL. Removing generation/staged-state
+guards failed all6 selected cases, then both production files were restored
+byte-identically. This does not qualify complete reviewer/admission contention.
+The subsequent full `pnpm check` passed124 React and1884 recorded Java cases/
+150 suites, zero failures/errors and the one existing absent-archive/native-PTY
+skip. Gradle2m54:4executed/61up-to-date, reusing the freshly forced operation
+suite and unchanged outputs; not all fresh. Coverage94.50% line/78.64% branch,
+unchanged thresholds. Final docs/format gates are reported with the checkpoint.
+
+Cloud1's [PR113 independent audit](https://github.com/hemantkgupta/tracepermit/pull/113#issuecomment-6394443819)
+reported four substantiated repair areas despite61 passing producer cases and
+green CI: suppressed private cleanup diagnostics, unbounded DML/post-wait expiry,
+conflicting local capacities and accepted physical-schema drift. PostgreSQL
+post-wait/missing-column observations must not be attributed to MariaDB; the
+auditor's MariaDB wait-view probe and diagnostic retry were inconclusive.
+Gemini keeps exclusive producer ownership. The human-coordinated
+[repair packet](docs/planning/packets/wave4-gemini-durable-replay-repair.md)
+requires distinguishing controls and exact-head qualification, not certification
+or integration of the unrepaired head.
+
+Cloud1's next separate tests/docs branch qualifies real synthetic HTTP credential
+exchange→target-preflight composition, using existing restricted test seams, not
+live providers. Cloud2's next GitHub-only static review compares actual physical
+schema checks with claimed V3/V2 readiness, while its unavailable PR115 runtime
+and four uncommitted repair files/reservation remain untouched. The human will
+inspect that existing runtime; this is not permission to recreate it.
+
 ## Current Mac authority-control prerequisite
 
 Mac retains sole writer ownership of `codex/durable-operation-authority`/PR108.

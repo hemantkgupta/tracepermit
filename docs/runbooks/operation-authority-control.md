@@ -107,6 +107,25 @@ so it was not all fresh. No deployment grants or runtime implementation changed.
 The static reviewer ran no execution gates. All8 hosted checks passed on the
 preceding331911c runtime checkpoint; the new tests/docs head needs its own CI.
 
+The next test-only checkpoint isolates a stored-generation mismatch with the
+profile hash unchanged, and starts32 activation contenders across4 independently
+constructed administrator datasources. Each exact engine acknowledges one
+winner and31 stale refusals, with no operation or lifecycle rows created. The
+V2→V3 upgrade case now first performs a real requester withdrawal, rejects its
+corrupted actor linkage before any V3 history/table adoption, then restores the
+fixture and preserves both the immutable original and cancelled current journal
+through upgrade. This is not a crash/restore or complete approval-race test.
+
+All42 focused control cases passed fresh. Deliberately removing the independent
+generation and staged-only activation guards made all6 selected cases fail;
+both production files were restored byte-identically before the final complete
+forced/cache-disabled287-case suite passed in2m21 (14 tasks executed), zero
+failures/errors/skips. The subsequent full `pnpm check` passed124 React and1884
+recorded Java cases/150 suites, zero failures/errors and one disclosed absent-
+archive/native-PTY skip. Gradle2m54:4executed/61up-to-date, not all fresh.
+Coverage94.50% line/78.64% branch passed unchanged thresholds. Exact-head hosted
+gates remain separate. Workloads, deadlines and thresholds were not reduced.
+
 ## Limits
 
 No approval/admission/permit/outbox, signed control history, provider verification,

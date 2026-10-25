@@ -1,5 +1,16 @@
 # Requirements traceability matrix
 
+## Explicit durable-review rules — approved design, not implementation
+
+[ADR0084](../architecture/0084-durable-review-membership-and-lifetime.md)
+records human-approved exact independent group enrollment, an explicit positive
+approval lifetime capped at five minutes with no default, and separate fresh
+evaluation authority. These settings require content/current-generation pins.
+Missing/expired facts fail closed. No durable reviewer transaction, IdP/provider
+integration, admission or whole-requirement completion is claimed. This is
+design traceability for FR-003/007/008/012, SEC-001/002/003/005/009/012,
+REL-001/002/004/005 and OPS-002/004 only.
+
 ## Writer-locked operation policy/recovery controls — prerequisite only
 
 Requirements: FR-003/007/008/012; SEC-001/002/003/005/009/012; REL-001/002/004/005;
@@ -14,6 +25,13 @@ tests current pins, genuine waits, grants, uncertainty and pre-DDL upgrade check
 See [ADR0083](../architecture/0083-writer-locked-operation-authority-control.md),
 [runbook](../runbooks/operation-authority-control.md) and
 [learning note](../learning/current-control-is-not-admission.md).
+
+Additional tests independently change stored generation without changing the
+profile hash, race32 activation contenders across4 independent datasources, and
+upgrade a real populated withdrawal journal while rejecting a corrupt actor
+hash before DDL. Removing the generation and activation-state guards made all6
+selected engine cases fail; the runtime was restored byte-identically. These
+are prerequisite controls, not approval/admission races or production scaling.
 
 Default V2/migration bytes and existing registration/withdrawal semantics remain.
 No approval/admission/permit/attempt/outbox/target, signed control journal,
