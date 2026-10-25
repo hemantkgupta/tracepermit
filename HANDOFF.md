@@ -3,6 +3,45 @@
 GitHub is authoritative. Credentials, private customer/provider planning and local
 operator values remain outside Git. Historical receipts are not fresh results.
 
+## Physical-schema repair — current Mac checkpoint
+
+Mac retains sole PR108 writer ownership. The physical-readiness follow-up to
+Cloud2's static review now checks actual required structure in addition to
+migration history. It does not change migration bytes/grants or implement durable
+review/admission. See [ADR0083](docs/architecture/0083-writer-locked-operation-authority-control.md)
+and the [qualification history](docs/runbooks/operation-authority-control.md).
+
+The original reproduction had8 accepted-drift assertion failures plus2 invalid
+MariaDB inline-CHECK-removal fixture errors, corrected without skipping tests.
+All60 focused control cases passed. Removing the new physical guard and restoring
+the old PostgreSQL trigger query made13/13 selected cases fail; guards restored.
+The first full305-case run then failed6 restricted-runtime MariaDB cases.
+Owned probes proved the table-scoped runtime sees zero CHECK rows while the
+owner sees7 on both exact MariaDB versions; SHOW CREATE works under the same
+grants. Temporary diagnostic printing was removed. A bounded closed declaration
+validator preserves exact CHECK requirements and grants; two table-scoped
+positive/removal/restoration cases and three lexical tests qualify that path.
+The final forced/cache-disabled310-case operation suite passed across8 suites,
+zero failures/errors/skips,14 tasks executed in3m50. Full `pnpm check` then
+passed124 React and1907 recorded Java cases/151 suites, zero failures/errors,
+one existing absent-archive/native-PTY skip. Gradle3m41:4executed/61up-to-date,
+not all fresh. Coverage94.5532% line/78.7399% branch passed unchanged thresholds.
+Format,1144 links/3 helpers,13 flow/drift and diff checks passed; final
+results-only documentation and exact-final-head hosted gates remain separate.
+
+Limited MariaDB metadata cannot establish complete absence of hidden routines,
+events or triggers. Operator-controlled full-visibility pre-start inspection is
+a future deployment prerequisite, not an implemented attestation/DBA-proof fence.
+No runtime admin/DDL/TRIGGER/EVENT grant, live action or new authority is added.
+
+The human sent Gemini the PR113 repair packet; a new repaired head remains to
+be independently consumed. Cloud1's PR116 is a released tests/docs handoff at
+5a09deafd7c8bc3b8199e2add70542852f681213 with all8 exact-head checks green.
+TP-Cloud-2R has a distinct new tests/docs metadata-visibility assignment from
+the prior pushed d6b7b9b baseline, not ownership of this implementation or of
+old PR115. The old unavailable Cloud2's uncommitted files/log/session stay
+preserved. Replacement runtime readiness is separate from dispatch delivery.
+
 ## Approved next authority slice and independent replay repair
 
 The human approved the strict group/lifetime/evaluation contract in

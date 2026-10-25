@@ -36,6 +36,16 @@ hashing; the review profile rejects malformed strings first. Valid Unicode is
 not normalized. This prevents an input alias, not a cryptographic hash collision,
 and does not turn a fingerprint into an authorization capability.
 
+Database readiness has a similar distinction: migration checksums are not
+physical-schema proof, and a limited user's zero metadata rows are not proof of
+absence. Required columns/keys/CHECKs must be observed through a qualified path
+or startup must refuse. MariaDB's table-scoped CHECK inventory is filtered on
+the qualified engines; exact bounded declaration validation preserves the same
+grants instead of skipping checks. Hidden routines/events/triggers still need a
+separate operator deployment prerequisite, not a user-supplied attestation.
+See [ADR0083](../architecture/0083-writer-locked-operation-authority-control.md).
+None of these checks supplies reviewer authority or continuous DBA-proof fencing.
+
 The current command/profile classes have no database or target port. The
 [wave-two board](../planning/wave2-durable-authority-batch.md) names the remaining
 durability, admission and integration gates. Existing local simulator approval

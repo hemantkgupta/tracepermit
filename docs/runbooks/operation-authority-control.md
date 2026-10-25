@@ -126,6 +126,60 @@ archive/native-PTY skip. Gradle2m54:4executed/61up-to-date, not all fresh.
 Coverage94.50% line/78.64% branch passed unchanged thresholds. Exact-head hosted
 gates remain separate. Workloads, deadlines and thresholds were not reduced.
 
+## Physical-schema follow-up and least-privilege compatibility
+
+Cloud2's [static schema audit](https://github.com/hemantkgupta/tracepermit/pull/108#issuecomment-6394595554)
+identified missing physical-shape checks despite valid Flyway history. Its later
+[metadata review](https://github.com/hemantkgupta/tracepermit/pull/108#issuecomment-6394784254)
+ran no database tests; source-based visibility predictions are not executed
+receipts. The Mac independently reproduced8 accepted-drift assertion failures.
+Two additional MariaDB failures were invalid fixture DDL, not demonstrated
+validator defects: removing an inline marker CHECK requires MODIFY COLUMN in
+these fixtures, not DROP CONSTRAINT. That fixture was corrected, not skipped.
+
+The new read-only guard requires known physical columns/types/nullability/
+defaults/collations, primary-key order, required foreign-key target/catalog/schema/
+rules and exact CHECK expressions. PostgreSQL also rejects protected-table
+TRUNCATE triggers whose functions live outside public; MariaDB sessions require
+foreign_key_checks/check_constraint_checks enabled. Migration bytes and grants
+are unchanged. Removing the physical guard and restoring the previous PostgreSQL
+trigger query made all13 selected drift cases fail; both guards were restored.
+
+All60 focused control cases passed, but the initial full305-case suite failed6
+MariaDB restricted-runtime cases,299 passed. An owned diagnostic then showed
+the owner sees7 CHECK rows while the existing table-scoped runtime sees zero on
+both10.6.25 and11.4.13, despite SELECT/INSERT on the required tables. Both use
+sql_quote_show_create=1; the same runtime can read SHOW CREATE TABLE. This
+corrects, rather than inherits, the static review's direct-CHECK visibility
+prediction. Temporary diagnostic printing was removed.
+
+The repair retains the exact grants and reads at most65,536 declaration
+characters plus one overflow character. A closed lexer ignores quoted-name
+decoys and rejects comments, escapes, unsupported quoting, malformed/duplicate
+checks and unknown expressions. It compares the known CHECK set, never skips
+missing metadata or normalizes arbitrary SQL. Columns and actual keys retain
+their separate metadata checks; declarations are not general physical-index
+proof. Two new table-scoped MariaDB cases prove valid startup, actual actor-CHECK
+removal refusal and restored valid startup. Three lexical tests include multiple
+malformed/decoy/oversize vectors. The focused22-case selection passed. The final
+complete forced/cache-disabled suite passed310 cases across8 suites in3m50,
+all14 tasks executed, zero failures/errors/skips:20 controls per engine,78
+PostgreSQL repository cases,79 per MariaDB version,11 stored-reader and3 lexer
+cases. The subsequent full `pnpm check` passed124 React and1907 recorded Java
+cases/151 suites, zero failures/errors and one existing absent-archive/native-PTY
+skip. Gradle3m41:4executed/61up-to-date, reusing the fresh operation suite and
+unchanged outputs, not all fresh execution. Coverage94.5532% line/78.7399% branch
+passed unchanged94/75 thresholds. Formatting,1144 links/3 helpers,13 flow/drift
+and diff checks passed; final results-only documentation is rechecked separately.
+Exact pushed-head hosted CI remains required, not inherited from the parent.
+
+Limited MariaDB metadata still cannot prove absence of hidden routines/events/
+triggers. No runtime admin/TRIGGER/EVENT/DDL expansion is allowed. A separately
+qualified operator pre-start inspection with full visibility, stopped writers
+and controlled DDL is a future deployment prerequisite, not an implemented
+attestation, a request-trusted boolean or continuous privileged-DBA fencing.
+This foundation must not be advertised as fully deployed/RDS schema-qualified.
+
 ## Limits
 
 No approval/admission/permit/outbox, signed control history, provider verification,

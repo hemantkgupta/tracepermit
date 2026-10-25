@@ -173,6 +173,7 @@ public final class OperationDatabase {
         requireForeignKey(connection, "tp_operation_lifecycle_facts", "tp_operation_lifecycle_heads");
       }
       if (authority) requireUnique(connection, "tp_operation_authority_controls", List.of("scope_hash"));
+      OperationPhysicalSchema.require(connection, engine, version);
       if (engine == Engine.MARIADB) {
         try (PreparedStatement statement = connection.prepareStatement("""
             SELECT COUNT(*) FROM information_schema.tables
@@ -202,8 +203,15 @@ public final class OperationDatabase {
     try (ResultSet keys = connection.getMetaData().getImportedKeys(
         connection.getCatalog(), schema(connection), table)) {
       if (!keys.next() || !parent.equals(keys.getString("PKTABLE_NAME"))
+          || !java.util.Objects.equals(connection.getCatalog(), keys.getString("PKTABLE_CAT"))
+          || !java.util.Objects.equals(schema(connection), keys.getString("PKTABLE_SCHEM"))
           || !"operation_id".equals(keys.getString("PKCOLUMN_NAME"))
-          || !"operation_id".equals(keys.getString("FKCOLUMN_NAME")) || keys.next()) {
+          || !"operation_id".equals(keys.getString("FKCOLUMN_NAME"))
+          || !Set.of(java.sql.DatabaseMetaData.importedKeyNoAction, java.sql.DatabaseMetaData.importedKeyRestrict)
+              .contains((int) keys.getShort("DELETE_RULE"))
+          || !Set.of(java.sql.DatabaseMetaData.importedKeyNoAction, java.sql.DatabaseMetaData.importedKeyRestrict)
+              .contains((int) keys.getShort("UPDATE_RULE"))
+          || keys.getShort("DEFERRABILITY") != java.sql.DatabaseMetaData.importedKeyNotDeferrable || keys.next()) {
         throw error(OPERATION_SCHEMA_NOT_READY);
       }
     }
@@ -235,13 +243,14 @@ public final class OperationDatabase {
         throw error(OPERATION_DATABASE_UNSUPPORTED);
       }
       try (PreparedStatement statement = connection.prepareStatement(
-          "SELECT @@read_only, @@innodb_flush_log_at_trx_commit, @@log_bin, @@sync_binlog")) {
+          "SELECT @@read_only, @@innodb_flush_log_at_trx_commit, @@log_bin, @@sync_binlog, @@foreign_key_checks, @@check_constraint_checks")) {
         statement.setQueryTimeout(5);
         try (ResultSet rows = statement.executeQuery()) {
           if (!rows.next() || rows.getBoolean(1) || rows.getInt(2) != 1
               || (rows.getBoolean(3) && rows.getInt(4) != 1)) {
             throw error(OPERATION_WRITER_REQUIRED);
           }
+          if (rows.getInt(5) != 1 || rows.getInt(6) != 1) throw error(OPERATION_SCHEMA_NOT_READY);
         }
       }
       return Engine.MARIADB;
@@ -279,7 +288,10 @@ public final class OperationDatabase {
         SELECT
           (SELECT COUNT(*) FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n
             ON n.oid = p.pronamespace WHERE n.nspname = current_schema()) +
-          (SELECT COUNT(*) FROM information_schema.triggers WHERE trigger_schema = current_schema())
+          (SELECT COUNT(*) FROM pg_catalog.pg_trigger t
+            JOIN pg_catalog.pg_class c ON c.oid = t.tgrelid
+            JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = current_schema() AND NOT t.tgisinternal)
         """ : """
         SELECT
           (SELECT COUNT(*) FROM information_schema.routines WHERE routine_schema = DATABASE()) +

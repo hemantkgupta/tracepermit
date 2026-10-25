@@ -34,6 +34,17 @@ selected engine cases fail; the runtime was restored byte-identically. These
 are prerequisite controls, not approval/admission races or production scaling.
 
 Default V2/migration bytes and existing registration/withdrawal semantics remain.
+`OperationPhysicalSchema` additionally checks observable required physical
+columns/types/nullability/defaults/collations, primary/foreign keys and exact
+CHECKs instead of treating intact migration history as physical proof.
+MariaDB's filtered table-scoped CHECK metadata is handled by bounded exact
+declaration validation without new grants; PostgreSQL protected-table trigger
+inspection includes TRUNCATE and out-of-schema functions. The control contract,
+two MariaDB table-scoped regressions and lexical negative vectors cover these
+prerequisites. Hidden MariaDB executable-object absence remains a separately
+unimplemented operator deployment gate, not runtime attestation. This strengthens
+SEC-003/012 and REL-001/004 only within the stated qualification boundary.
+
 No approval/admission/permit/attempt/outbox/target, signed control journal,
 instant revocation, older-backup or paused-sender fencing is supplied. The future
 single transaction must recheck all deadlines/identity/authority after all locks.

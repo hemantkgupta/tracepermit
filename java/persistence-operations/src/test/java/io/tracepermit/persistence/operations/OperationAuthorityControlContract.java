@@ -405,6 +405,155 @@ abstract class OperationAuthorityControlContract {
   }
 
   @Test
+  void physicalReadinessRejectsRenamedControlColumn() throws Exception {
+    assertRenamedColumnRejected("tp_operation_authority_controls", "profile_hash");
+  }
+
+  @Test
+  void physicalReadinessRejectsRenamedLifecycleActorColumn() throws Exception {
+    assertRenamedColumnRejected("tp_operation_lifecycle_facts", "actor_json");
+  }
+
+  private void assertRenamedColumnRejected(String table, String column) throws Exception {
+    try (Connection connection = source.getConnection(); var statement = connection.createStatement()) {
+      statement.execute("ALTER TABLE " + table + " RENAME COLUMN " + column + " TO fixture_missing_column");
+      try {
+        assertThatThrownBy(() -> statement.executeQuery("SELECT " + column + " FROM " + table + " WHERE 1 = 0"))
+            .isInstanceOf(SQLException.class);
+        assertCode(() -> OperationDatabase.validateExisting(source), OPERATION_SCHEMA_NOT_READY);
+        assertCode(() -> OperationDatabase.validateAuthorityExisting(source), OPERATION_SCHEMA_NOT_READY);
+      } finally {
+        statement.execute("ALTER TABLE " + table + " RENAME COLUMN fixture_missing_column TO " + column);
+      }
+    }
+    OperationDatabase.validateExisting(source);
+    OperationDatabase.validateAuthorityExisting(source);
+  }
+
+  @Test
+  void physicalReadinessRejectsRemovedMarkerCheck() throws Exception {
+    ready();
+    String name;
+    try (Connection connection = source.getConnection(); var statement = connection.createStatement();
+        var rows = statement.executeQuery(postgres() ? """
+          SELECT conname FROM pg_constraint c JOIN pg_class t ON t.oid = c.conrelid
+            JOIN pg_namespace n ON n.oid = t.relnamespace
+           WHERE n.nspname = current_schema() AND t.relname = 'tp_operation_authority_controls'
+             AND c.contype = 'c' AND pg_get_constraintdef(c.oid) LIKE '%lock_marker%'
+          """ : """
+          SELECT CONSTRAINT_NAME FROM information_schema.check_constraints
+           WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'tp_operation_authority_controls'
+             AND CHECK_CLAUSE LIKE '%lock_marker%'
+          """)) {
+      assertThat(rows.next()).isTrue();
+      name = rows.getString(1);
+      assertThat(name).matches("[A-Za-z_][A-Za-z0-9_]*");
+      assertThat(rows.next()).isFalse();
+    }
+    try (Connection connection = source.getConnection(); var statement = connection.createStatement()) {
+      statement.execute(postgres() ? "ALTER TABLE tp_operation_authority_controls DROP CONSTRAINT " + name
+          : "ALTER TABLE tp_operation_authority_controls MODIFY COLUMN lock_marker SMALLINT NOT NULL DEFAULT 0");
+      try {
+        try (Connection mutation = writer(source); var update = mutation.createStatement()) {
+          assertThat(update.executeUpdate("UPDATE tp_operation_authority_controls SET lock_marker = 1")).isEqualTo(1);
+          mutation.rollback();
+        }
+        assertCode(() -> OperationDatabase.validateExisting(source), OPERATION_SCHEMA_NOT_READY);
+        assertCode(() -> OperationDatabase.validateAuthorityExisting(source), OPERATION_SCHEMA_NOT_READY);
+      } finally {
+        statement.execute(postgres() ? "ALTER TABLE tp_operation_authority_controls ADD CONSTRAINT " + name + " CHECK (lock_marker = 0)"
+            : "ALTER TABLE tp_operation_authority_controls MODIFY COLUMN lock_marker SMALLINT NOT NULL DEFAULT 0 CHECK (lock_marker = 0)");
+      }
+    }
+    OperationDatabase.validateAuthorityExisting(source);
+  }
+
+  protected void assertTruncateTriggerRejected() throws Exception {
+    try (Connection connection = source.getConnection(); var statement = connection.createStatement()) {
+      statement.execute("CREATE SCHEMA tp_fixture_aux");
+      try {
+        statement.execute("CREATE FUNCTION tp_fixture_aux.noop_trigger() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NULL; END $$");
+        statement.execute("CREATE TRIGGER tp_fixture_truncate AFTER TRUNCATE ON public.tp_operation_authority_controls FOR EACH STATEMENT EXECUTE FUNCTION tp_fixture_aux.noop_trigger()");
+        try {
+          assertCode(() -> OperationDatabase.validateExisting(source), OPERATION_SCHEMA_NOT_READY);
+          assertCode(() -> OperationDatabase.validateAuthorityExisting(source), OPERATION_SCHEMA_NOT_READY);
+        } finally {
+          statement.execute("DROP TRIGGER tp_fixture_truncate ON public.tp_operation_authority_controls");
+          statement.execute("DROP FUNCTION tp_fixture_aux.noop_trigger()");
+        }
+      } finally {
+        statement.execute("DROP SCHEMA tp_fixture_aux");
+      }
+    }
+    OperationDatabase.validateAuthorityExisting(source);
+  }
+
+  @Test
+  void physicalReadinessRejectsTypeNullabilityAndDefaultDrift() throws Exception {
+    String[][] mutations = postgres() ? new String[][] {
+        {"ALTER COLUMN profile_hash TYPE VARCHAR(8) COLLATE \"C\"", "ALTER COLUMN profile_hash TYPE VARCHAR(71) COLLATE \"C\""},
+        {"ALTER COLUMN control_state DROP NOT NULL", "ALTER COLUMN control_state SET NOT NULL"},
+        {"ALTER COLUMN lock_marker SET DEFAULT 1", "ALTER COLUMN lock_marker SET DEFAULT 0"}
+    } : new String[][] {
+        {"MODIFY COLUMN profile_hash VARCHAR(8) CHARACTER SET ascii COLLATE ascii_bin NOT NULL", "MODIFY COLUMN profile_hash VARCHAR(71) CHARACTER SET ascii COLLATE ascii_bin NOT NULL"},
+        {"MODIFY COLUMN profile_hash VARCHAR(71) CHARACTER SET ascii COLLATE ascii_general_ci NOT NULL", "MODIFY COLUMN profile_hash VARCHAR(71) CHARACTER SET ascii COLLATE ascii_bin NOT NULL"},
+        {"MODIFY COLUMN profile_hash VARCHAR(71) CHARACTER SET ascii COLLATE ascii_bin NULL", "MODIFY COLUMN profile_hash VARCHAR(71) CHARACTER SET ascii COLLATE ascii_bin NOT NULL"},
+        {"ALTER COLUMN lock_marker SET DEFAULT 1", "ALTER COLUMN lock_marker SET DEFAULT 0"}
+    };
+    for (String[] mutation : mutations) {
+      try (Connection connection = source.getConnection(); var statement = connection.createStatement()) {
+        statement.execute("ALTER TABLE tp_operation_authority_controls " + mutation[0]);
+        try {
+          assertCode(() -> OperationDatabase.validateExisting(source), OPERATION_SCHEMA_NOT_READY);
+          assertCode(() -> OperationDatabase.validateAuthorityExisting(source), OPERATION_SCHEMA_NOT_READY);
+        } finally {
+          statement.execute("ALTER TABLE tp_operation_authority_controls " + mutation[1]);
+        }
+      }
+      OperationDatabase.validateAuthorityExisting(source);
+    }
+  }
+
+  @Test
+  void v2PhysicalReadinessRejectsMissingJournalColumnBeforeUpgrade() throws Exception {
+    try (var extra = container().withPassword(UUID.randomUUID().toString())) {
+      extra.start();
+      var v2 = new TestSource(extra, extra.getUsername(), extra.getPassword());
+      OperationDatabase.initializeEmpty(v2);
+      try (Connection connection = v2.getConnection(); var statement = connection.createStatement()) {
+        statement.execute("ALTER TABLE tp_operation_lifecycle_facts RENAME COLUMN actor_json TO missing_actor");
+        try {
+          assertCode(() -> OperationDatabase.validateExisting(v2), OPERATION_SCHEMA_NOT_READY);
+          assertCode(() -> new JdbcBusinessOperationLifecycleRepository(v2), OPERATION_SCHEMA_NOT_READY);
+          assertCode(() -> OperationDatabase.upgradeAuthorityFromV2(v2), OPERATION_SCHEMA_NOT_READY);
+          try (var rows = statement.executeQuery("SELECT COUNT(*) FROM tp_operation_schema_history WHERE version = '3'")) {
+            rows.next();
+            assertThat(rows.getInt(1)).isZero();
+          }
+        } finally {
+          statement.execute("ALTER TABLE tp_operation_lifecycle_facts RENAME COLUMN missing_actor TO actor_json");
+        }
+      }
+      OperationDatabase.validateExisting(v2);
+    }
+  }
+
+  protected void assertDisabledSessionConstraintsRejected() throws Exception {
+    for (String setting : new String[] {"check_constraint_checks", "foreign_key_checks"}) {
+      try (Connection connection = writer(source); var statement = connection.createStatement()) {
+        statement.execute("SET SESSION " + setting + " = 0");
+        try {
+          assertCode(() -> OperationDatabase.inspectWriter(connection), OPERATION_SCHEMA_NOT_READY);
+        } finally {
+          statement.execute("SET SESSION " + setting + " = 1");
+          connection.rollback();
+        }
+        OperationDatabase.inspectWriter(connection);
+      }
+    }
+  }
+
+  @Test
   void v2IsNotAutomaticallyUpgradedAndExplicitUpgradePreservesItsMigrationHistory() throws Exception {
     try (var extra = container().withPassword(UUID.randomUUID().toString())) {
       extra.start();

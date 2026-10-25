@@ -35,7 +35,10 @@ This is not an implemented durable reviewer transaction or live IdP integration.
 adds opt-in V3 current profile/recovery controls, explicit inactive staging and
 new-generation replacement, restricted operator/runtime grants and a guard that
 retains a caller-owned writer lock. Default installation remains V2; V1/V2 bytes
-are unchanged. This is not the complete approval/admission transaction or an
+are unchanged. Required physical-structure checks supplement migration history;
+filtered MariaDB runtime metadata is not an absence certificate or a reason to
+expand grants. Full operator deployment visibility remains a future gate.
+This is not the complete approval/admission transaction or an
 installed service; see [qualification and limits](../runbooks/operation-authority-control.md).
 
 [ADR0077](../architecture/0077-closed-operation-authority-contracts.md) adds only
