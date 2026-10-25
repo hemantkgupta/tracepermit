@@ -535,6 +535,27 @@ workspace and requester; authentication and authorization remain adapter duties.
 See [ADR 0068](../architecture/0068-versioned-business-operation-contract.md) for
 the underlying document contract.
 
+### Execution-disabled workload registration candidate
+
+`AgentCoreRegistrationIngress` is an unwired Java library, not an HTTP route.
+Its closed ingress schema1.0 accepts only `schemaVersion`, `clientRequestKey`,
+`title` and optional nonblank `body`. Maximum input is32KiB UTF-8; duplicate
+keys, trailing values, malformed Unicode, unsupported fields/schemas and bounded
+parser violations fail closed. The operator enrollment supplies all scope and
+exact target/profile fields after the unchanged verifier checks the workload
+access token. No authenticated context or current policy authority comes from
+the body. Any second authorization value is rejected with
+`AGENTCORE_DELEGATION_CONTRACT_REQUIRED`.
+
+Registration uses only `BusinessOperationRepository`, preserves its original
+same-key return/conflict semantics and returns creation status, stored operation
+ID and `executionEnabled=false`. Exact token fingerprints are single-use through
+the existing replay port; explicit same-key retries need fresh tokens. There is
+no implicit human delegation, approval, permit, authority transition or execution.
+Live provider token compatibility, a verified workload-to-human exchange/grant,
+transport proof and durable replay deployment remain unqualified. See
+[ADR0078](../architecture/0078-agentcore-execution-disabled-registration.md).
+
 ## 3A. Java development control-plane reads
 
 The Java development adapter exposes these loopback-only reads:
