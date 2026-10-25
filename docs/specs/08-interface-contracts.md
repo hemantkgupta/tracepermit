@@ -722,13 +722,24 @@ duplicate-key errors (PostgreSQL 23505, MariaDB 1062/23000) represent replay. Su
 where `expiresAt <= now` fail closed and write nothing; replays never refresh expiry or
 overwrite existing timestamps.
 
-Finite capacity is enforced via an atomic counter update on `tp_workload_replay_state`
-singleton (`total_claims = total_claims + 1 WHERE singleton = 1 AND total_claims < capacity`).
-When capacity is reached, the transaction rolls back the claim insert and refuses admission
-without evicting live unexpired records. A consumption attempt returns `true` only after
-successful commit and connection cleanup acknowledgement; lost commit acknowledgement
-fails closed with `REPLAY_COMMIT_UNKNOWN`. All thrown exceptions discard JDBC causes and
-suppressed exceptions to protect database credentials and connection state. See
+Finite capacity is enforced via an agreed operator-configured capacity column in
+schema V2 (`tp_workload_replay_state.capacity`) and an atomic counter update on the
+state singleton (`total_claims = total_claims + 1 WHERE singleton = 1 AND capacity = ? AND total_claims < capacity`).
+Store initialization validates local capacity against persisted capacity and fails closed
+with `REPLAY_CAPACITY_MISMATCH` on disagreement. An explicit `upgradeFromV1` path upgrades
+schema V1 while preserving published V1 migration bytes unmodified. Physical schema validation
+directly checks table columns, types, nullability, collations (`"C"` on PostgreSQL, `ascii_bin`
+on MariaDB), and primary keys, rejecting drift or unmigrated structures.
+
+Finite statement query timeouts are enforced across all operations. The store evaluates
+post-wait validity using caller-trusted monotonic elapsed time against `expiresAt` after
+connection lease, after INSERT, after counter UPDATE, and after cleanup. If lock contention
+or query execution causes elapsed time to reach or exceed expiry before commit, the transaction
+rolls back and returns `false`. If commit acknowledges after expiry or cleanup delays past
+expiry, consumption fails closed with `REPLAY_COMMIT_UNKNOWN`. All thrown `WorkloadIdentityReplayException`
+instances disarm causes (`initCause = this`), disable exception suppression (`enableSuppression = false`),
+and omit arbitrary message constructors to prevent database credentials, canary tokens, and
+internal diagnostics from escaping. See
 [ADR 0080](../architecture/0080-durable-workload-identity-replay.md) and the
 [workload-identity replay runbook](../runbooks/workload-identity-replay-store.md).
 

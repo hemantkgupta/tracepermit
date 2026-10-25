@@ -67,9 +67,12 @@ abstract class WorkloadIdentityReplayStoreContract {
   @BeforeEach
   void reset() throws SQLException {
     source.fault = Fault.NONE;
+    source.dmlCanary = null;
+    source.closeCanary = null;
     grantRuntimePermissions();
     execute("DELETE FROM tp_workload_replay_claims");
-    execute("UPDATE tp_workload_replay_state SET total_claims = 0 WHERE singleton = 1");
+    execute("UPDATE tp_workload_replay_state SET total_claims = 0, capacity = "
+        + WorkloadIdentityReplayDatabase.DEFAULT_CAPACITY + " WHERE singleton = 1");
     store = new JdbcWorkloadIdentityReplayStore(source);
   }
 
@@ -105,118 +108,120 @@ abstract class WorkloadIdentityReplayStoreContract {
   }
 
   // --------------------------------------------------------------------------------------
-  // 3. Delimiter, case, trailing space, and hash substitution controls
+  // 3. Delimiter injection and boundary collision safety
   // --------------------------------------------------------------------------------------
   @Test
   void delimiterInjectionDoesNotCauseCollision() {
-    assertThat(store.consume("t\u0000i", "i", "token-x", T.plusSeconds(300), T)).isTrue();
-    assertThat(store.consume("t", "i\u0000x", "token-pad", T.plusSeconds(300), T)).isTrue();
-    assertThat(store.consume("t", "i", "token-x\u0000pad", T.plusSeconds(300), T)).isTrue();
-    assertThat(store.totalClaims()).isEqualTo(3);
-  }
+    // Two distinct tuple pairs that would collide under naive concatenation
+    assertThat(store.consume("tenantA", "issuerB", "tokenC", T.plusSeconds(300), T)).isTrue();
+    assertThat(store.consume("tenantA:issuerB", "x", "tokenC", T.plusSeconds(300), T)).isTrue();
+    assertThat(store.consume("tenantA", "issuerB:tokenC", "x", T.plusSeconds(300), T)).isTrue();
 
-  @Test
-  void caseSensitivityIsEnforced() {
-    assertThat(store.consume("tenant:case", ISSUER, "token-case", T.plusSeconds(300), T)).isTrue();
-    assertThat(store.consume("TENANT:CASE", ISSUER, "token-case", T.plusSeconds(300), T)).isTrue();
-    assertThat(store.consume("tenant:case", ISSUER, "TOKEN-CASE", T.plusSeconds(300), T)).isTrue();
-    assertThat(store.totalClaims()).isEqualTo(3);
-  }
+    // Semicolon/colon variations
+    assertThat(store.consume("tenant;1", "issuer", "token", T.plusSeconds(300), T)).isTrue();
+    assertThat(store.consume("tenant", "1;issuer", "token", T.plusSeconds(300), T)).isTrue();
 
-  @Test
-  void trailingSpaceDoesNotCollideOrNormalize() {
-    assertThat(store.consume("tenant:acme", ISSUER, "token-space", T.plusSeconds(300), T)).isTrue();
-    assertThat(store.consume("tenant:acme ", ISSUER, "token-space", T.plusSeconds(300), T)).isTrue();
-    assertThat(store.consume("tenant:acme", ISSUER + " ", "token-space", T.plusSeconds(300), T)).isTrue();
-    assertThat(store.totalClaims()).isEqualTo(3);
+    assertThat(store.totalClaims()).isEqualTo(5);
   }
 
   // --------------------------------------------------------------------------------------
-  // 4. Strict expiry and equality boundary
+  // 4. Exact case sensitivity and trailing space preservation
   // --------------------------------------------------------------------------------------
   @Test
-  void expiredOfferAndExactEqualityBoundaryFailClosedWritingNothing() {
-    // Exact equality boundary (now == expiresAt) is expired: fails closed and writes nothing
-    assertThat(store.consume(TENANT, ISSUER, "token-equal", T, T)).isFalse();
+  void caseSensitivityIsPreservedWithoutFolding() {
+    assertThat(store.consume("TENANT", ISSUER, "token-case", T.plusSeconds(300), T)).isTrue();
+    assertThat(store.consume("tenant", ISSUER, "token-case", T.plusSeconds(300), T)).isTrue();
+    assertThat(store.consume(TENANT, "ISSUER", "token-case", T.plusSeconds(300), T)).isTrue();
+    assertThat(store.consume(TENANT, ISSUER, "TOKEN-CASE", T.plusSeconds(300), T)).isTrue();
+
+    assertThat(store.totalClaims()).isEqualTo(4);
+  }
+
+  @Test
+  void trailingSpaceIsPreservedWithoutTrimming() {
+    assertThat(store.consume("tenant ", ISSUER, "token-space", T.plusSeconds(300), T)).isTrue();
+    assertThat(store.consume("tenant", ISSUER, "token-space", T.plusSeconds(300), T)).isTrue();
+    assertThat(store.consume(TENANT, "issuer ", "token-space", T.plusSeconds(300), T)).isTrue();
+    assertThat(store.consume(TENANT, ISSUER, "token-space ", T.plusSeconds(300), T)).isTrue();
+
+    assertThat(store.totalClaims()).isEqualTo(4);
+  }
+
+  // --------------------------------------------------------------------------------------
+  // 5. Strict expiry and boundary equality
+  // --------------------------------------------------------------------------------------
+  @Test
+  void expiredAndExactBoundarySubmissionsFailClosedWithoutWriting() {
+    // expired: expiresAt < now
+    assertThat(store.consume(TENANT, ISSUER, "token-expired", T.minusSeconds(1), T)).isFalse();
+
+    // exact boundary: expiresAt == now
+    assertThat(store.consume(TENANT, ISSUER, "token-boundary", T, T)).isFalse();
+
     assertThat(store.totalClaims()).isZero();
-    assertThat(store.isClaimed(TENANT, ISSUER, "token-equal")).isFalse();
-
-    // Past expiry (now > expiresAt): fails closed and writes nothing
-    assertThat(store.consume(TENANT, ISSUER, "token-past", T.minusSeconds(1), T)).isFalse();
-    assertThat(store.totalClaims()).isZero();
-    assertThat(store.isClaimed(TENANT, ISSUER, "token-past")).isFalse();
-
-    // Valid future deadline succeeds
-    assertThat(store.consume(TENANT, ISSUER, "token-future", T.plusSeconds(1), T)).isTrue();
-    assertThat(store.totalClaims()).isEqualTo(1);
-    assertThat(store.isClaimed(TENANT, ISSUER, "token-future")).isTrue();
+    assertThat(store.isClaimed(TENANT, ISSUER, "token-expired")).isFalse();
+    assertThat(store.isClaimed(TENANT, ISSUER, "token-boundary")).isFalse();
   }
 
   // --------------------------------------------------------------------------------------
-  // 5. No expiry refresh on replay
+  // 6. No expiry refresh on replay attempt
   // --------------------------------------------------------------------------------------
   @Test
-  void duplicateWithLaterExpiryDoesNotRefreshOriginalClaim() {
-    Instant originalExpiry = T.plusSeconds(60);
-    assertThat(store.consume(TENANT, ISSUER, "token-no-refresh", originalExpiry, T)).isTrue();
+  void duplicateSubmissionNeverRefreshesExpiry() {
+    Instant originalExpiry = T.plusSeconds(100);
+    Instant extendedExpiry = T.plusSeconds(500);
 
-    // Replay with a much later requested expiry returns false
-    Instant laterRequested = T.plusSeconds(3600);
-    assertThat(store.consume(TENANT, ISSUER, "token-no-refresh", laterRequested, T.plusSeconds(10))).isFalse();
+    assertThat(store.consume(TENANT, ISSUER, "token-fixed-expiry", originalExpiry, T)).isTrue();
+    assertThat(store.findClaimExpiry(TENANT, ISSUER, "token-fixed-expiry")).contains(originalExpiry);
 
-    // Stored expiry remains the original expiry
-    var storedExpiry = store.findClaimExpiry(TENANT, ISSUER, "token-no-refresh");
-    assertThat(storedExpiry).isPresent();
-    assertThat(storedExpiry.get().getEpochSecond()).isEqualTo(originalExpiry.getEpochSecond());
+    // Replay attempt with later expiry date is rejected and does not overwrite existing expiry
+    assertThat(store.consume(TENANT, ISSUER, "token-fixed-expiry", extendedExpiry, T)).isFalse();
+    assertThat(store.findClaimExpiry(TENANT, ISSUER, "token-fixed-expiry")).contains(originalExpiry);
     assertThat(store.totalClaims()).isEqualTo(1);
   }
 
   // --------------------------------------------------------------------------------------
-  // 6. Reconstruction across store instances
+  // 7. Reconstruction durability and concurrent racing stores
   // --------------------------------------------------------------------------------------
   @Test
-  void reconstructionPreservesDurableReplayRejection() {
-    assertThat(store.consume(TENANT, ISSUER, "token-durable", T.plusSeconds(300), T)).isTrue();
+  void claimsSurviveStoreReconstruction() {
+    assertThat(store.consume(TENANT, ISSUER, "token-persist", T.plusSeconds(300), T)).isTrue();
 
-    // Reconstruct brand new store instance
-    var freshStore = new JdbcWorkloadIdentityReplayStore(source);
-    assertThat(freshStore.consume(TENANT, ISSUER, "token-durable", T.plusSeconds(300), T)).isFalse();
-    assertThat(freshStore.isClaimed(TENANT, ISSUER, "token-durable")).isTrue();
+    // Construct fresh store instance with agreed capacity
+    var freshStore = new JdbcWorkloadIdentityReplayStore(source, WorkloadIdentityReplayDatabase.DEFAULT_CAPACITY);
+    assertThat(freshStore.totalClaims()).isEqualTo(1);
+    assertThat(freshStore.isClaimed(TENANT, ISSUER, "token-persist")).isTrue();
+    assertThat(freshStore.consume(TENANT, ISSUER, "token-persist", T.plusSeconds(300), T)).isFalse();
   }
 
-  // --------------------------------------------------------------------------------------
-  // 7. Genuinely concurrent independent store instances
-  // --------------------------------------------------------------------------------------
   @Test
-  void concurrentStoreInstancesRacingSameTokenProduceExactlyOneWinner() throws Exception {
-    int workers = 16;
+  void concurrentRacingStoresSucceedExactlyOnce() throws Exception {
+    int threadCount = 16;
+    ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+    CountDownLatch startLatch = new CountDownLatch(1);
+    List<Future<Boolean>> futures = new ArrayList<>();
     List<JdbcWorkloadIdentityReplayStore> instances = new ArrayList<>();
-    for (int i = 0; i < workers; i++) {
-      instances.add(new JdbcWorkloadIdentityReplayStore(source));
+
+    for (int i = 0; i < threadCount; i++) {
+      instances.add(new JdbcWorkloadIdentityReplayStore(source, WorkloadIdentityReplayDatabase.DEFAULT_CAPACITY));
     }
 
-    CountDownLatch start = new CountDownLatch(1);
-    ExecutorService executor = Executors.newFixedThreadPool(workers);
-    List<Future<Boolean>> futures = new ArrayList<>();
-
-    for (int i = 0; i < workers; i++) {
-      final int index = i;
+    String raceToken = "racing-token-" + UUID.randomUUID();
+    for (var instance : instances) {
       futures.add(executor.submit(() -> {
-        if (!start.await(10, TimeUnit.SECONDS)) {
-          throw new AssertionError("race start gate timed out");
-        }
-        return instances.get(index).consume(TENANT, ISSUER, "token-race", T.plusSeconds(300), T);
+        startLatch.await();
+        return instance.consume(TENANT, ISSUER, raceToken, T.plusSeconds(300), T);
       }));
     }
 
-    start.countDown();
+    startLatch.countDown();
     int winners = 0;
-    for (Future<Boolean> future : futures) {
+    for (var future : futures) {
       if (future.get(10, TimeUnit.SECONDS)) {
         winners++;
       }
     }
-    executor.shutdownNow();
+    executor.shutdown();
 
     assertThat(winners).isEqualTo(1);
     assertThat(store.totalClaims()).isEqualTo(1);
@@ -226,7 +231,8 @@ abstract class WorkloadIdentityReplayStoreContract {
   // 8. Finite capacity and fail-closed saturation
   // --------------------------------------------------------------------------------------
   @Test
-  void finiteCapacitySaturatesAndRefusesWithoutEvictingLiveEntries() {
+  void finiteCapacitySaturatesAndRefusesWithoutEvictingLiveEntries() throws SQLException {
+    execute("UPDATE tp_workload_replay_state SET capacity = 3 WHERE singleton = 1");
     var boundedStore = new JdbcWorkloadIdentityReplayStore(source, 3);
 
     assertThat(boundedStore.consume(TENANT, ISSUER, "cap-1", T.plusSeconds(300), T)).isTrue();
@@ -246,6 +252,46 @@ abstract class WorkloadIdentityReplayStoreContract {
     assertThat(boundedStore.totalClaims()).isEqualTo(3);
   }
 
+  @Test
+  void independentFinalSlotContentionWith16StoresAndDistinctTokens() throws Exception {
+    execute("UPDATE tp_workload_replay_state SET capacity = 1 WHERE singleton = 1");
+    int threadCount = 16;
+    ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+    CountDownLatch startLatch = new CountDownLatch(1);
+    List<Future<Boolean>> futures = new ArrayList<>();
+
+    for (int i = 0; i < threadCount; i++) {
+      String token = "final-slot-token-" + i;
+      var storeInstance = new JdbcWorkloadIdentityReplayStore(source, 1);
+      futures.add(executor.submit(() -> {
+        startLatch.await();
+        return storeInstance.consume(TENANT, ISSUER, token, T.plusSeconds(300), T);
+      }));
+    }
+
+    startLatch.countDown();
+    int winners = 0;
+    int losers = 0;
+    for (var future : futures) {
+      if (future.get(10, TimeUnit.SECONDS)) {
+        winners++;
+      } else {
+        losers++;
+      }
+    }
+    executor.shutdown();
+
+    assertThat(winners).isEqualTo(1);
+    assertThat(losers).isEqualTo(15);
+    assertThat(store.totalClaims()).isEqualTo(1);
+    try (Connection conn = source.getConnection();
+         PreparedStatement ps = conn.prepareStatement("SELECT COUNT(*) FROM tp_workload_replay_claims");
+         ResultSet rs = ps.executeQuery()) {
+      assertThat(rs.next()).isTrue();
+      assertThat(rs.getInt(1)).isEqualTo(1);
+    }
+  }
+
   // --------------------------------------------------------------------------------------
   // 9. Atomic counter and claim rollback
   // --------------------------------------------------------------------------------------
@@ -263,6 +309,23 @@ abstract class WorkloadIdentityReplayStoreContract {
     assertThat(store.totalClaims()).isEqualTo(1);
   }
 
+  @Test
+  void rollbackAfterRealSuccessfulInsertFollowedByCounterFailure() throws SQLException {
+    source.fault = Fault.COUNTER_FAILURE_AFTER_INSERT;
+    assertCode(() -> store.consume(TENANT, ISSUER, "token-counter-fail", T.plusSeconds(300), T), REPLAY_STORAGE_UNAVAILABLE);
+    source.fault = Fault.NONE;
+
+    // Verify claim row is cleanly rolled back and not orphaned in the database
+    assertThat(store.totalClaims()).isZero();
+    assertThat(store.isClaimed(TENANT, ISSUER, "token-counter-fail")).isFalse();
+    try (Connection conn = source.getConnection();
+         PreparedStatement ps = conn.prepareStatement("SELECT COUNT(*) FROM tp_workload_replay_claims");
+         ResultSet rs = ps.executeQuery()) {
+      assertThat(rs.next()).isTrue();
+      assertThat(rs.getInt(1)).isZero();
+    }
+  }
+
   // --------------------------------------------------------------------------------------
   // 10. Before/after-commit and close failures
   // --------------------------------------------------------------------------------------
@@ -274,6 +337,16 @@ abstract class WorkloadIdentityReplayStoreContract {
 
     assertThat(store.totalClaims()).isZero();
     assertThat(store.isClaimed(TENANT, ISSUER, "token-commit-fail")).isFalse();
+  }
+
+  @Test
+  void afterCommitFailureThrowsCommitUnknown() {
+    source.fault = Fault.AFTER_COMMIT;
+    assertCode(() -> store.consume(TENANT, ISSUER, "token-after-commit-fail", T.plusSeconds(300), T), REPLAY_COMMIT_UNKNOWN);
+    source.fault = Fault.NONE;
+
+    // Row was committed, so duplicate attempt is rejected
+    assertThat(store.consume(TENANT, ISSUER, "token-after-commit-fail", T.plusSeconds(300), T)).isFalse();
   }
 
   @Test
@@ -304,19 +377,17 @@ abstract class WorkloadIdentityReplayStoreContract {
   // 12. Duplicate versus unrelated constraint errors
   // --------------------------------------------------------------------------------------
   @Test
-  void unrelatedConstraintViolationThrowsStorageUnavailableRatherThanReplayRefusal() throws SQLException {
-    // Normal duplicate returns false
+  void unrelatedConstraintViolationThrowsStorageUnavailableRatherThanReplayRefusal() {
     assertThat(store.consume(TENANT, ISSUER, "token-dup", T.plusSeconds(300), T)).isTrue();
     assertThat(store.consume(TENANT, ISSUER, "token-dup", T.plusSeconds(300), T)).isFalse();
 
-    // Fault that simulates an unrelated constraint violation (e.g. foreign key or check violation)
     source.fault = Fault.UNRELATED_CONSTRAINT;
     assertCode(() -> store.consume(TENANT, ISSUER, "token-unrelated", T.plusSeconds(300), T), REPLAY_STORAGE_UNAVAILABLE);
     source.fault = Fault.NONE;
   }
 
   // --------------------------------------------------------------------------------------
-  // 13. Malformed schema and version validation
+  // 13. Malformed schema, physical DDL negatives, and version validation
   // --------------------------------------------------------------------------------------
   @Test
   void corruptOrExtraTableFailsSchemaValidation() throws SQLException {
@@ -329,8 +400,79 @@ abstract class WorkloadIdentityReplayStoreContract {
     }
   }
 
+  @Test
+  void physicalSchemaValidationRejectsMissingColumn() throws SQLException {
+    String dropSql = isPostgreSql()
+        ? "ALTER TABLE tp_workload_replay_claims DROP COLUMN expires_at CASCADE"
+        : "ALTER TABLE tp_workload_replay_claims DROP CONSTRAINT tp_workload_replay_claim_time_order, DROP COLUMN expires_at";
+    execute(dropSql);
+    try {
+      assertCode(() -> WorkloadIdentityReplayDatabase.validateExisting(source), REPLAY_SCHEMA_NOT_READY);
+      assertCode(() -> new JdbcWorkloadIdentityReplayStore(source), REPLAY_SCHEMA_NOT_READY);
+    } finally {
+      String restoreSql = isPostgreSql()
+          ? "ALTER TABLE tp_workload_replay_claims ADD COLUMN expires_at TIMESTAMPTZ NOT NULL DEFAULT '2030-01-01 00:00:00+00', ADD CONSTRAINT tp_workload_replay_claim_time_order CHECK (claimed_at < expires_at)"
+          : "ALTER TABLE tp_workload_replay_claims ADD COLUMN expires_at DATETIME(6) NOT NULL DEFAULT '2030-01-01 00:00:00', ADD CONSTRAINT tp_workload_replay_claim_time_order CHECK (claimed_at < expires_at)";
+      execute(restoreSql);
+    }
+  }
+
   // --------------------------------------------------------------------------------------
-  // 14. Fixed diagnostics with secret canaries
+  // 14. Conflicting capacity rejection and reconstruction
+  // --------------------------------------------------------------------------------------
+  @Test
+  void conflictingCapacityRejectionAndReconstruction() throws SQLException {
+    execute("UPDATE tp_workload_replay_state SET capacity = 1 WHERE singleton = 1");
+    var store1 = new JdbcWorkloadIdentityReplayStore(source, 1);
+    assertThat(store1.consume(TENANT, ISSUER, "token-conf-1", T.plusSeconds(300), T)).isTrue();
+
+    // Store 2 configured with capacity 2 is rejected
+    assertCode(() -> new JdbcWorkloadIdentityReplayStore(source, 2), REPLAY_CAPACITY_MISMATCH);
+
+    // Store 3 with agreed capacity 1 constructs and verifies saturation
+    var store3 = new JdbcWorkloadIdentityReplayStore(source, 1);
+    assertThat(store3.consume(TENANT, ISSUER, "token-conf-2", T.plusSeconds(300), T)).isFalse();
+    assertThat(store3.totalClaims()).isEqualTo(1);
+  }
+
+  // --------------------------------------------------------------------------------------
+  // 15. Real lock wait past expiry fails closed with zero writes
+  // --------------------------------------------------------------------------------------
+  @Test
+  void realLockWaitPastExpiryFailsClosedWithZeroWrites() throws Exception {
+    Instant now = Instant.now();
+    Instant shortExpiry = now.plusMillis(200);
+
+    Connection conn1 = source.getConnection();
+    conn1.setAutoCommit(false);
+    try (PreparedStatement ps = conn1.prepareStatement(
+        "UPDATE tp_workload_replay_state SET total_claims = total_claims WHERE singleton = 1")) {
+      ps.executeUpdate();
+
+      ExecutorService executor = Executors.newSingleThreadExecutor();
+      Future<Boolean> consumeFuture = executor.submit(() ->
+          store.consume(TENANT, ISSUER, "token-lock-wait-expiry", shortExpiry, now));
+
+      // Wait 400ms while holding the lock, ensuring monotonic time passes shortExpiry
+      Thread.sleep(400);
+      assertThat(consumeFuture.isDone()).isFalse();
+
+      // Release lock
+      conn1.commit();
+
+      Boolean result = consumeFuture.get(5, TimeUnit.SECONDS);
+      executor.shutdown();
+
+      assertThat(result).isFalse();
+      assertThat(store.totalClaims()).isZero();
+      assertThat(store.isClaimed(TENANT, ISSUER, "token-lock-wait-expiry")).isFalse();
+    } finally {
+      conn1.close();
+    }
+  }
+
+  // --------------------------------------------------------------------------------------
+  // 16. Fixed diagnostics, combined error+cleanup redaction, and no canary leaks
   // --------------------------------------------------------------------------------------
   @Test
   void secretCanariesAndCausesAreNeverLeakedInExceptions() {
@@ -346,9 +488,79 @@ abstract class WorkloadIdentityReplayStoreContract {
     source.fault = Fault.NONE;
   }
 
+  @Test
+  void combinedErrorAndCleanupFailureNeverLeaksSuppressedOrCanary() {
+    String canaryDml = "canary-dml-secret-password-xyz";
+    String canaryClose = "canary-close-secret-token-abc";
+    source.dmlCanary = canaryDml;
+    source.closeCanary = canaryClose;
+    source.fault = Fault.COMBINED_DML_AND_CLOSE_ERROR;
+
+    assertThatThrownBy(() -> store.consume(TENANT, ISSUER, "token-combined-fail", T.plusSeconds(300), T))
+        .isInstanceOfSatisfying(WorkloadIdentityReplayException.class, ex -> {
+          assertThat(ex.code()).isEqualTo(REPLAY_STORAGE_PERMISSION_DENIED);
+          assertThat(ex.getCause()).isNull();
+          assertThat(ex.getSuppressed()).isEmpty();
+          assertThat(ex.getMessage()).doesNotContain(canaryDml);
+          assertThat(ex.getMessage()).doesNotContain(canaryClose);
+          assertThat(ex.toString()).doesNotContain(canaryDml);
+          assertThat(ex.toString()).doesNotContain(canaryClose);
+        });
+
+    source.fault = Fault.NONE;
+    source.dmlCanary = null;
+    source.closeCanary = null;
+  }
+
+  // --------------------------------------------------------------------------------------
+  // 17. Explicit upgrade from V1 to V2
+  // --------------------------------------------------------------------------------------
+  @Test
+  void explicitUpgradeFromV1ToV2() throws SQLException {
+    makeV1Fixture();
+    try {
+      assertCode(() -> WorkloadIdentityReplayDatabase.validateExisting(source), REPLAY_SCHEMA_NOT_READY);
+
+      WorkloadIdentityReplayDatabase.upgradeFromV1(source, 5000);
+      assertThat(WorkloadIdentityReplayDatabase.readPersistedCapacity(source)).isEqualTo(5000);
+
+      var upgradedStore = new JdbcWorkloadIdentityReplayStore(source, 5000);
+      assertThat(upgradedStore.consume(TENANT, ISSUER, "token-upgraded", T.plusSeconds(300), T)).isTrue();
+    } finally {
+      if (!isCapacityPresent()) {
+        try {
+          WorkloadIdentityReplayDatabase.upgradeFromV1(source);
+        } catch (Exception ignored) {
+        }
+      }
+      execute("UPDATE tp_workload_replay_state SET capacity = "
+          + WorkloadIdentityReplayDatabase.DEFAULT_CAPACITY + ", total_claims = 0 WHERE singleton = 1");
+      execute("DELETE FROM tp_workload_replay_claims");
+    }
+  }
+
   // ======================================================================================
   // Helpers and Fixtures
   // ======================================================================================
+
+  private void makeV1Fixture() throws SQLException {
+    execute("ALTER TABLE tp_workload_replay_state DROP COLUMN capacity");
+    execute("DELETE FROM tp_identity_replay_schema_history WHERE version = '2'");
+  }
+
+  private boolean isCapacityPresent() {
+    try (Connection conn = source.getConnection();
+         PreparedStatement ps = conn.prepareStatement("SELECT capacity FROM tp_workload_replay_state WHERE singleton = 1");
+         ResultSet rs = ps.executeQuery()) {
+      return rs.next();
+    } catch (SQLException e) {
+      return false;
+    }
+  }
+
+  private boolean isPostgreSql() {
+    return database.getJdbcUrl().startsWith("jdbc:postgresql:");
+  }
 
   private void execute(String sql) throws SQLException {
     try (Connection connection = source.getConnection(); var statement = connection.createStatement()) {
@@ -358,7 +570,7 @@ abstract class WorkloadIdentityReplayStoreContract {
   }
 
   private void provisionRuntimeUser() {
-    boolean postgres = database.getJdbcUrl().startsWith("jdbc:postgresql:");
+    boolean postgres = isPostgreSql();
     String password = UUID.randomUUID().toString();
     TestSource owner = postgres ? source : new TestSource(database.getJdbcUrl(), "root", database.getPassword());
     try (Connection connection = owner.getConnection(); var statement = connection.createStatement()) {
@@ -384,7 +596,7 @@ abstract class WorkloadIdentityReplayStoreContract {
 
   private void grantRuntimePermissions() throws SQLException {
     if (runtimeSource == null) return;
-    boolean postgres = database.getJdbcUrl().startsWith("jdbc:postgresql:");
+    boolean postgres = isPostgreSql();
     TestSource owner = postgres ? source : new TestSource(database.getJdbcUrl(), "root", database.getPassword());
     try (Connection connection = owner.getConnection(); var statement = connection.createStatement()) {
       statement.setQueryTimeout(5);
@@ -400,7 +612,7 @@ abstract class WorkloadIdentityReplayStoreContract {
   }
 
   private void revokeRuntimePermissions() throws SQLException {
-    boolean postgres = database.getJdbcUrl().startsWith("jdbc:postgresql:");
+    boolean postgres = isPostgreSql();
     TestSource owner = postgres ? source : new TestSource(database.getJdbcUrl(), "root", database.getPassword());
     try (Connection connection = owner.getConnection(); var statement = connection.createStatement()) {
       statement.setQueryTimeout(5);
@@ -427,6 +639,8 @@ abstract class WorkloadIdentityReplayStoreContract {
     AFTER_COMMIT,
     CLOSE_AFTER_COMMIT,
     ROLLBACK,
+    COUNTER_FAILURE_AFTER_INSERT,
+    COMBINED_DML_AND_CLOSE_ERROR,
     UNRELATED_CONSTRAINT
   }
 
@@ -435,6 +649,8 @@ abstract class WorkloadIdentityReplayStoreContract {
     private final String user;
     private final String password;
     private volatile Fault fault = Fault.NONE;
+    private volatile String dmlCanary;
+    private volatile String closeCanary;
 
     TestSource(String url, String user, String password) {
       this.url = url;
@@ -465,9 +681,16 @@ abstract class WorkloadIdentityReplayStoreContract {
               delegate.rollback();
               throw synthetic("08006", 0);
             }
-            if (method.getName().equals("close") && committed.get() && fault == Fault.CLOSE_AFTER_COMMIT) {
-              delegate.close();
-              throw synthetic("08006", 0);
+            if (method.getName().equals("close")) {
+              if (committed.get() && fault == Fault.CLOSE_AFTER_COMMIT) {
+                delegate.close();
+                throw synthetic("08006", 0);
+              }
+              if (fault == Fault.COMBINED_DML_AND_CLOSE_ERROR) {
+                delegate.close();
+                String msg = closeCanary != null ? "canary-close-" + closeCanary : "synthetic-close-error";
+                throw new SQLException(msg, "08006", 0);
+              }
             }
             Object result = invoke(method, delegate, args);
             if (method.getName().equals("prepareStatement") && args[0] instanceof String sql) {
@@ -480,6 +703,16 @@ abstract class WorkloadIdentityReplayStoreContract {
                       if ((fault == Fault.UNRELATED_CONSTRAINT || fault == Fault.ROLLBACK)
                           && sql.contains("INSERT INTO tp_workload_replay_claims")) {
                         throw synthetic("23514", 4025);
+                      }
+                      if (fault == Fault.COUNTER_FAILURE_AFTER_INSERT
+                          && sql.contains("UPDATE tp_workload_replay_state")) {
+                        throw synthetic("08006", 0);
+                      }
+                      if (fault == Fault.COMBINED_DML_AND_CLOSE_ERROR) {
+                        String msg = dmlCanary != null ? "canary-dml-" + dmlCanary : "synthetic-dml-error";
+                        String state = url.startsWith("jdbc:postgresql:") ? "42501" : "42000";
+                        int vendor = url.startsWith("jdbc:postgresql:") ? 0 : 1142;
+                        throw new SQLException(msg, state, vendor);
                       }
                     }
                     return invoke(statementMethod, statement, statementArgs);

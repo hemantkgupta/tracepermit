@@ -20,9 +20,12 @@ import org.flywaydb.core.Flyway;
  * Isolated durable workload-identity replay database lifecycle and validation.
  *
  * <p>Enforces dedicated empty-only schema initialization, strict version and engine validation,
- * exact table whitelisting, and fail-closed handling of read-only/replica or corrupt topologies.
+ * exact table and column physical schema verification, agreed capacity enforcement, and
+ * fail-closed handling of read-only/replica or corrupt topologies.
  */
 public final class WorkloadIdentityReplayDatabase {
+  public static final long DEFAULT_CAPACITY = 10_000L;
+
   private static final Set<String> EXPECTED_TABLES = Set.of(
       "tp_identity_replay_schema_history",
       "tp_workload_replay_claims",
@@ -77,16 +80,68 @@ public final class WorkloadIdentityReplayDatabase {
 
   private WorkloadIdentityReplayDatabase() {}
 
-  /** Explicit first install in an empty dedicated schema/database; runtime never calls this. */
+  /** Explicit first install in an empty dedicated schema/database with default capacity. */
   public static void initializeEmpty(DataSource source) {
+    initializeEmpty(source, DEFAULT_CAPACITY);
+  }
+
+  /** Explicit first install in an empty dedicated schema/database with operator-agreed capacity. */
+  public static void initializeEmpty(DataSource source, long capacity) {
+    if (capacity <= 0) {
+      throw error(REPLAY_INPUT_INVALID);
+    }
     try (Connection connection = source.getConnection()) {
       Engine engine = inspectWriter(connection);
       if (!tables(connection).isEmpty()) {
         throw error(REPLAY_SCHEMA_NOT_READY);
       }
       requireNoExecutableObjects(connection, engine);
-      flyway(source, engine).migrate();
-      validateExisting(source);
+      flyway(source, engine, "2").migrate();
+      if (capacity != DEFAULT_CAPACITY) {
+        try (PreparedStatement statement = connection.prepareStatement("""
+            UPDATE tp_workload_replay_state SET capacity = ? WHERE singleton = 1
+            """)) {
+          statement.setQueryTimeout(5);
+          statement.setLong(1, capacity);
+          statement.executeUpdate();
+        }
+      }
+      validateExisting(source, capacity);
+    } catch (WorkloadIdentityReplayException failure) {
+      throw failure;
+    } catch (SQLException | RuntimeException failure) {
+      throw error(REPLAY_SCHEMA_NOT_READY);
+    }
+  }
+
+  /**
+   * Explicit additive upgrade from V1 to V2 with default capacity.
+   */
+  public static void upgradeFromV1(DataSource source) {
+    upgradeFromV1(source, DEFAULT_CAPACITY);
+  }
+
+  /**
+   * Explicit additive upgrade from V1 to V2 with operator-agreed capacity.
+   */
+  public static void upgradeFromV1(DataSource source, long capacity) {
+    if (capacity <= 0) {
+      throw error(REPLAY_INPUT_INVALID);
+    }
+    validateSchema(source, "1");
+    try (Connection connection = source.getConnection()) {
+      Engine engine = inspectWriter(connection);
+      flyway(source, engine, "2").migrate();
+      if (capacity != DEFAULT_CAPACITY) {
+        try (PreparedStatement statement = connection.prepareStatement("""
+            UPDATE tp_workload_replay_state SET capacity = ? WHERE singleton = 1
+            """)) {
+          statement.setQueryTimeout(5);
+          statement.setLong(1, capacity);
+          statement.executeUpdate();
+        }
+      }
+      validateExisting(source, capacity);
     } catch (WorkloadIdentityReplayException failure) {
       throw failure;
     } catch (SQLException | RuntimeException failure) {
@@ -96,7 +151,42 @@ public final class WorkloadIdentityReplayDatabase {
 
   /** Validate only: no automatic migrate, baseline, repair, clean or adoption. */
   public static void validateExisting(DataSource source) {
-    validateSchema(source, "1");
+    validateSchema(source, "2");
+  }
+
+  /** Validate existing schema at version 2 and assert agreed capacity match. */
+  public static void validateExisting(DataSource source, long expectedCapacity) {
+    validateExisting(source);
+    long actualCapacity = readPersistedCapacity(source);
+    if (actualCapacity != expectedCapacity) {
+      throw error(REPLAY_CAPACITY_MISMATCH);
+    }
+  }
+
+  /** Read persisted capacity from the database state row. */
+  public static long readPersistedCapacity(DataSource source) {
+    try (Connection connection = source.getConnection()) {
+      inspectWriter(connection);
+      try (PreparedStatement statement = connection.prepareStatement("""
+          SELECT capacity FROM tp_workload_replay_state WHERE singleton = 1
+          """)) {
+        statement.setQueryTimeout(5);
+        try (ResultSet rows = statement.executeQuery()) {
+          if (!rows.next()) {
+            throw error(REPLAY_SCHEMA_NOT_READY);
+          }
+          long capacity = rows.getLong(1);
+          if (capacity <= 0) {
+            throw error(REPLAY_SCHEMA_NOT_READY);
+          }
+          return capacity;
+        }
+      }
+    } catch (WorkloadIdentityReplayException failure) {
+      throw failure;
+    } catch (SQLException | RuntimeException failure) {
+      throw error(REPLAY_SCHEMA_NOT_READY);
+    }
   }
 
   private static void validateSchema(DataSource source, String version) {
@@ -113,8 +203,14 @@ public final class WorkloadIdentityReplayDatabase {
           || flyway.info().pending().length != 0) {
         throw error(REPLAY_SCHEMA_NOT_READY);
       }
-      requireUnique(connection, "tp_workload_replay_claims", List.of("claim_hash"));
-      requireUnique(connection, "tp_workload_replay_state", List.of("singleton"));
+
+      // Physical schema column validation
+      validateClaimsTable(connection, engine);
+      validateStateTable(connection, version);
+
+      // Primary key validation
+      requirePrimaryKey(connection, "tp_workload_replay_claims", "claim_hash");
+      requirePrimaryKey(connection, "tp_workload_replay_state", "singleton");
 
       if (engine == Engine.MARIADB) {
         try (PreparedStatement statement = connection.prepareStatement("""
@@ -131,12 +227,17 @@ public final class WorkloadIdentityReplayDatabase {
         }
       }
 
-      try (PreparedStatement statement = connection.prepareStatement("""
-          SELECT singleton, total_claims FROM tp_workload_replay_state WHERE singleton = 1
-          """)) {
+      boolean isV2 = "2".equals(version);
+      String stateQuery = isV2
+          ? "SELECT singleton, total_claims, capacity FROM tp_workload_replay_state WHERE singleton = 1"
+          : "SELECT singleton, total_claims FROM tp_workload_replay_state WHERE singleton = 1";
+      try (PreparedStatement statement = connection.prepareStatement(stateQuery)) {
         statement.setQueryTimeout(5);
         try (ResultSet rows = statement.executeQuery()) {
           if (!rows.next() || rows.getInt(1) != 1 || rows.getLong(2) < 0) {
+            throw error(REPLAY_SCHEMA_NOT_READY);
+          }
+          if (isV2 && rows.getLong(3) <= 0) {
             throw error(REPLAY_SCHEMA_NOT_READY);
           }
         }
@@ -145,6 +246,124 @@ public final class WorkloadIdentityReplayDatabase {
       throw failure;
     } catch (SQLException | RuntimeException failure) {
       throw error(REPLAY_SCHEMA_NOT_READY);
+    }
+  }
+
+  private record ColumnInfo(String name, String typeName, int columnSize, boolean isNullable) {}
+
+  private static void validateClaimsTable(Connection connection, Engine engine) throws SQLException {
+    Map<String, ColumnInfo> columns = readColumns(connection, "tp_workload_replay_claims");
+    Set<String> expectedColumnNames = Set.of(
+        "claim_hash", "tenant_hash", "token_fingerprint", "expires_at", "claimed_at");
+    if (!columns.keySet().equals(expectedColumnNames)) {
+      throw error(REPLAY_SCHEMA_NOT_READY);
+    }
+    for (ColumnInfo col : columns.values()) {
+      if (col.isNullable()) {
+        throw error(REPLAY_SCHEMA_NOT_READY);
+      }
+    }
+    ColumnInfo claimHash = columns.get("claim_hash");
+    ColumnInfo tenantHash = columns.get("tenant_hash");
+    ColumnInfo tokenFingerprint = columns.get("token_fingerprint");
+    if (claimHash.columnSize() != 71 || tenantHash.columnSize() != 71 || tokenFingerprint.columnSize() != 71) {
+      throw error(REPLAY_SCHEMA_NOT_READY);
+    }
+    ColumnInfo expiresAt = columns.get("expires_at");
+    ColumnInfo claimedAt = columns.get("claimed_at");
+    if (engine == Engine.POSTGRESQL) {
+      if (!isPostgresTimestampType(expiresAt.typeName()) || !isPostgresTimestampType(claimedAt.typeName())) {
+        throw error(REPLAY_SCHEMA_NOT_READY);
+      }
+      validatePostgresCollation(connection);
+    } else {
+      if (!"datetime".equalsIgnoreCase(expiresAt.typeName()) || !"datetime".equalsIgnoreCase(claimedAt.typeName())) {
+        throw error(REPLAY_SCHEMA_NOT_READY);
+      }
+      validateMariaDbCollation(connection);
+    }
+  }
+
+  private static boolean isPostgresTimestampType(String typeName) {
+    return "timestamptz".equalsIgnoreCase(typeName)
+        || "timestamp with time zone".equalsIgnoreCase(typeName);
+  }
+
+  private static void validatePostgresCollation(Connection connection) throws SQLException {
+    try (PreparedStatement statement = connection.prepareStatement("""
+        SELECT COUNT(*)
+          FROM information_schema.columns
+         WHERE table_schema = current_schema()
+           AND table_name = 'tp_workload_replay_claims'
+           AND column_name IN ('claim_hash', 'tenant_hash', 'token_fingerprint')
+           AND collation_name = 'C'
+        """)) {
+      statement.setQueryTimeout(5);
+      try (ResultSet rows = statement.executeQuery()) {
+        if (!rows.next() || rows.getInt(1) != 3) {
+          throw error(REPLAY_SCHEMA_NOT_READY);
+        }
+      }
+    }
+  }
+
+  private static void validateMariaDbCollation(Connection connection) throws SQLException {
+    try (PreparedStatement statement = connection.prepareStatement("""
+        SELECT COUNT(*)
+          FROM information_schema.columns
+         WHERE table_schema = DATABASE()
+           AND table_name = 'tp_workload_replay_claims'
+           AND column_name IN ('claim_hash', 'tenant_hash', 'token_fingerprint')
+           AND collation_name = 'ascii_bin'
+        """)) {
+      statement.setQueryTimeout(5);
+      try (ResultSet rows = statement.executeQuery()) {
+        if (!rows.next() || rows.getInt(1) != 3) {
+          throw error(REPLAY_SCHEMA_NOT_READY);
+        }
+      }
+    }
+  }
+
+  private static void validateStateTable(Connection connection, String version) throws SQLException {
+    Map<String, ColumnInfo> columns = readColumns(connection, "tp_workload_replay_state");
+    boolean isV2 = "2".equals(version);
+    Set<String> expectedColumnNames = isV2
+        ? Set.of("singleton", "total_claims", "capacity")
+        : Set.of("singleton", "total_claims");
+    if (!columns.keySet().equals(expectedColumnNames)) {
+      throw error(REPLAY_SCHEMA_NOT_READY);
+    }
+    for (ColumnInfo col : columns.values()) {
+      if (col.isNullable()) {
+        throw error(REPLAY_SCHEMA_NOT_READY);
+      }
+    }
+  }
+
+  private static Map<String, ColumnInfo> readColumns(Connection connection, String table) throws SQLException {
+    Map<String, ColumnInfo> columns = new HashMap<>();
+    try (ResultSet rs = connection.getMetaData().getColumns(
+        connection.getCatalog(), schema(connection), table, "%")) {
+      while (rs.next()) {
+        String name = rs.getString("COLUMN_NAME").toLowerCase(Locale.ROOT);
+        String typeName = rs.getString("TYPE_NAME");
+        int size = rs.getInt("COLUMN_SIZE");
+        String nullableStr = rs.getString("IS_NULLABLE");
+        boolean nullable = !"NO".equalsIgnoreCase(nullableStr);
+        columns.put(name, new ColumnInfo(name, typeName, size, nullable));
+      }
+    }
+    return columns;
+  }
+
+  private static void requirePrimaryKey(Connection connection, String table, String expectedColumn)
+      throws SQLException {
+    try (ResultSet rs = connection.getMetaData().getPrimaryKeys(
+        connection.getCatalog(), schema(connection), table)) {
+      if (!rs.next() || !expectedColumn.equalsIgnoreCase(rs.getString("COLUMN_NAME")) || rs.next()) {
+        throw error(REPLAY_SCHEMA_NOT_READY);
+      }
     }
   }
 
@@ -201,24 +420,6 @@ public final class WorkloadIdentityReplayDatabase {
     return names;
   }
 
-  private static void requireUnique(Connection connection, String table, List<String> columns)
-      throws SQLException {
-    Map<String, List<String>> indexes = new HashMap<>();
-    try (ResultSet rows = connection.getMetaData().getIndexInfo(
-        connection.getCatalog(), schema(connection), table, true, false)) {
-      while (rows.next()) {
-        String name = rows.getString("INDEX_NAME");
-        String column = rows.getString("COLUMN_NAME");
-        if (name != null && column != null && rows.getString("FILTER_CONDITION") == null) {
-          indexes.computeIfAbsent(name, unused -> new ArrayList<>()).add(column);
-        }
-      }
-    }
-    if (!indexes.containsValue(columns)) {
-      throw error(REPLAY_SCHEMA_NOT_READY);
-    }
-  }
-
   private static void requireNoExecutableObjects(Connection connection, Engine engine)
       throws SQLException {
     String sql = engine == Engine.POSTGRESQL ? """
@@ -245,10 +446,6 @@ public final class WorkloadIdentityReplayDatabase {
   private static String schema(Connection connection) throws SQLException {
     return "PostgreSQL".equals(connection.getMetaData().getDatabaseProductName())
         ? connection.getSchema() : null;
-  }
-
-  private static Flyway flyway(DataSource source, Engine engine) {
-    return flyway(source, engine, "1");
   }
 
   private static Flyway flyway(DataSource source, Engine engine, String target) {

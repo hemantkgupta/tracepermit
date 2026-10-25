@@ -113,10 +113,19 @@ final class WorkloadIdentityReplayHashTest {
     var ex1 = new WorkloadIdentityReplayException(WorkloadIdentityReplayException.Code.REPLAY_STORAGE_UNAVAILABLE);
     assertThat(ex1.code()).isEqualTo(WorkloadIdentityReplayException.Code.REPLAY_STORAGE_UNAVAILABLE);
     assertThat(ex1.getMessage()).isEqualTo("REPLAY_STORAGE_UNAVAILABLE");
+    assertThat(ex1.getCause()).isNull();
+    assertThat(ex1.getSuppressed()).isEmpty();
 
-    var ex2 = new WorkloadIdentityReplayException(WorkloadIdentityReplayException.Code.REPLAY_INPUT_INVALID, "custom-safe-message");
+    var ex2 = new WorkloadIdentityReplayException(WorkloadIdentityReplayException.Code.REPLAY_INPUT_INVALID);
     assertThat(ex2.code()).isEqualTo(WorkloadIdentityReplayException.Code.REPLAY_INPUT_INVALID);
-    assertThat(ex2.getMessage()).isEqualTo("REPLAY_INPUT_INVALID: custom-safe-message");
+    assertThat(ex2.getMessage()).isEqualTo("REPLAY_INPUT_INVALID");
+
+    // Suppressed and cause suppression verification
+    ex2.addSuppressed(new IllegalStateException("canary-suppressed-failure"));
+    assertThat(ex2.getSuppressed()).isEmpty();
+
+    ex2.initCause(new IllegalStateException("canary-cause-failure"));
+    assertThat(ex2.getCause()).isNull();
   }
 
   @Test

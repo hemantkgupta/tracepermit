@@ -15,14 +15,15 @@ Supported production database engines:
 
 The store maintains a dedicated, self-contained schema consisting of three exact tables:
 
-| Table                               | Engine (PG / MariaDB) | Description                                                                                                    |
-| :---------------------------------- | :-------------------- | :------------------------------------------------------------------------------------------------------------- |
-| `tp_identity_replay_schema_history` | Relational            | Flyway migration version history.                                                                              |
-| `tp_workload_replay_claims`         | Relational / InnoDB   | Stores hashed claim records (`claim_hash`, `tenant_hash`, `token_fingerprint`, `expires_at`, `claimed_at`).    |
-| `tp_workload_replay_state`          | Relational / InnoDB   | Singleton row (`singleton = 1`) tracking atomic claim counts (`total_claims`) for finite capacity enforcement. |
+| Table                               | Engine (PG / MariaDB) | Description                                                                                                                          |
+| :---------------------------------- | :-------------------- | :----------------------------------------------------------------------------------------------------------------------------------- |
+| `tp_identity_replay_schema_history` | Relational            | Flyway migration version history.                                                                                                    |
+| `tp_workload_replay_claims`         | Relational / InnoDB   | Stores hashed claim records (`claim_hash`, `tenant_hash`, `token_fingerprint`, `expires_at`, `claimed_at`).                          |
+| `tp_workload_replay_state`          | Relational / InnoDB   | Singleton row (`singleton = 1`) tracking atomic claim counts (`total_claims`) and agreed operator-owned capacity limit (`capacity`). |
 
 > [!IMPORTANT]
 > **Credential Privacy Boundary**: The database stores **only** cryptographic SHA-256 digests (`sha256:...`) and UTC timestamps. Raw bearer tokens, authorization headers, private keys, and user claims are never written to disk or logs.
+> All runtime exceptions discard causes and suppressed exceptions to prevent credentials, URLs, or database diagnostics from escaping.
 
 ---
 
@@ -67,16 +68,27 @@ GRANT SELECT ON `<database_name>`.tp_identity_replay_schema_history TO 'tp_ident
 To initialize a fresh, dedicated database schema:
 
 1. Ensure the target database exists and contains zero tables, views, procedures, or triggers.
-2. Execute the initialization routine using migration owner credentials:
+2. Execute the initialization routine using migration owner credentials with the agreed operator capacity (default `65,536`):
    ```java
-   WorkloadIdentityReplayDatabase.initializeEmpty(migrationDataSource);
+   WorkloadIdentityReplayDatabase.initializeEmpty(migrationDataSource, capacity);
    ```
-3. Initialization will run Flyway migrations and validate the schema, creating version 1 and setting initial counter `total_claims = 0`.
+3. Initialization will run Flyway migrations and validate the schema, creating version 2 and setting initial state `total_claims = 0` and `capacity = <capacity>`.
 4. If any existing objects or tables are present, `initializeEmpty` will fail closed with `REPLAY_SCHEMA_NOT_READY`.
+
+### Upgrading an Existing V1 Database
+
+To upgrade an existing V1 schema to V2:
+
+1. Ensure runtime writers are paused.
+2. Run explicit upgrade using migration owner credentials:
+   ```java
+   WorkloadIdentityReplayDatabase.upgradeFromV1(migrationDataSource, capacity);
+   ```
+3. The upgrade applies `V2__workload_replay_agreed_capacity.sql`, populates the operator-agreed capacity, and verifies complete physical DDL integrity.
 
 ### Runtime Validation
 
-Ingress services constructing `JdbcWorkloadIdentityReplayStore` automatically validate the schema without running DDL:
+Ingress services constructing `JdbcWorkloadIdentityReplayStore` automatically validate the schema and agreed capacity without running DDL:
 
 ```java
 WorkloadIdentityReplayStore replayStore = new JdbcWorkloadIdentityReplayStore(runtimeDataSource, capacity);
@@ -88,8 +100,9 @@ Runtime validation asserts:
 - Engine version matches supported PostgreSQL or MariaDB profiles.
 - Writable endpoint (fails closed on replicas or read-only connections).
 - Zero triggers, routines, or events.
-- Valid primary key constraints on all tables.
-- Valid singleton row in `tp_workload_replay_state`.
+- Physical column definitions, types, nullability, and collations (`"C"` on PG, `ascii_bin` on MariaDB).
+- Primary key constraints on all tables.
+- Persisted capacity in `tp_workload_replay_state` exactly matches local configured capacity (mismatch throws `REPLAY_CAPACITY_MISMATCH`).
 
 ---
 
@@ -102,7 +115,7 @@ The store enforces finite capacity (`DEFAULT_CAPACITY = 65,536` or operator-conf
 Operators should poll the claim count metric periodically:
 
 ```sql
-SELECT total_claims FROM tp_workload_replay_state WHERE singleton = 1;
+SELECT total_claims, capacity FROM tp_workload_replay_state WHERE singleton = 1;
 ```
 
 ### Alert Thresholds
@@ -115,10 +128,11 @@ SELECT total_claims FROM tp_workload_replay_state WHERE singleton = 1;
 
 ## Troubleshooting & Incident Handling
 
-| Exception Code                     | Probable Cause                                                            | Action                                                               |
-| :--------------------------------- | :------------------------------------------------------------------------ | :------------------------------------------------------------------- |
-| `REPLAY_STORAGE_READ_ONLY`         | Node connected to read-only replica or RDS failover replica.              | Point connection pool to authoritative writer endpoint.              |
-| `REPLAY_SCHEMA_NOT_READY`          | Missing tables, extra tables, trigger detected, or missing singleton row. | Run schema validation inspection; remove unauthorized objects.       |
-| `REPLAY_STORAGE_PERMISSION_DENIED` | Runtime user lacks `INSERT` or `UPDATE` privileges.                       | Verify runtime role grants against permissions guide above.          |
-| `REPLAY_COMMIT_UNKNOWN`            | Network timeout or socket reset during transaction commit or close.       | Check database host connectivity; do not assume operation succeeded. |
-| `REPLAY_STORAGE_UNAVAILABLE`       | Database unreachable or connection pool exhausted.                        | Verify database health, host resources, and connection pool sizing.  |
+| Exception Code                     | Probable Cause                                                                           | Action                                                                    |
+| :--------------------------------- | :--------------------------------------------------------------------------------------- | :------------------------------------------------------------------------ |
+| `REPLAY_STORAGE_READ_ONLY`         | Node connected to read-only replica or RDS failover replica.                             | Point connection pool to authoritative writer endpoint.                   |
+| `REPLAY_SCHEMA_NOT_READY`          | Missing tables, dropped columns (e.g. `expires_at`), trigger detected, or missing state. | Run schema validation inspection; ensure all physical columns are intact. |
+| `REPLAY_CAPACITY_MISMATCH`         | Local client configured capacity differs from persisted database capacity.               | Ensure all ingress nodes configure the identical agreed capacity.         |
+| `REPLAY_STORAGE_PERMISSION_DENIED` | Runtime user lacks `INSERT` or `UPDATE` privileges.                                      | Verify runtime role grants against permissions guide above.               |
+| `REPLAY_COMMIT_UNKNOWN`            | Network timeout, lock wait past expiry, or socket reset during transaction commit/close. | Check database host connectivity; do not assume operation succeeded.      |
+| `REPLAY_STORAGE_UNAVAILABLE`       | Database unreachable or connection pool exhausted.                                       | Verify database health, host resources, and connection pool sizing.       |
