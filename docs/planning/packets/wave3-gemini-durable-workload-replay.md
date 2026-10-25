@@ -116,7 +116,10 @@ counts, exact versions and cache facts. Hosted checks must match final pushed
 HEAD. Cite affected requirement IDs and add ADR/runbook/learning/traceability.
 
 **Local environment warning:** the coordinator observed a large Docker/Mac clock
-offset while diagnosing a real lock-wait test failure. Before Docker qualification,
+offset in Docker-info output while diagnosing a real lock-wait test failure. A
+later fresh networkless container-clock probe agreed with the Mac within its
+one-second resolution; the info timestamp is not proof of current database skew
+or grounds for restarting Docker. Before Docker qualification,
 verify bounded daemon health and host/container time consistency. If unhealthy,
 stop and ask the operator to repair Docker; do not restart/prune it yourself,
 change the Mac clock, widen expiry checks or label failing tests flaky. Pure

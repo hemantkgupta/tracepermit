@@ -105,3 +105,6 @@ case, which unexpectedly accepted the command;244/245 operation cases passed.
 Later aggregate gates did not complete. A later bounded Docker observation
 showed a large server/Mac clock offset; its relation to the database failure still
 requires diagnosis. This failure is retained, not relabeled by focused passes.
+A subsequent fresh networkless container-clock probe agreed with the Mac within
+one-second resolution: the earlier Docker-info observation is not proof of
+current database skew. No Docker restart is justified by that timestamp alone.

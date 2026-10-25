@@ -37,6 +37,11 @@ approximately9852seconds behind the Mac clock. This is an environmental lead,
 not yet an independently verified database-clock diagnosis or runtime fix.
 No Docker restart, clock change or unrelated cleanup is authorized/performed.
 The broad failure must be diagnosed/resolved before this checkpoint is qualified.
+A subsequent owned, network-disabled container clock probe agreed with the Mac
+within its one-second measurement resolution. The earlier Docker-info timestamp
+therefore does not establish a current VM/database clock skew or justify a
+restart. Fresh database-time observations and the original failure still need
+investigation; do not widen expiry margins or rerun solely to get green.
 
 ## Current PR104 reconciliation
 
