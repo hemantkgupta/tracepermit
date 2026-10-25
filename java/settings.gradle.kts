@@ -15,6 +15,7 @@ include(
   "persistence-postgres",
   "persistence-mariadb",
   "persistence-operations",
+  "persistence-identity",
   "observability-otel",
   "conformance",
 )

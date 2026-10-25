@@ -704,6 +704,34 @@ do not provide byte quotas, bounded lock waits, restart/durable recovery,
 distributed replay state, revocation or public saturation metrics. See
 [ADR 0054](../architecture/0054-bounded-local-replay-stores.md).
 
+### Durable workload-identity replay store
+
+`io.tracepermit.persistence.identity.JdbcWorkloadIdentityReplayStore` implements
+the `WorkloadIdentityReplayStore` port across PostgreSQL 16.4 and MariaDB 11.4.13/10.6.25
+(InnoDB). Compound identities (`tenantId`, `issuer`, `tokenId`) are hashed using a
+versioned, domain-separated, length-delimited SHA-256 recipe
+(`tracepermit:workload-identity-replay:v1\0`) with 4-byte big-endian integer byte-length
+delimiters over UTF-8 bytes. Maximum identifier lengths are enforced (`tenantId` <= 128,
+`issuer` <= 256, `tokenId` <= 256) and invalid Unicode surrogate pairs are rejected.
+
+The persistent schema (`tp_workload_replay_claims`) stores only bounded cryptographic
+digests (`claim_hash`, `tenant_hash`, `token_fingerprint`) and microsecond wall-clock
+timestamps (`expires_at`, `claimed_at`). Plain unique insertion serves as the concurrency
+arbiter: exactly one caller among racing store instances succeeds, and only expected
+duplicate-key errors (PostgreSQL 23505, MariaDB 1062/23000) represent replay. Submissions
+where `expiresAt <= now` fail closed and write nothing; replays never refresh expiry or
+overwrite existing timestamps.
+
+Finite capacity is enforced via an atomic counter update on `tp_workload_replay_state`
+singleton (`total_claims = total_claims + 1 WHERE singleton = 1 AND total_claims < capacity`).
+When capacity is reached, the transaction rolls back the claim insert and refuses admission
+without evicting live unexpired records. A consumption attempt returns `true` only after
+successful commit and connection cleanup acknowledgement; lost commit acknowledgement
+fails closed with `REPLAY_COMMIT_UNKNOWN`. All thrown exceptions discard JDBC causes and
+suppressed exceptions to protect database credentials and connection state. See
+[ADR 0080](../architecture/0080-durable-workload-identity-replay.md) and the
+[workload-identity replay runbook](../runbooks/workload-identity-replay-store.md).
+
 ## 6. Audit evidence contract
 
 The current internal evidence record contains:

@@ -102,3 +102,12 @@ pre-handler refusal and bounded close; see the
 [handoff explanation](../learning/bounded-dispatch-handoff.md) and
 [qualification record](../runbooks/latency-qualification-transport-diagnostics.md).
 This does not qualify production load or a public abuse-control boundary.
+
+[ADR0080](../architecture/0080-durable-workload-identity-replay.md) adds the
+standalone durable `WorkloadIdentityReplayStore` library across PostgreSQL 16.4
+and MariaDB 11.4.13/10.6.25. Length-delimited domain-separated compound hashes,
+bounded fingerprint-only persistence, single-winner unique insertion, fail-closed
+saturation and commit/cleanup acknowledgement are qualified. The module is not
+wired into ingress or application authority; see the
+[runbook](../runbooks/workload-identity-replay-store.md) and
+[learning note](../learning/workload-replay-is-not-admission.md).
