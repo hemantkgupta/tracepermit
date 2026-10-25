@@ -10,6 +10,7 @@ include(
   "simulator",
   "adapters-http",
   "adapters-remote",
+  "agentcore-registration-http",
   "endpoint-connector",
   "review-verifier",
   "persistence-postgres",

@@ -109,3 +109,10 @@ body derives no authority from client flags and rejects human/OBO token pairs.
 Synthetic token/recording-port tests do not qualify live AgentCore/Okta token
 compatibility, a provider delegation relationship or composed durable ingress;
 see the [ingress runbook](../runbooks/agentcore-trusted-ingress.md).
+
+[ADR0082](../architecture/0082-loopback-agentcore-registration-http.md) adds an
+optional numeric-loopback HTTP registration library around the unchanged
+execution-disabled ingress, with explicit NIO deadlines and bounded admission.
+It has no executable/default wiring, public edge, OBO or execution capability.
+The [runbook](../runbooks/agentcore-loopback-registration-http.md) separates
+synthetic signed HTTP/JDBC evidence from future deployment and authority gates.

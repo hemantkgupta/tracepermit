@@ -1,5 +1,27 @@
 # Requirements traceability matrix
 
+## Numeric-loopback registration HTTP candidate
+
+Requirements: FR-002/003/010/012; SEC-001/002/003/004/009/012;
+REL-001/002/003/005/009; DATA-001; OPS-002/004; PORT-004. No whole-ID promotion.
+The new `agentcore-registration-http` library binds only numeric127.0.0.1 and
+routes one closed HTTP1.1 POST through the existing real registration ingress.
+NIO deadlines, stream/frame bounds, fixed worker/pending/connection capacity,
+queue cancellation and bounded close preserve metadata uncertainty; receipts
+contain only creation status/UUID/execution-disabled flag. Actual local-JWKS
+signed HTTP/JDBC tests cover all three exact engines, initial records and
+fresh-token retries/conflicts/acknowledgement loss. Socket tests cover slow and
+oversized input, duplicate/mixed identity, default saturation and cancellation;
+guard-removal evidence and exact-head results belong to the PR handoff.
+
+This is not a default launcher, public/TLS deployment, provider interoperability,
+OBO, shared durable replay, revocation, approval/admission/dispatch or production
+qualification. In-flight calls can finish metadata after transport timeout and
+retain capacity until actual completion. See
+[ADR0082](../architecture/0082-loopback-agentcore-registration-http.md),
+[runbook](../runbooks/agentcore-loopback-registration-http.md) and
+[timeout explanation](../learning/registration-timeout-is-not-rollback.md).
+
 ## Ingress-to-JDBC registration qualification
 
 Requirements: FR-002/003/010/012; SEC-001/002/003/004/009/012;

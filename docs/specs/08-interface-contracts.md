@@ -556,6 +556,25 @@ Live provider token compatibility, a verified workload-to-human exchange/grant,
 transport proof and durable replay deployment remain unqualified. See
 [ADR0078](../architecture/0078-agentcore-execution-disabled-registration.md).
 
+### Optional numeric-loopback registration HTTP library
+
+`agentcore-registration-http` explicitly constructs a numeric127.0.0.1-only
+listener, without adding a default launcher or existing-service route.
+`POST /v1/agentcore/registrations` requires HTTP1.1, exact numeric Host/port,
+one Authorization and Content-Length, and the closed JSON ingress schema.
+Duplicate/forwarded/cookie identity, ambiguous paths, unsupported encodings,
+chunking and upgrade are rejected. Body framing is bounded before allocation
+to32768 bytes; the existing ingress owns strict UTF-8/JSON and enrollment.
+
+Created201/existing200 return only `created`, `operationId` and
+`executionEnabled:false`. Fixed400/401/409/503 errors disclose no snapshots,
+fingerprints or raw diagnostics. NIO header/body/overall deadlines and bounded
+worker/queue/connection reservations close expired transport and cancel pending
+work; interruption never certifies JDBC rollback. Overload may return fixed503
+or close before parsing. Fresh-token same-key recovery is metadata only.
+See [ADR0082](../architecture/0082-loopback-agentcore-registration-http.md).
+There is no public TLS edge, OBO, shared durable replay, authority or execution.
+
 ## 3A. Java development control-plane reads
 
 The Java development adapter exposes these loopback-only reads:
