@@ -32,10 +32,11 @@ is separate from earlier green checkpoints. No endpoint, permit, admission,
 attempt/outbox, provider or target is enabled.
 
 [ADR0087](../architecture/0087-fully-bound-operation-permit-and-admission.md)
-records the approved strict identity/signature/lifetime choices for the next
-fully bound permit/admission boundary. Its transaction/schema/reader design is
-proposed only; no permit, admission, attempt/outbox or sender implementation is
-promoted by the design record.
+records the approved strict identity/signature/lifetime choices and opt-in
+closed JDBC permit-issuance slice. Its [issuance qualification](../runbooks/closed-operation-permit-issuance.md)
+is separate from V4 review: actual approved state is loaded and the read
+connection closes before signing. Atomic single-use admission, attempt/outbox,
+new schema and sender remain proposed only; no endpoint or target is enabled.
 
 [ADR0084](../architecture/0084-durable-review-membership-and-lifetime.md)
 records the approved next design: exact independent reviewer-group enrollment,

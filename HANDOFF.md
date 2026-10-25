@@ -5,6 +5,47 @@ operator values remain outside Git. Historical receipts are not fresh results.
 
 ## Timestamp compatibility repair and next admission contract
 
+### Closed JDBC permit issuance — current Mac checkpoint
+
+Mac retains the only PR108 writer. Pushed e230972 has all eight exact-head hosted
+checks green in CI40196383943; they do not qualify the new local issuance source.
+The next slice implements an opt-in `JdbcGitHubOperationPermitIssuer`, explicit
+profile-v3 admission settings and new closed Ed25519 wire codec on existing V4
+storage. Actual approved/current history is loaded under control/head locks and
+every approved identity deadline is bounded; the read transaction and connection
+end before private-key signing. No arbitrary approved JSON, clock/signing port,
+public verifier, mutation, endpoint, consumption, durable attempt/outbox or
+target is introduced. Default V2, V1-V4 SQL and legacy profile recipes remain
+unchanged. See [issuance scope](docs/runbooks/closed-operation-permit-issuance.md)
+and [ADR0087](docs/architecture/0087-fully-bound-operation-permit-and-admission.md).
+
+Focused qualification passed 36 issuer/codec cases on the exact three engines;
+application outputs were valid/reused. Initial new-vector failures were an
+accidentally canonicalized-away floating spelling and a duplicate-stage test
+expecting the wrong existing error; the actual wire vector/operator replacement
+API now exercise the intended rules. Four deliberate profile-pin/pre-lock-clock
+negative-control failures were observed; both production files are restored
+byte-identically. The final forced/cache-disabled complete operation suite passed
+409 cases across 12 suites, zero failures/errors/skips, 18 tasks executed in
+7m36. Final `pnpm check` passed 124 React and 2018 recorded Java cases across
+156 suites, zero failures/errors and one existing absent-archive native-PTY skip.
+The fresh 409-case operation result was reused; other valid outputs were reused
+or restored from cache. Gradle4m18, 9 executed/1 from cache/55 up-to-date, NOT all
+tests fresh. Coverage94.7211% line/78.5906% branch passed unchanged94/75 gates.
+Formatting,1173 links/3 helpers,13 flow/drift cases and diff checks passed.
+Exact new-head hosted checks remain separate; Mac retains writer ownership.
+
+Gemini PR121 at 41a8b9a has eight green checks and a reported clean/released
+handoff. Source intake identified process-supervision/acknowledgement and
+operator-fixture qualification gaps; the human was given a follow-up repair
+prompt, not a production-bypass claim. The human now confirms that follow-up
+prompt was sent; reacquired writer ownership/new head is not yet independently
+verified. Do not take over that branch or silently repin its frozen aab5c03
+parent. Mac Air's fixed Page still reports its second aggregate in progress.
+All PRs remain draft/unmerged; old Cloud2 files/session/log remain preserved.
+
+### Preceding timestamp checkpoint history
+
 Mac retains sole PR108 writer ownership. The preceding aab5c03 checkpoint has all
 eight exact-head checks green in CI40188482042. Cloud2R's bounded static actual
 V4 review is consumed: one timestamp compatibility defect, all reviewer execution

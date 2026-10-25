@@ -31,12 +31,21 @@ rewriting immutable originals or weakening clock-regression refusal. Its
 three-engine cases are in the same contract; new journal metadata remains strict.
 
 [ADR0087](../architecture/0087-fully-bound-operation-permit-and-admission.md)
-records the human-approved NEXT admission trust contract: separate fresh exact
-owner operations.execute authority and an explicit, independently versioned
-Ed25519 permit with no default lifetime and a maximum of60 seconds, further
-bounded by approval/identity deadlines. Fully bound single-use admission and
-atomic attempt/outbox are proposed, NOT implemented or qualified. No additional
-FR-008/009/010, SEC-004/005/006/010 or DATA-004 completion is claimed.
+records the human-approved admission trust contract and separate closed
+`JdbcGitHubOperationPermitIssuer` slice. Profile v3 pins exact Ed25519 key
+material/issuer/key ID/audience/positive lifetime before evaluation; legacy
+v1/v2 recipes remain exact. Fresh exact-owner operations.execute permission,
+actual loaded approved state and all original deadline minima are required.
+The read transaction/cleanup finish before signing; no DML or consumption occurs.
+`BusinessOperationAuthorityProfileTest`, `OperationPermitCodecTest` and new
+three-engine `OperationReviewContract` cases cover settings/format/key/type
+substitutions, closed actual-history anchors, original evaluator expiry,
+real wait expiry, private-key use after cleanup, operator changes and read
+uncertainty. See the [qualified boundary and retained failures](../runbooks/closed-operation-permit-issuance.md).
+This is partial FR-007/008/009/012, SEC-001/002/003/004/005/006/009/010/012,
+REL-001/002/004/005, DATA-001/004 and OPS-002/004 evidence only. Fully bound
+single-use admission, atomic attempt/outbox, public endpoint and target remain
+unimplemented. No whole-ID completion is claimed.
 
 ## Explicit durable-review rules — input/settings prerequisite
 

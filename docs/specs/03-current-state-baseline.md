@@ -20,14 +20,20 @@ Default V2 installation and V1-V3 migration bytes remain unchanged. See the
 [candidate qualification record](../runbooks/durable-operation-review.md).
 
 This library is not wired into an authenticated endpoint or simulator. It does
-not provide permit/admission, attempt/outbox, target dispatch, live IdP/AWS/RDS
+not itself provide permit/admission, attempt/outbox, target dispatch, live IdP/AWS/RDS
 qualification, complete operator metadata visibility or restore/sender fencing.
 Existing simulator flows below remain separately qualified compositions.
 
 The human-approved next [permit/admission contract](../architecture/0087-fully-bound-operation-permit-and-admission.md)
 requires fresh owner execute permission and separately versioned, explicitly
-configured Ed25519 authority capped at60 seconds and existing approval/identity
-deadlines. This is a proposed implementation contract, not a new running path.
+configured Ed25519 authority capped at 60 seconds and all original approval/
+identity deadlines. The separate opt-in `JdbcGitHubOperationPermitIssuer` now
+loads actual approved V4 history under current control/head locks, captures
+the exact approved state/settings/review/target bindings, then rolls back and
+closes before signing. Profile v3 pins explicit settings before evaluation;
+legacy v1/v2 recipes and V4 SQL stay unchanged. See [issuance scope and tests](../runbooks/closed-operation-permit-issuance.md).
+This is not wired to a route or service. Signature validity is not consumption:
+single-use admission, durable attempt/outbox and execution remain unimplemented.
 
 ## Approval review export and browser download
 

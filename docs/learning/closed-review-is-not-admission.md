@@ -50,7 +50,15 @@ It cannot reuse the legacy permit as though it contained the full operation,
 review, target and current-generation binding. Signing does not atomically
 consume single use; admission must commit that consumption, attempt, lifecycle
 fact and outbox together, without signing or networking under database locks.
-These are approved design constraints, not an implemented admission service.
+The separate [closed JDBC issuer](../runbooks/closed-operation-permit-issuance.md)
+now loads actual approved state and exact original review anchors, with every
+approved identity deadline capped, before ending its read transaction and
+connection and then signing. Its profile v3 pins the actual public key and all
+explicit settings before evaluation, without promoting old approvals. Even this
+real signature is not atomic consumption. Multiple issuances create no durable
+attempt, and a delayed signature can already be expired when returned. Admission
+must still independently recheck fresh authority and consume one use with the
+attempt/fact/head/outbox transaction. That service remains unimplemented.
 
 V4 also illustrates why migration detection cannot trust an empty metadata view:
 an old MariaDB runtime may not see a new table it cannot SELECT. Its old writer

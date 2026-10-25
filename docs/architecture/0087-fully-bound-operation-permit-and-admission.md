@@ -1,8 +1,10 @@
 # ADR0087: fully bound operation permit and atomic admission
 
-Status: proposed implementation contract. The human approved the strict identity,
-signature and lifetime choices on 25 October 2026. No operation permit, admission,
-attempt/outbox or dispatch implementation is claimed by this decision record.
+Status: partially implemented, opt-in closed JDBC permit issuance only. The human
+approved the strict identity, signature and lifetime choices on 25 October 2026.
+Atomic admission, durable attempts/outbox and dispatch remain proposed and
+unimplemented. The [issuance qualification](../runbooks/closed-operation-permit-issuance.md)
+is distinct from earlier review checkpoints and exact-head hosted checks.
 
 Requirements: FR-007/008/009/010/012; SEC-001/002/003/004/005/006/009/010/012;
 REL-001/002/004/005; DATA-001/004; OPS-002/004. Requirement-wide completion is not
@@ -32,7 +34,24 @@ than the minimum of those deadlines, the original approval deadline and issue
 time plus the configured lifetime. Fresh exact-owner authentication at use
 cannot extend the already signed expiry. A same-credential requirement or live
 reviewer re-enrollment is not part of the approved contract. These choices are
-settled; the permit/admission implementation remains pending.
+settled; the admission implementation remains pending.
+
+## Closed issuance checkpoint
+
+`JdbcGitHubOperationPermitIssuer` loads actual approved V4 history in one
+control-first/head-next READ COMMITTED observation, repeats current pins and
+fresh exact-owner execute permission, captures every approved deadline, then
+ends the read transaction and connection before signing. No caller-approved
+JSON, claims, clock or signer callback is accepted. Rollback/cleanup failure
+returns no signed value. Signing delay never renews issue/expiry time.
+
+Explicit profile v3 adds admission settings to the existing authority profile
+before evaluation, preserving legacy v1/v2 recipes and current V4 journal/SQL.
+The new closed canonical JWS vocabulary is internal to this opt-in library and
+separate from legacy execution permits. Its bounded strict decoder is package
+internal and returns private checked construction, not public authority.
+Repeated issuance consumes nothing and can return different permit/attempt IDs.
+No public admission method, attempt/outbox, target or default runtime is enabled.
 
 ## Versioned binding and issuance boundary
 
@@ -51,7 +70,8 @@ schema1/schema2 action-and-approval profile. Its exact closed claims must bind:
 - Single-use permit and attempt identities, exact issue/expiry instants and
   `maxUses=1`.
 
-Names and wire bytes remain to be implemented with independent golden vectors.
+The internal names/wire recipe have literal-header and independent JCA signature
+checks; public contract artifacts and admission remain separate.
 The frozen operation and canonical JSON contracts are not rewritten. The strict
 GitHub digest is reused rather than copied; it legitimately changes when the
 snapshot advances from approved to claimed. Captured claims stay anchored to the
@@ -67,8 +87,9 @@ and never enter stored evidence or diagnostics.
 
 Signing configuration and lifetime must participate in an explicit versioned
 operator profile before use. Adding these settings cannot silently promote a
-legacy review profile or replace same-generation authority. Exact final profile
-and key-rotation behavior need source review and tests before runtime use. Pin
+legacy review profile or replace same-generation authority. Profile v3 and key
+material/settings changes have scoped source/tests; deployed key-rotation
+behavior still needs separate qualification. Pin
 the actual public-key fingerprint as well as key ID; a reused key label is not
 unchanged key material. New admission settings must already be present when the
 operation is evaluated. Old approvals remain readable but ineligible; obtain a

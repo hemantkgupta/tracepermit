@@ -31,23 +31,34 @@ public final class BusinessOperationAuthorityProfile {
   private final String resourceBindingHash;
   private final String fingerprint;
   private final BusinessOperationReviewSettings reviewSettings;
+  private final BusinessOperationAdmissionSettings admissionSettings;
 
   public BusinessOperationAuthorityProfile(BusinessOperationScope scope, String adapterId,
       long recoveryGeneration, JsonNode operatorPolicy, String artifactDigestsHash,
       String resourceBindingHash) {
-    this(scope, adapterId, recoveryGeneration, operatorPolicy, artifactDigestsHash, resourceBindingHash, null, false);
+    this(scope, adapterId, recoveryGeneration, operatorPolicy, artifactDigestsHash, resourceBindingHash, null, null, false);
   }
 
   /** V2 pins explicit review settings. Null is refused; the six-argument v1 remains legacy-only. */
   public BusinessOperationAuthorityProfile(BusinessOperationScope scope, String adapterId,
       long recoveryGeneration, JsonNode operatorPolicy, String artifactDigestsHash,
       String resourceBindingHash, BusinessOperationReviewSettings reviewSettings) {
-    this(scope, adapterId, recoveryGeneration, operatorPolicy, artifactDigestsHash, resourceBindingHash, reviewSettings, true);
+    this(scope, adapterId, recoveryGeneration, operatorPolicy, artifactDigestsHash, resourceBindingHash, reviewSettings, null, true);
+  }
+
+  /** V3 pins admission settings before evaluation; legacy v1/v2 recipes remain byte-identical. */
+  public BusinessOperationAuthorityProfile(BusinessOperationScope scope, String adapterId,
+      long recoveryGeneration, JsonNode operatorPolicy, String artifactDigestsHash,
+      String resourceBindingHash, BusinessOperationReviewSettings reviewSettings,
+      BusinessOperationAdmissionSettings admissionSettings) {
+    this(scope, adapterId, recoveryGeneration, operatorPolicy, artifactDigestsHash, resourceBindingHash,
+        reviewSettings, requireAdmissionSettings(admissionSettings), true);
   }
 
   private BusinessOperationAuthorityProfile(BusinessOperationScope scope, String adapterId,
       long recoveryGeneration, JsonNode operatorPolicy, String artifactDigestsHash,
-      String resourceBindingHash, BusinessOperationReviewSettings reviewSettings, boolean explicitSettings) {
+      String resourceBindingHash, BusinessOperationReviewSettings reviewSettings,
+      BusinessOperationAdmissionSettings admissionSettings, boolean explicitSettings) {
     try {
       if (scope == null || adapterId == null
           || !adapterId.matches("[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
@@ -68,8 +79,10 @@ public final class BusinessOperationAuthorityProfile {
       this.artifactDigestsHash = artifactDigestsHash;
       this.resourceBindingHash = resourceBindingHash;
       this.reviewSettings = reviewSettings;
+      this.admissionSettings = admissionSettings;
       var pins = JsonSupport.MAPPER.createObjectNode();
-      pins.put("profile", explicitSettings ? "tracepermit-operation-review-v2" : "tracepermit-operation-review-v1");
+      pins.put("profile", admissionSettings != null ? "tracepermit-operation-authority-v3"
+          : explicitSettings ? "tracepermit-operation-review-v2" : "tracepermit-operation-review-v1");
       pins.put("scopeHash", scope.fingerprint());
       pins.put("adapterId", adapterId);
       pins.put("recoveryGeneration", recoveryGeneration);
@@ -77,6 +90,7 @@ public final class BusinessOperationAuthorityProfile {
       pins.put("artifactDigestsHash", artifactDigestsHash);
       pins.put("resourceBindingHash", resourceBindingHash);
       if (explicitSettings) pins.set("reviewSettings", reviewSettings.pins());
+      if (admissionSettings != null) pins.set("admissionSettings", admissionSettings.pins());
       this.fingerprint = CanonicalJson.sha256(pins);
     } catch (RuntimeException failure) {
       // Discard validator/canonicalizer messages: operator JSON can contain private values.
@@ -100,6 +114,16 @@ public final class BusinessOperationAuthorityProfile {
   public BusinessOperationReviewSettings reviewSettings() {
     if (reviewSettings == null) throw error(OPERATION_REVIEW_SETTINGS_REQUIRED);
     return reviewSettings;
+  }
+
+  public BusinessOperationAdmissionSettings admissionSettings() {
+    if (admissionSettings == null) throw error(OPERATION_ADMISSION_SETTINGS_REQUIRED);
+    return admissionSettings;
+  }
+
+  private static BusinessOperationAdmissionSettings requireAdmissionSettings(BusinessOperationAdmissionSettings settings) {
+    if (settings == null) throw error(OPERATION_PROFILE_INVALID);
+    return settings;
   }
 
   /**
