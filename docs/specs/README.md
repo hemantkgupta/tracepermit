@@ -115,3 +115,10 @@ Wave 2 review adds strict assurance/cleanup/transport regressions and a test-onl
 concrete-provider/adapter composition fixture under ADR0076. Existing permit,
 allowlist, target preflight and unknown-outcome semantics are exercised without
 composing a shipped launcher or durable operation executor.
+
+[ADR0081](../architecture/0081-github-pilot-operator-diagnostics.md) adds a separate
+Java21 operator diagnostic bundle: strict private offline input validation and
+explicit existing read-only target preflight. The
+[setup runbook](../runbooks/pilot-operator-distribution.md) records source-free
+packaging and synthetic/POSIX qualification limits. No admission, approval,
+operation permit, execution or reconciliation authority is introduced.

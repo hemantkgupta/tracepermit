@@ -321,3 +321,21 @@ test-only `SyntheticInstallationCredentialFixture` to exercise the concrete
 provider against unchanged permit, allowlist, target preflight and unknown-outcome
 guards. All target observations are fake loopback responses. This does not
 certify durable authority, launcher wiring or a live provider/target.
+
+## Private GitHub pilot operator diagnostics
+
+SEC-001/002/003/007/012/015, REL-001/005/009 and OPS-002/004 apply to
+[ADR0081](../architecture/0081-github-pilot-operator-diagnostics.md). Acceptance
+requires strict private bounded UTF8/JSON/key validation, valid offline checks
+with an active DNS-denial control and zero provider construction, generated-key
+concrete-provider plus unchanged exact four-GET preflight, exact assurance/
+repository/SHA negatives, no target POST/retry, fixed redacted errors, cleanup/
+expiry refusal and finite worker/host process deadlines. Source-free installed
+bytes must pass spaces/empty-PATH and dependency/provenance/checksum inventory
+checks. The additive packaging CI step retains all prior packaging checks.
+
+The intended macOS operator profile remains host-validation pending; current
+Linux POSIX synthetic tests do not certify a Mac, live key/provider/target,
+current policy, durable authority, execution, reconciliation or absence after
+an interrupted/lost response. Preserve failure, skip and cache evidence in the
+exact-head handoff.
