@@ -23,12 +23,21 @@ older restored database. Its fingerprint is not a signature or current permit.
 The review-only profile rejects `allow`/`sanitize`, so a permissive policy result
 cannot accidentally bypass human review in this unfinished composition.
 
-The [approved next design](../architecture/0084-durable-review-membership-and-lifetime.md)
-also requires exact independently verified group membership, a positive explicit
+The [explicit settings boundary](../architecture/0084-durable-review-membership-and-lifetime.md)
+requires exact independently verified group membership, a positive explicit
 approval lifetime of at most five minutes with no default, and separate fresh
-evaluation permission. All settings need current policy/generation pins. These
-rules are not silently implemented by the existing role/scope constructor, and
-their approval does not enable live provider calls or a durable decision route.
+evaluation permission. The new profile v2 pins group, enrollment provenance and
+exact lifetime to current policy/generation. A one-nanosecond change is a different
+profile. Its group gate checks exact identity and freshness; evaluation requires
+its own permission, not cancellation permission. No membership constructor
+verifies a token, and no profile hash makes an adapter-supplied fact trustworthy.
+
+The legacy profile fingerprint and identity-only review method remain compatible,
+but the new gates refuse missing explicit settings. This does not yet create
+pending approval state or a durable decision route: the future single transaction
+must store the exact pending group/deadline, lock/recheck all current facts and
+append closed journal facts atomically. See the
+[qualification runbook](../runbooks/operation-review-settings.md).
 
 An exact content hash also needs exact input bytes. Replacement UTF-8 encoding
 can map malformed Unicode and a valid question mark to the same bytes before

@@ -63,11 +63,31 @@ public final class BusinessOperationReview {
     return decision;
   }
 
-  /** Fresh writer time after locks, not request time. Equality is expired. */
+  /** Legacy identity-only check, NOT complete group authorization or a durable decision gate. */
   public void requireAuthorizedAt(Instant storeTime) {
     requireIdentity();
     if (storeTime == null || !reviewer.authorityExpiresAt().isAfter(storeTime)) {
       throw error(OPERATION_AUTHENTICATION_EXPIRED);
+    }
+  }
+
+  /** Full approved group input check, repeated using writer time AFTER all authority locks. */
+  public void requireGroupAuthorizedAt(BusinessOperationAuthorityProfile profile,
+      TrustedOperationGroupMembership membership, Instant storeTime) {
+    requireAuthorizedAt(storeTime);
+    if (profile == null || !scope.equals(profile.scope())
+        || expected.recoveryGeneration() != profile.recoveryGeneration()) throw error(OPERATION_PROFILE_MISMATCH);
+    var settings = profile.reviewSettings();
+    if (membership == null || !scope.tenantId().equals(membership.tenantId())
+        || !scope.workspaceId().equals(membership.workspaceId())
+        || !reviewer.identity().reviewerSubjectId().equals(membership.principalId())
+        || !settings.reviewerGroupId().equals(membership.groupId())
+        || !settings.membershipSourceFingerprint().equals(membership.sourceFingerprint())
+        || membership.expiresAt().isAfter(reviewer.authorityExpiresAt())) {
+      throw error(OPERATION_GROUP_MEMBERSHIP_INVALID);
+    }
+    if (membership.observedAt().isAfter(storeTime) || !membership.expiresAt().isAfter(storeTime)) {
+      throw error(OPERATION_GROUP_MEMBERSHIP_EXPIRED);
     }
   }
 

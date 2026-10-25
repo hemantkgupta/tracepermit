@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.*;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.tracepermit.application.BusinessOperationAuthorityProfile;
+import io.tracepermit.application.BusinessOperationReviewSettings;
 import io.tracepermit.application.BusinessOperationScope;
 import io.tracepermit.application.BusinessOperationStorageException;
 import io.tracepermit.application.BusinessOperationTransitionPlanner;
@@ -648,6 +649,40 @@ abstract class OperationAuthorityControlContract {
     return (ObjectNode) BusinessOperationValidator.validate(operation);
   }
 
+  @Test
+  void explicitReviewSettingsAreDurablyPinnedAndReplacementNeedsNewGeneration() throws Exception {
+    var settings = new BusinessOperationReviewSettings("synthetic-reviewers", HASH, java.time.Duration.ofMinutes(1));
+    var original = profile(SCOPE, 1, "original", settings);
+    OperationAuthorityAdministration.stageNew(source, original);
+    OperationAuthorityAdministration.activateStaged(source, original);
+    try (Connection connection = writer(runtime)) {
+      OperationAuthorityControl.requireCurrent(connection, original);
+      connection.rollback();
+    }
+    for (var changed : java.util.List.of(
+        new BusinessOperationReviewSettings("other-reviewers", HASH, settings.approvalLifetime()),
+        new BusinessOperationReviewSettings(settings.reviewerGroupId(), "sha256:" + "b".repeat(64), settings.approvalLifetime()),
+        new BusinessOperationReviewSettings(settings.reviewerGroupId(), HASH, settings.approvalLifetime().plusNanos(1)))) {
+      var wrong = profile(SCOPE, 1, "original", changed);
+      assertThat(wrong.fingerprint()).isNotEqualTo(original.fingerprint());
+      assertGuard(wrong, OPERATION_PROFILE_MISMATCH);
+      assertCode(() -> OperationAuthorityAdministration.stageReplacement(source, original, wrong), OPERATION_COMMAND_INVALID);
+    }
+    assertGuard(profile(SCOPE, 1, "original"), OPERATION_PROFILE_MISMATCH);
+    var next = profile(SCOPE, 2, "original", new BusinessOperationReviewSettings(
+        "other-reviewers", HASH, java.time.Duration.ofMinutes(2)));
+    OperationAuthorityAdministration.stageReplacement(source, original, next);
+    assertGuard(original, OPERATION_PROFILE_MISMATCH);
+    assertGuard(next, OPERATION_AUTHORITY_NOT_READY); // Explicit replacement is inactive.
+    OperationAuthorityAdministration.activateStaged(source, next);
+    try (Connection connection = writer(runtime)) {
+      OperationAuthorityControl.requireCurrent(connection, next);
+      connection.rollback();
+    }
+    for (String table : new String[] {"tp_business_operations", "tp_business_operation_facts",
+        "tp_operation_lifecycle_heads", "tp_operation_lifecycle_facts"}) assertThat(count(table)).isZero();
+  }
+
   private BusinessOperationAuthorityProfile ready() {
     var profile = profile(SCOPE, 1, "original");
     OperationAuthorityAdministration.stageNew(source, profile);
@@ -696,6 +731,11 @@ abstract class OperationAuthorityControlContract {
   }
 
   private static BusinessOperationAuthorityProfile profile(BusinessOperationScope scope, long generation, String label) {
+    return profile(scope, generation, label, null);
+  }
+
+  private static BusinessOperationAuthorityProfile profile(BusinessOperationScope scope, long generation, String label,
+      BusinessOperationReviewSettings settings) {
     try {
       ObjectNode policy = (ObjectNode) JsonSupport.MAPPER.readTree("""
           {"schemaVersion":"1.0","id":"synthetic-policy","version":1,"name":"Synthetic",
@@ -705,7 +745,8 @@ abstract class OperationAuthorityControlContract {
             "decision":{"outcome":"require_approval","reasonCode":"SYNTHETIC_REVIEW","approvalGroup":"synthetic-reviewers"}}]}
           """);
       policy.put("description", label);
-      return new BusinessOperationAuthorityProfile(scope, "synthetic-adapter", generation, policy, HASH, HASH);
+      return settings == null ? new BusinessOperationAuthorityProfile(scope, "synthetic-adapter", generation, policy, HASH, HASH)
+          : new BusinessOperationAuthorityProfile(scope, "synthetic-adapter", generation, policy, HASH, HASH, settings);
     } catch (java.io.IOException failure) {
       throw new AssertionError(failure);
     }

@@ -1,8 +1,9 @@
 # ADR0084: explicit durable-review membership and lifetime
 
-Status: human-approved design; the durable evaluation/review transaction is
-**not implemented** by this decision. Existing review constructors and V3 control
-lookups remain data/prerequisites, not committed approval or admission.
+Status: human-approved boundary; input/settings prerequisites implemented. The
+durable evaluation/review transaction is **not implemented**. Review constructors,
+group checks and V3 control lookups remain prerequisites, not committed approval
+or admission.
 
 Requirements: FR-003/007/008/012; SEC-001/002/003/005/009/012;
 REL-001/002/004/005; OPS-002/004. No whole-requirement completion is claimed.
@@ -32,6 +33,41 @@ to independently derived provenance/configuration and a bounded expiry. Any
 internal Java carrier is trusted-adapter data, not token verification. Never
 deserialize authority facts from a public body, or perform IdP/network work
 under database locks. No instantaneous membership-revocation claim follows.
+
+## Implemented input/settings checkpoint
+
+`BusinessOperationReviewSettings` requires exact group and enrollment-source
+fingerprint plus a positive explicit lifetime through five minutes. Seconds and
+nanoseconds are both pinned; there is no rounding, fallback or default. Its
+deadline helper accepts only a supplied writer instant, never a caller clock.
+The future transaction owner must obtain that instant after all authority locks.
+
+The explicit seven-argument `BusinessOperationAuthorityProfile` uses a versioned
+v2 fingerprint containing all review settings. The six-argument v1 hash recipe
+remains unchanged for existing unwired contracts. The new gates reject v1
+profiles instead of implicitly upgrading them. A v2 review-only policy must
+select the configured exact group for `require_approval`. Existing V3 control
+storage binds these settings via the profile hash: changed group, provenance or
+even one lifetime nanosecond cannot match current pins. Replacing settings needs
+a newer generation and explicit activation, not a migration or broader grant.
+
+`BusinessOperationReview.requireGroupAuthorizedAt` repeats the existing
+independent-human role/scope/tenant/workspace/non-self checks and checks exact
+principal/group/provenance and membership freshness. Membership cannot extend
+authentication expiry; future observations and equality with expiry reject.
+`TrustedOperationGroupMembership` is an internal adapter fact carrier, not token
+verification or a public body schema. The old identity-only method remains for
+compatibility and is explicitly insufficient for the future durable decision.
+
+`BusinessOperationEvaluation` separately requires `operation_requester` and
+`operations.evaluate`, exact owner scope, explicit settings and fresh
+authentication. Withdrawal permission is insufficient. Expected state is an
+optimistic identity, not proof that the operation is still evaluating. Neither
+new command writes a fact, changes a head or enables an endpoint.
+
+See the [settings qualification runbook](../runbooks/operation-review-settings.md).
+The current six-field review actor, withdrawal-only journal reader, database
+migrations, runtime grants and legacy simulator composition are unchanged.
 
 ## Composition prerequisites
 

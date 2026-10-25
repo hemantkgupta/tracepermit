@@ -3,7 +3,62 @@
 GitHub is authoritative. Credentials, private customer/provider planning and local
 operator values remain outside Git. Historical receipts are not fresh results.
 
-## Physical-schema repair — current Mac checkpoint
+## Explicit review input/settings — current Mac checkpoint
+
+Mac retains sole PR108 writer ownership. This slice implements the approved
+[ADR0084](docs/architecture/0084-durable-review-membership-and-lifetime.md)
+input/settings prerequisites: explicit exact group/enrollment provenance and
+positive approval lifetime through five minutes, all pinned by a new v2 profile
+recipe; exact fresh group checks for both review decisions; and separate fresh
+evaluation permission for the exact owner/workspace. Legacy v1 hashes, six-field
+review actors, migration bytes, grants, runtime wiring and simulator behavior
+remain unchanged. The new gates refuse missing explicit settings rather than
+invent a default. Internal carriers are trusted-adapter data, not verified tokens.
+
+Focused application qualification first used an incorrectly selected JDK through
+a nested login shell:26 cases passed but the unchanged build gate failed, so the
+command is not a qualifying pass. Explicit selection of the installed JDK21 and
+strict setup passed26 fresh cases/11 executed tasks. The first new three-engine
+test expected the wrong error for mismatching pins and failed all3 cases; only
+the new expectations changed to the existing `OPERATION_PROFILE_MISMATCH`.
+Matching inactive pins still require `OPERATION_AUTHORITY_NOT_READY`; all3
+corrected engine cases passed freshly in22s/14 executed tasks.
+
+Temporarily omitting the v2 settings pins and exact membership-source check made
+both selected distinguishing cases fail. Both production files were restored
+byte-identically before final verification. The restored26 selected application
+cases passed freshly in7s/11 executed tasks. The complete fresh/cache-disabled
+operation suite passed313 cases/8 suites, zero failures/errors/skips,14 tasks
+executed in2m29. Full `pnpm check` passed124 React and1919 recorded Java cases/
+152 suites, zero failures/errors and1 existing absent-archive/native-PTY skip.
+Gradle3m7:10executed/55up-to-date, reusing the fresh operation suite and other
+unchanged results; not all tests fresh. Coverage94.5760% line/78.9952% branch
+passed unchanged94/75 thresholds. Format,1149 links/3 helpers,13 flows/drift and
+diff checks passed. Exact-final-head hosted checks remain pending; the previous
+d85459f hosted checks do not cover these new files.
+
+The actual immutable pending-binding/deadline writer, closed decision-journal
+vocabulary/reader, strict loaded target join, and single durable evaluation/review
+transaction remain unimplemented. Separate fully bound permit, atomic admission,
+attempt/evidence/outbox and synthetic dispatch remain later gates. No endpoint,
+network/provider enrollment verification, credential minting or target call is
+enabled. See the [qualification runbook](docs/runbooks/operation-review-settings.md).
+
+The human has launched the independent Mac Air PR113 repair qualification on its
+own reserved branch; this Mac has no verified Air thread/host or writer takeover.
+Cloud2R's tests/docs-only [PR117](https://github.com/hemantkgupta/tracepermit/pull/117)
+is clean/released at8c020c6aaa134e7f2d0a9d9a94b448f7d73e1714 and all8 exact-head
+hosted checks passed. Root read all five new files and published a scoped static
+[intake](https://github.com/hemantkgupta/tracepermit/pull/117#issuecomment-6395555849),
+not independent Mac execution. Producer's12 focused metadata cases passed; its
+local full check failed3 existing endpoint cleanup cases and retained1 existing
+PTY skip. Those failures are not waived by hosted green checks. Original Cloud2
+PR115's four unpushed repair files/session/log remain preserved and reserved.
+Cloud1's interrupted PR108 audit remains incomplete: its already-completed310-case
+module pass does not turn the stopped review into a no-findings certification.
+The stopped audit is not being retried or reassigned.
+
+## Physical-schema repair — preceding pushed checkpoint
 
 Mac retains sole PR108 writer ownership. The physical-readiness follow-up to
 Cloud2's static review now checks actual required structure in addition to

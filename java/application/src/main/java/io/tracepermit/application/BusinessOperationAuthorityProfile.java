@@ -30,16 +30,30 @@ public final class BusinessOperationAuthorityProfile {
   private final String artifactDigestsHash;
   private final String resourceBindingHash;
   private final String fingerprint;
+  private final BusinessOperationReviewSettings reviewSettings;
 
   public BusinessOperationAuthorityProfile(BusinessOperationScope scope, String adapterId,
       long recoveryGeneration, JsonNode operatorPolicy, String artifactDigestsHash,
       String resourceBindingHash) {
+    this(scope, adapterId, recoveryGeneration, operatorPolicy, artifactDigestsHash, resourceBindingHash, null, false);
+  }
+
+  /** V2 pins explicit review settings. Null is refused; the six-argument v1 remains legacy-only. */
+  public BusinessOperationAuthorityProfile(BusinessOperationScope scope, String adapterId,
+      long recoveryGeneration, JsonNode operatorPolicy, String artifactDigestsHash,
+      String resourceBindingHash, BusinessOperationReviewSettings reviewSettings) {
+    this(scope, adapterId, recoveryGeneration, operatorPolicy, artifactDigestsHash, resourceBindingHash, reviewSettings, true);
+  }
+
+  private BusinessOperationAuthorityProfile(BusinessOperationScope scope, String adapterId,
+      long recoveryGeneration, JsonNode operatorPolicy, String artifactDigestsHash,
+      String resourceBindingHash, BusinessOperationReviewSettings reviewSettings, boolean explicitSettings) {
     try {
       if (scope == null || adapterId == null
           || !adapterId.matches("[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
           || recoveryGeneration < 1 || recoveryGeneration > MAX_SAFE_INTEGER
           || !hash(artifactDigestsHash) || !hash(resourceBindingHash) || operatorPolicy == null
-          || canonicalBytes(operatorPolicy) > 65_536) {
+          || canonicalBytes(operatorPolicy) > 65_536 || explicitSettings && reviewSettings == null) {
         throw error(OPERATION_PROFILE_INVALID);
       }
       this.policy = PolicyValidator.validate(operatorPolicy).deepCopy();
@@ -53,14 +67,16 @@ public final class BusinessOperationAuthorityProfile {
       this.policyHash = CanonicalJson.sha256(this.policy);
       this.artifactDigestsHash = artifactDigestsHash;
       this.resourceBindingHash = resourceBindingHash;
+      this.reviewSettings = reviewSettings;
       var pins = JsonSupport.MAPPER.createObjectNode();
-      pins.put("profile", "tracepermit-operation-review-v1");
+      pins.put("profile", explicitSettings ? "tracepermit-operation-review-v2" : "tracepermit-operation-review-v1");
       pins.put("scopeHash", scope.fingerprint());
       pins.put("adapterId", adapterId);
       pins.put("recoveryGeneration", recoveryGeneration);
       pins.put("policyHash", policyHash);
       pins.put("artifactDigestsHash", artifactDigestsHash);
       pins.put("resourceBindingHash", resourceBindingHash);
+      if (explicitSettings) pins.set("reviewSettings", reviewSettings.pins());
       this.fingerprint = CanonicalJson.sha256(pins);
     } catch (RuntimeException failure) {
       // Discard validator/canonicalizer messages: operator JSON can contain private values.
@@ -78,6 +94,12 @@ public final class BusinessOperationAuthorityProfile {
 
   public long recoveryGeneration() {
     return recoveryGeneration;
+  }
+
+  /** Required by the new closed evaluation/group gates; no implicit upgrade or lifetime default. */
+  public BusinessOperationReviewSettings reviewSettings() {
+    if (reviewSettings == null) throw error(OPERATION_REVIEW_SETTINGS_REQUIRED);
+    return reviewSettings;
   }
 
   /**
@@ -109,6 +131,10 @@ public final class BusinessOperationAuthorityProfile {
     PolicyDecision decision = new PolicyEvaluator().evaluate(operation.path("canonicalAction"), policy).decision();
     if (!"block".equals(decision.outcome()) && !"require_approval".equals(decision.outcome())) {
       throw error(OPERATION_POLICY_OUTCOME_UNSUPPORTED);
+    }
+    if (reviewSettings != null && "require_approval".equals(decision.outcome())
+        && !reviewSettings.reviewerGroupId().equals(decision.approvalGroup())) {
+      throw error(OPERATION_PROFILE_MISMATCH);
     }
     return decision;
   }

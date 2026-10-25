@@ -1,15 +1,26 @@
 # Requirements traceability matrix
 
-## Explicit durable-review rules — approved design, not implementation
+## Explicit durable-review rules — input/settings prerequisite
 
 [ADR0084](../architecture/0084-durable-review-membership-and-lifetime.md)
 records human-approved exact independent group enrollment, an explicit positive
 approval lifetime capped at five minutes with no default, and separate fresh
-evaluation authority. These settings require content/current-generation pins.
-Missing/expired facts fail closed. No durable reviewer transaction, IdP/provider
-integration, admission or whole-requirement completion is claimed. This is
-design traceability for FR-003/007/008/012, SEC-001/002/003/005/009/012,
-REL-001/002/004/005 and OPS-002/004 only.
+evaluation authority. `BusinessOperationReviewSettings` and the explicit v2
+authority profile bind every settings field; the legacy v1 recipe stays exact.
+The new group and evaluation gates require matching scope/generation, fresh
+authentication and exact independently derived group/provenance. A cancellation
+scope is not evaluation authority. These are internal inputs, not verified body
+claims or proof that a transaction committed.
+
+`BusinessOperationReviewSettingsTest` covers exact pins, lifetime bounds, both
+review decisions, enrollment substitutions/time, separate evaluation permission
+and v1 refusal. The three-engine control contract verifies settings substitutions
+cannot match current pins, replacements require a newer generation and explicit
+activation, and these controls produce no operation/journal effects. See the
+[qualification runbook](../runbooks/operation-review-settings.md).
+No durable reviewer transaction, IdP/provider integration, admission or whole-ID
+completion is claimed for FR-003/007/008/012, SEC-001/002/003/005/009/012,
+REL-001/002/004/005 and OPS-002/004.
 
 ## Writer-locked operation policy/recovery controls — prerequisite only
 
