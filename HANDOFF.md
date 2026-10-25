@@ -23,6 +23,46 @@ changes. Durable transaction implementation and multi-engine qualification remai
 pending. Mac retains exclusive writer ownership of this draft branch; it is not
 released for another environment to edit.
 
+### Current repair and standing coordination
+
+The operator extended Cloud1/Cloud2 coordination until explicitly stopped. The
+Mac keeps this branch; every PR remains draft/unmerged and each new cloud slice
+has a separate branch. GitHub packets describe the
+[operator diagnostics lane](docs/planning/packets/wave3-cloud1-github-operator-diagnostics.md)
+and [loopback registration lane](docs/planning/packets/wave3-cloud2-loopback-registration-http.md).
+Gemini retains the separate [durable replay lane](docs/planning/packets/wave3-gemini-durable-workload-replay.md).
+The local recurring coordinator is not a guarantee of uninterrupted execution;
+it stops/escalates for missing authority, unsafe prerequisites or repeated
+no-progress failures rather than manufacturing work or retrying to green.
+
+Both preceding cloud reviews were consumed. Cloud1 independently passed174 real
+HTTP-ingress/JDBC-composition test cases across the three required engines on
+[PR111](https://github.com/hemantkgupta/tracepermit/pull/111), with no substantiated
+finding and no whole-product certification. Cloud2's
+[PR108 review](https://github.com/hemantkgupta/tracepermit/pull/108#issuecomment-6393630502)
+found one P2 malformed-Unicode policy/snapshot alias. The local regression first
+failed three of eleven profile cases. Strict UTF-8 encoding before hashing then
+passed17 profile/review cases with caches disabled, without altering frozen
+canonical-v1 behavior or valid-input hashes. The subsequent full `pnpm check`
+passed:124 React cases and1842 recorded Java cases across147 suites, zero
+failures/errors and one existing installed-archive/native-PTY skip. Gradle6m50:
+23 tasks executed and42 up-to-date, so these are not all fresh executions.
+Coverage94.48% line/78.56% branch, with unchanged thresholds. Exact-final-head
+hosted checks remain separate. Final documentation passed formatting,1123 links/
+three link-helper cases,13 flow/drift cases and `git diff --check`.
+
+The [database fixture repair](docs/runbooks/operation-lock-wait-expiry-qualification.md)
+is pushed at `6b86be959e9b649a995557929dbd510e4cce06a0`. It measures fresh writer
+time during the genuine lock wait; it does not widen expiry, concurrency or wait
+bounds and leaves production lifecycle code unchanged. All three engine cases
+failed when production time sampling was deliberately moved before the lock;
+after restoration the complete forced/cache-disabled operation suite passed245
+cases. The original broad failure below is retained. A fresh container clock and
+bounded writer-time observation did not establish current clock skew; the old
+Docker-info observation is not a reason to restart Docker. The original
+transient cause remains unproven. The later aggregate pass is a separate result,
+not erasure or relabeling of that first failed run.
+
 First contract checkpoint evidence:13 focused application tests passed. Removing
 only the independent-human and resource-binding guards made both selected
 negative-control cases fail; both guards were restored, and the application

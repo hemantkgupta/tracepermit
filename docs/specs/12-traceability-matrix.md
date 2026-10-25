@@ -14,6 +14,14 @@ negative controls, coherent rehashed substitutions, defensive copies and fixed
 cause/suppression-safe rejection. See [ADR0077](../architecture/0077-closed-operation-authority-contracts.md)
 and the [learning note](../learning/closed-review-is-not-admission.md).
 
+Independent review found a profile-local malformed-Unicode input alias before
+hashing, not a SHA-256 collision or execution bypass. Strict encoder validation
+now rejects lone surrogates before policy/snapshot hashing while retaining valid
+canonical-v1 bytes. Four regressions include parsed replacement aliases and valid
+supplementary/non-normalized Unicode; three failed before repair, then all17
+profile/review cases passed freshly. This strengthens SEC-003/012 and REL-001/004
+at this unwired boundary only; it is not durable authority qualification.
+
 These are unwired application contracts, **not** durable approval/admission,
 current database policy/recovery proof, verified provider enrollment, a permit,
 claim, target executor, outbox or new API. V2 storage/withdrawal and migration

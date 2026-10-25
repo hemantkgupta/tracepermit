@@ -42,6 +42,16 @@ operation is copied/revalidated and bounded to 256KiB before comparison. Policy
 is actually evaluated on the canonical action rather than trusting an existing
 `approved` label or a caller-constructed `PolicyDecision`.
 
+Strict UTF-8 encoding is required before content hashing and byte-size checks.
+Java's replacement encoding can collapse a lone UTF-16 surrogate to the same
+bytes as a valid question mark; hashing those bytes would not pin the distinct
+decision data exactly. Reject malformed policy strings as `OPERATION_PROFILE_INVALID`
+and malformed operation snapshots as `OPERATION_PROFILE_MISMATCH`, without
+retaining encoder diagnostics. Valid supplementary pairs remain accepted;
+normalization is not performed. Frozen canonical-v1 behavior and hashes of valid
+inputs are unchanged. This profile-local check is not a global canonical-reader
+repair or proof that caller-provided hashes carry authority.
+
 This first profile supports only `block` and `require_approval`; `allow` or
 `sanitize` is a fixed rejection, not automatic approval or action rewriting.
 Its result is decision data only. A future store must call its own trusted
@@ -90,8 +100,12 @@ identity/token/decision, defensive metadata and diagnostic suppression. It
 explicitly demonstrates that a fabricated expected token is still only data.
 `BusinessOperationAuthorityProfileTest` covers real policy rule/default outcomes,
 copied operator policy, coherent rehashed binding substitutions, unsupported
-outcomes, disabled/invalid/oversized configuration and fingerprints. All fixtures
-are synthetic; no provider, target or customer input is used.
+outcomes, disabled/invalid/oversized configuration and fingerprints. Four added
+regressions cover parsed lone-surrogate policy aliases, malformed strings in
+policy fields, malformed snapshot aliases and valid/non-normalized Unicode.
+Before the encoder repair, three of the eleven profile cases failed; afterward,
+all seventeen profile/review cases passed with caches disabled. All fixtures are
+synthetic; no provider, target or customer input is used.
 
 Passing these application tests is not a durable approval/admission test, provider
 qualification, RDS/replica/failover test or production-readiness claim. Runtime
@@ -108,3 +122,20 @@ requires diagnosis. This failure is retained, not relabeled by focused passes.
 A subsequent fresh networkless container-clock probe agreed with the Mac within
 one-second resolution: the earlier Docker-info observation is not proof of
 current database skew. No Docker restart is justified by that timestamp alone.
+
+The subsequent [test-only lock-wait fixture repair](../runbooks/operation-lock-wait-expiry-qualification.md)
+observes writer time after acquiring the holder lock and proves pre-expiry
+arrival/continued blocking. It keeps the original expiry window, margin and wait
+bounds. Moving production time sampling before lock acquisition made all three
+engine cases fail; restored, byte-identical production passed the forced,
+cache-disabled245-case operation suite. This removes the fixture's host-clock
+assumption, not a proven diagnosis of the original transient failure. The first
+broad failure remains part of the evidence; a focused pass does not replace a
+fresh aggregate gate.
+
+The subsequent full `pnpm check` passed with124 React cases and1842 recorded
+Java cases/147 suites, zero failures/errors and one existing installed-archive
+native-PTY skip. Gradle executed23 tasks and reused42 up-to-date tasks in6m50;
+this is not an all-fresh test claim. Aggregate coverage94.48% line/78.56% branch
+passed unchanged thresholds. Exact-final-head hosted checks and durable authority
+implementation remain separate outstanding gates.

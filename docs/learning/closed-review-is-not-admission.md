@@ -23,6 +23,12 @@ older restored database. Its fingerprint is not a signature or current permit.
 The review-only profile rejects `allow`/`sanitize`, so a permissive policy result
 cannot accidentally bypass human review in this unfinished composition.
 
+An exact content hash also needs exact input bytes. Replacement UTF-8 encoding
+can map malformed Unicode and a valid question mark to the same bytes before
+hashing; the review profile rejects malformed strings first. Valid Unicode is
+not normalized. This prevents an input alias, not a cryptographic hash collision,
+and does not turn a fingerprint into an authorization capability.
+
 The current command/profile classes have no database or target port. The
 [wave-two board](../planning/wave2-durable-authority-batch.md) names the remaining
 durability, admission and integration gates. Existing local simulator approval

@@ -9,6 +9,9 @@ import io.tracepermit.contracts.JsonSupport;
 import io.tracepermit.policy.PolicyDecision;
 import io.tracepermit.policy.PolicyEvaluator;
 import io.tracepermit.policy.PolicyValidator;
+import java.nio.CharBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 
 /**
@@ -36,12 +39,12 @@ public final class BusinessOperationAuthorityProfile {
           || !adapterId.matches("[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
           || recoveryGeneration < 1 || recoveryGeneration > MAX_SAFE_INTEGER
           || !hash(artifactDigestsHash) || !hash(resourceBindingHash) || operatorPolicy == null
-          || CanonicalJson.canonicalize(operatorPolicy).getBytes(StandardCharsets.UTF_8).length > 65_536) {
+          || canonicalBytes(operatorPolicy) > 65_536) {
         throw error(OPERATION_PROFILE_INVALID);
       }
       this.policy = PolicyValidator.validate(operatorPolicy).deepCopy();
       if (!this.policy.path("enabled").asBoolean()
-          || CanonicalJson.canonicalize(this.policy).getBytes(StandardCharsets.UTF_8).length > 65_536) {
+          || canonicalBytes(this.policy) > 65_536) {
         throw error(OPERATION_PROFILE_INVALID);
       }
       this.scope = scope;
@@ -78,7 +81,7 @@ public final class BusinessOperationAuthorityProfile {
     JsonNode operation;
     try {
       operation = BusinessOperationValidator.validate(snapshot);
-      if (CanonicalJson.canonicalize(operation).getBytes(StandardCharsets.UTF_8).length > 262_144) {
+      if (canonicalBytes(operation) > 262_144) {
         throw error(OPERATION_PROFILE_MISMATCH);
       }
     } catch (RuntimeException failure) {
@@ -100,6 +103,19 @@ public final class BusinessOperationAuthorityProfile {
       throw error(OPERATION_POLICY_OUTCOME_UNSUPPORTED);
     }
     return decision;
+  }
+
+  private static int canonicalBytes(JsonNode value) {
+    try {
+      // getBytes(UTF_8) silently replaces lone surrogates with '?'. Reject instead before
+      // forming exact content pins; leave frozen canonical v1 and all valid bytes unchanged.
+      return StandardCharsets.UTF_8.newEncoder()
+          .onMalformedInput(CodingErrorAction.REPORT)
+          .onUnmappableCharacter(CodingErrorAction.REPORT)
+          .encode(CharBuffer.wrap(CanonicalJson.canonicalize(value))).remaining();
+    } catch (CharacterCodingException rejected) {
+      throw error(OPERATION_PROFILE_INVALID);
+    }
   }
 
   private static boolean hash(String value) {

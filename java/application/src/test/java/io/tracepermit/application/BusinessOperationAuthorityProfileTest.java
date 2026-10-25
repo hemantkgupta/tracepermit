@@ -150,6 +150,86 @@ final class BusinessOperationAuthorityProfileTest {
     new BusinessOperationAuthorityProfile(SCOPE, "adapter", 9_007_199_254_740_991L, policy, HASH, HASH);
   }
 
+  @Test
+  void parsedLoneSurrogatePolicyCannotShareAContentPinWithDifferentDecisionData() throws Exception {
+    String lone = String.valueOf((char) 0xd800);
+    ObjectNode malformed = policy("require_approval");
+    ((ObjectNode) malformed.path("rules").get(0).path("match"))
+        .putArray("toolNames").add("github.pull_request.create" + lone);
+    ObjectNode ordinary = policy("require_approval");
+    ((ObjectNode) ordinary.path("rules").get(0).path("match"))
+        .putArray("toolNames").add("github.pull_request.create?");
+    ObjectNode parsed = parseEscapedSurrogate(malformed, lone);
+    assertThat(parsed).isNotEqualTo(ordinary);
+    // Preserve frozen canonical v1: reject this malformed accepted-input collision locally.
+    assertThat(CanonicalJson.sha256(parsed)).isEqualTo(CanonicalJson.sha256(ordinary));
+    ObjectNode operation = operation(ordinary);
+    ((ObjectNode) operation.path("canonicalAction").path("action"))
+        .put("toolName", "github.pull_request.create?");
+    rehashAction(operation);
+    BusinessOperationValidator.validate(operation);
+    assertThat(profile(ordinary, operation).evaluate(operation).outcome()).isEqualTo("require_approval");
+    assertCode(() -> profile(parsed, operation), OPERATION_PROFILE_INVALID);
+  }
+
+  @Test
+  void malformedUnicodeInAnyPolicyStringIsRejectedWithoutLossyReplacementOrDiagnostics() throws Exception {
+    for (String lone : List.of(String.valueOf((char) 0xd800), String.valueOf((char) 0xdfff))) {
+      for (String field : List.of("name", "description", "reasonCode", "approvalGroup", "toolName")) {
+        ObjectNode policy = policy("require_approval");
+        switch (field) {
+          case "reasonCode", "approvalGroup" ->
+              ((ObjectNode) policy.path("rules").get(0).path("decision")).put(field, "synthetic-" + lone);
+          case "toolName" -> ((ObjectNode) policy.path("rules").get(0).path("match"))
+              .putArray("toolNames").add("synthetic-" + lone);
+          default -> policy.put(field, "synthetic-" + lone);
+        }
+        ObjectNode parsed = parseEscapedSurrogate(policy, lone);
+        assertCode(() -> new BusinessOperationAuthorityProfile(SCOPE, "adapter", 1, parsed, HASH, HASH),
+            OPERATION_PROFILE_INVALID);
+      }
+    }
+  }
+
+  @Test
+  void malformedSnapshotStringsAreNotAcceptedThroughFrozenHashReplacement() throws Exception {
+    ObjectNode policy = policy("require_approval");
+    ObjectNode operation = operation(policy);
+    var profile = profile(policy, operation);
+    String lone = String.valueOf((char) 0xdc00);
+    ((ObjectNode) operation.path("canonicalAction").path("action").path("arguments"))
+        .put("title", "synthetic-" + lone);
+    ObjectNode parsed = parseEscapedSurrogate(operation, lone);
+    rehashAction(parsed);
+    BusinessOperationValidator.validate(parsed);
+    assertCode(() -> profile.evaluate(parsed), OPERATION_PROFILE_MISMATCH);
+  }
+
+  @Test
+  void validUnicodeAndSupplementaryPairsRemainExactWithoutNormalization() {
+    String supplemental = new String(Character.toChars(0x1f680));
+    ObjectNode first = policy("require_approval").put("description", "R\u00e9sum\u00e9 " + supplemental);
+    ObjectNode second = policy("require_approval").put("description", "Re\u0301sume\u0301 " + supplemental);
+    ObjectNode firstOperation = operation(first);
+    ObjectNode secondOperation = operation(second);
+    var a = profile(first, firstOperation);
+    var b = profile(second, secondOperation);
+    assertThat(a.evaluate(firstOperation).outcome()).isEqualTo("require_approval");
+    assertThat(b.evaluate(secondOperation).outcome()).isEqualTo("require_approval");
+    assertThat(a.fingerprint()).isNotEqualTo(b.fingerprint());
+  }
+
+  private static ObjectNode parseEscapedSurrogate(ObjectNode source, String lone) throws java.io.IOException {
+    String escape = "\\" + "u" + "%04x".formatted((int) lone.charAt(0));
+    return (ObjectNode) JsonSupport.MAPPER.readTree(source.toString().replace(lone, escape)
+        .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+  }
+
+  private static void rehashAction(ObjectNode operation) {
+    operation.put("canonicalActionHash", CanonicalJson.sha256(operation.path("canonicalAction")));
+    operation.put("semanticPayloadDigest", CanonicalJson.sha256(operation.path("canonicalAction").path("action")));
+  }
+
   private static BusinessOperationAuthorityProfile profile(JsonNode policy, JsonNode operation) {
     return new BusinessOperationAuthorityProfile(SCOPE, operation.path("adapterId").asText(), 1,
         policy, CanonicalJson.sha256(operation.path("artifactDigests")), operation.path("resourceBindingHash").asText());
