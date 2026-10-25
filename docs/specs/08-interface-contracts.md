@@ -3,6 +3,26 @@
 **Status:** Current interfaces plus target extensions  
 **Applies to:** MCP, internal HTTP, control plane, and signed artifacts
 
+## Durable execution-disabled AgentCore registration composition
+
+`DurableAgentCoreRegistration.create` in `agentcore-durable-registration` takes
+the concrete trusted verifier, enrollment, clock, two dedicated initialized JDBC
+datasources, explicit agreed replay capacity and finite DML budget. It constructs
+the unchanged JDBC replay/repository and ingress internally, validates only, and
+has no in-memory fallback or injectable repository/replay supplier. Datasource
+ownership remains with the caller. Initialization failures become fixed
+`DURABLE_REGISTRATION_NOT_READY` with no retained causes/suppressed diagnostics.
+
+`register` exposes the existing closed body and minimal execution-disabled
+receipt. Verified-token replay consumption commits before a separate operation
+registration transaction; a failed registration can leave the token spent.
+Replay uncertainty cannot reach registration. Operation commit uncertainty is
+`AGENTCORE_REGISTRATION_UNKNOWN`, even if independently observed committed.
+No automatic retry follows either. Explicit fresh verified identity may recover
+the original scoped-key registration metadata, never authority or target dispatch.
+Human token pairing remains refused. See [ADR0086](../architecture/0086-durable-agentcore-registration-composition.md)
+and the [qualification matrix](../runbooks/agentcore-durable-registration-qualification.md).
+
 ## 1. Contract rules
 
 - External data is untrusted until validated by its adapter.

@@ -1,5 +1,26 @@
 # Requirements traceability matrix
 
+## Durable execution-disabled AgentCore registration composition
+
+Requirements: FR-003/008/011/012; SEC-001/003/006/009/012; REL-001/002/004;
+OPS-002/004. Partial evidence only, with no whole-ID status promotion.
+
+`DurableAgentCoreRegistration` internally joins the concrete verifier/ingress,
+`JdbcWorkloadIdentityReplayStore` and `JdbcBusinessOperationRepository`, validating
+separate initialized stores without migration or in-memory fallback. Replay and
+registration commit separately; uncertainty never authorizes automatic retry.
+The minimal original-return receipt is always execution-disabled, not human
+delegation, approval, admission or a permit. `DurableRegistrationContract` runs
+35 equivalent cases on each exact PostgreSQL16.4/MariaDB11.4.13/MariaDB10.6.25
+profile: real signature/enrollment/body rejection, 32-way shared replay and
+request-key contention, genuine two-JVM restart and non-durable control,
+capacity/schema/permission refusal, partial-write rollback, committed-but-unknown
+acknowledgements, real lock/expiry waits, fixed diagnostics and resource cleanup.
+Datasource/network bounds, partial schema validation, live provider compatibility,
+revocation, restoration/failover fencing and all target authority remain separate.
+See [ADR0086](../architecture/0086-durable-agentcore-registration-composition.md)
+and the [commands/evidence/limits runbook](../runbooks/agentcore-durable-registration-qualification.md).
+
 ## Durable workload-identity replay store
 
 Requirements: FR-008/011; SEC-006; REL-001/004; OPS-004. No whole-ID status promotion.
