@@ -376,7 +376,7 @@ abstract class OperationReviewCrossProcessContract {
     JsonNode pending = evalResult.snapshot();
     var originalBinding = binding();
 
-    // Step 1: Operator quarantines control row
+    // Step 1: Operator quarantines control row using OperationAuthorityAdministration
     OperationAuthorityAdministration.quarantine(adminSource, profile);
 
     // JVM B with stale active expectation attempts review -> refuses OPERATION_AUTHORITY_NOT_READY
@@ -393,10 +393,32 @@ abstract class OperationReviewCrossProcessContract {
     assertThat(count("tp_operation_lifecycle_facts")).isEqualTo(1);
     assertThat(binding()).isEqualTo(originalBinding);
 
-    // Step 2: Unquarantine and advance recovery generation to 2
-    execute("UPDATE tp_operation_authority_controls SET control_state = 'ready', recovery_generation = 2");
+    // Step 2: Operator stages replacement with recovery generation = 2
+    BusinessOperationAuthorityProfile nextProfile = new BusinessOperationAuthorityProfile(
+        SCOPE, target.adapterId(), 2L, OperationReviewChildJvm.createPolicy("require_approval"),
+        CanonicalJson.sha256(initial.path("artifactDigests")),
+        initial.path("resourceBindingHash").asText(),
+        profile.reviewSettings()
+    );
+    OperationAuthorityAdministration.stageReplacement(adminSource, profile, nextProfile);
 
-    // JVM C carrying recoveryGeneration=1 attempts review -> refuses OPERATION_PROFILE_MISMATCH
+    // Prove staged replacement remains inactive before explicit activation:
+    // JVM C with nextProfile (generation 2) attempts review -> refuses OPERATION_AUTHORITY_NOT_READY
+    ChildResult stagedReviewResult = OperationReviewChildJvm.runChild(
+        requestBuilder("REVIEW")
+            .operationJson(CanonicalJson.canonicalize(pending))
+            .decision("APPROVE")
+            .reviewExpiryIso(fresh().toString())
+            .recoveryGeneration(2L)
+            .build(),
+        Duration.ofSeconds(30)
+    );
+    assertThat(stagedReviewResult.isRefused(OPERATION_AUTHORITY_NOT_READY)).isTrue();
+
+    // Step 3: Explicitly activate the staged profile
+    OperationAuthorityAdministration.activateStaged(adminSource, nextProfile);
+
+    // JVM D with old generation 1 attempts review -> refuses OPERATION_PROFILE_MISMATCH at control check
     ChildResult mismatchReviewResult = OperationReviewChildJvm.runChild(
         requestBuilder("REVIEW")
             .operationJson(CanonicalJson.canonicalize(pending))
@@ -407,8 +429,24 @@ abstract class OperationReviewCrossProcessContract {
         Duration.ofSeconds(30)
     );
     assertThat(mismatchReviewResult.isRefused(OPERATION_PROFILE_MISMATCH)).isTrue();
+
+    // JVM E with nextProfile (generation 2) attempts to review gen-1 pending operation ->
+    // refuses OPERATION_PROFILE_MISMATCH because the evaluation binding is pinned to generation 1
+    ChildResult gen2ReviewResult = OperationReviewChildJvm.runChild(
+        requestBuilder("REVIEW")
+            .operationJson(CanonicalJson.canonicalize(pending))
+            .decision("APPROVE")
+            .reviewExpiryIso(fresh().toString())
+            .recoveryGeneration(2L)
+            .build(),
+        Duration.ofSeconds(30)
+    );
+    assertThat(gen2ReviewResult.isRefused(OPERATION_PROFILE_MISMATCH)).isTrue();
+
+    // History and immutable bindings remain intact
     assertThat(currentStatus()).isEqualTo("awaiting_approval");
     assertThat(count("tp_operation_lifecycle_facts")).isEqualTo(1);
+    assertThat(count("tp_operation_review_bindings")).isEqualTo(1);
     assertThat(binding()).isEqualTo(originalBinding);
   }
 
@@ -535,6 +573,153 @@ abstract class OperationReviewCrossProcessContract {
         Duration.ofSeconds(30)
     );
     assertThat(reviewAfterCancel.isRefused(OPERATION_STATE_STALE)).isTrue();
+  }
+
+  @Test
+  void testPreCommandChildTerminationProducesNoStateTransition() throws Exception {
+    ContenderHandle handle = OperationReviewChildJvm.startContender(
+        requestBuilder("EVALUATE")
+            .operationJson(CanonicalJson.canonicalize(initial))
+            .barrier(true)
+            .build()
+    );
+
+    // Child is waiting at READY boundary before command execution
+    // Parent terminates the child before sending GO
+    handle.close();
+    ChildResult result = handle.awaitResult(Duration.ofSeconds(10));
+
+    assertThat(result.acknowledged()).isFalse();
+    assertThat(result.status()).isEqualTo("UNACKNOWLEDGED");
+
+    // Independent reader proves no transition occurred in the database
+    ChildResult readResult = OperationReviewChildJvm.runChild(
+        requestBuilder("READ_CURRENT").operationId(id()).build(), Duration.ofSeconds(30));
+    assertThat(readResult.isOk()).isTrue();
+    assertThat(readResult.resultStatus()).isEqualTo("evaluating");
+    assertThat(count("tp_operation_lifecycle_facts")).isZero();
+    assertThat(count("tp_operation_review_bindings")).isZero();
+  }
+
+  @Test
+  void testCommittedEvaluationWithWithheldAcknowledgementReportsUnacknowledgedAndReconcilesCleanly() throws Exception {
+    ContenderHandle handle = OperationReviewChildJvm.startContender(
+        requestBuilder("EVALUATE")
+            .operationJson(CanonicalJson.canonicalize(initial))
+            .evaluatorExpiryIso(fresh().toString())
+            .testMode("POST_COMMIT_BARRIER")
+            .build()
+    );
+
+    // Wait until child has committed the transaction to the database
+    handle.awaitCommitted(Duration.ofSeconds(15));
+
+    // Independent fresh reader proves the transaction committed
+    ChildResult freshRead = OperationReviewChildJvm.runChild(
+        requestBuilder("READ_CURRENT").operationId(id()).build(), Duration.ofSeconds(30));
+    assertThat(freshRead.isOk()).isTrue();
+    assertThat(freshRead.resultStatus()).isEqualTo("awaiting_approval");
+    assertThat(count("tp_operation_lifecycle_facts")).isEqualTo(1);
+    assertThat(count("tp_operation_review_bindings")).isEqualTo(1);
+
+    // Terminate the child BEFORE it can emit its acknowledgement result
+    handle.close();
+    ChildResult unackResult = handle.awaitResult(Duration.ofSeconds(10));
+
+    // Parent must report UNACKNOWLEDGED, not successful completion or a stale loser
+    assertThat(unackResult.acknowledged()).isFalse();
+    assertThat(unackResult.status()).isEqualTo("UNACKNOWLEDGED");
+
+    // Fresh readback reconciles committed history without manufacturing the lost acknowledgement
+    ChildResult reconciledRead = OperationReviewChildJvm.runChild(
+        requestBuilder("READ_CURRENT").operationId(id()).build(), Duration.ofSeconds(30));
+    assertThat(reconciledRead.isOk()).isTrue();
+    assertThat(reconciledRead.resultStatus()).isEqualTo("awaiting_approval");
+
+    // Repeating the original command with initial snapshot must not append a second transition
+    ChildResult repeatEval = OperationReviewChildJvm.runChild(
+        requestBuilder("EVALUATE")
+            .operationJson(CanonicalJson.canonicalize(initial))
+            .evaluatorExpiryIso(fresh().toString())
+            .build(),
+        Duration.ofSeconds(30)
+    );
+    assertThat(repeatEval.isRefused(OPERATION_STATE_STALE)).isTrue();
+    assertThat(count("tp_operation_lifecycle_facts")).isEqualTo(1);
+  }
+
+  @Test
+  void testCommittedReviewWithWithheldAcknowledgementReportsUnacknowledgedAndPreventsDuplicateTransition() throws Exception {
+    // JVM A: evaluate to awaiting_approval
+    ChildResult evalResult = OperationReviewChildJvm.runChild(
+        requestBuilder("EVALUATE")
+            .operationJson(CanonicalJson.canonicalize(initial))
+            .evaluatorExpiryIso(fresh().toString())
+            .build(),
+        Duration.ofSeconds(30)
+    );
+    assertThat(evalResult.isOk()).isTrue();
+    JsonNode pending = evalResult.snapshot();
+
+    // JVM B: review with withheld acknowledgement
+    ContenderHandle handle = OperationReviewChildJvm.startContender(
+        requestBuilder("REVIEW")
+            .operationJson(CanonicalJson.canonicalize(pending))
+            .decision("APPROVE")
+            .reviewExpiryIso(fresh().toString())
+            .testMode("POST_COMMIT_BARRIER")
+            .build()
+    );
+
+    // Wait until child has committed the review transaction to the database
+    handle.awaitCommitted(Duration.ofSeconds(15));
+
+    // Independent fresh reader proves the review committed to approved
+    ChildResult freshRead = OperationReviewChildJvm.runChild(
+        requestBuilder("READ_CURRENT").operationId(id()).build(), Duration.ofSeconds(30));
+    assertThat(freshRead.isOk()).isTrue();
+    assertThat(freshRead.resultStatus()).isEqualTo("approved");
+    assertThat(count("tp_operation_lifecycle_facts")).isEqualTo(2);
+
+    // Terminate the child BEFORE it can emit its acknowledgement result
+    handle.close();
+    ChildResult unackResult = handle.awaitResult(Duration.ofSeconds(10));
+
+    // Parent must report UNACKNOWLEDGED, not success or stale loser
+    assertThat(unackResult.acknowledged()).isFalse();
+    assertThat(unackResult.status()).isEqualTo("UNACKNOWLEDGED");
+
+    // Fresh readback reconciles committed approved state
+    ChildResult reconciledRead = OperationReviewChildJvm.runChild(
+        requestBuilder("READ_CURRENT").operationId(id()).build(), Duration.ofSeconds(30));
+    assertThat(reconciledRead.isOk()).isTrue();
+    assertThat(reconciledRead.resultStatus()).isEqualTo("approved");
+
+    // Repeating the review command with pending snapshot must refuse OPERATION_STATE_STALE
+    ChildResult repeatReview = OperationReviewChildJvm.runChild(
+        requestBuilder("REVIEW")
+            .operationJson(CanonicalJson.canonicalize(pending))
+            .decision("APPROVE")
+            .reviewExpiryIso(fresh().toString())
+            .build(),
+        Duration.ofSeconds(30)
+    );
+    assertThat(repeatReview.isRefused(OPERATION_STATE_STALE)).isTrue();
+
+    // Repeating with initial snapshot also refuses OPERATION_STATE_STALE
+    ChildResult repeatInitial = OperationReviewChildJvm.runChild(
+        requestBuilder("REVIEW")
+            .operationJson(CanonicalJson.canonicalize(initial))
+            .decision("APPROVE")
+            .reviewExpiryIso(fresh().toString())
+            .build(),
+        Duration.ofSeconds(30)
+    );
+    assertThat(repeatInitial.isRefused(OPERATION_STATE_STALE)).isTrue();
+
+    // Exactly 2 lifecycle facts (evaluation + review) and exactly 1 review binding
+    assertThat(count("tp_operation_lifecycle_facts")).isEqualTo(2);
+    assertThat(count("tp_operation_review_bindings")).isEqualTo(1);
   }
 
   @Test

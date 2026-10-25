@@ -11,6 +11,7 @@ import io.tracepermit.contracts.CanonicalJson;
 import io.tracepermit.contracts.JsonSupport;
 import io.tracepermit.execution.TenantPartition;
 import java.io.*;
+import java.net.ProtocolException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.sql.Connection;
@@ -30,6 +31,9 @@ import javax.sql.DataSource;
  * <p>Receives database credentials and trusted test configuration strictly via private parent-child
  * stdin pipes (zero argv or environment exposure). Emits fixed statuses, synthetic IDs, counts, and
  * approved hashes to stdout. Drains stdout and stderr concurrently to prevent pipe deadlocks.
+ *
+ * <p>Enforces explicit byte bounds on request/response/stderr lines, monotonic budget accounting across
+ * all execution phases, immediate process ownership upon fork, and conservative response validation.
  */
 public final class OperationReviewChildJvm {
   private static final String JVM_ID = UUID.randomUUID().toString();
@@ -39,6 +43,22 @@ public final class OperationReviewChildJvm {
       "synthetic-tenant", "synthetic-github-sandbox", "principal:synthetic-requester");
   public static final String GROUP = "synthetic-reviewers";
   public static final String HASH = "sha256:" + "a".repeat(64);
+
+  /**
+   * Maximum allowed line size for request and response JSON streams.
+   * Valid canonical business operation vectors are ~2-4 KB; 64 KB provides generous headroom
+   * while conservatively rejecting runaway, malicious, or unbounded payloads.
+   */
+  public static final int MAX_LINE_BYTES = 65_536;
+
+  /** Maximum byte bound per retained stderr line to prevent buffer overflow. */
+  public static final int MAX_STDERR_LINE_BYTES = 1024;
+
+  /** Maximum number of stderr lines retained for diagnostics. */
+  public static final int MAX_STDERR_LINES = 100;
+
+  /** Maximum aggregate stderr retention bytes across all lines. */
+  public static final int MAX_STDERR_TOTAL_BYTES = 32_768;
 
   public record ChildRequest(
       String command,
@@ -55,10 +75,24 @@ public final class OperationReviewChildJvm {
       String reviewExpiryIso,
       String membershipExpiryIso,
       boolean barrier,
-      boolean simulateCrash
+      boolean simulateCrash,
+      String testMode
   ) {
     public static Builder builder(String command, String jdbcUrl, String username, String password) {
       return new Builder(command, jdbcUrl, username, password);
+    }
+
+    @Override
+    public String toString() {
+      return "ChildRequest[command=" + command
+          + ", operationId=" + operationId
+          + ", policyOutcome=" + policyOutcome
+          + ", decision=" + decision
+          + ", generation=" + recoveryGeneration
+          + ", barrier=" + barrier
+          + ", simulateCrash=" + simulateCrash
+          + ", testMode=" + testMode
+          + ", credentials=[REDACTED]]";
     }
 
     public static class Builder {
@@ -77,6 +111,7 @@ public final class OperationReviewChildJvm {
       private String membershipExpiryIso;
       private boolean barrier = false;
       private boolean simulateCrash = false;
+      private String testMode = "NORMAL";
 
       Builder(String command, String jdbcUrl, String username, String password) {
         this.command = command;
@@ -96,12 +131,13 @@ public final class OperationReviewChildJvm {
       public Builder membershipExpiryIso(String iso) { this.membershipExpiryIso = iso; return this; }
       public Builder barrier(boolean b) { this.barrier = b; return this; }
       public Builder simulateCrash(boolean crash) { this.simulateCrash = crash; return this; }
+      public Builder testMode(String mode) { this.testMode = mode; return this; }
 
       public ChildRequest build() {
         return new ChildRequest(
             command, jdbcUrl, username, password, operationId, operationJson,
             policyOutcome, lifetimeMillis, recoveryGeneration, decision,
-            evaluatorExpiryIso, reviewExpiryIso, membershipExpiryIso, barrier, simulateCrash
+            evaluatorExpiryIso, reviewExpiryIso, membershipExpiryIso, barrier, simulateCrash, testMode
         );
       }
     }
@@ -122,12 +158,56 @@ public final class OperationReviewChildJvm {
     public boolean isRefused(BusinessOperationStorageException.Code expectedCode) {
       return acknowledged && "REFUSED".equals(status) && expectedCode.name().equals(code);
     }
+
+    @Override
+    public String toString() {
+      return "ChildResult[acknowledged=" + acknowledged
+          + ", exitCode=" + exitCode
+          + ", jvmId=" + (jvmId != null ? (jvmId.length() > 8 ? jvmId.substring(0, 8) + "..." : jvmId) : "null")
+          + ", status=" + status
+          + ", code=" + code
+          + ", resultStatus=" + resultStatus
+          + ", snapshotHash=" + (snapshotHash != null ? (snapshotHash.length() > 16 ? snapshotHash.substring(0, 16) + "..." : snapshotHash) : "null")
+          + ", stderrCount=" + (stderrLines != null ? stderrLines.size() : 0) + "]";
+    }
+  }
+
+  /**
+   * Reads a single line from an InputStream up to a strict maximum byte limit.
+   * Strips trailing CRLF or LF. Throws ProtocolException if maxBytes is exceeded before a newline.
+   * Returns null on EOF before any bytes are read.
+   */
+  public static String readBoundedLine(InputStream in, int maxBytes) throws IOException {
+    ByteArrayOutputStream buffer = new ByteArrayOutputStream(Math.min(maxBytes, 1024));
+    int b;
+    while ((b = in.read()) != -1) {
+      if (b == '\n') {
+        byte[] bytes = buffer.toByteArray();
+        int len = bytes.length;
+        if (len > 0 && bytes[len - 1] == '\r') {
+          len--;
+        }
+        return new String(bytes, 0, len, StandardCharsets.UTF_8);
+      }
+      buffer.write(b);
+      if (buffer.size() > maxBytes) {
+        throw new ProtocolException("Stream line length exceeded maximum limit of " + maxBytes + " bytes");
+      }
+    }
+    if (buffer.size() == 0) {
+      return null;
+    }
+    byte[] bytes = buffer.toByteArray();
+    int len = bytes.length;
+    if (len > 0 && bytes[len - 1] == '\r') {
+      len--;
+    }
+    return new String(bytes, 0, len, StandardCharsets.UTF_8);
   }
 
   public static void main(String[] args) {
     try {
-      BufferedReader reader = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
-      String requestLine = reader.readLine();
+      String requestLine = readBoundedLine(System.in, MAX_LINE_BYTES);
       if (requestLine == null || requestLine.isBlank()) {
         System.err.println("CHILD_ERROR: missing request payload on stdin");
         System.exit(2);
@@ -135,6 +215,41 @@ public final class OperationReviewChildJvm {
       }
 
       JsonNode req = JsonSupport.MAPPER.readTree(requestLine);
+      String testMode = req.path("testMode").asText("NORMAL");
+      if ("SILENT".equals(testMode)) {
+        System.exit(0);
+        return;
+      }
+      if ("EARLY_EXIT".equals(testMode)) {
+        System.err.println("CHILD_SIMULATED_EARLY_EXIT");
+        System.exit(42);
+        return;
+      }
+      if ("MALFORMED_READY".equals(testMode)) {
+        System.out.println("NOT_READY_MALFORMED");
+        System.out.flush();
+        System.exit(0);
+        return;
+      }
+      if ("STDERR_PRESSURE".equals(testMode)) {
+        for (int i = 0; i < 500; i++) {
+          System.err.println("STDERR_PRESSURE_LINE_" + i);
+        }
+      }
+      if ("OVERSIZED_RESPONSE".equals(testMode)) {
+        System.out.print("X".repeat(100_000));
+        System.out.println();
+        System.out.flush();
+        System.exit(0);
+        return;
+      }
+      if ("NO_NEWLINE".equals(testMode)) {
+        System.out.print("{\"status\":\"OK\"}");
+        System.out.flush();
+        System.exit(0);
+        return;
+      }
+
       String command = req.path("command").asText();
       boolean simulateCrash = req.path("simulateCrash").asBoolean(false);
       if (simulateCrash) {
@@ -168,18 +283,17 @@ public final class OperationReviewChildJvm {
       }
 
       if (barrier) {
-        // Signal ready and wait for barrier release
         System.out.println("READY");
         System.out.flush();
-        String goSignal = reader.readLine();
+        String goSignal = readBoundedLine(System.in, 1024);
         if (!"GO".equalsIgnoreCase(goSignal)) {
-          System.err.println("CHILD_ERROR: expected GO signal but got: " + goSignal);
+          System.err.println("CHILD_ERROR: expected GO signal");
           System.exit(3);
           return;
         }
       }
 
-      executeCommand(command, req, dataSource, profile, target);
+      executeCommand(command, req, dataSource, profile, target, testMode);
       System.exit(0);
     } catch (Throwable t) {
       System.err.println("CHILD_UNCAUGHT_EXCEPTION: " + t.getClass().getSimpleName());
@@ -192,7 +306,8 @@ public final class OperationReviewChildJvm {
       JsonNode req,
       DataSource dataSource,
       BusinessOperationAuthorityProfile profile,
-      GitHubBusinessOperationBinding.ExpectedProfile target
+      GitHubBusinessOperationBinding.ExpectedProfile target,
+      String testMode
   ) throws Exception {
     ObjectNode response = JsonSupport.MAPPER.createObjectNode();
     response.put("jvmId", JVM_ID);
@@ -221,6 +336,17 @@ public final class OperationReviewChildJvm {
               SCOPE, before.path("operationId").asText(), PLANNER.observe(SCOPE, before), evalContext);
           var repo = new JdbcGitHubOperationReviewRepository(dataSource, profile, target);
           JsonNode result = repo.evaluate(evaluation);
+
+          if ("POST_COMMIT_BARRIER".equals(testMode)) {
+            System.out.println("COMMITTED");
+            System.out.flush();
+            String releaseSignal = readBoundedLine(System.in, 1024);
+            if (!"RELEASE".equals(releaseSignal)) {
+              System.err.println("CHILD_BARRIER_ABORTED");
+              System.exit(14);
+              return;
+            }
+          }
           emitOk(response, result);
         }
         case "REVIEW" -> {
@@ -252,6 +378,17 @@ public final class OperationReviewChildJvm {
               Instant.now().minusSeconds(1), memExpiry);
           var repo = new JdbcGitHubOperationReviewRepository(dataSource, profile, target);
           JsonNode result = repo.review(review, membership);
+
+          if ("POST_COMMIT_BARRIER".equals(testMode)) {
+            System.out.println("COMMITTED");
+            System.out.flush();
+            String releaseSignal = readBoundedLine(System.in, 1024);
+            if (!"RELEASE".equals(releaseSignal)) {
+              System.err.println("CHILD_BARRIER_ABORTED");
+              System.exit(14);
+              return;
+            }
+          }
           emitOk(response, result);
         }
         case "WITHDRAW" -> {
@@ -297,7 +434,7 @@ public final class OperationReviewChildJvm {
             System.out.flush();
           }
         }
-        default -> throw new IllegalArgumentException("Unknown command: " + command);
+        default -> throw new IllegalArgumentException("Unknown command");
       }
     } catch (BusinessOperationStorageException failure) {
       response.put("status", "REFUSED");
@@ -320,8 +457,9 @@ public final class OperationReviewChildJvm {
   // --- Supervision Methods executed in the Parent Test ---
 
   public static ChildResult runChild(ChildRequest request, Duration timeout) throws Exception {
-    ContenderHandle handle = startContender(request);
-    return handle.awaitResult(timeout);
+    try (ContenderHandle handle = startContender(request)) {
+      return handle.awaitResult(timeout);
+    }
   }
 
   public static ContenderHandle startContender(ChildRequest request) throws Exception {
@@ -338,135 +476,256 @@ public final class OperationReviewChildJvm {
     );
     // Explicitly do NOT put credentials or request into env or args!
     Process process = pb.start();
+    ContenderHandle handle = null;
 
-    // Spawn concurrent stderr drainer
-    List<String> stderrLines = new CopyOnWriteArrayList<>();
-    Thread stderrThread = new Thread(() -> {
-      try (BufferedReader r = new BufferedReader(new InputStreamReader(process.getErrorStream(), StandardCharsets.UTF_8))) {
-        String line;
-        while ((line = r.readLine()) != null) {
-          if (stderrLines.size() < 100) stderrLines.add(line);
+    try {
+      // Spawn concurrent bounded stderr drainer
+      List<String> stderrLines = new CopyOnWriteArrayList<>();
+      Thread stderrThread = new Thread(() -> {
+        try {
+          InputStream err = process.getErrorStream();
+          int totalBytes = 0;
+          String line;
+          while ((line = readBoundedLine(err, MAX_STDERR_LINE_BYTES)) != null) {
+            if (stderrLines.size() < MAX_STDERR_LINES && totalBytes < MAX_STDERR_TOTAL_BYTES) {
+              stderrLines.add(line);
+              totalBytes += line.length();
+            }
+          }
+        } catch (IOException ignored) {}
+      }, "child-stderr-drainer");
+      stderrThread.setDaemon(true);
+      stderrThread.start();
+
+      // Open stdin writer and stdout stream
+      BufferedWriter stdinWriter = new BufferedWriter(new OutputStreamWriter(process.getOutputStream(), StandardCharsets.UTF_8));
+      InputStream stdoutStream = process.getInputStream();
+
+      // Send request payload as a single bounded line
+      ObjectNode reqNode = JsonSupport.MAPPER.createObjectNode();
+      reqNode.put("command", request.command());
+      reqNode.put("jdbcUrl", request.jdbcUrl());
+      reqNode.put("username", request.username());
+      reqNode.put("password", request.password());
+      if (request.operationId() != null) reqNode.put("operationId", request.operationId());
+      if (request.operationJson() != null) reqNode.put("operationJson", request.operationJson());
+      reqNode.put("policyOutcome", request.policyOutcome());
+      reqNode.put("lifetimeMillis", request.lifetimeMillis());
+      reqNode.put("recoveryGeneration", request.recoveryGeneration());
+      reqNode.put("decision", request.decision());
+      if (request.evaluatorExpiryIso() != null) reqNode.put("evaluatorExpiryIso", request.evaluatorExpiryIso());
+      if (request.reviewExpiryIso() != null) reqNode.put("reviewExpiryIso", request.reviewExpiryIso());
+      if (request.membershipExpiryIso() != null) reqNode.put("membershipExpiryIso", request.membershipExpiryIso());
+      reqNode.put("barrier", request.barrier());
+      reqNode.put("simulateCrash", request.simulateCrash());
+      reqNode.put("testMode", request.testMode());
+
+      String serializedReq = CanonicalJson.canonicalize(reqNode);
+      if (serializedReq.getBytes(StandardCharsets.UTF_8).length > MAX_LINE_BYTES) {
+        throw new ProtocolException("Serialized ChildRequest exceeds MAX_LINE_BYTES bound");
+      }
+      stdinWriter.write(serializedReq);
+      stdinWriter.newLine();
+      stdinWriter.flush();
+
+      handle = new ContenderHandle(process, stdinWriter, stdoutStream, stderrLines, stderrThread);
+      if (request.barrier()) {
+        handle.awaitReady(Duration.ofSeconds(15));
+      }
+      return handle;
+    } catch (Throwable t) {
+      if (handle != null) {
+        handle.close();
+      } else {
+        process.destroyForcibly();
+        try {
+          process.waitFor(2, TimeUnit.SECONDS);
+        } catch (InterruptedException ie) {
+          Thread.currentThread().interrupt();
         }
-      } catch (IOException ignored) {}
-    }, "child-stderr-drainer");
-    stderrThread.setDaemon(true);
-    stderrThread.start();
-
-    // Open stdin writer and stdout reader
-    BufferedWriter stdinWriter = new BufferedWriter(new OutputStreamWriter(process.getOutputStream(), StandardCharsets.UTF_8));
-    BufferedReader stdoutReader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8));
-
-    // Send request payload as a single line
-    ObjectNode reqNode = JsonSupport.MAPPER.createObjectNode();
-    reqNode.put("command", request.command());
-    reqNode.put("jdbcUrl", request.jdbcUrl());
-    reqNode.put("username", request.username());
-    reqNode.put("password", request.password());
-    if (request.operationId() != null) reqNode.put("operationId", request.operationId());
-    if (request.operationJson() != null) reqNode.put("operationJson", request.operationJson());
-    reqNode.put("policyOutcome", request.policyOutcome());
-    reqNode.put("lifetimeMillis", request.lifetimeMillis());
-    reqNode.put("recoveryGeneration", request.recoveryGeneration());
-    reqNode.put("decision", request.decision());
-    if (request.evaluatorExpiryIso() != null) reqNode.put("evaluatorExpiryIso", request.evaluatorExpiryIso());
-    if (request.reviewExpiryIso() != null) reqNode.put("reviewExpiryIso", request.reviewExpiryIso());
-    if (request.membershipExpiryIso() != null) reqNode.put("membershipExpiryIso", request.membershipExpiryIso());
-    reqNode.put("barrier", request.barrier());
-    reqNode.put("simulateCrash", request.simulateCrash());
-
-    stdinWriter.write(CanonicalJson.canonicalize(reqNode));
-    stdinWriter.newLine();
-    stdinWriter.flush();
-
-    ContenderHandle handle = new ContenderHandle(process, stdinWriter, stdoutReader, stderrLines, stderrThread);
-    if (request.barrier()) {
-      handle.awaitReady(Duration.ofSeconds(15));
+      }
+      throw t;
     }
-    return handle;
   }
 
   public static final class ContenderHandle implements AutoCloseable {
     private final Process process;
     private final BufferedWriter stdinWriter;
-    private final BufferedReader stdoutReader;
+    private final InputStream stdoutStream;
     private final List<String> stderrLines;
     private final Thread stderrThread;
 
-    ContenderHandle(Process process, BufferedWriter stdinWriter, BufferedReader stdoutReader,
+    ContenderHandle(Process process, BufferedWriter stdinWriter, InputStream stdoutStream,
                     List<String> stderrLines, Thread stderrThread) {
       this.process = process;
       this.stdinWriter = stdinWriter;
-      this.stdoutReader = stdoutReader;
+      this.stdoutStream = stdoutStream;
       this.stderrLines = stderrLines;
       this.stderrThread = stderrThread;
     }
 
     public void awaitReady(Duration timeout) throws Exception {
+      long startNanos = System.nanoTime();
+      long budgetNanos = timeout.toNanos();
       ExecutorService executor = Executors.newSingleThreadExecutor();
       try {
-        Future<String> future = executor.submit(stdoutReader::readLine);
+        Future<String> future = executor.submit(() -> readBoundedLine(stdoutStream, MAX_LINE_BYTES));
         String line = future.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
         if (!"READY".equals(line)) {
-          throw new IllegalStateException("Child failed readiness handshake: " + line);
+          throw new IllegalStateException("Child failed readiness handshake, got: "
+              + (line != null ? (line.length() > 32 ? line.substring(0, 32) + "..." : line) : "null"));
         }
+      } catch (TimeoutException te) {
+        close();
+        throw new TimeoutException("Child timed out waiting for READY signal within monotonic budget");
+      } catch (Throwable t) {
+        close();
+        throw t;
       } finally {
         executor.shutdownNow();
+        try {
+          executor.awaitTermination(200, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException ie) {
+          Thread.currentThread().interrupt();
+        }
       }
     }
 
     public void signalGo() throws Exception {
-      stdinWriter.write("GO");
-      stdinWriter.newLine();
+      stdinWriter.write("GO\n");
+      stdinWriter.flush();
+    }
+
+    public void awaitCommitted(Duration timeout) throws Exception {
+      ExecutorService executor = Executors.newSingleThreadExecutor();
+      try {
+        Future<String> future = executor.submit(() -> readBoundedLine(stdoutStream, MAX_LINE_BYTES));
+        String line = future.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
+        if (!"COMMITTED".equals(line)) {
+          throw new IllegalStateException("Child failed post-commit handshake, got: "
+              + (line != null ? (line.length() > 32 ? line.substring(0, 32) + "..." : line) : "null"));
+        }
+      } catch (TimeoutException te) {
+        close();
+        throw new TimeoutException("Child timed out waiting for COMMITTED signal within monotonic budget");
+      } catch (Throwable t) {
+        close();
+        throw t;
+      } finally {
+        executor.shutdownNow();
+        try {
+          executor.awaitTermination(200, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException ie) {
+          Thread.currentThread().interrupt();
+        }
+      }
+    }
+
+    public void signalRelease() throws Exception {
+      stdinWriter.write("RELEASE\n");
       stdinWriter.flush();
     }
 
     public ChildResult awaitResult(Duration timeout) throws Exception {
+      long startNanos = System.nanoTime();
+      long totalBudgetNanos = timeout.toNanos();
       ExecutorService executor = Executors.newSingleThreadExecutor();
+
       try {
-        Future<String> lineFuture = executor.submit(stdoutReader::readLine);
+        Future<String> lineFuture = executor.submit(() -> readBoundedLine(stdoutStream, MAX_LINE_BYTES));
         String responseLine = null;
         try {
-          responseLine = lineFuture.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
+          long remainingNanos = totalBudgetNanos - (System.nanoTime() - startNanos);
+          if (remainingNanos <= 0) {
+            close();
+            throw new TimeoutException("Child timed out before reading response line");
+          }
+          responseLine = lineFuture.get(remainingNanos, TimeUnit.NANOSECONDS);
         } catch (TimeoutException te) {
-          process.destroyForcibly();
-          throw new TimeoutException("Child timed out waiting for response line after " + timeout);
+          close();
+          throw new TimeoutException("Child timed out waiting for response line within monotonic budget");
         } catch (ExecutionException ee) {
-          // stream closed or IO error
+          // Stream closed or IO error
         }
 
-        boolean exited = process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS);
+        long remainingNanos = totalBudgetNanos - (System.nanoTime() - startNanos);
+        long waitMillis = Math.max(1, TimeUnit.NANOSECONDS.toMillis(remainingNanos));
+        boolean exited = process.waitFor(waitMillis, TimeUnit.MILLISECONDS);
         if (!exited) {
           process.destroyForcibly();
-          process.waitFor(5, TimeUnit.SECONDS);
+          process.waitFor(2, TimeUnit.SECONDS);
         }
         int exitCode = process.exitValue();
-        stderrThread.join(1000);
+
+        remainingNanos = totalBudgetNanos - (System.nanoTime() - startNanos);
+        long stderrWait = Math.min(500, Math.max(10, TimeUnit.NANOSECONDS.toMillis(remainingNanos)));
+        stderrThread.join(stderrWait);
 
         if (responseLine == null || responseLine.isBlank() || exitCode != 0) {
           return new ChildResult(false, exitCode, null, "UNACKNOWLEDGED", null, null, null, null, stderrLines);
         }
 
-        JsonNode resNode = JsonSupport.MAPPER.readTree(responseLine);
-        String status = resNode.path("status").asText();
-        String jvmId = resNode.path("jvmId").asText(null);
-        String code = resNode.hasNonNull("code") ? resNode.path("code").asText() : null;
-        String resultStatus = resNode.hasNonNull("resultStatus") ? resNode.path("resultStatus").asText() : null;
-        String snapshotHash = resNode.hasNonNull("snapshotHash") ? resNode.path("snapshotHash").asText() : null;
-        JsonNode snapshot = resNode.path("snapshot");
+        JsonNode resNode;
+        try {
+          resNode = JsonSupport.MAPPER.readTree(responseLine);
+        } catch (Exception parseError) {
+          return new ChildResult(false, exitCode, null, "UNACKNOWLEDGED", null, null, null, null, stderrLines);
+        }
 
-        return new ChildResult(true, exitCode, jvmId, status, code, resultStatus, snapshotHash, snapshot, stderrLines);
+        if (!resNode.isObject()) {
+          return new ChildResult(false, exitCode, null, "UNACKNOWLEDGED", null, null, null, null, stderrLines);
+        }
+
+        String jvmId = resNode.path("jvmId").asText(null);
+        if (jvmId == null || !jvmId.matches("^[0-9a-fA-F\\-]{36}$")) {
+          return new ChildResult(false, exitCode, null, "UNACKNOWLEDGED", null, null, null, null, stderrLines);
+        }
+
+        String status = resNode.path("status").asText(null);
+        if ("OK".equals(status)) {
+          if (!resNode.hasNonNull("snapshot") || !resNode.path("snapshot").isObject()
+              || !resNode.hasNonNull("resultStatus")
+              || !resNode.hasNonNull("snapshotHash")) {
+            return new ChildResult(false, exitCode, jvmId, "UNACKNOWLEDGED", null, null, null, null, stderrLines);
+          }
+          String resultStatus = resNode.path("resultStatus").asText();
+          String snapshotHash = resNode.path("snapshotHash").asText();
+          JsonNode snapshot = resNode.path("snapshot");
+          return new ChildResult(true, exitCode, jvmId, "OK", null, resultStatus, snapshotHash, snapshot, stderrLines);
+        } else if ("REFUSED".equals(status)) {
+          String code = resNode.path("code").asText(null);
+          if (code == null || Arrays.stream(BusinessOperationStorageException.Code.values()).noneMatch(c -> c.name().equals(code))) {
+            return new ChildResult(false, exitCode, jvmId, "UNACKNOWLEDGED", null, null, null, null, stderrLines);
+          }
+          return new ChildResult(true, exitCode, jvmId, "REFUSED", code, null, null, null, stderrLines);
+        } else {
+          return new ChildResult(false, exitCode, jvmId, "UNACKNOWLEDGED", null, null, null, null, stderrLines);
+        }
+      } catch (InterruptedException ie) {
+        Thread.currentThread().interrupt();
+        throw ie;
       } finally {
         executor.shutdownNow();
+        try {
+          executor.awaitTermination(200, TimeUnit.MILLISECONDS);
+        } catch (InterruptedException ie) {
+          Thread.currentThread().interrupt();
+        }
         close();
       }
     }
 
     @Override
     public void close() {
-      try { stdinWriter.close(); } catch (Exception ignored) {}
-      try { stdoutReader.close(); } catch (Exception ignored) {}
+      try { stdinWriter.close(); } catch (Throwable ignored) {}
+      try { stdoutStream.close(); } catch (Throwable ignored) {}
       if (process.isAlive()) {
         process.destroyForcibly();
+        try {
+          process.waitFor(2, TimeUnit.SECONDS);
+        } catch (InterruptedException ie) {
+          Thread.currentThread().interrupt();
+        }
       }
     }
   }
