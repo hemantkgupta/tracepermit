@@ -26,6 +26,10 @@ public final class OperationDatabase {
   private static final Set<String> V3_TABLES = Set.of(
       "tp_operation_schema_history", "tp_business_operations", "tp_business_operation_facts",
       "tp_operation_lifecycle_heads", "tp_operation_lifecycle_facts", "tp_operation_authority_controls");
+  private static final Set<String> V4_TABLES = Set.of(
+      "tp_operation_schema_history", "tp_business_operations", "tp_business_operation_facts",
+      "tp_operation_lifecycle_heads", "tp_operation_lifecycle_facts", "tp_operation_authority_controls",
+      "tp_operation_review_bindings");
 
   enum Engine {
     POSTGRESQL("postgresql"), MARIADB("mariadb");
@@ -55,6 +59,11 @@ public final class OperationDatabase {
     initializeEmpty(source, "3");
   }
 
+  /** Explicit V4 install. No default upgrade, policy activation or execution capability. */
+  public static void initializeReviewEmpty(DataSource source) {
+    initializeEmpty(source, "4");
+  }
+
   private static void initializeEmpty(DataSource source, String version) {
     try (Connection connection = source.getConnection()) {
       Engine engine = inspectWriter(connection);
@@ -73,16 +82,82 @@ public final class OperationDatabase {
   public static void validateExisting(DataSource source) {
     String version;
     try (Connection connection = source.getConnection()) {
-      version = tables(connection).contains("tp_operation_authority_controls") ? "3" : "2";
+      Set<String> names = tables(connection);
+      version = names.contains("tp_operation_review_bindings") ? "4"
+          : names.contains("tp_operation_authority_controls") ? "3" : "2";
     } catch (SQLException | RuntimeException failure) {
       throw error(OPERATION_SCHEMA_NOT_READY);
     }
     validateSchema(source, version);
   }
 
-  /** Authority callers require V3 exactly; registration/withdrawal still support qualified V2. */
+  /** V3/V4 control callers; default V2 registration/withdrawal remains supported. */
   static void validateAuthorityExisting(DataSource source) {
+    String version;
+    try (Connection connection = source.getConnection()) {
+      version = hasReviewBindings(connection) ? "4" : "3";
+    } catch (SQLException | RuntimeException failure) {
+      throw error(OPERATION_SCHEMA_NOT_READY);
+    }
+    // Version routing is a stopped-DDL startup observation, not an authority transaction.
+    // Release its connection before validation/Flyway obtains its own bounded connections.
+    validateSchema(source, version);
+  }
+
+  static void validateReviewExisting(DataSource source) {
+    validateSchema(source, "4");
+  }
+
+  static boolean hasReviewBindings(Connection connection) throws SQLException {
+    if (tables(connection).contains("tp_operation_review_bindings")) return true;
+    // A retained V3 runtime can have no SELECT on the newly installed table. MariaDB then hides
+    // it from table metadata. History is already readable by that runtime: never mistake filtered
+    // table visibility for permission to use the old, head-first withdrawal path after V4.
+    try (var statement = JdbcBusinessOperationRepository.prepare(connection,
+        "SELECT version FROM tp_operation_schema_history WHERE version = '4' AND success = TRUE");
+        var rows = statement.executeQuery()) {
+      return rows.next();
+    }
+  }
+
+  /** Retained V4 readers/writers cannot silently operate after an unknown protocol upgrade. */
+  static void requireReviewVersion(Connection connection) throws SQLException {
+    try (var statement = JdbcBusinessOperationRepository.prepare(connection, """
+        SELECT version, success FROM tp_operation_schema_history ORDER BY installed_rank DESC
+        """); var rows = statement.executeQuery()) {
+      if (!rows.next() || !"4".equals(rows.getString(1)) || !rows.getBoolean(2)) {
+        throw error(OPERATION_SCHEMA_NOT_READY);
+      }
+    }
+  }
+
+  /** Explicit stopped-writer V3->V4. Validate populated immutable/current state BEFORE DDL. */
+  public static void upgradeReviewFromV3(DataSource source) {
     validateSchema(source, "3");
+    try (Connection connection = source.getConnection()) {
+      Engine engine = inspectWriter(connection);
+      connection.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
+      connection.setAutoCommit(false);
+      try (var statement = JdbcBusinessOperationRepository.prepare(connection,
+          "SELECT operation_id, snapshot_json FROM tp_business_operations");
+          var rows = statement.executeQuery()) {
+        while (rows.next()) {
+          var json = StoredOperationJson.read(rows.getString(2), JdbcBusinessOperationRepository.MAX_BYTES);
+          var context = json.path("trustedContext");
+          var scope = new io.tracepermit.application.BusinessOperationScope(context.path("tenantId").asText(),
+              context.path("workspaceId").asText(), context.path("requesterPrincipalId").asText());
+          var initial = JdbcBusinessOperationRepository.read(connection, scope, "operation_id", rows.getString(1))
+              .orElseThrow(() -> error(OPERATION_SCHEMA_NOT_READY));
+          JdbcBusinessOperationLifecycleRepository.current(connection, scope, rows.getString(1), initial, false);
+        }
+      } finally {
+        connection.rollback();
+      }
+      flyway(source, engine, "4").migrate();
+      validateReviewExisting(source);
+    } catch (SQLException | RuntimeException failure) {
+      throw error(OPERATION_SCHEMA_NOT_READY);
+    }
   }
 
   /** Stopped-writer, additive opt-in upgrade. No activation, repair or partial-DDL recovery. */
@@ -150,8 +225,9 @@ public final class OperationDatabase {
     try (Connection connection = source.getConnection()) {
       Engine engine = inspectWriter(connection);
       boolean lifecycle = !"1".equals(version);
-      boolean authority = "3".equals(version);
-      if (!tables(connection).equals(authority ? V3_TABLES : lifecycle ? V2_TABLES : V1_TABLES)) {
+      boolean review = "4".equals(version);
+      boolean authority = review || "3".equals(version);
+      if (!tables(connection).equals(review ? V4_TABLES : authority ? V3_TABLES : lifecycle ? V2_TABLES : V1_TABLES)) {
         throw error(OPERATION_SCHEMA_NOT_READY);
       }
       requireNoExecutableObjects(connection, engine);
@@ -173,19 +249,25 @@ public final class OperationDatabase {
         requireForeignKey(connection, "tp_operation_lifecycle_facts", "tp_operation_lifecycle_heads");
       }
       if (authority) requireUnique(connection, "tp_operation_authority_controls", List.of("scope_hash"));
+      if (review) {
+        requireUnique(connection, "tp_operation_review_bindings", List.of("operation_id"));
+        requireForeignKey(connection, "tp_operation_review_bindings", "tp_operation_lifecycle_heads");
+      }
       OperationPhysicalSchema.require(connection, engine, version);
       if (engine == Engine.MARIADB) {
         try (PreparedStatement statement = connection.prepareStatement("""
             SELECT COUNT(*) FROM information_schema.tables
              WHERE table_schema = DATABASE() AND table_name IN
                (%s) AND engine = 'InnoDB'
-            """.formatted(authority
+            """.formatted(review
+                ? "'tp_business_operations', 'tp_business_operation_facts', 'tp_operation_lifecycle_heads', 'tp_operation_lifecycle_facts', 'tp_operation_authority_controls', 'tp_operation_review_bindings'"
+                : authority
                 ? "'tp_business_operations', 'tp_business_operation_facts', 'tp_operation_lifecycle_heads', 'tp_operation_lifecycle_facts', 'tp_operation_authority_controls'"
                 : lifecycle ? "'tp_business_operations', 'tp_business_operation_facts', 'tp_operation_lifecycle_heads', 'tp_operation_lifecycle_facts'"
                 : "'tp_business_operations', 'tp_business_operation_facts'"))) {
           statement.setQueryTimeout(5);
           try (ResultSet rows = statement.executeQuery()) {
-            if (!rows.next() || rows.getInt(1) != (authority ? 5 : lifecycle ? 4 : 2)) {
+            if (!rows.next() || rows.getInt(1) != (review ? 6 : authority ? 5 : lifecycle ? 4 : 2)) {
               throw error(OPERATION_SCHEMA_NOT_READY);
             }
           }

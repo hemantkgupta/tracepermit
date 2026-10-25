@@ -33,9 +33,13 @@ final class OperationPhysicalSchema {
           varchar("previous_snapshot_hash", 71), varchar("result_snapshot_hash", 71), text("fact_json"),
           varchar("actor_hash", 71), text("actor_json")));
     }
-    if ("3".equals(version)) {
+    if ("3".equals(version) || "4".equals(version)) {
       tables.put("tp_operation_authority_controls", List.of(varchar("scope_hash", 71), varchar("profile_hash", 71),
           new Column("lock_marker", "smallint", null), new Column("recovery_generation", "bigint", null), varchar("control_state", 16)));
+    }
+    if ("4".equals(version)) {
+      tables.put("tp_operation_review_bindings", List.of(varchar("operation_id", 36),
+          varchar("binding_hash", 71), text("binding_json")));
     }
     String sql = pg ? """
         SELECT table_name, column_name, data_type, character_maximum_length, character_set_name,
@@ -163,6 +167,7 @@ final class OperationPhysicalSchema {
             ? "CHECK (((sequence_number >= 1) AND (sequence_number <= 3)))" : "`sequence_number` between 1 and 3");
         case "tp_operation_lifecycle_facts" -> Set.of(bytes("fact_json", 262144, pg), bytes("actor_json", 4096, pg), pg
             ? "CHECK ((sequence_number >= 4))" : "`sequence_number` >= 4");
+        case "tp_operation_review_bindings" -> Set.of(bytes("binding_json", 8192, pg));
         case "tp_operation_authority_controls" -> pg ? Set.of("CHECK ((lock_marker = 0))",
             "CHECK (((recovery_generation >= 1) AND (recovery_generation <= '9007199254740991'::bigint)))",
             "CHECK (((control_state)::text = ANY ((ARRAY['staged'::character varying, 'ready'::character varying, 'quarantined'::character varying])::text[])))")

@@ -3,6 +3,73 @@
 GitHub is authoritative. Credentials, private customer/provider planning and local
 operator values remain outside Git. Historical receipts are not fresh results.
 
+## Closed durable review — current V4 Mac checkpoint
+
+Mac retains sole PR108 writer ownership. The opt-in
+[ADR0085](docs/architecture/0085-closed-durable-operation-review.md) implementation
+adds the actual one-connection/control-first evaluation, independent-human review
+and pending-withdrawal transaction, immutable evaluation binding and closed
+versioned journal reader. It reuses the strict pure GitHub join on loaded state;
+V1-V3 migration bytes and default V2 remain unchanged. No endpoint, permit,
+admission, attempt/outbox, IdP/provider call or target is enabled. This candidate
+passed local qualification; exact pushed-head hosted checks remain separate.
+The prior 2dee hosted green checks do not cover it. See the
+[runbook](docs/runbooks/durable-operation-review.md).
+
+After a new-fixture compile error and24/36 new-fixture assertion failures were
+diagnosed and corrected without changing authorization, nine selected cases
+passed, then all42 new three-engine review cases passed freshly in1m58 with18
+executed tasks. The first complete355-case operation run then failed one existing
+PostgreSQL32-activation test: it expected stale state but observed schema-not-ready.
+The new version-routing helper unnecessarily held its probe connection while
+validation/Flyway borrowed more. A deterministic bounded-source test failed on
+all3 engines before repair; closing the probe before validation made those3 plus
+the existing3 contention cases pass in37s. That proves the nested-borrow defect;
+the original fixed-code failure did not retain a raw PostgreSQL diagnostic, so
+its exact server-side cause is not claimed proven. At that intermediate
+checkpoint the final complete operation, aggregate, formatting/docs and
+pushed-head gates were still pending; the local results below supersede that
+intermediate status.
+
+Later declared-version cases exposed retained V4 instances accepting an unknown
+installed version and success-only history filtering hiding a failed/repeatable
+later entry. Both new three-engine regressions first failed3/3; the owner and
+current reader now require the latest installed entry to be successful version4.
+The complete forced/cache-disabled matrix then passed361 cases/11 suites,
+zero failures/errors/skips,18 tasks in4m22. New review fixtures additionally pin
+and assert their owned database publications to numeric127.0.0.1. The final
+`pnpm check` including that test-only loopback assertion passed124 React and1967
+recorded Java cases/155 suites, zero failures/errors and1 existing absent-archive
+native-PTY skip. The361 operation cases ran freshly in this final aggregate;
+other valid outputs were reused. Gradle19m49:5 executed/60 up-to-date, not all
+tests fresh. Coverage94.6493% line/78.5678% branch passed unchanged94/75 gates.
+An earlier358-case candidate aggregate is not substituted for the final source.
+Formatting,1161 links/3 helpers and13 flow/drift cases passed before results-only
+updates and are checked again for publication. One bounded worker stack sample
+showed active PostgreSQL authentication/control-case work during the longer
+final run, not a proved hang or reason to restart Docker/change test limits.
+
+Cloud1's PR119 atddcfbec2 had all8 hosted checks green and a clean released
+three-path tooling handoff. Root read both scripts, the runbook and handoff, then
+native macOS/Bash3.2 failed shell case58. A minimal conditional-source reproduction
+exits early under errexit rather than returning to the caller's else branch.
+Cloud1 reacquired only its tooling branch and published3e92aa6104914706d749f1cd07b6105a8c05ab5d.
+Root read the complete follow-up/handoff, verified all8 exact-head green checks,
+then independently passed all152 unchanged native macOS/Bash3.2 scenarios and
+actual selected-JDK/cache/precedence checks. Root's focused
+[intake](https://github.com/hemantkgupta/tracepermit/pull/119#issuecomment-6396596462)
+does not claim a coordinator full-repository or automatic macOS-discovery run.
+The branch is clean/released by Cloud1; root acquired no writer ownership.
+The stopped physical-schema audit remains stopped. The clean detached Mac
+review tree is separate from this authority checkout.
+
+Mac Air's fixed handoff Page now reports IN_PROGRESS and draft PR120; GitHub
+confirms integration-only head eb0fdb30a163e4aed36adf54f207b0c939e891ab stacked on
+PR118. Its new registration module is not qualified yet, and that lane retains
+its independent writer reservation. Original Cloud2/PR115's unpushed repair
+files/session/log stay preserved; Cloud2R is idle until a useful new checkpoint.
+All PRs remain draft/unmerged.
+
 ## Explicit review input/settings — current Mac checkpoint
 
 Mac retains sole PR108 writer ownership. This slice implements the approved

@@ -31,6 +31,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Logger;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.AfterAll;
@@ -106,6 +107,15 @@ abstract class OperationAuthorityControlContract {
     assertThat(count("tp_business_operations")).isZero();
     assertThat(count("tp_operation_lifecycle_facts")).isZero();
     assertThat(count("tp_operation_authority_controls")).isEqualTo(1);
+  }
+
+  @Test
+  void versionProbeClosesBeforeValidationBorrowsAnotherConnection() {
+    var bounded = new TestSource(database, database.getUsername(), database.getPassword());
+    bounded.requireProbeClosed = true;
+    OperationDatabase.validateAuthorityExisting(bounded);
+    assertThat(bounded.firstClosed.get()).isTrue();
+    assertThat(bounded.borrows.get()).isGreaterThan(1);
   }
 
   @Test
@@ -766,6 +776,9 @@ abstract class OperationAuthorityControlContract {
     private final String password;
     private volatile String fault = "none";
     private volatile CountDownLatch lockAttempt;
+    private boolean requireProbeClosed;
+    private final AtomicInteger borrows = new AtomicInteger();
+    private final AtomicBoolean firstClosed = new AtomicBoolean();
 
     private TestSource(JdbcDatabaseContainer<?> database, String user, String password) {
       this.database = database;
@@ -774,6 +787,8 @@ abstract class OperationAuthorityControlContract {
     }
 
     @Override public Connection getConnection() throws SQLException {
+      int borrow = borrows.incrementAndGet();
+      if (requireProbeClosed && borrow > 1 && !firstClosed.get()) throw synthetic();
       if (fault.equals("connect")) throw new IllegalStateException("synthetic-sensitive-canary");
       Connection delegate = DriverManager.getConnection(database.getJdbcUrl(), user, password);
       var committed = new AtomicBoolean();
@@ -787,6 +802,7 @@ abstract class OperationAuthorityControlContract {
             } catch (InvocationTargetException failure) {
               throw failure.getCause();
             }
+            if (method.getName().equals("close") && borrow == 1) firstClosed.set(true);
             if (method.getName().equals("commit") && mutating.get()) {
               committed.set(true);
               if (fault.equals("commit")) throw synthetic();

@@ -35,6 +35,16 @@ public final class BusinessOperationEvaluation {
   public String operationId() { return operationId; }
   public BusinessOperationTransitionPlanner.StateToken expected() { return expected; }
 
+  /** Fingerprinted identity metadata only, never a committed evaluation or permission proof. */
+  public com.fasterxml.jackson.databind.node.ObjectNode actor() {
+    var identity = evaluator.identity();
+    return io.tracepermit.contracts.JsonSupport.MAPPER.createObjectNode()
+        .put("scopeHash", scope.fingerprint()).put("principalId", identity.requesterSubjectId())
+        .put("authenticationMethod", identity.authenticationMethod())
+        .put("credentialFingerprint", identity.credentialFingerprint())
+        .put("authorityExpiresAt", identity.authorityExpiresAt().toString());
+  }
+
   /** Future transaction owner must repeat AFTER all locks; profile settings cannot default to v1. */
   public void requireAuthorizedAt(BusinessOperationAuthorityProfile profile, Instant writerTime) {
     requireIdentity();

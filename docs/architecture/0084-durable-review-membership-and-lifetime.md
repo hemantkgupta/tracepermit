@@ -1,9 +1,9 @@
 # ADR0084: explicit durable-review membership and lifetime
 
-Status: human-approved boundary; input/settings prerequisites implemented. The
-durable evaluation/review transaction is **not implemented**. Review constructors,
-group checks and V3 control lookups remain prerequisites, not committed approval
-or admission.
+Status: human-approved boundary; input/settings prerequisites implemented.
+[ADR0085](0085-closed-durable-operation-review.md) adds the opt-in V4 transaction
+implementation and its separate qualification. Input constructors, group checks
+and V3 control lookups alone remain prerequisites, not committed approval or admission.
 
 Requirements: FR-003/007/008/012; SEC-001/002/003/005/009/012;
 REL-001/002/004/005; OPS-002/004. No whole-requirement completion is claimed.
@@ -66,8 +66,10 @@ optimistic identity, not proof that the operation is still evaluating. Neither
 new command writes a fact, changes a head or enables an endpoint.
 
 See the [settings qualification runbook](../runbooks/operation-review-settings.md).
-The current six-field review actor, withdrawal-only journal reader, database
-migrations, runtime grants and legacy simulator composition are unchanged.
+That checkpoint preserved the six-field review actor, withdrawal-only journal
+reader, database migrations, grants and legacy simulator composition. ADR0085
+separately versions the durable journal without changing the old command actor
+or enabling a simulator/HTTP route.
 
 ## Composition prerequisites
 

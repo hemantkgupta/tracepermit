@@ -1,12 +1,28 @@
 # Current-state capability matrix
 
-**As of:** 2026-10-24
+**As of:** 2026-10-25
 **Scope:** public Java-backend/React-console proof of concept
 
 This is the authoritative boundary between running POC behavior and product
 design. A passing test proves the named composition, not deployment to an
 enterprise network or control over arbitrary agent tools. The detailed
 requirement-to-test mapping is in the [traceability matrix](12-traceability-matrix.md).
+
+## Opt-in closed durable operation review
+
+[ADR0085](../architecture/0085-closed-durable-operation-review.md) adds an opt-in
+V4 Java/JDBC transaction for policy evaluation, independent-human approve/deny
+and pending withdrawal. Current profile/generation control is locked before the
+actual operation head, then fresh writer time and exact state/identity/group/
+deadline/strict target pins are checked. Immutable evaluation bindings, closed
+facts and head changes share one commit; coherent readers replay at fact time.
+Default V2 installation and V1-V3 migration bytes remain unchanged. See the
+[candidate qualification record](../runbooks/durable-operation-review.md).
+
+This library is not wired into an authenticated endpoint or simulator. It does
+not provide permit/admission, attempt/outbox, target dispatch, live IdP/AWS/RDS
+qualification, complete operator metadata visibility or restore/sender fencing.
+Existing simulator flows below remain separately qualified compositions.
 
 ## Approval review export and browser download
 

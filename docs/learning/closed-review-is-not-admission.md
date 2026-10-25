@@ -13,7 +13,9 @@ separate three responsibilities:
    workspace-specific context. Request fields never verify themselves.
 2. The transaction owner loads and locks authoritative state, samples database
    time **after** lock acquisition, rechecks all bindings and commits approval
-   with its append-only facts. This step is not yet implemented for operations.
+   with its append-only facts. The opt-in V4
+   [closed JDBC owner](../architecture/0085-closed-durable-operation-review.md)
+   implements this separate step; it is not wired to an authenticated route.
 3. Separate single-use admission must consume fully bound execution authority
    and create an attempt atomically. Even a committed approval is not execution.
 
@@ -33,11 +35,21 @@ its own permission, not cancellation permission. No membership constructor
 verifies a token, and no profile hash makes an adapter-supplied fact trustworthy.
 
 The legacy profile fingerprint and identity-only review method remain compatible,
-but the new gates refuse missing explicit settings. This does not yet create
-pending approval state or a durable decision route: the future single transaction
-must store the exact pending group/deadline, lock/recheck all current facts and
-append closed journal facts atomically. See the
-[qualification runbook](../runbooks/operation-review-settings.md).
+but the new gates refuse missing explicit settings. These checks alone do not
+create pending state or a durable decision route. The separate V4 transaction
+stores the exact pending binding/deadline, locks/rechecks current facts and
+appends closed facts atomically; its
+[qualification](../runbooks/durable-operation-review.md) must not be confused
+with the earlier [input-only cases](../runbooks/operation-review-settings.md).
+An approved snapshot still conveys no single-use admission or target capability.
+
+V4 also illustrates why migration detection cannot trust an empty metadata view:
+an old MariaDB runtime may not see a new table it cannot SELECT. Its old writer
+must still detect the installed protocol from readable migration history and
+refuse, rather than silently retain the head-first lock order. Historical journal
+replay uses fact time; today's expired authentication is not a reason to erase a
+valid historical decision. Neither fact hashes nor replay defeat a database
+administrator who can rewrite all stored integrity data.
 
 An exact content hash also needs exact input bytes. Replacement UTF-8 encoding
 can map malformed Unicode and a valid question mark to the same bytes before

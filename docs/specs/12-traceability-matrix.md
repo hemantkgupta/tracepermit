@@ -1,5 +1,30 @@
 # Requirements traceability matrix
 
+## Closed durable operation review — opt-in V4 library
+
+[ADR0085](../architecture/0085-closed-durable-operation-review.md) adds the closed
+`JdbcGitHubOperationReviewRepository`: one READ COMMITTED connection locks current
+control first, then the actual operation head, samples writer time after waits
+and rechecks exact state/policy/generation/identity/group/deadline. It reuses the
+pure strict GitHub binding rather than accepting a caller's bound flag. A V4
+immutable evaluation binding and closed versioned fact are committed with the
+conditional head update; no independently committing stores are called atomic.
+The coherent reader preserves legacy withdrawal facts, validates closed new
+metadata/cardinality and replays historical facts at their own time. Explicit
+V4 install/upgrade is separate; default V2 and V1-V3 SQL bytes remain unchanged.
+
+`OperationReviewContract` supplies real three-engine qualification of review,
+block and pending withdrawal, one-connection/lock order, strict target checks,
+expiry after genuine waits,32 mixed contenders, atomic rollback, unknown
+commit/cleanup, populated pre-DDL validation, retained old-writer refusal and
+least-privileged immutable-binding grants. See the
+[qualification history](../runbooks/durable-operation-review.md) for current
+results and limits; previous green input/settings gates are not this candidate's
+qualification. Partial FR-003/007/008/012, SEC-001/002/003/005/009/012,
+REL-001/002/004/005 and OPS-002/004 evidence only. No authenticated endpoint,
+live IdP, permit, admission, attempt/outbox, target, restore fence or whole-ID
+completion is claimed.
+
 ## Explicit durable-review rules — input/settings prerequisite
 
 [ADR0084](../architecture/0084-durable-review-membership-and-lifetime.md)
@@ -18,7 +43,8 @@ and v1 refusal. The three-engine control contract verifies settings substitution
 cannot match current pins, replacements require a newer generation and explicit
 activation, and these controls produce no operation/journal effects. See the
 [qualification runbook](../runbooks/operation-review-settings.md).
-No durable reviewer transaction, IdP/provider integration, admission or whole-ID
+That input/settings checkpoint alone supplies no durable reviewer transaction,
+IdP/provider integration, admission or whole-ID
 completion is claimed for FR-003/007/008/012, SEC-001/002/003/005/009/012,
 REL-001/002/004/005 and OPS-002/004.
 
