@@ -3,6 +3,54 @@
 GitHub is authoritative. Credentials, private customer/provider planning and local
 operator values remain outside Git. Historical receipts are not fresh results.
 
+## Timestamp compatibility repair and next admission contract
+
+Mac retains sole PR108 writer ownership. The preceding aab5c03 checkpoint has all
+eight exact-head checks green in CI40188482042. Cloud2R's bounded static actual
+V4 review is consumed: one timestamp compatibility defect, all reviewer execution
+NOT RUN, [review](https://github.com/hemantkgupta/tracepermit/pull/108#issuecomment-6397157388).
+The owned follow-up fixes the clock-regression comparison's operation timestamp
+parser without changing stored bytes/hashes, frozen validation or new journal
+metadata strictness. Three-engine positive/upgrade/withdrawal tests first
+reproduced the defect, then all12 selected cases passed after repair, including
+clock-regression refusal. The first complete373-case follow-up ran372pass/1fail
+in an unchanged MariaDB10.6 contention repetition; no raw SQL cause is proven.
+Original XML receipts remain in /private/tmp/tp108-timestamp-matrix.q6glOv.
+An unchanged-workload30-repetition diagnostic passed after fixed-category-only
+assertion reporting was added, not a runtime repair. Required aggregate is now
+complete as the second broad attempt: PASS124 React/1979 recorded Java cases,
+155 suites, zero failures/errors and one existing absent-archive native-PTY skip.
+All373 operation cases ran freshly in that aggregate; other valid outputs were
+reused. Gradle18m15,5 executed/60 up-to-date, coverage94.6493% line/78.5804% branch
+passed unchanged94/75 gates. The first failure remains unresolved history; no
+third retry was run. See the detailed
+[history](docs/runbooks/durable-operation-review.md#timestamp-compatibility-follow-up).
+
+The human approved the strict admission contract: fresh exact owner identity
+with operation_requester/operations.execute and a separately versioned Ed25519
+permit with explicit issuer/key/audience, no default positive lifetime, maximum
+60 seconds and approval/identity deadline bounds. [ADR0087](docs/architecture/0087-fully-bound-operation-permit-and-admission.md)
+records this next implementation design only. No operation permit/admission,
+attempt/outbox or target is implemented/enabled by this follow-up.
+
+The human confirms Gemini received the new cross-process review qualification
+packet; Gemini uses GitHub-only handoff, not Space read/write. Its new branch is
+separate and frozen at aab5c03; no automatic repin is authorized. Mac Air retains
+PR120: producer reports105 fresh module cases passed, but its first aggregate
+failed two existing HTTP timeouts; a human-approved second attempt is running.
+Feature changes remain local/unpublished, without a final handoff/release.
+Original Cloud2/PR115's unpushed files/session/log remain preserved. All PRs stay
+draft/unmerged.
+
+Cloud1 independently qualified all30 unchanged contention repetitions at the
+published aab5c03 baseline in48s/18 fresh tasks, no failures/errors/skips and no
+tracked edits. Its [receipt](https://github.com/hemantkgupta/tracepermit/pull/108#issuecomment-6397891809)
+does not qualify this repair or explain the earlier failure. Root observed a
+separate active Gradle build on the same physical Mac in Gemini's reserved
+qualification checkout; only cwd/Git metadata was inspected, not its unpublished
+source. This confirms shared compute, not causality. No other process or Docker
+was interrupted; future heavy builds on this Mac should be serialized.
+
 ## Closed durable review — current V4 Mac checkpoint
 
 Mac retains sole PR108 writer ownership. The opt-in

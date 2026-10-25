@@ -43,6 +43,12 @@ unchanged. Explicit empty V4 install and stopped-writer V3-to-V4 upgrade are
 separate operator actions. The upgrade validates populated original/current
 state before DDL; it does not repair or resume partial MariaDB DDL.
 
+Operation-v1 accepts equivalent UTC fractional timestamp spellings. Comparing
+the validated snapshot's updatedAt with writer time parses its existing instant
+without rewriting stored strings or hashes. The new journal's own generated
+metadata retains its separate strict Instant.toString encoding. Neither rule
+changes the frozen validator or permits a regressing writer observation.
+
 Versioned closed evaluation/review actor envelopes fit the existing actor bound;
 the existing exact withdrawal actor remains readable. The coherent MVCC reader
 reconstructs each fact at its historical fact time, checks binding cardinality,

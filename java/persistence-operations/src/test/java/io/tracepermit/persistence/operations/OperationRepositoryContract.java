@@ -390,12 +390,14 @@ abstract class OperationRepositoryContract {
     var command = withdrawal(initial, Instant.now().plusSeconds(60));
     var stores = List.of(new JdbcBusinessOperationLifecycleRepository(source),
         new JdbcBusinessOperationLifecycleRepository(source));
+    source.sqlCategories.clear();
     var outcomes = race(16, index -> {
       try {
         stores.get(index % stores.size()).withdraw(command);
         return "cancelled";
       } catch (BusinessOperationStorageException failure) {
-        assertThat(failure.code()).isEqualTo(OPERATION_STATE_STALE);
+        assertThat(failure.code()).as("fixed SQL categories: %s", source.sqlCategories)
+            .isEqualTo(OPERATION_STATE_STALE);
         return "stale";
       }
     });

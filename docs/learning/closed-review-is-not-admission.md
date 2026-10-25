@@ -43,6 +43,15 @@ appends closed facts atomically; its
 with the earlier [input-only cases](../runbooks/operation-review-settings.md).
 An approved snapshot still conveys no single-use admission or target capability.
 
+The next [admission contract](../architecture/0087-fully-bound-operation-permit-and-admission.md)
+also requires separate fresh owner execute permission and an independently
+versioned Ed25519 permit with explicit operator issuer/key/audience and lifetime.
+It cannot reuse the legacy permit as though it contained the full operation,
+review, target and current-generation binding. Signing does not atomically
+consume single use; admission must commit that consumption, attempt, lifecycle
+fact and outbox together, without signing or networking under database locks.
+These are approved design constraints, not an implemented admission service.
+
 V4 also illustrates why migration detection cannot trust an empty metadata view:
 an old MariaDB runtime may not see a new table it cannot SELECT. Its old writer
 must still detect the installed protocol from readable migration history and

@@ -152,3 +152,61 @@ During the longer run, one bounded worker stack read showed active PostgreSQL
 authentication/control-test work; no hang/clock-skew cause was asserted and no
 process, Docker, timeout or workload was restarted or weakened. Final formatting,
 documentation and exact pushed-head hosted gates are recorded in the handoff.
+
+## Timestamp compatibility follow-up
+
+Cloud2R's [static review](https://github.com/hemantkgupta/tracepermit/pull/108#issuecomment-6397157388)
+identified a compatibility defect at aab5c03: the clock-regression comparison
+applied the new journal's strict Instant.toString encoding to an already
+validated operation-v1 updatedAt. Valid .000Z and .000000000Z spellings could
+therefore register and upgrade successfully but fail evaluation or pending
+withdrawal with OPERATION_STORAGE_CORRUPT. This was an availability defect, not
+an authority bypass; all reviewer execution was NOT RUN.
+
+The first nine new engine cases had six fixture assertions because the selected
+millisecond value already matched Instant.toString, plus three genuine storage
+refusals. After making the fixture's final transition and dimension coherently
+whole-second, all nine cases reproduced the actual OPERATION_STORAGE_CORRUPT
+failure across PostgreSQL16.4 and both MariaDB versions. No production fix had
+been applied for that corrected reproduction.
+
+The repair parses only the already validated operation timestamp for comparison;
+it preserves original strings, hashes and the frozen timestamp grammar. The
+journal's own strict metadata parser remains unchanged. The same nine cases
+then passed freshly in1m9/18 executed tasks, including populated V3-to-V4 upgrade,
+evaluation/review, pre-evaluation withdrawal and exact immutable-registration
+retention. With the additional clock-regression case, all12 selected cases passed
+freshly in1m11/18 executed tasks.
+
+The first complete follow-up matrix ran373 cases/11 suites:372 passed, one
+failed, zero errors/skips,18 tasks in13m4. All57 review cases passed. The unchanged
+MariaDB10.6 sixteen-contender withdrawal case's second repetition expected
+OPERATION_STATE_STALE but received OPERATION_STORAGE_UNAVAILABLE. Its raw SQL
+cause was not retained; XML/source/one bounded worker observation do not prove a
+specific server error, clock skew or a transient environment cause. The original
+11 XML receipts remain local and must not be replaced by later outputs.
+
+The existing assertion now includes only fixed SQLState/vendor categories and
+clears pre-race categories; its expected outcome,16 contenders,10 repetitions
+per engine and all deadlines remain unchanged. A fresh selected run of all30
+repetitions passed in52s/18 executed tasks. This is diagnostic evidence, not a
+repair or explanation of the earlier failure; an empty category set would not
+exclude a connection failure outside the recording proxy. The required aggregate
+was a second broad attempt without a diagnosed repair of that failure; no third
+automatic broad retry was permitted. Its final result follows.
+
+The required second broad attempt, `pnpm check`, passed124 React and1979 recorded
+Java cases/155 suites, zero failures/errors and one existing absent-archive
+native-PTY skip. All373 operation cases/11 suites ran freshly and passed in this
+aggregate; other valid outputs were reused. Gradle18m15:5 executed/60 up-to-date,
+not an all-fresh repository claim. Coverage94.6493% line/78.5804% branch passed
+unchanged94/75 gates. No third broad attempt was run, no failing expectation or
+deadline was relaxed, and the earlier372/373 failure remains explicitly retained.
+
+Cloud1 separately passed the unchanged30 selected contention repetitions at the
+published aab5c03 baseline in48s/18 fresh tasks with no tracked edits. Its
+[receipt](https://github.com/hemantkgupta/tracepermit/pull/108#issuecomment-6397891809)
+neither qualifies this repair nor establishes the original cause. Read-only
+cwd/Git metadata confirmed a concurrent heavy build in Gemini's separate task
+checkout on this same Mac. Resource overlap is observed; it is not proof of
+the failed SQL outcome's cause. No other worker or Docker was interrupted.

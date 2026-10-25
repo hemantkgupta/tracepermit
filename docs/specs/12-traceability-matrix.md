@@ -25,6 +25,19 @@ REL-001/002/004/005 and OPS-002/004 evidence only. No authenticated endpoint,
 live IdP, permit, admission, attempt/outbox, target, restore fence or whole-ID
 completion is claimed.
 
+The timestamp follow-up preserves valid operation-v1 fractional spellings through
+evaluation, review, pre-evaluation withdrawal and populated V3 upgrade without
+rewriting immutable originals or weakening clock-regression refusal. Its
+three-engine cases are in the same contract; new journal metadata remains strict.
+
+[ADR0087](../architecture/0087-fully-bound-operation-permit-and-admission.md)
+records the human-approved NEXT admission trust contract: separate fresh exact
+owner operations.execute authority and an explicit, independently versioned
+Ed25519 permit with no default lifetime and a maximum of60 seconds, further
+bounded by approval/identity deadlines. Fully bound single-use admission and
+atomic attempt/outbox are proposed, NOT implemented or qualified. No additional
+FR-008/009/010, SEC-004/005/006/010 or DATA-004 completion is claimed.
+
 ## Explicit durable-review rules — input/settings prerequisite
 
 [ADR0084](../architecture/0084-durable-review-membership-and-lifetime.md)

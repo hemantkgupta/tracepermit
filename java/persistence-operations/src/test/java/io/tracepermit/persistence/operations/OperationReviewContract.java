@@ -174,6 +174,71 @@ abstract class OperationReviewContract {
   }
 
   @Test
+  void equivalentOperationTimestampSpellingsSurviveEvaluationWithoutRewritingOriginal() throws Exception {
+    for (int digits : List.of(3, 9)) {
+      reset();
+      registerEquivalentTimestamp(digits);
+      String original = CanonicalJson.canonicalize(initial);
+      JsonNode pending = writer(runtime).evaluate(evaluation(initial, fresh()));
+      JsonNode approved = writer(runtime).review(review(pending, BusinessOperationReview.Decision.APPROVE, fresh()), member(fresh()));
+      assertCurrent(approved);
+      assertThat(CanonicalJson.canonicalize(new JdbcBusinessOperationRepository(source).find(SCOPE, id()).orElseThrow()))
+          .isEqualTo(original);
+      assertThat(binding().path("evaluatedSnapshotHash").asText()).isEqualTo(CanonicalJson.sha256(initial));
+    }
+  }
+
+  @Test
+  void equivalentOperationTimestampSpellingsSurvivePreEvaluationWithdrawal() throws Exception {
+    for (int digits : List.of(3, 9)) {
+      reset();
+      registerEquivalentTimestamp(digits);
+      String original = CanonicalJson.canonicalize(initial);
+      JsonNode cancelled = writer(runtime).withdraw(withdrawal(initial));
+      assertCurrent(cancelled);
+      assertThat(count("tp_operation_review_bindings")).isZero();
+      assertThat(CanonicalJson.canonicalize(new JdbcBusinessOperationRepository(source).find(SCOPE, id()).orElseThrow()))
+          .isEqualTo(original);
+    }
+  }
+
+  @Test
+  void populatedV3WithEquivalentTimestampSpellingUpgradesAndCanEvaluate() throws Exception {
+    try (var extra = isolatedContainer()) {
+      extra.start();
+      assertLoopback(extra);
+      var owner = new TestSource(extra, extra.getUsername(), extra.getPassword());
+      OperationDatabase.initializeAuthorityEmpty(owner);
+      ObjectNode original = equivalentTimestamp(operation(target), 9);
+      new JdbcBusinessOperationRepository(owner).createOrGet(SCOPE, original);
+      OperationAuthorityAdministration.stageNew(owner, profile);
+      OperationAuthorityAdministration.activateStaged(owner, profile);
+      OperationDatabase.upgradeReviewFromV3(owner);
+      JsonNode pending = writer(owner).evaluate(evaluation(original, fresh()));
+      String operationId = original.path("operationId").asText();
+      assertThat(CanonicalJson.canonicalize(new JdbcBusinessOperationLifecycleRepository(owner)
+          .findCurrent(SCOPE, operationId).orElseThrow())).isEqualTo(CanonicalJson.canonicalize(pending));
+      assertThat(CanonicalJson.canonicalize(new JdbcBusinessOperationRepository(owner).find(SCOPE, operationId).orElseThrow()))
+          .isEqualTo(CanonicalJson.canonicalize(original));
+    }
+  }
+
+  @Test
+  void equivalentOperationTimestampStillRejectsWriterClockRegression() throws Exception {
+    for (String table : List.of("tp_operation_lifecycle_heads", "tp_business_operation_facts", "tp_business_operations")) {
+      execute("DELETE FROM " + table);
+    }
+    initial = equivalentTimestamp(initial, 9, storeNow().plusSeconds(60)
+        .truncatedTo(java.time.temporal.ChronoUnit.SECONDS));
+    register();
+    assertCode(() -> writer(runtime).evaluate(evaluation(initial, fresh())), OPERATION_CLOCK_REGRESSION);
+    assertCode(() -> writer(runtime).withdraw(withdrawal(initial)), OPERATION_CLOCK_REGRESSION);
+    assertThat(count("tp_operation_lifecycle_facts")).isZero();
+    assertThat(count("tp_operation_review_bindings")).isZero();
+    assertCurrent(initial);
+  }
+
+  @Test
   void withdrawalsBeforeAndAfterEvaluationUseControlFirstAndNeverConsumeApproval() throws Exception {
     var legacy = new JdbcBusinessOperationLifecycleRepository(runtime);
     assertCode(() -> legacy.withdraw(withdrawal(initial)), OPERATION_SCHEMA_NOT_READY);
@@ -605,6 +670,32 @@ abstract class OperationReviewContract {
   }
 
   private void register() { new JdbcBusinessOperationRepository(source).createOrGet(SCOPE, initial); }
+  private void registerEquivalentTimestamp(int digits) throws Exception {
+    for (String table : List.of("tp_operation_lifecycle_heads", "tp_business_operation_facts", "tp_business_operations")) {
+      execute("DELETE FROM " + table);
+    }
+    initial = equivalentTimestamp(initial, digits);
+    register();
+  }
+
+  private static ObjectNode equivalentTimestamp(ObjectNode snapshot, int digits) {
+    // Use a whole-second last transition so both .000Z and .000000000Z are valid
+    // non-Instant.toString spellings. Keep the dimension/history instants coherent.
+    return equivalentTimestamp(snapshot, digits, Instant.parse(snapshot.path("updatedAt").asText()).plusSeconds(1)
+        .truncatedTo(java.time.temporal.ChronoUnit.SECONDS));
+  }
+
+  private static ObjectNode equivalentTimestamp(ObjectNode snapshot, int digits, Instant at) {
+    var copy = snapshot.deepCopy();
+    ObjectNode last = (ObjectNode) copy.path("transitions").get(copy.path("transitions").size() - 1);
+    last.put("at", at.toString());
+    ((ObjectNode) copy.path(last.path("dimension").asText())).put("updatedAt", at.toString());
+    String spelling = new java.time.format.DateTimeFormatterBuilder().appendInstant(digits).toFormatter()
+        .format(at);
+    assertThat(spelling).isNotEqualTo(Instant.parse(spelling).toString());
+    copy.put("updatedAt", spelling);
+    return (ObjectNode) BusinessOperationValidator.validate(copy);
+  }
   private JdbcGitHubOperationReviewRepository writer(DataSource ds) { return new JdbcGitHubOperationReviewRepository(ds, profile, target); }
   private JsonNode current() { return new JdbcBusinessOperationLifecycleRepository(source).findCurrent(SCOPE, id()).orElseThrow(); }
   private void assertCurrent(JsonNode expected) {

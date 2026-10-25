@@ -24,6 +24,11 @@ not provide permit/admission, attempt/outbox, target dispatch, live IdP/AWS/RDS
 qualification, complete operator metadata visibility or restore/sender fencing.
 Existing simulator flows below remain separately qualified compositions.
 
+The human-approved next [permit/admission contract](../architecture/0087-fully-bound-operation-permit-and-admission.md)
+requires fresh owner execute permission and separately versioned, explicitly
+configured Ed25519 authority capped at60 seconds and existing approval/identity
+deadlines. This is a proposed implementation contract, not a new running path.
+
 ## Approval review export and browser download
 
 The local authenticated simulator approval API provides a bounded per-request
