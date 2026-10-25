@@ -44,7 +44,7 @@ This store is strictly a credential replay boundary for verified workload tokens
    If a wait crosses expiry before commit, the transaction rolls back cleanly with zero rows written and returns `false`. If commit completes after expiry or cleanup delays past expiry, the operation fails closed with `REPLAY_COMMIT_UNKNOWN`, ensuring authority never follows late execution.
 
 6. **Agreed Operator-Persisted Capacity and Fail-Closed Saturation**:
-   Capacity is persisted directly in the schema (`tp_workload_replay_state.capacity` in V2) and operator-agreed. Store instances validate that local configuration matches the persisted capacity; disagreement fails immediately with `REPLAY_CAPACITY_MISMATCH`.
+   Capacity is persisted directly in the schema (`tp_workload_replay_state.capacity` in V2, default `10,000`) and operator-agreed. Store instances validate that local configuration matches the persisted capacity; disagreement fails immediately with `REPLAY_CAPACITY_MISMATCH`.
    Atomic counter update (`UPDATE tp_workload_replay_state SET total_claims = total_claims + 1 WHERE singleton = 1 AND capacity = ? AND total_claims < capacity`) ensures that when capacity is reached, the transaction rolls back the claim insert and refuses admission (`return false`) without evicting live entries.
 
 7. **Commit and Connection Cleanup Acknowledgement**:

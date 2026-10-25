@@ -723,7 +723,7 @@ where `expiresAt <= now` fail closed and write nothing; replays never refresh ex
 overwrite existing timestamps.
 
 Finite capacity is enforced via an agreed operator-configured capacity column in
-schema V2 (`tp_workload_replay_state.capacity`) and an atomic counter update on the
+schema V2 (`tp_workload_replay_state.capacity`, default `10,000`) and an atomic counter update on the
 state singleton (`total_claims = total_claims + 1 WHERE singleton = 1 AND capacity = ? AND total_claims < capacity`).
 Store initialization validates local capacity against persisted capacity and fails closed
 with `REPLAY_CAPACITY_MISMATCH` on disagreement. An explicit `upgradeFromV1` path upgrades

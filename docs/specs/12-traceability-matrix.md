@@ -14,7 +14,7 @@ Persistence stores only bounded SHA-256 fingerprints (`claim_hash`, `tenant_hash
 insertion ensures exactly one winner under contention; duplicate-key errors represent replay;
 expired/equal deadlines fail closed with zero writes; replays never refresh expiry.
 Finite capacity enforces fail-closed saturation via agreed operator capacity in schema V2
-(`tp_workload_replay_state.capacity`) and atomic counter updates without evicting live unexpired claims.
+(`tp_workload_replay_state.capacity`, default `10,000`) and atomic counter updates without evicting live unexpired claims.
 Initial verification checks physical column definitions, nullability, collations (`"C"` / `ascii_bin`),
 and primary keys directly against database metadata, rejecting drift or unmigrated structures.
 Store startup enforces capacity agreement and fails closed with `REPLAY_CAPACITY_MISMATCH` on conflict.

@@ -68,7 +68,7 @@ GRANT SELECT ON `<database_name>`.tp_identity_replay_schema_history TO 'tp_ident
 To initialize a fresh, dedicated database schema:
 
 1. Ensure the target database exists and contains zero tables, views, procedures, or triggers.
-2. Execute the initialization routine using migration owner credentials with the agreed operator capacity (default `65,536`):
+2. Execute the initialization routine using migration owner credentials with the agreed operator capacity (default `10,000`):
    ```java
    WorkloadIdentityReplayDatabase.initializeEmpty(migrationDataSource, capacity);
    ```
@@ -108,7 +108,7 @@ Runtime validation asserts:
 
 ## Capacity Monitoring & Saturation Alerts
 
-The store enforces finite capacity (`DEFAULT_CAPACITY = 65,536` or operator-configured). When `total_claims >= capacity`, subsequent fresh token submissions fail closed (`return false`).
+The store enforces finite capacity (`DEFAULT_CAPACITY = 10,000` or operator-configured). When `total_claims >= capacity`, subsequent fresh token submissions fail closed (`return false`).
 
 ### Monitoring Query
 
