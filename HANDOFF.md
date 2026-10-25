@@ -3,6 +3,13 @@
 GitHub is authoritative. Credentials, private customer/provider planning and local
 operator values remain outside Git. Historical receipts are not fresh results.
 
+## Wave 3 Gemini durable workload-identity replay store checkpoint
+
+Gemini claims sole-writer ownership of `codex/durable-workload-identity-replay` starting from frozen main `0bc6b618aa9eac7df3bacf7a6d4bcafe2a824c4f`.
+Goal packet: `docs/planning/packets/wave3-gemini-durable-workload-replay.md`.
+Scope: Standalone `java/persistence-identity/` module implementing `WorkloadIdentityReplayStore`, dedicated migrations, ADR0080, and qualification across PostgreSQL 16.4 and MariaDB 11.4.13/10.6.25.
+No edits to Mac PR108, Cloud PR105/PR109/PR111/PR112, existing persistence, contracts, or verifiers.
+
 ## Current PR104 reconciliation
 
 The user requested a normal merge of current main
