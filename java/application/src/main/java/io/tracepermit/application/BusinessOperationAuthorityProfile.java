@@ -72,6 +72,14 @@ public final class BusinessOperationAuthorityProfile {
     return fingerprint;
   }
 
+  public BusinessOperationScope scope() {
+    return scope;
+  }
+
+  public long recoveryGeneration() {
+    return recoveryGeneration;
+  }
+
   /**
    * Re-evaluates the canonical action against the copied operator policy. The returned immutable
    * decision is data, not proof; a store must call its OWN profile rather than accept caller results.

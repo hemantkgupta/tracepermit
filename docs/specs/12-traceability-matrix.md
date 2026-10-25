@@ -1,5 +1,25 @@
 # Requirements traceability matrix
 
+## Writer-locked operation policy/recovery controls — prerequisite only
+
+Requirements: FR-003/007/008/012; SEC-001/002/003/005/009/012; REL-001/002/004/005;
+OPS-002/004. No whole-ID or production status promotion.
+
+Opt-in V3 adds an exact owner-scope/profile/generation control row, separately
+privileged inactive staging/activation/quarantine and strictly newer-generation
+replacement. `OperationAuthorityControl` retains the caller's READ COMMITTED
+writer lock without committing. Restricted runtime users can lock but cannot
+alter authority columns. The three-engine `OperationAuthorityControlContract`
+tests current pins, genuine waits, grants, uncertainty and pre-DDL upgrade checks.
+See [ADR0083](../architecture/0083-writer-locked-operation-authority-control.md),
+[runbook](../runbooks/operation-authority-control.md) and
+[learning note](../learning/current-control-is-not-admission.md).
+
+Default V2/migration bytes and existing registration/withdrawal semantics remain.
+No approval/admission/permit/attempt/outbox/target, signed control journal,
+instant revocation, older-backup or paused-sender fencing is supplied. The future
+single transaction must recheck all deadlines/identity/authority after all locks.
+
 ## Closed operation-review authority inputs — first checkpoint
 
 Requirements: FR-002/003/007/008/009/012; SEC-001/002/003/005/009/012;

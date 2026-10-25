@@ -29,7 +29,7 @@ import javax.sql.DataSource;
  */
 public final class JdbcBusinessOperationLifecycleRepository implements BusinessOperationLifecycleRepository {
   private final DataSource source;
-  private final BusinessOperationTransitionPlanner planner = new BusinessOperationTransitionPlanner();
+  private static final BusinessOperationTransitionPlanner planner = new BusinessOperationTransitionPlanner();
 
   public JdbcBusinessOperationLifecycleRepository(DataSource source) {
     this.source = Objects.requireNonNull(source);
@@ -133,7 +133,7 @@ public final class JdbcBusinessOperationLifecycleRepository implements BusinessO
     return result.deepCopy();
   }
 
-  private JsonNode current(Connection connection, BusinessOperationScope scope,
+  static JsonNode current(Connection connection, BusinessOperationScope scope,
       String id, JsonNode initial, boolean lock) throws SQLException {
     JsonNode head;
     String hash;

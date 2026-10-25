@@ -23,6 +23,9 @@ public final class OperationDatabase {
   private static final Set<String> V2_TABLES = Set.of(
       "tp_operation_schema_history", "tp_business_operations", "tp_business_operation_facts",
       "tp_operation_lifecycle_heads", "tp_operation_lifecycle_facts");
+  private static final Set<String> V3_TABLES = Set.of(
+      "tp_operation_schema_history", "tp_business_operations", "tp_business_operation_facts",
+      "tp_operation_lifecycle_heads", "tp_operation_lifecycle_facts", "tp_operation_authority_controls");
 
   enum Engine {
     POSTGRESQL("postgresql"), MARIADB("mariadb");
@@ -44,12 +47,21 @@ public final class OperationDatabase {
 
   /** Explicit first install in an empty dedicated schema/database; runtime never calls this. */
   public static void initializeEmpty(DataSource source) {
+    initializeEmpty(source, "2");
+  }
+
+  /** Explicit opt-in install; controls start absent/inactive, never automatically ready. */
+  public static void initializeAuthorityEmpty(DataSource source) {
+    initializeEmpty(source, "3");
+  }
+
+  private static void initializeEmpty(DataSource source, String version) {
     try (Connection connection = source.getConnection()) {
       Engine engine = inspectWriter(connection);
       if (!tables(connection).isEmpty()) throw error(OPERATION_SCHEMA_NOT_READY);
       requireNoExecutableObjects(connection, engine);
-      flyway(source, engine).migrate();
-      validateExisting(source);
+      flyway(source, engine, version).migrate();
+      validateSchema(source, version);
     } catch (BusinessOperationStorageException failure) {
       throw failure;
     } catch (SQLException | RuntimeException failure) {
@@ -59,7 +71,48 @@ public final class OperationDatabase {
 
   /** Validate only: no automatic migrate, baseline, repair, clean or adoption. */
   public static void validateExisting(DataSource source) {
+    String version;
+    try (Connection connection = source.getConnection()) {
+      version = tables(connection).contains("tp_operation_authority_controls") ? "3" : "2";
+    } catch (SQLException | RuntimeException failure) {
+      throw error(OPERATION_SCHEMA_NOT_READY);
+    }
+    validateSchema(source, version);
+  }
+
+  /** Authority callers require V3 exactly; registration/withdrawal still support qualified V2. */
+  static void validateAuthorityExisting(DataSource source) {
+    validateSchema(source, "3");
+  }
+
+  /** Stopped-writer, additive opt-in upgrade. No activation, repair or partial-DDL recovery. */
+  public static void upgradeAuthorityFromV2(DataSource source) {
     validateSchema(source, "2");
+    try (Connection connection = source.getConnection()) {
+      Engine engine = inspectWriter(connection);
+      connection.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
+      connection.setAutoCommit(false);
+      try (PreparedStatement statement = JdbcBusinessOperationRepository.prepare(connection,
+          "SELECT operation_id, snapshot_json FROM tp_business_operations");
+          ResultSet rows = statement.executeQuery()) {
+        while (rows.next()) {
+          var json = StoredOperationJson.read(rows.getString(2), JdbcBusinessOperationRepository.MAX_BYTES);
+          var context = json.path("trustedContext");
+          var scope = new io.tracepermit.application.BusinessOperationScope(
+              context.path("tenantId").asText(), context.path("workspaceId").asText(),
+              context.path("requesterPrincipalId").asText());
+          var initial = JdbcBusinessOperationRepository.read(connection, scope, "operation_id", rows.getString(1))
+              .orElseThrow(() -> error(OPERATION_SCHEMA_NOT_READY));
+          JdbcBusinessOperationLifecycleRepository.current(connection, scope, rows.getString(1), initial, false);
+        }
+      } finally {
+        connection.rollback();
+      }
+      flyway(source, engine, "3").migrate();
+      validateAuthorityExisting(source);
+    } catch (SQLException | RuntimeException failure) {
+      throw error(OPERATION_SCHEMA_NOT_READY);
+    }
   }
 
   /**
@@ -96,8 +149,11 @@ public final class OperationDatabase {
   private static void validateSchema(DataSource source, String version) {
     try (Connection connection = source.getConnection()) {
       Engine engine = inspectWriter(connection);
-      boolean lifecycle = "2".equals(version);
-      if (!tables(connection).equals(lifecycle ? V2_TABLES : V1_TABLES)) throw error(OPERATION_SCHEMA_NOT_READY);
+      boolean lifecycle = !"1".equals(version);
+      boolean authority = "3".equals(version);
+      if (!tables(connection).equals(authority ? V3_TABLES : lifecycle ? V2_TABLES : V1_TABLES)) {
+        throw error(OPERATION_SCHEMA_NOT_READY);
+      }
       requireNoExecutableObjects(connection, engine);
       Flyway flyway = flyway(source, engine, version);
       flyway.validate();
@@ -116,17 +172,21 @@ public final class OperationDatabase {
         requireForeignKey(connection, "tp_operation_lifecycle_heads", "tp_business_operations");
         requireForeignKey(connection, "tp_operation_lifecycle_facts", "tp_operation_lifecycle_heads");
       }
+      if (authority) requireUnique(connection, "tp_operation_authority_controls", List.of("scope_hash"));
       if (engine == Engine.MARIADB) {
         try (PreparedStatement statement = connection.prepareStatement("""
             SELECT COUNT(*) FROM information_schema.tables
              WHERE table_schema = DATABASE() AND table_name IN
                (%s) AND engine = 'InnoDB'
-            """.formatted(lifecycle
-                ? "'tp_business_operations', 'tp_business_operation_facts', 'tp_operation_lifecycle_heads', 'tp_operation_lifecycle_facts'"
+            """.formatted(authority
+                ? "'tp_business_operations', 'tp_business_operation_facts', 'tp_operation_lifecycle_heads', 'tp_operation_lifecycle_facts', 'tp_operation_authority_controls'"
+                : lifecycle ? "'tp_business_operations', 'tp_business_operation_facts', 'tp_operation_lifecycle_heads', 'tp_operation_lifecycle_facts'"
                 : "'tp_business_operations', 'tp_business_operation_facts'"))) {
           statement.setQueryTimeout(5);
           try (ResultSet rows = statement.executeQuery()) {
-            if (!rows.next() || rows.getInt(1) != (lifecycle ? 4 : 2)) throw error(OPERATION_SCHEMA_NOT_READY);
+            if (!rows.next() || rows.getInt(1) != (authority ? 5 : lifecycle ? 4 : 2)) {
+              throw error(OPERATION_SCHEMA_NOT_READY);
+            }
           }
         }
       }

@@ -25,11 +25,19 @@ the traceability matrix, and add positive and negative tests. The
 [simulator scenarios](../demo-scenarios/README.md) show qualified POC paths.
 No demo path may contact a real destructive target.
 
+[ADR0083](../architecture/0083-writer-locked-operation-authority-control.md)
+adds opt-in V3 current profile/recovery controls, explicit inactive staging and
+new-generation replacement, restricted operator/runtime grants and a guard that
+retains a caller-owned writer lock. Default installation remains V2; V1/V2 bytes
+are unchanged. This is not the complete approval/admission transaction or an
+installed service; see [qualification and limits](../runbooks/operation-authority-control.md).
+
 [ADR0077](../architecture/0077-closed-operation-authority-contracts.md) adds only
 closed, unwired operation-review inputs and a copied/pinned static operator
 policy profile. It does not implement durable approval, admission or execution;
 the [learning note](../learning/closed-review-is-not-admission.md) separates these
-remaining authority boundaries. Existing operation storage remains V2.
+remaining authority boundaries. Its first contract checkpoint retains V2 storage;
+the later opt-in V3 control prerequisite does not complete those boundaries.
 
 [ADR0075](../architecture/0075-github-business-operation-binding.md) adds a pure
 operation/target hash join with an explicit strict GitHub profile and independent

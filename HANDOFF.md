@@ -3,6 +3,62 @@
 GitHub is authoritative. Credentials, private customer/provider planning and local
 operator values remain outside Git. Historical receipts are not fresh results.
 
+## Current Mac authority-control prerequisite
+
+Mac retains sole writer ownership of `codex/durable-operation-authority`/PR108.
+[ADR0083](docs/architecture/0083-writer-locked-operation-authority-control.md)
+adds opt-in V3 current policy/profile/recovery control, not durable reviewer
+approval or admission. Default initialization remains V2; V1/V2 bytes are
+unchanged. Explicit populated upgrade validates immutable/current journals before
+DDL. Runtime startup validates exact V2/V3 without auto-migrate or repair.
+
+New profiles/replacements start inactive. Quarantined generations cannot be
+reactivated; replacements need a greater generation. A restricted runtime can
+lock/recheck current control on the caller's READ COMMITTED writer transaction,
+but cannot mutate authority columns. Only a separately privileged operator
+datasource can stage/activate/quarantine/replace. There is no endpoint, permit,
+attempt/outbox, target call or complete authority transaction. The next owner
+must retain this lock, acquire remaining authority locks, sample fresh writer
+time and atomically recheck/commit the whole closed approval/admission boundary.
+
+All33 initial control cases passed,11 per exact engine. Added populated/corrupt
+upgrade checks also passed all33. Removing profile/readiness guards made all6
+selected cases fail; guards were restored, then the full forced/cache-disabled
+operation suite passed278 cases,14tasks executed in1m50. An intermediate full
+`pnpm check` passed after that run. Subsequent review found unchecked datasource
+diagnostics escaping the new schema-version detection. Three new engine cases
+failed before the fixed-code catch repair. The final forced/cache-disabled
+operation suite then passed281 cases/7 suites, zero failures/errors/skips,
+14tasks executed in1m50. Additional activation-acknowledgement assertions also
+passed the complete281-case forced suite in1m52: an activation can commit while
+the caller receives unknown, never proof of rollback. The final aggregate gate
+passed afterward:124 React cases and1878 recorded Java cases/150 suites,
+zero failures/errors and one existing archive-dependent native-PTY skip.
+The final incremental Gradle gate took4s (3 tasks executed/62 up-to-date), reusing
+the freshly forced operation result and previously qualified unchanged suites;
+these are not all fresh executions. Coverage94.50% line/78.63% branch passed
+unchanged thresholds. Formatting,1132 links/3 helpers,13 flows/drift and diff
+checks passed; final results-only documentation is checked separately. Hosted
+checks must match the final pushed head, not the earlier green `c3f2b2d`.
+
+Cloud1's [PR114](https://github.com/hemantkgupta/tracepermit/pull/114) handoff at
+`b1a88473573efbd9dd942ef265c3a757985d93ad` was consumed with its green exact-head
+checks/released writer. Independent Mac default-temp qualification failed3/56
+configuration cases; the identical source passed56/56 with a canonical-temp
+diagnostic control. [The review receipt](https://github.com/hemantkgupta/tracepermit/pull/114#issuecomment-6394125895)
+records this limit. Cloud1 explicitly reacquired the same branch for tests/docs
+repair; production link/private-mode gates stay intact. The detached Mac review
+worktree has no tracked edits and never acquires producer writer ownership.
+
+Cloud2's [PR115](https://github.com/hemantkgupta/tracepermit/pull/115) is still
+producer-owned. Its new HTTP runtime was read at
+`928d5ca796888178f661ab3fcf229fb9ccbbf8cc`; a provisional accepted-socket setup
+cleanup finding was sent for investigation/regression before release. Local
+producer counts are progress reports, not a consumed final handoff. No duplicate
+assignment or PR merge is authorized. Gemini's persistence-identity remains
+exclusive. The standing coordinator records exact heads and gates, then assigns
+subsequent non-overlapping tasks only after review/release.
+
 ## Wave 2 Mac ownership checkpoint
 
 The operator authorized the eight-hour durable authority/admission lane and two
