@@ -180,3 +180,13 @@ To ensure regression prevention across all 10 threat vectors, the deterministic 
 3. **Pre-Production Prerequisites**: Live customer pilots must not proceed until:
    - PR #105 (credential provider) and PR #107 (MariaDB transaction engine) are fully implemented and merged.
    - Dedicated AWS infrastructure with MariaDB/RDS and private GitHub App installations are provisioned and tested end-to-end under genuine network conditions.
+
+## Evidence-repair lane ownership checkpoint
+
+Cloud 1 is preparing a tests/docs-only correction on
+`codex/sandbox-qualification-evidence-repair`, based exactly on producer
+`0963e8423e7d57a8c98c7aaf281a45317d7a3566`. The producer branch has no published
+writer release and is not claimed or changed. This isolated lane will distinguish
+unit/mock observations, separately existing JDBC evidence and untested integration;
+no runtime change or production-readiness claim is authorized. Findings and gate
+results in the producer report above are being verified, not inherited as proof.
