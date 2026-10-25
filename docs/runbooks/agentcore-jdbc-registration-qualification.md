@@ -38,8 +38,9 @@ provisions a separate runtime user. Runtime receives SELECT on the four data
 tables and schema history, INSERT only on the original/facts/head tables and
 schema USAGE where required. It has no journal INSERT, UPDATE, DELETE or DDL
 permission. Normal repository construction validates existing schema. The
-composition proves runtime cannot create/alter tables, rewrite/delete originals
-or facts, or update heads; exact table inventory contains no authority/permit/
+composition requires the engine's permission-denied category (not an arbitrary
+SQL/foreign-key failure) for runtime create/alter, rewrite/delete, head update and
+journal INSERT attempts; exact table inventory contains no authority/permit/
 attempt/target objects. The ingress constructor has no such port to call.
 
 Positive controls inspect the database directly: one original snapshot, all
@@ -134,3 +135,17 @@ caches disabled and fresh XML on all three engines. Frozen install, format,
 operation suite, full-project checks and exact-head hosted receipts are
 recorded in the final [PR111](https://github.com/hemantkgupta/tracepermit/pull/111)
 handoff. Earlier environment/PR109 receipts are not fresh evidence for this slice.
+
+Final review strengthened privilege probes to require PostgreSQL42501 or MariaDB
+42000 with1142/1143, including a journal INSERT with no selected rows. The final
+three-engine focused run again passed174/174, zero failures/errors/skips,
+20/20 tasks executed in54s with caches disabled and fresh XML.
+
+One local full-check attempt overlapped that focused run. The narrow test task
+replaced the remote module's coverage input before aggregate verification, which
+then correctly failed unchanged94%/75% gates at reported87%/68%. This is a test
+orchestration error, not a valid full-suite qualification receipt. Its log and
+4m18s/4-executed/61-up-to-date facts are preserved. The final full check runs
+alone after the focused run has finished, rebuilding complete test/coverage
+inputs. No thresholds or assertions were weakened and no failing product test
+was retried to green. Final full/hosted evidence is in PR111's handoff.

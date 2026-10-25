@@ -370,12 +370,18 @@ abstract class AgentCoreJdbcRegistrationContract {
     for (String sql : List.of("CREATE TABLE tp_ingress_forbidden (id INTEGER)",
         "UPDATE tp_business_operations SET snapshot_json = snapshot_json",
         "DELETE FROM tp_business_operations", "UPDATE tp_operation_lifecycle_heads SET snapshot_json = snapshot_json",
-        "DELETE FROM tp_business_operation_facts", "ALTER TABLE tp_business_operations ADD COLUMN forbidden INTEGER")) {
+        "DELETE FROM tp_business_operation_facts", "ALTER TABLE tp_business_operations ADD COLUMN forbidden INTEGER",
+        "INSERT INTO tp_operation_lifecycle_facts SELECT * FROM tp_operation_lifecycle_facts WHERE 1 = 0")) {
       boolean refused = false;
       try (Connection connection = runtime.getConnection(); var statement = connection.createStatement()) {
         statement.setQueryTimeout(5);
         statement.execute(sql);
       } catch (SQLException expected) {
+        // A constraint/syntax failure is not evidence of a restricted grant.
+        boolean permissionDenied = postgres() ? "42501".equals(expected.getSQLState())
+            : "42000".equals(expected.getSQLState())
+                && (expected.getErrorCode() == 1142 || expected.getErrorCode() == 1143);
+        assertThat(permissionDenied).as("Driver must report permission denial").isTrue();
         refused = true;
       }
       assertThat(refused).as("Runtime privilege denial").isTrue();
