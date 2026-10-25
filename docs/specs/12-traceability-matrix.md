@@ -1,5 +1,24 @@
 # Requirements traceability matrix
 
+## Ingress-to-JDBC registration qualification
+
+Requirements: FR-002/003/010/012; SEC-001/002/003/004/009/012;
+REL-001/002/003/005/009; DATA-001; OPS-002/004; PORT-004. Test-only follow-up,
+with no runtime or whole-requirement status change. The new
+`agentcore.jdbc.AgentCoreJdbcRegistrationContract` runs the real verifier,
+ingress and JDBC repository against required PostgreSQL16.4 and
+MariaDB11.4.13/10.6.25 fixtures under restricted runtime grants. Direct reads
+check the original, three initial facts, exact head and no lifecycle journal;
+scoped golden/retry/reconstruction, actual permission failure, forwarded-JDBC
+write/commit/close faults and16-way contention qualify metadata registration.
+Rejected identities/body scope/second-token composition stop before JDBC.
+
+Policy/artifact-only profile changes intentionally retain original-return
+semantics; workspace derives from operator enrollment, not a provider workspace
+claim. Metadata recovery conveys no authority or dispatch. Live interoperability,
+shared durable replay, revocation and executor composition remain separate gates.
+See the [qualification record](../runbooks/agentcore-jdbc-registration-qualification.md).
+
 ## Execution-disabled AgentCore registration ingress
 
 Requirements: FR-002/003/010/012; SEC-001/002/003/004/009/012;
