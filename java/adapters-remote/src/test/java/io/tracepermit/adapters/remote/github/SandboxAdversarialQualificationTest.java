@@ -43,8 +43,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * Deterministic adversarial qualification probes covering sandbox foundations across
- * operation binding, target execution, withdrawal, and credential boundary controls.
+ * Synthetic unit/mock probes of pure binding, supplied withdrawal contexts and the target adapter.
+ * No JDBC transaction, actual row-lock wait, live identity or concrete credential exchange is used.
  */
 final class SandboxAdversarialQualificationTest {
   private static final String REPO = "tracepermit/agentcore-pr-pilot";
@@ -162,7 +162,7 @@ final class SandboxAdversarialQualificationTest {
   // --------------------------------------------------------------------------------------
 
   @Test
-  void scopeAndRehashedRequestSubstitutionCannotBypassExactProfileOrImpersonateTenant() {
+  void scopeAndRehashedActionsAreBoundWithoutGrantingExecution() {
     var expected = profile();
     ObjectNode source = operation(expected);
 
@@ -196,10 +196,13 @@ final class SandboxAdversarialQualificationTest {
     // Permit issued for original action is rejected when presented with altered rehashed action
     var originalAction = action();
     var permitForOriginal = permit(originalAction);
-    var alteredAction = action();
+    var alteredAction = originalAction.deepCopy();
     args(alteredAction).put("title", "Malicious unapproved PR");
     assertThatThrownBy(() -> adapter.execute(alteredAction, permitForOriginal))
-        .isInstanceOf(io.tracepermit.security.ExecutionPermitException.class);
+        .isInstanceOfSatisfying(
+            io.tracepermit.security.ExecutionPermitException.class,
+            failure -> assertThat(failure.code()).isEqualTo("PERMIT_ACTION_MISMATCH"));
+    assertThat(requests).isEmpty();
 
     // Adversarial probe 3: Attacker alters target repository and recomputes hashes
     ObjectNode rehashedRepo = operation(expected);
@@ -229,7 +232,7 @@ final class SandboxAdversarialQualificationTest {
   // --------------------------------------------------------------------------------------
 
   @Test
-  void callerAuthoredApprovalOrExecutionLabelsRemainDataAndNeverConveyAuthority() {
+  void callerAuthoredLabelsBindAsDataButDoNotSupplyATargetPermit() {
     var expected = profile();
     var planner = new BusinessOperationTransitionPlanner();
     ObjectNode initial = operation(expected);
@@ -264,7 +267,7 @@ final class SandboxAdversarialQualificationTest {
   // --------------------------------------------------------------------------------------
 
   @Test
-  void staleRecoveryGenerationPolicyVersionAndContentHashFailClosed() {
+  void staleExpectedProfilesFailAtPureBindingBoundary() {
     var expected = profile();
     ObjectNode initial = operation(expected);
 
@@ -274,7 +277,8 @@ final class SandboxAdversarialQualificationTest {
     // Adversarial probe 1: Stale recovery generation in snapshot (G1 vs active G2)
     var bumpedGenerationProfile = profile("test", 2, policy(), artifacts(), TARGET);
     assertThatThrownBy(() -> GitHubBusinessOperationBinding.bind(SCOPE, initial, bumpedGenerationProfile))
-        .isInstanceOf(GitHubBusinessOperationBinding.BindingException.class);
+        .isInstanceOfSatisfying(GitHubBusinessOperationBinding.BindingException.class,
+            failure -> assertThat(failure.code()).isEqualTo("GITHUB_OPERATION_BINDING_INVALID"));
 
     // Adversarial probe 2: Stale policy version (version 1 vs active version 2)
     var bumpedPolicyProfile =
@@ -285,7 +289,8 @@ final class SandboxAdversarialQualificationTest {
             artifacts(),
             TARGET);
     assertThatThrownBy(() -> GitHubBusinessOperationBinding.bind(SCOPE, initial, bumpedPolicyProfile))
-        .isInstanceOf(GitHubBusinessOperationBinding.BindingException.class);
+        .isInstanceOfSatisfying(GitHubBusinessOperationBinding.BindingException.class,
+            failure -> assertThat(failure.code()).isEqualTo("GITHUB_OPERATION_BINDING_INVALID"));
 
     // Adversarial probe 3: In-place modified policy content hash
     var alteredHashProfile =
@@ -296,7 +301,8 @@ final class SandboxAdversarialQualificationTest {
             artifacts(),
             TARGET);
     assertThatThrownBy(() -> GitHubBusinessOperationBinding.bind(SCOPE, initial, alteredHashProfile))
-        .isInstanceOf(GitHubBusinessOperationBinding.BindingException.class);
+        .isInstanceOfSatisfying(GitHubBusinessOperationBinding.BindingException.class,
+            failure -> assertThat(failure.code()).isEqualTo("GITHUB_OPERATION_BINDING_INVALID"));
 
     // Adversarial probe 4: Stale artifact digest
     var alteredArtifactProfile =
@@ -307,15 +313,17 @@ final class SandboxAdversarialQualificationTest {
             Map.of("policy_bundle", "sha256:" + "e".repeat(64), "adapter_release", HASH_7),
             TARGET);
     assertThatThrownBy(() -> GitHubBusinessOperationBinding.bind(SCOPE, initial, alteredArtifactProfile))
-        .isInstanceOf(GitHubBusinessOperationBinding.BindingException.class);
+        .isInstanceOfSatisfying(GitHubBusinessOperationBinding.BindingException.class,
+            failure -> assertThat(failure.code()).isEqualTo("GITHUB_OPERATION_BINDING_INVALID"));
+    assertThat(requests).isEmpty();
   }
 
   // --------------------------------------------------------------------------------------
-  // 4. Expiry after genuine lock waits
+  // 4. Supplied-time expiry boundary (actual JDBC lock waits are tested in persistence-operations)
   // --------------------------------------------------------------------------------------
 
   @Test
-  void authorityExpiryEvaluatedAtStoreTimeFailsClosedEvenOnExactEquality() {
+  void suppliedStoreTimeExpiryRejectsEqualityAndLaterInstants() {
     var token =
         new BusinessOperationTransitionPlanner.StateToken(
             "1e7d1ec3-af54-4c5b-8f73-f58e9c3c9863", 1, 3, 1, 1, 1, HASH_5);
@@ -334,14 +342,13 @@ final class SandboxAdversarialQualificationTest {
     // Positive control: Authority verified before deadline succeeds
     assertThatNoException().isThrownBy(() -> command.requireAuthorizedAt(DEADLINE.minusMillis(1)));
 
-    // Adversarial probe 1: Store time equals exact deadline (lock wait ended exactly at expiry)
-    // Invariant: equality is expired (isAfter must be strictly true)
+    // Supplied equality is expired. No lock or database clock is involved in this unit probe.
     assertThatThrownBy(() -> command.requireAuthorizedAt(DEADLINE))
         .isInstanceOfSatisfying(
             BusinessOperationStorageException.class,
             failure -> assertThat(failure.code()).isEqualTo(BusinessOperationStorageException.Code.OPERATION_AUTHENTICATION_EXPIRED));
 
-    // Adversarial probe 2: Store time is after deadline (lock wait exceeded deadline)
+    // Adversarial probe 2: supplied store time is after deadline
     assertThatThrownBy(() -> command.requireAuthorizedAt(DEADLINE.plusMillis(1)))
         .isInstanceOfSatisfying(
             BusinessOperationStorageException.class,
@@ -353,11 +360,11 @@ final class SandboxAdversarialQualificationTest {
   }
 
   // --------------------------------------------------------------------------------------
-  // 5. Duplicate admission and cached success replay
+  // 5. Same-permit rejection and fresh-permit cached success in a process-local ledger
   // --------------------------------------------------------------------------------------
 
   @Test
-  void succeededAttemptReplaysCachedResultWithoutSecondNetworkDispatch() {
+  void samePermitReplayIsRejectedAndFreshPermitUsesCachedSuccess() {
     register();
     var action = action();
     var permit = permit(action);
@@ -368,6 +375,15 @@ final class SandboxAdversarialQualificationTest {
     assertThat(first.htmlUrl()).isEqualTo("https://github.com/" + REPO + "/pull/42");
     assertThat(posts()).isEqualTo(1);
 
+    // Reusing the exact consumed token is distinct from presenting a newly issued permit.
+    int afterFirstDispatch = requests.size();
+    assertThatThrownBy(() -> adapter.execute(action, permit))
+        .isInstanceOfSatisfying(
+            io.tracepermit.security.ExecutionPermitException.class,
+            failure -> assertThat(failure.code()).isEqualTo("EXECUTION_PERMIT_REPLAYED"));
+    assertThat(requests).hasSize(afterFirstDispatch);
+    assertThat(posts()).isEqualTo(1);
+
     // Duplicate admission / replay attempt with same operation key
     // A fresh permit for the same action is presented; adapter returns cached success without second network call
     var second = adapter.execute(action, permit(action));
@@ -375,19 +391,20 @@ final class SandboxAdversarialQualificationTest {
     assertThat(second.htmlUrl()).isEqualTo(first.htmlUrl());
     // Invariant: zero additional POST requests sent to target
     assertThat(posts()).isEqualTo(1);
+    assertThat(requests).hasSize(afterFirstDispatch);
   }
 
   // --------------------------------------------------------------------------------------
-  // 6. Partial transactional failure
+  // 6. Incomplete post-dispatch confirmation; no database transaction is composed here
   // --------------------------------------------------------------------------------------
 
   @Test
-  void truncatedOrMalformedTargetConfirmationFailsClosedAndRecordsFailure() {
+  void incompletePostDispatchConfirmationStaysUnknownAndCannotPostAgain() {
     register();
     var action = action();
     var permit = permit(action);
 
-    // Inject malformed 201 response missing required fields
+    // Valid JSON, but incomplete 201 confirmation after the target has received the POST.
     override =
         req -> {
           if (req.getMethod().equals("POST")) {
@@ -401,19 +418,28 @@ final class SandboxAdversarialQualificationTest {
             GitHubPullRequestException.class,
             failure ->
                 assertThat(failure.errorCode())
-                    .isIn("INVALID_TARGET_CONFIRMATION", "TARGET_PREFLIGHT_OR_IDENTITY_REJECTED"));
+                    .isEqualTo("TARGET_PREFLIGHT_OR_IDENTITY_REJECTED"));
 
-    // Attempt is NOT marked succeeded
-    var attempt = ledger.findByIdempotencyKey(key());
-    assertThat(attempt.status()).isNotEqualTo("succeeded");
+    assertThat(status()).isEqualTo("unknown");
+    assertThat(posts()).isEqualTo(1);
+    int afterFirstDispatch = requests.size();
+
+    override = req -> null; // Even a now-successful fake target cannot authorize another dispatch.
+    assertThatThrownBy(() -> adapter.execute(action, permit(action)))
+        .isInstanceOfSatisfying(
+            GitHubPullRequestException.class,
+            failure -> assertThat(failure.errorCode()).isEqualTo("EXECUTION_OUTCOME_UNKNOWN"));
+    assertThat(status()).isEqualTo("unknown");
+    assertThat(posts()).isEqualTo(1);
+    assertThat(requests).hasSize(afterFirstDispatch);
   }
 
   // --------------------------------------------------------------------------------------
-  // 7. Changed refs and resource bindings
+  // 7. Changed supplied expected refs and resource bindings (pure binding, not a remote ref GET)
   // --------------------------------------------------------------------------------------
 
   @Test
-  void changedRemoteRefOrCommitShaBreaksPreconditionBinding() {
+  void changedExpectedRefOrCommitShaBreaksPureBinding() {
     var expected = profile();
     ObjectNode source = operation(expected);
 
@@ -452,6 +478,7 @@ final class SandboxAdversarialQualificationTest {
             new GitHubPilotTargetBinding(71, 101, 201, REPO, "feature/other", BASE, "a".repeat(40), "b".repeat(40)));
     assertThatThrownBy(() -> GitHubBusinessOperationBinding.bind(SCOPE, source, changedHeadRefProfile))
         .isInstanceOf(GitHubBusinessOperationBinding.BindingException.class);
+    assertThat(requests).isEmpty();
   }
 
   // --------------------------------------------------------------------------------------
@@ -523,14 +550,16 @@ final class SandboxAdversarialQualificationTest {
     override = req -> null;
     ReconciliationObservation obsSuccess = resolver.lookup(candidate());
     assertThat(obsSuccess.confirmed()).isTrue();
+    assertThat(status()).isEqualTo("unknown"); // Lookup observes; it does not commit a ledger outcome.
+    assertThat(posts()).isEqualTo(1);
   }
 
   // --------------------------------------------------------------------------------------
-  // 9. Unrelated workload / user identity being treated as delegation
+  // 9. Supplied withdrawal-context checks and separate permit audience; no delegation proof
   // --------------------------------------------------------------------------------------
 
   @Test
-  void unrelatedWorkloadOrAudienceMismatchRejectsDelegation() {
+  void withdrawalContextAuthorizationAndPermitAudienceAreSeparateBoundaries() {
     var token =
         new BusinessOperationTransitionPlanner.StateToken(
             "1e7d1ec3-af54-4c5b-8f73-f58e9c3c9863", 1, 3, 1, 1, 1, HASH_5);
@@ -624,21 +653,24 @@ final class SandboxAdversarialQualificationTest {
     var evaluation = evaluation(action);
     var wrongAudiencePermit = permits.issue(action, evaluation, "github.pull_request.merge");
     assertThatThrownBy(() -> adapter.execute(action, wrongAudiencePermit))
-        .isInstanceOf(io.tracepermit.security.ExecutionPermitException.class);
+        .isInstanceOfSatisfying(
+            io.tracepermit.security.ExecutionPermitException.class,
+            failure -> assertThat(failure.code()).isEqualTo("WRONG_PERMIT_AUDIENCE"));
 
     // Adversarial probe 7: Missing or blank permit token
     assertThatThrownBy(() -> adapter.execute(action, ""))
         .isInstanceOfSatisfying(
             GitHubPullRequestException.class,
             failure -> assertThat(failure.errorCode()).isEqualTo("MISSING_PERMIT"));
+    assertThat(requests).isEmpty();
   }
 
   // --------------------------------------------------------------------------------------
-  // 10. Secrets or sensitive arguments escaping through errors/evidence
+  // 10. Selected diagnostic strings omit a canary; the full snapshot remains sensitive data
   // --------------------------------------------------------------------------------------
 
   @Test
-  void sensitiveArgumentsAndCredentialsNeverEscapeThroughErrorsOrStringForms() {
+  void selectedErrorsAndDiagnosticStringsOmitCanaryButSnapshotIsSensitive() {
     var expected = profile();
     ObjectNode source = operation(expected);
 
@@ -676,6 +708,8 @@ final class SandboxAdversarialQualificationTest {
     // Probe 3: toString() representations of internal components are all redacted
     var bound = GitHubBusinessOperationBinding.bind(SCOPE, source, expected);
     assertThat(bound.toString()).isEqualTo("GitHubBoundOperationData[redacted; no execution authority]");
+    assertThat(bound.snapshot().path("canonicalAction").path("action").path("arguments")
+        .path("body").textValue().equals(sensitiveCanary)).isTrue();
     assertThat(expected.toString()).isEqualTo("GitHubExpectedOperationProfile[redacted]");
     assertThat(expected.policyRelease().toString()).isEqualTo("GitHubExpectedPolicyRelease[redacted]");
 
