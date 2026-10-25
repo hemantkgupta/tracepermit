@@ -11,9 +11,32 @@ of `codex/durable-operation-authority` from main
 `0bc6b618aa9eac7df3bacf7a6d4bcafe2a824c4f` in the isolated
 `tracepermit-durable-authority` checkout. The [wave-two board](docs/planning/wave2-durable-authority-batch.md)
 records exclusive paths, design prerequisites and bounded completion gates.
-This initial documentation checkpoint claims no runtime change or new test pass.
+The initial documentation checkpoint claimed no runtime change or new test pass.
 The generic cloud launches stopped at environment selection before editing;
 their creation is not evidence that either approved cloud lane is running.
+
+The first implementation checkpoint adds unwired application contracts only:
+closed independent-human review inputs and a copied/pinned static review policy
+profile; see [ADR0077](docs/architecture/0077-closed-operation-authority-contracts.md).
+No V2 database schema, withdrawal behavior, permit, admission, API or target wiring
+changes. Durable transaction implementation and multi-engine qualification remain
+pending. Mac retains exclusive writer ownership of this draft branch; it is not
+released for another environment to edit.
+
+First contract checkpoint evidence:13 focused application tests passed. Removing
+only the independent-human and resource-binding guards made both selected
+negative-control cases fail; both guards were restored, and the application
+tests passed in the subsequent broad run. Formatting,1121 documentation links,
+three link helpers and13 flow/drift cases passed. The first `pnpm check` is a
+**failure**, not qualification:124 React cases passed, but the unchanged real
+PostgreSQL head-lock expiry case unexpectedly succeeded (244/245 operation cases
+passed). Gradle stopped after30m44; later aggregate/coverage gates did not finish.
+No test or timing assertion was weakened and no retry-to-green was performed.
+An independent bounded Docker health observation later showed its server clock
+approximately9852seconds behind the Mac clock. This is an environmental lead,
+not yet an independently verified database-clock diagnosis or runtime fix.
+No Docker restart, clock change or unrelated cleanup is authorized/performed.
+The broad failure must be diagnosed/resolved before this checkpoint is qualified.
 
 ## Current PR104 reconciliation
 

@@ -25,6 +25,12 @@ the traceability matrix, and add positive and negative tests. The
 [simulator scenarios](../demo-scenarios/README.md) show qualified POC paths.
 No demo path may contact a real destructive target.
 
+[ADR0077](../architecture/0077-closed-operation-authority-contracts.md) adds only
+closed, unwired operation-review inputs and a copied/pinned static operator
+policy profile. It does not implement durable approval, admission or execution;
+the [learning note](../learning/closed-review-is-not-admission.md) separates these
+remaining authority boundaries. Existing operation storage remains V2.
+
 [ADR0075](../architecture/0075-github-business-operation-binding.md) adds a pure
 operation/target hash join with an explicit strict GitHub profile and independent
 golden recipe. Separately supplied scope/policy/generation/target expectations

@@ -1,5 +1,25 @@
 # Requirements traceability matrix
 
+## Closed operation-review authority inputs — first checkpoint
+
+Requirements: FR-002/003/007/008/009/012; SEC-001/002/003/005/009/012;
+REL-001/002/004/005; OPS-002/004. No whole-ID status promotion.
+
+`BusinessOperationReview` and `TrustedOperationReviewerContext` close independent
+human/tenant/workspace/role/scope/deadline inputs without changing legacy reviewer
+contexts. `BusinessOperationAuthorityProfile` copies operator policy and pins exact
+scope/adapter/generation/policy/artifacts/resource bindings, with bounded canonical
+UTF-8 and actual review-only policy evaluation. Focused application tests cover
+negative controls, coherent rehashed substitutions, defensive copies and fixed
+cause/suppression-safe rejection. See [ADR0077](../architecture/0077-closed-operation-authority-contracts.md)
+and the [learning note](../learning/closed-review-is-not-admission.md).
+
+These are unwired application contracts, **not** durable approval/admission,
+current database policy/recovery proof, verified provider enrollment, a permit,
+claim, target executor, outbox or new API. V2 storage/withdrawal and migration
+bytes remain unchanged; complete transaction and three-engine qualification
+remain required. Existing simulator qualifications do not qualify this path.
+
 ## Pure GitHub business-operation binding
 
 Requirements: FR-002/010/012; SEC-001/002/003/005/009/012; REL-003/005/008;
