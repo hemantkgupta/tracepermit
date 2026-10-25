@@ -187,17 +187,34 @@ abstract class OperationAuthorityControlContract {
         "UPDATE tp_operation_authority_controls SET recovery_generation = 2",
         "UPDATE tp_operation_authority_controls SET profile_hash = 'synthetic'",
         "DELETE FROM tp_operation_authority_controls",
-        "ALTER TABLE tp_operation_authority_controls ADD COLUMN forbidden INTEGER",
-        "INSERT INTO tp_operation_authority_controls SELECT * FROM tp_operation_authority_controls"}) {
+        "ALTER TABLE tp_operation_authority_controls ADD COLUMN forbidden INTEGER"}) {
       try (Connection connection = runtime.getConnection(); var statement = connection.createStatement()) {
         assertThatThrownBy(() -> statement.execute(sql)).isInstanceOf(SQLException.class);
       }
     }
+    var unused = profile(new BusinessOperationScope(SCOPE.tenantId(), "unused-workspace",
+        SCOPE.requesterPrincipalId()), 1, "unused");
+    // A duplicate key must not masquerade as INSERT privilege denial. Prove these exact values
+    // are insertable with the owner, roll them back, and then require an actual ACL rejection.
+    try (Connection connection = writer(source)) {
+      assertThat(insertControl(connection, unused)).isEqualTo(1);
+      connection.rollback();
+    }
+    assertThat(count("tp_operation_authority_controls")).isEqualTo(1);
+    try (Connection connection = writer(runtime)) {
+      assertThatThrownBy(() -> insertControl(connection, unused))
+          .isInstanceOfSatisfying(SQLException.class, failure -> {
+            assertThat(failure.getSQLState()).isEqualTo(postgres() ? "42501" : "42000");
+            if (!postgres()) assertThat(failure.getErrorCode()).isEqualTo(1142);
+          });
+      connection.rollback();
+    }
     assertCode(() -> OperationAuthorityAdministration.quarantine(runtime, profile), OPERATION_STORAGE_UNAVAILABLE);
-    assertCode(() -> OperationAuthorityAdministration.stageNew(runtime, profile), OPERATION_STORAGE_UNAVAILABLE);
+    assertCode(() -> OperationAuthorityAdministration.stageNew(runtime, unused), OPERATION_STORAGE_UNAVAILABLE);
     assertCode(() -> OperationAuthorityAdministration.activateStaged(runtime, profile), OPERATION_STORAGE_UNAVAILABLE);
     assertCode(() -> OperationAuthorityAdministration.stageReplacement(runtime, profile,
         profile(SCOPE, 2, "new")), OPERATION_STORAGE_UNAVAILABLE);
+    assertThat(count("tp_operation_authority_controls")).isEqualTo(1);
     if (postgres()) {
       try (Connection connection = runtime.getConnection(); var statement = connection.createStatement()) {
         assertThatThrownBy(() -> statement.executeUpdate("UPDATE tp_operation_authority_controls SET lock_marker = 1"))
@@ -387,6 +404,19 @@ abstract class OperationAuthorityControlContract {
     connection.setTransactionIsolation(Connection.TRANSACTION_READ_COMMITTED);
     connection.setAutoCommit(false);
     return connection;
+  }
+
+  private static int insertControl(Connection connection, BusinessOperationAuthorityProfile profile)
+      throws SQLException {
+    try (var statement = connection.prepareStatement("""
+        INSERT INTO tp_operation_authority_controls
+          (scope_hash, profile_hash, recovery_generation, control_state) VALUES (?, ?, ?, 'staged')
+        """)) {
+      statement.setString(1, profile.scope().fingerprint());
+      statement.setString(2, profile.fingerprint());
+      statement.setLong(3, profile.recoveryGeneration());
+      return statement.executeUpdate();
+    }
   }
 
   private int count(String table) throws SQLException {

@@ -88,6 +88,25 @@ but this is not an all-fresh aggregate run. Coverage94.50% line/78.63% branch,
 unchanged thresholds. Formatting,1132 links/3 helpers,13 flows/drift and diff
 checks passed. Exact-final-head hosted checks remain a separate gate.
 
+Cloud2's [static follow-up](https://github.com/hemantkgupta/tracepermit/pull/108#issuecomment-6394291995)
+found a qualification gap, not a demonstrated runtime privilege bypass: the two
+INSERT-denial checks reused an existing primary key, so uniqueness failures
+could masquerade as ACL enforcement. The repaired shared case uses an unused
+valid scope/profile, proves the exact INSERT succeeds for the administrator and
+rolls that positive control back, then requires PostgreSQL SQLState42501 or
+MariaDB SQLState42000/vendor1142 from the restricted user. The administration
+API also attempts the unused scope, and the row count must remain unchanged.
+The three selected engine cases passed fresh. Temporarily granting only INSERT
+to each disposable fixture runtime made all3 fail because the INSERT succeeded;
+the fixture grants were restored before the complete verification. The restored
+forced/cache-disabled281-case suite passed in1m57 (14 tasks executed), followed
+by `pnpm check`:124 React and1878 recorded Java cases, zero failures/errors and
+one disclosed archive-dependent skip. Gradle2m46:4executed/61up-to-date; the
+aggregate reused the fresh operation result and other unchanged test outputs,
+so it was not all fresh. No deployment grants or runtime implementation changed.
+The static reviewer ran no execution gates. All8 hosted checks passed on the
+preceding331911c runtime checkpoint; the new tests/docs head needs its own CI.
+
 ## Limits
 
 No approval/admission/permit/outbox, signed control history, provider verification,

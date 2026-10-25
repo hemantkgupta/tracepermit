@@ -41,21 +41,46 @@ unchanged thresholds. Formatting,1132 links/3 helpers,13 flows/drift and diff
 checks passed; final results-only documentation is checked separately. Hosted
 checks must match the final pushed head, not the earlier green `c3f2b2d`.
 
+Cloud2's [static control audit](https://github.com/hemantkgupta/tracepermit/pull/108#issuecomment-6394291995)
+found an INSERT-denial test gap: duplicate keys could satisfy both old negative
+assertions even with an incorrect INSERT grant. The shared case now inserts a
+valid unused scope under the administrator in a rolled-back positive control,
+requires the engine's actual permission SQLState/vendor code for the runtime,
+uses the unused scope through the administration API, and verifies no new row.
+All3 selected engine cases passed fresh; temporarily granting only INSERT in
+the disposable fixtures made all3 fail because the insert succeeded. Grants
+were restored before complete qualification: the fresh forced281-case suite
+passed in1m57 (14 executed), then full `pnpm check` passed124 React and1878
+recorded Java cases with one existing archive-dependent skip, no failures or
+errors. Gradle2m46:4executed/61up-to-date, not all fresh tests. This is test-only
+hardening, not a demonstrated runtime privilege bypass. The static reviewer ran
+no tests. All8 hosted checks passed at331911c; a new checkpoint requires new CI.
+
 Cloud1's [PR114](https://github.com/hemantkgupta/tracepermit/pull/114) handoff at
 `b1a88473573efbd9dd942ef265c3a757985d93ad` was consumed with its green exact-head
 checks/released writer. Independent Mac default-temp qualification failed3/56
 configuration cases; the identical source passed56/56 with a canonical-temp
 diagnostic control. [The review receipt](https://github.com/hemantkgupta/tracepermit/pull/114#issuecomment-6394125895)
-records this limit. Cloud1 explicitly reacquired the same branch for tests/docs
-repair; production link/private-mode gates stay intact. The detached Mac review
-worktree has no tracked edits and never acquires producer writer ownership.
+records this limit. Cloud1's tests/docs-only repair at
+`76aa4fe19b290fda7d0813aa9f65dc85d96506ac` was subsequently consumed with all8
+exact-head checks green and writer release. Independent default-temp Mac checks
+passed58 configuration,3 archive inventory/hash and8 installed-process cases;
+[the receipt](https://github.com/hemantkgupta/tracepermit/pull/114#issuecomment-6394270217)
+preserves the historical failures and diagnostic-only override. Production
+link/private-mode gates stay intact. The clean detached Mac review worktree
+never acquired producer writer ownership. Cloud1 now independently audits
+Gemini's replay implementation without acquiring its branch.
 
 Cloud2's [PR115](https://github.com/hemantkgupta/tracepermit/pull/115) is still
 producer-owned. Its new HTTP runtime was read at
 `928d5ca796888178f661ab3fcf229fb9ccbbf8cc`; a provisional accepted-socket setup
-cleanup finding was sent for investigation/regression before release. Local
-producer counts are progress reports, not a consumed final handoff. No duplicate
-assignment or PR merge is authorized. Gemini's persistence-identity remains
+cleanup finding was sent for investigation/regression before release. Its four
+repair files remain local, uncommitted and unpushed in the unavailable prepared
+Cloud2 runtime; the second broad run's final outcome is unknown. The published
+head still contains the setup leak. Preserve the files/logs and reservation;
+no takeover, rebuild or automatic third broad run. Cloud2 can perform bounded
+GitHub-only static reviews meanwhile. No duplicate assignment or PR merge is
+authorized. Gemini's persistence-identity remains
 exclusive. The standing coordinator records exact heads and gates, then assigns
 subsequent non-overlapping tasks only after review/release.
 
