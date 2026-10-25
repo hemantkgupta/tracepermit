@@ -1,9 +1,12 @@
 # ADR0087: fully bound operation permit and atomic admission
 
-Status: partially implemented, opt-in closed JDBC permit issuance only. The human
+Status: opt-in closed JDBC permit issuance and V6 atomic admission library,
+with scoped three-engine local operation/aggregate qualification. The human
 approved the strict identity, signature and lifetime choices on 25 October 2026.
-Atomic admission, durable attempts/outbox and dispatch remain proposed and
-unimplemented. The [issuance qualification](../runbooks/closed-operation-permit-issuance.md)
+The V6 library adds atomic single-use consumption/initial attempt, a claimed
+fact/head and immutable outbox; dispatch remains unimplemented. The
+[admission qualification](../runbooks/closed-operation-admission.md) is separate
+from the [issuance qualification](../runbooks/closed-operation-permit-issuance.md), which
 is distinct from earlier review checkpoints and exact-head hosted checks.
 
 Requirements: FR-007/008/009/010/012; SEC-001/002/003/004/005/006/009/010/012;
@@ -34,7 +37,34 @@ than the minimum of those deadlines, the original approval deadline and issue
 time plus the configured lifetime. Fresh exact-owner authentication at use
 cannot extend the already signed expiry. A same-credential requirement or live
 reviewer re-enrollment is not part of the approved contract. These choices are
-settled; the admission implementation remains pending.
+settled; they are not new decisions delegated to callers or stored claims.
+
+## V6 closed admission checkpoint
+
+`JdbcGitHubOperationAdmissionRepository` verifies the existing bounded closed
+signature before locks, then owns one control-first/head-next READ COMMITTED
+transaction. It reloads actual closed approved history and compares every stable
+signed anchor with the existing claims capture under current configuration.
+Fresh owner authentication may differ, but cannot extend any signed expiry.
+
+V5 adds immutable operation-keyed consumption/initial-attempt metadata, with
+unique permit and attempt IDs; V6 adds a separately anchored immutable outbox.
+Each MariaDB unit contains one CREATE TABLE. Runtime accepts complete V6 only,
+never partial V5. Explicit stopped-writer V4 upgrade replays populated history
+before either DDL unit; default V2 and V1–V4 bytes remain unchanged.
+
+After the provisional admission INSERT's possible UNIQUE/FK waits, the owner
+samples writer time and rechecks authority, writes fact/head/outbox, then samples
+and rechecks time AGAIN after every remaining write. Expired provisional writes
+roll back. No generic duplicate becomes replay success. Commit and cleanup must
+both acknowledge; uncertainty grants no dispatch/retry capability.
+
+The closed reader understands the admission envelope before the writer records
+it, enforcing admission/outbox cardinality and historical anchors at fact time.
+Claims/fingerprints are stored metadata, not retained signatures or current
+authority. No sender, target, public endpoint, live IdP/provider or deployment
+fence is enabled. Scoped results/failures are in the admission runbook above;
+older issuer passes do not qualify it.
 
 ## Closed issuance checkpoint
 
@@ -51,7 +81,8 @@ The new closed canonical JWS vocabulary is internal to this opt-in library and
 separate from legacy execution permits. Its bounded strict decoder is package
 internal and returns private checked construction, not public authority.
 Repeated issuance consumes nothing and can return different permit/attempt IDs.
-No public admission method, attempt/outbox, target or default runtime is enabled.
+The issuer itself exposes no admission method, attempt/outbox, target or default
+runtime; the separate V6 library above owns admission only.
 
 ## Versioned binding and issuance boundary
 
@@ -137,12 +168,12 @@ still admits at most one attempt even when several permits were issued. The
 separate immutable outbox event must bind exact operation/scope, admission,
 attempt, fact sequence/hash, actor and resulting snapshot. Its historical
 payload derives from those immutable anchors, not today's mutable head. Outbox
-presence means neither target dispatch nor evidence delivery. Exact tables and
-unique-key conflict classification remain to be implemented: unrelated unique,
-FK or CHECK failures must not become replay success or disclose another scope.
+presence means neither target dispatch nor evidence delivery. V5/V6 implement
+these separate immutable tables. Unrelated unique/FK/CHECK failures roll back as
+fixed storage failures, not replay success or disclosure of another scope.
 
-The exact additive tables and migration versions require an implementation
-checkpoint. Every MariaDB migration unit must be a single reviewed schema
+The V5 admission and V6 outbox form the additive implementation checkpoint.
+Every MariaDB migration unit must be a single reviewed schema
 mutation, with explicit stopped-writer upgrade and pre-DDL validation of existing
 history. Partial upgrades refuse; runtime never migrates or repairs them.
 Default V2 and existing V1-V4 SQL bytes remain unchanged. Required runtime grants

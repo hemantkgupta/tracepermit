@@ -44,8 +44,22 @@ real wait expiry, private-key use after cleanup, operator changes and read
 uncertainty. See the [qualified boundary and retained failures](../runbooks/closed-operation-permit-issuance.md).
 This is partial FR-007/008/009/012, SEC-001/002/003/004/005/006/009/010/012,
 REL-001/002/004/005, DATA-001/004 and OPS-002/004 evidence only. Fully bound
-single-use admission, atomic attempt/outbox, public endpoint and target remain
-unimplemented. No whole-ID completion is claimed.
+single-use admission is a separately qualified boundary, not supplied by the
+issuer itself. No whole-ID completion is claimed.
+
+The opt-in V6 `JdbcGitHubOperationAdmissionRepository` library now owns
+consumption/initial attempt, execution-claimed fact, conditional head and immutable
+outbox in one transaction. `OperationAdmissionJournal` extends coherent closed
+historical replay/cardinality without persisting a raw token/signature. New
+`OperationAdmissionContract` cases and exact three-engine wrappers exercise
+one attempt across32 contenders/four permits, genuine implicit UNIQUE-wait expiry
+after holder rollback, binding/time substitutions, rollback/commit/cleanup
+uncertainty, valid-admin-positive privilege denials, populated pre-DDL validation
+and protocol refusal. See [scoped evidence/retained failures](../runbooks/closed-operation-admission.md).
+Local complete matrix/aggregate gates passed; independent/hosted checks remain
+separate. No public endpoint, sender,
+external evidence sink, restore fence or target is claimed. The requirement IDs
+above receive scoped evidence only, not whole-ID status promotion.
 
 ## Explicit durable-review rules — input/settings prerequisite
 

@@ -58,7 +58,14 @@ explicit settings before evaluation, without promoting old approvals. Even this
 real signature is not atomic consumption. Multiple issuances create no durable
 attempt, and a delayed signature can already be expired when returned. Admission
 must still independently recheck fresh authority and consume one use with the
-attempt/fact/head/outbox transaction. That service remains unimplemented.
+attempt/fact/head/outbox transaction. The separate opt-in
+[V6 admission library](../runbooks/closed-operation-admission.md) implements
+that transaction, not a sender or public service, with scoped three-engine
+local qualification. A UNIQUE/FK wait can occur after explicit locks: it rechecks time
+after the provisional admission INSERT and again after all remaining writes.
+The real holder-rollback-after-expiry test distinguishes these checks from an
+early clock sample. Even acknowledged admission/outbox presence is only committed
+history, not a target call, evidence delivery, response lease or resend permission.
 
 V4 also illustrates why migration detection cannot trust an empty metadata view:
 an old MariaDB runtime may not see a new table it cannot SELECT. Its old writer

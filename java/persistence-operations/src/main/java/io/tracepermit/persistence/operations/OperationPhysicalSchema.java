@@ -33,13 +33,18 @@ final class OperationPhysicalSchema {
           varchar("previous_snapshot_hash", 71), varchar("result_snapshot_hash", 71), text("fact_json"),
           varchar("actor_hash", 71), text("actor_json")));
     }
-    if ("3".equals(version) || "4".equals(version)) {
+    if (Set.of("3", "4", "6").contains(version)) {
       tables.put("tp_operation_authority_controls", List.of(varchar("scope_hash", 71), varchar("profile_hash", 71),
           new Column("lock_marker", "smallint", null), new Column("recovery_generation", "bigint", null), varchar("control_state", 16)));
     }
-    if ("4".equals(version)) {
+    if (Set.of("4", "6").contains(version)) {
       tables.put("tp_operation_review_bindings", List.of(varchar("operation_id", 36),
           varchar("binding_hash", 71), text("binding_json")));
+    }
+    if ("6".equals(version)) {
+      tables.put("tp_operation_admissions", List.of(varchar("operation_id", 36), varchar("permit_id", 36),
+          varchar("attempt_id", 36), varchar("admission_hash", 71), text("admission_json")));
+      tables.put("tp_operation_admission_outbox", List.of(varchar("operation_id", 36), varchar("outbox_hash", 71), text("outbox_json")));
     }
     String sql = pg ? """
         SELECT table_name, column_name, data_type, character_maximum_length, character_set_name,
@@ -168,6 +173,8 @@ final class OperationPhysicalSchema {
         case "tp_operation_lifecycle_facts" -> Set.of(bytes("fact_json", 262144, pg), bytes("actor_json", 4096, pg), pg
             ? "CHECK ((sequence_number >= 4))" : "`sequence_number` >= 4");
         case "tp_operation_review_bindings" -> Set.of(bytes("binding_json", 8192, pg));
+        case "tp_operation_admissions" -> Set.of(bytes("admission_json", 16384, pg));
+        case "tp_operation_admission_outbox" -> Set.of(bytes("outbox_json", 4096, pg));
         case "tp_operation_authority_controls" -> pg ? Set.of("CHECK ((lock_marker = 0))",
             "CHECK (((recovery_generation >= 1) AND (recovery_generation <= '9007199254740991'::bigint)))",
             "CHECK (((control_state)::text = ANY ((ARRAY['staged'::character varying, 'ready'::character varying, 'quarantined'::character varying])::text[])))")

@@ -3,9 +3,52 @@
 GitHub is authoritative. Credentials, private customer/provider planning and local
 operator values remain outside Git. Historical receipts are not fresh results.
 
+## Closed V6 atomic admission — current Mac checkpoint
+
+Mac retains the sole PR108 writer. The preceding issuer head
+94778166f3b45f42222a6e0610a7588ad58ca258 has all eight exact-head checks
+in CI40203926733 passed. Independent Cloud1 qualification passed50 existing
+issuer/profile/codec cases; Cloud2R's static issuer review had no substantiated
+scoped finding, with all reviewer execution NOT RUN. Both complete receipts
+were consumed in [the coordinator intake](https://github.com/hemantkgupta/tracepermit/pull/108#issuecomment-6399211367).
+Those results do NOT cover this separate admission checkpoint.
+
+New `JdbcGitHubOperationAdmissionRepository` owns signature verification before
+locks and one control-first/head-next atomic consumption/initial-attempt/fact/
+head/outbox transaction. Writer time is rechecked after provisional UNIQUE/FK
+waits and again after all remaining writes. New closed metadata/reader support
+is installed before writing facts. Explicit V5/V6 each contain one table CREATE;
+partial V5 refuses; populated V4 replay precedes either DDL. Default V2 and
+existing V1–V4 SQL remain unchanged. No network/signing under locks or sender,
+endpoint/target/execution lease is introduced.
+
+Focused candidate evidence:36 cases across three exact engines passed, including
+32 contenders, four permits, rollback/commit/cleanup, metadata/grants and populated
+upgrade. The next6 focused partial-V5/protocol cases passed after an explicit null
+version guard corrected the new repeatable-entry diagnostic. Removing BOTH
+post-write rechecks made3/3 real UNIQUE-wait-expiry cases fail; the production
+file was restored byte-identically. Initial fixture and diagnostic failures are
+preserved in [the candidate runbook](docs/runbooks/closed-operation-admission.md).
+The first forced/cache-disabled complete operation matrix PASSED451 cases across
+15 suites, zero failures/errors/skips, all18 tasks executed in8m21; actual XML
+counts verified. Final `pnpm check` PASS:124 React/2060 recorded Java cases across
+159 suites, zero failures/errors and one existing absent-archive native-PTY skip.
+Gradle4m15,4 executed/61 up-to-date; fresh451 operations and other valid results
+were reused, NOT all tests fresh. Coverage94.7650% line/78.2000% branch passed
+unchanged94/75 gates. Final format,1182 links/3 helpers and13 flow/drift cases
+passed after documentation edits. New-head hosted and
+independent admission checks remain separate. No writer release is made.
+
+Cloud1/Cloud2R are now idle after consumed issuer tasks, awaiting a useful frozen
+next checkpoint rather than duplicate work. Gemini PR121's hardening prompt is
+confirmed sent, but no newer pushed repair is verified. Mac Air's last saved
+handoff remains sequence5/IN_PROGRESS and PR120 is still integration-only.
+Original Cloud2/PR115's unpushed files/session/log remain preserved. All PRs
+draft/unmerged; no stopped physical-schema audit is resumed or rerouted.
+
 ## Timestamp compatibility repair and next admission contract
 
-### Closed JDBC permit issuance — current Mac checkpoint
+### Preceding closed JDBC permit-issuance checkpoint
 
 Mac retains the only PR108 writer. Pushed e230972 has all eight exact-head hosted
 checks green in CI40196383943; they do not qualify the new local issuance source.

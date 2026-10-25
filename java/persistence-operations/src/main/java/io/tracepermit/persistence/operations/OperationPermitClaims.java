@@ -107,16 +107,27 @@ final class OperationPermitClaims {
 
   /** Closed syntax/intrinsic bindings only: not current DB state or permission to execute. */
   static ObjectNode checked(JsonNode claims, BusinessOperationAdmissionSettings settings) {
+    ObjectNode result = historical(claims);
+    Instant issue = OperationReviewJournal.time(result.path("issuedAt"));
+    if (!settings.issuer().equals(result.path("issuer").asText())
+        || !settings.audience().equals(result.path("audience").asText())
+        || !settings.publicKeyFingerprint().equals(result.path("publicKeyFingerprint").asText())
+        || !CanonicalJson.sha256(settings.pins()).equals(result.path("admissionSettingsHash").asText())
+        || OperationReviewJournal.time(result.path("expiresAt")).isAfter(issue.plus(settings.lifetime()))) throw invalid();
+    return result;
+  }
+
+  /** Stored metadata shape/intrinsic bounds only; no signature or current authority assertion. */
+  static ObjectNode historical(JsonNode claims) {
     try {
       Set<String> fields = new HashSet<>(HASHES);
       fields.addAll(Set.of("format", "issuer", "audience", "permitId", "attemptId", "operationId", "ownerPrincipalId",
           "adapterId", "state", "issuedAt", "expiresAt", "maxUses", "identityBounds", "executeIdentity"));
       fields(claims, fields);
       if (!claims.path("issuer").isTextual() || !claims.path("audience").isTextual()
-          || !FORMAT.equals(claims.path("format").asText()) || !settings.issuer().equals(claims.path("issuer").asText())
-          || !settings.audience().equals(claims.path("audience").asText())
-          || !settings.publicKeyFingerprint().equals(claims.path("publicKeyFingerprint").asText())
-          || !CanonicalJson.sha256(settings.pins()).equals(claims.path("admissionSettingsHash").asText())
+          || !claims.path("issuer").asText().matches("[A-Za-z0-9][A-Za-z0-9._:@/+\\-]{0,511}")
+          || claims.path("audience").asText().isBlank() || claims.path("audience").asText().length() > 256
+          || !FORMAT.equals(claims.path("format").asText())
           || !GitHubBusinessOperationBinding.ADAPTER_ID.equals(claims.path("adapterId").asText())) throw invalid();
       for (String key : HASHES) hash(claims.path(key));
       for (String key : Set.of("permitId", "attemptId", "operationId")) {
@@ -134,7 +145,7 @@ final class OperationPermitClaims {
       number(state.path("executionVersion"), 1); number(state.path("evidenceVersion"), 1); number(claims.path("maxUses"), 1);
       Instant issue = OperationReviewJournal.time(claims.path("issuedAt"));
       Instant expiry = OperationReviewJournal.time(claims.path("expiresAt"));
-      if (!expiry.isAfter(issue) || expiry.isAfter(issue.plus(settings.lifetime()))) throw invalid();
+      if (!expiry.isAfter(issue) || expiry.isAfter(issue.plusSeconds(60))) throw invalid();
       JsonNode bounds = claims.path("identityBounds");
       fields(bounds, BOUNDS);
       for (JsonNode bound : bounds) if (expiry.isAfter(OperationReviewJournal.time(bound))) throw invalid();

@@ -72,8 +72,7 @@ public final class JdbcGitHubOperationPermitIssuer {
     /** Sensitive in-memory transport value. Never log, persist or put in evidence. */
     public String serialized() { return serialized; }
     public String fingerprint() {
-      return CanonicalJson.sha256(JsonSupport.MAPPER.createObjectNode()
-          .put("format", "tracepermit-operation-permit-fingerprint-v1").put("permit", serialized));
+      return OperationPermitCodec.fingerprint(serialized);
     }
     @Override public String toString() { return "IssuedOperationPermit[redacted; NOT admitted]"; }
   }

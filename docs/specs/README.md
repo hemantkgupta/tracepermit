@@ -35,8 +35,11 @@ attempt/outbox, provider or target is enabled.
 records the approved strict identity/signature/lifetime choices and opt-in
 closed JDBC permit-issuance slice. Its [issuance qualification](../runbooks/closed-operation-permit-issuance.md)
 is separate from V4 review: actual approved state is loaded and the read
-connection closes before signing. Atomic single-use admission, attempt/outbox,
-new schema and sender remain proposed only; no endpoint or target is enabled.
+connection closes before signing. The separate opt-in V6
+[closed admission library](../runbooks/closed-operation-admission.md) adds one
+atomic consumption/initial-attempt/fact/head/outbox transaction and its closed
+reader, with scoped three-engine local qualification. Default V2/V1–V4 SQL
+are unchanged. No sender, endpoint or target is enabled.
 
 [ADR0084](../architecture/0084-durable-review-membership-and-lifetime.md)
 records the approved next design: exact independent reviewer-group enrollment,

@@ -32,8 +32,13 @@ loads actual approved V4 history under current control/head locks, captures
 the exact approved state/settings/review/target bindings, then rolls back and
 closes before signing. Profile v3 pins explicit settings before evaluation;
 legacy v1/v2 recipes and V4 SQL stay unchanged. See [issuance scope and tests](../runbooks/closed-operation-permit-issuance.md).
-This is not wired to a route or service. Signature validity is not consumption:
-single-use admission, durable attempt/outbox and execution remain unimplemented.
+This is not wired to a route or service. Signature validity is not consumption.
+The separate opt-in V6 [admission library](../runbooks/closed-operation-admission.md)
+adds atomic single-use consumption/initial-attempt metadata, claimed fact/head
+and immutable outbox, with a compatible closed reader. It rechecks writer time
+after implicit write waits and has scoped three-engine local qualification;
+earlier issuer results are separate. Default V2/V1–V4 bytes remain unchanged.
+There is still no sender, authenticated endpoint, target call or execution lease.
 
 ## Approval review export and browser download
 

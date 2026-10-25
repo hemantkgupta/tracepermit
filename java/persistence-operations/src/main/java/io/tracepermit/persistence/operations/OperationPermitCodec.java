@@ -78,6 +78,11 @@ final class OperationPermitCodec {
     @Override public String toString() { return "CheckedOperationPermit[redacted; signature only, not admission]"; }
   }
 
+  static String fingerprint(String token) {
+    return CanonicalJson.sha256(JsonSupport.MAPPER.createObjectNode()
+        .put("format", "tracepermit-operation-permit-fingerprint-v1").put("permit", token));
+  }
+
   private static byte[] decode(String part, int maximum) {
     if (part.isEmpty() || part.length() > (maximum * 4 + 2) / 3 || !part.matches("[A-Za-z0-9_-]+")) throw invalid();
     byte[] decoded = Base64.getUrlDecoder().decode(part);
