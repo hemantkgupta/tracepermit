@@ -19,7 +19,10 @@ import org.junit.jupiter.params.provider.ValueSource;
 class PilotConfigurationTest {
   @TempDir Path root;
   private PilotTestFiles files;
-  @BeforeEach void setup() throws Exception { files = new PilotTestFiles(root); }
+  @BeforeEach void setup() throws Exception {
+    root = root.toRealPath();
+    files = new PilotTestFiles(root);
+  }
 
   @Test void positiveOfflineCheckNeverConstructsProviderOrTransportAndWritesNothing() throws Exception {
     var invocations = new AtomicInteger();
@@ -36,6 +39,31 @@ class PilotConfigurationTest {
     assertThat(config.key()).isEqualTo(files.key);
     assertThat(config.installation().permissions()).containsExactlyInAnyOrderEntriesOf(
         io.tracepermit.adapters.remote.github.credentials.GitHubInstallationConfiguration.requiredPermissions());
+  }
+
+  @ParameterizedTest @ValueSource(strings = {"config", "key"})
+  void trustedTempAliasProducesPhysicalPinsButExplicitOperatorAliasesRemainRejected(String selected) throws Exception {
+    Path physical = Files.createDirectory(root.resolve("physical temporary root"));
+    Path alias = root.resolve("temporary root alias"); Files.createSymbolicLink(alias, physical);
+    var fixture = new PilotTestFiles(alias);
+    var invocations = new AtomicInteger();
+    PilotOperatorMain.Preflights forbidden = ignored -> {
+      invocations.incrementAndGet(); throw new AssertionError("OFFLINE_NETWORK_PATH_ENTERED");
+    };
+    assertThat(PilotOperatorMain.bounded(new String[]{"--check"}, fixture.config.toString(), forbidden,
+        Duration.ofSeconds(5))).isEqualTo(PilotOperatorMain.Result.CHECK_VALID);
+    assertThat(fixture.config).isEqualTo(fixture.config.toRealPath());
+    assertThat(fixture.key).isEqualTo(fixture.key.toRealPath());
+    Path aliasedDirectory = alias.resolve(fixture.directory.getFileName());
+    Path configuration = fixture.config;
+    if (selected.equals("config")) configuration = aliasedDirectory.resolve(fixture.config.getFileName());
+    else {
+      fixture.json.put("privateKeyFile", aliasedDirectory.resolve(fixture.key.getFileName()).toString());
+      fixture.write();
+    }
+    assertThat(PilotOperatorMain.bounded(new String[]{"--check"}, configuration.toString(), forbidden,
+        Duration.ofSeconds(5))).isEqualTo(PilotOperatorMain.Result.CONFIGURATION_REJECTED);
+    assertThat(invocations).hasValue(0);
   }
 
   @ParameterizedTest @ValueSource(strings = {"authenticated", "verified", "delegated", "approved", "origin", "proxy",

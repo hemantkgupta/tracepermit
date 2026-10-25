@@ -16,7 +16,9 @@ final class PilotTestFiles {
   final Path config;
   final ObjectNode json;
   PilotTestFiles(Path root) throws Exception {
-    directory = Files.createDirectory(root.resolve("private configuration with spaces"));
+    // Canonicalize only the trusted fixture root, e.g. macOS /var -> /private/var.
+    // Explicit operator paths and negative-control links must remain unresolved.
+    directory = Files.createDirectory(root.toRealPath().resolve("private configuration with spaces"));
     Files.setPosixFilePermissions(directory, PosixFilePermissions.fromString("rwx------"));
     key = directory.resolve("synthetic key.der"); config = directory.resolve("operator.json");
     var generator = KeyPairGenerator.getInstance("RSA"); generator.initialize(2048);

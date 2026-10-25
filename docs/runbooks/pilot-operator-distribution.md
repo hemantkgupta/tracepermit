@@ -133,3 +133,29 @@ tests with `-PpilotArchiveRoot` pointing to those exact archived bytes. Preserve
 skips/cache facts and final source provenance in the PR handoff. No live
 provider, installation token response compatibility, hardware key custody,
 production authority, macOS host or cross-platform certification is implied.
+
+### Temporary-path fixture portability
+
+Independent coordinator review on unmodified `b1a8847` found three failures in
+56 configuration tests with default Mac temporary paths: the valid offline
+case and both private-file mode positive controls. The Mac `/var` prefix
+aliases `/private/var`; the fixture had embedded that alias in valid operator
+pins. The same tree passed56/56 when the coordinator selected `/private/tmp`
+only for a diagnostic JVM run. That diagnostic control is not default-Mac
+qualification or an approved permanent environment workaround.
+
+Test setup now resolves trusted temporary fixture roots before creating private
+configuration/key pins. The configuration suite also resolves its setup root so
+explicit negative links are tested in isolation; installed fixtures resolve
+their setup root for bundle and fake-JVM paths. Preflight tests share the fixed
+private-file fixture. Archive extraction paths are only trusted copy inputs,
+not operator configuration/key pins, and need no production-path relaxation.
+New controlled alias-prefix tests exercise both the in-process checker and the
+source-free launcher: physical fixture pins pass, while explicitly aliased
+configuration and key paths still fail. Existing symlink, hardlink, private-mode
+and provider/DNS controls remain intact. No production validator or path input
+is canonicalized; all-component no-follow enforcement remains unchanged.
+
+Cloud Linux tests of this repair are synthetic portability regressions. They do
+not replace the coordinator's default-Mac rerun of the pushed exact head or
+qualify a native Mac archive, provider or target.

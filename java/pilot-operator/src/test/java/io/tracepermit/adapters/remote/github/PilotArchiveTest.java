@@ -21,6 +21,7 @@ class PilotArchiveTest {
   private PilotTestFiles files;
   private Path distribution;
   @BeforeEach void setup() throws Exception {
+    root = root.toRealPath();
     files = new PilotTestFiles(root);
     String installed = System.getProperty("tracepermit.pilotArchiveRoot");
     distribution = Files.createDirectory(root.resolve("source free installed bundle with spaces"));
@@ -51,6 +52,22 @@ class PilotArchiveTest {
     assertThat(Files.exists(distribution.resolve("node_modules"))).isFalse();
     var result = command(List.of(launcher(), "--check"), true);
     assertThat(result.exit).isZero(); assertThat(result.output).isEqualTo("CHECK_VALID_NON_AUTHORITATIVE\n");
+  }
+
+  @Test void installedCheckUsesPhysicalFixturePinsButRejectsExplicitConfigAndKeyAliases() throws Exception {
+    Path physical = Files.createDirectory(root.resolve("physical installed fixture root"));
+    Path alias = root.resolve("installed fixture temp alias"); Files.createSymbolicLink(alias, physical);
+    files = new PilotTestFiles(alias);
+    var valid = command(List.of(launcher(), "--check"), true);
+    assertThat(valid.exit).isZero(); assertThat(valid.output).isEqualTo("CHECK_VALID_NON_AUTHORITATIVE\n");
+    Path aliasedDirectory = alias.resolve(files.directory.getFileName());
+    var builder = builder(List.of(launcher(), "--check"), true);
+    builder.environment().put("TRACEPERMIT_PILOT_CONFIGURATION", aliasedDirectory.resolve(files.config.getFileName()).toString());
+    var refused = finish(builder); assertThat(refused.exit).isEqualTo(2);
+    assertThat(refused.output).isEqualTo("CONFIGURATION_REJECTED_NON_AUTHORITATIVE\n");
+    files.json.put("privateKeyFile", aliasedDirectory.resolve(files.key.getFileName()).toString()); files.write();
+    refused = command(List.of(launcher(), "--check"), true); assertThat(refused.exit).isEqualTo(2);
+    assertThat(refused.output).isEqualTo("CONFIGURATION_REJECTED_NON_AUTHORITATIVE\n");
   }
 
   @Test void syntheticDnsTripwireIsActiveAndOfflineMakesZeroProviderOrDnsCalls() throws Exception {
