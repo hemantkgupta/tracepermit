@@ -46,6 +46,15 @@ and recheck those independent boundaries.
 
 ## Durable pending-operation withdrawal
 
+The [row-lock expiry fixture repair](../runbooks/operation-lock-wait-expiry-qualification.md)
+uses fresh writer-time observations on both sides of a genuine wait instead of
+assuming the test-host clock proves writer expiry. The same800ms window/150ms
+margin and bounded waits remain, with new pre-expiry arrival/continued-blocking
+assertions. A pre-lock-production-time negative control failed all three engines;
+restored production passed the complete forced245-case suite. This is test-only
+evidence (FR-003/007/012; SEC-002/009; REL-001/004; OPS-004), not a runtime change,
+new skew allowance or qualification of unwired operation authority.
+
 Follow-up fail-closed decoding evidence (SEC-003/012; REL-001/004; DATA-001;
 OPS-002/004): package-local `StoredOperationJson` and its focused tests reject
 duplicate/nested keys, trailing data, malformed/null/oversized UTF-8 values and

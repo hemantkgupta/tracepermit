@@ -450,9 +450,6 @@ abstract class OperationRepositoryContract {
     ObjectNode initial = operation();
     repository.createOrGet(SCOPE, initial);
     var lifecycle = new JdbcBusinessOperationLifecycleRepository(source);
-    Instant deadline = Instant.now().plusMillis(800);
-    var command = withdrawal(initial, deadline);
-    source.lockAttempt = new CountDownLatch(1);
     var executor = Executors.newSingleThreadExecutor();
     try (Connection held = source.getConnection()) {
       held.setAutoCommit(false);
@@ -460,17 +457,24 @@ abstract class OperationRepositoryContract {
         statement.setString(1, id(initial));
         try (var rows = statement.executeQuery()) { assertThat(rows.next()).isTrue(); }
       }
-      // The first signal above is our lock holder; only the actual contender counts below.
+      // The authority check uses writer time, not the independent test-host clock. Start the
+      // unchanged 800ms validity window only once the real holder owns the row lock.
+      Instant deadline = writerTime(held).plusMillis(800);
+      var command = withdrawal(initial, deadline);
+      // Install the signal after acquiring our lock, so only the actual contender counts.
       source.lockAttempt = new CountDownLatch(1);
       var result = executor.submit(() -> {
         assertCode(() -> lifecycle.withdraw(command), OPERATION_AUTHENTICATION_EXPIRED);
       });
       assertThat(source.lockAttempt.await(5, TimeUnit.SECONDS)).isTrue();
+      assertThat(writerTime(held)).as("contender reached the real row lock before authority expired").isBefore(deadline);
+      assertThat(result.isDone()).as("contender cannot finish while the holder owns the row").isFalse();
       long stop = System.nanoTime() + Duration.ofSeconds(4).toNanos();
-      while (Instant.now().isBefore(deadline.plusMillis(150))) {
+      while (writerTime(held).isBefore(deadline.plusMillis(150))) {
         if (System.nanoTime() > stop) throw new AssertionError("deadline wait exceeded bound");
         Thread.sleep(20);
       }
+      assertThat(result.isDone()).as("genuine lock wait continues past the writer deadline").isFalse();
       held.rollback();
       result.get(10, TimeUnit.SECONDS);
     } finally {
@@ -479,6 +483,21 @@ abstract class OperationRepositoryContract {
       assertThat(executor.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
     }
     assertLifecycleCounts(1, 0);
+  }
+
+  private Instant writerTime(Connection connection) throws SQLException {
+    String sql = database.getJdbcUrl().startsWith("jdbc:postgresql:")
+        ? "SELECT clock_timestamp()" : "SELECT UTC_TIMESTAMP(6)";
+    try (var statement = connection.prepareStatement(sql)) {
+      statement.setQueryTimeout(1);
+      try (var rows = statement.executeQuery()) {
+        assertThat(rows.next()).isTrue();
+        var value = rows.getTimestamp(1, java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC")));
+        assertThat(value).isNotNull();
+        assertThat(rows.next()).isFalse();
+        return value.toInstant();
+      }
+    }
   }
 
   @Test
