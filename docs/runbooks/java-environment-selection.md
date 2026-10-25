@@ -29,8 +29,11 @@ unchanged. No credentials or proxy values are needed in a bug report.
 Cleanup removes the helper functions while preserving configuration's exit
 status. Before the repair, an invalid explicit JDK printed rejection but
 `unset -f` replaced failure with status0 when the caller did not exit early.
-Now plain sourcing, conditional sourcing and direct Bash execution return
-failure consistently, with or without caller `errexit`.
+The guarded configuration call and explicit file-scope return/exit protocol
+preserve the public0/1 status for sourced and directly executed Bash. An
+explicit return lets a sourcing caller's `if`/`&&` handle failure; direct Bash
+execution exits with the same status. This avoids relying on a final bare
+function command's `errexit` behavior.
 
 ```bash
 source scripts/configure-java-environment.sh && java -version
@@ -67,8 +70,15 @@ temporary and is not rendered on failures.
 The final repaired suite passed152 scenarios plus native setup and explicit
 precedence on Linux Bash. Running the same new suite against an isolated copy
 of the original setup script must fail, distinguishing the regression. The
-implementation uses Bash3.2-compatible constructs; native macOS/Bash3.2
-execution remains a separate qualification boundary. This tooling change
+initial Linux result did not qualify native Bash3.2: coordinator execution on
+Apple-Silicon `/bin/bash`3.2.57 at commit
+`ddcfbec2d1d87c02194173a8c7717187a9ed19ca` failed case58 (child status1,
+expected0). Invalid explicit selection under conditional source exited before
+the caller's else/continuation markers. That failure is retained; the existing
+152 scenarios and expectations are unchanged. The follow-up guards the finish
+function at file scope and explicitly returns to the sourcing caller, or exits
+when directly executed. Native qualification of the follow-up remains pending
+independent coordinator execution; Cloud does not claim it. This tooling change
 does not alter Java/Gradle versions, dependency or CI configuration, or the
 warning-as-error gates. Full repository and exact-head hosted results are
 recorded in the PR handoff separately.

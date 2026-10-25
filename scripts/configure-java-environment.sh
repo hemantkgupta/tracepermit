@@ -114,4 +114,12 @@ tracepermit_finish_java_environment() {
   return "$tracepermit_configuration_status"
 }
 
-tracepermit_finish_java_environment
+# Bash3.2 can apply errexit to a final bare function call even when the
+# caller conditionally sources this file. Guard that call here, then finish
+# explicitly at file scope. Configuration's public status is always 0 or 1.
+# return leaves a sourcing caller in control; direct Bash execution uses exit.
+if tracepermit_finish_java_environment; then
+  return 0 2>/dev/null || exit 0
+else
+  return 1 2>/dev/null || exit 1
+fi
