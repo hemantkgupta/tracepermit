@@ -95,8 +95,11 @@ The closed JSON receipt contains `schemaVersion`, `profile`, `outcome`,
 `created`, `operationId`, `executionEnabled`. Execution is always false.
 Only `CONFIG_VALID`, `CREATED` and `EXISTING` have zero exit status. Registration
 success has a boolean `created` and the original operation ID; other outcomes
-have null creation/ID fields. Fixed failures are `USAGE`, `INPUT_INVALID`,
-`CONFIG_INVALID`, `NOT_READY`, `REJECTED`, `UNKNOWN`. Raw exceptions never appear.
+have null creation/ID fields. Receipt decoding strictly requires textual JSON AST
+nodes for `schemaVersion`, `profile`, and `outcome`, rejecting numeric coercion
+(such as numeric `1.0` or numeric outcomes) and non-string types as `UNKNOWN`.
+Fixed failures are `USAGE`, `INPUT_INVALID`, `CONFIG_INVALID`, `NOT_READY`,
+`REJECTED`, `UNKNOWN`. Raw exceptions never appear.
 
 `UNKNOWN` is nonzero even if an independent observer finds committed data.
 The producer's replay refusal code also covers uncertainty, so the CLI reports
@@ -109,18 +112,26 @@ Replay and operation commits are separate, with no distributed atomicity claim.
 
 The supervisor reserves 1s for sending the tiny receipt inside a 60s total command
 budget and adds a separate 5s cleanup reserve. Slow/open stdin, blocked output,
-worker exit and pressure remain bounded. Child termination precedes pipe close;
-the process only terminates its own worker. Host suspend, kernel stalls, process
-creation before handle ownership, SIGKILL and same-UID/root interference remain
-deployment limitations. Keep the lid open and the host awake for qualification.
+worker exit and pressure remain bounded. Cleanup operates against a single
+monotonic cleanup deadline: initial and arriving interrupts are collected and
+preserved, forced worker exit is awaited and observed within the remaining
+cleanup reserve, and owned pipe closer and output drainer threads are joined.
+Unobserved exit or interrupt during cleanup reports `UNKNOWN`. Child termination
+precedes pipe close; the process only terminates its own worker. Host suspend,
+kernel stalls, process creation before handle ownership, SIGKILL and same-UID/root
+interference remain deployment limitations. Keep the lid open and the host awake
+for qualification.
 
 ## Qualification commands and evidence
 
 Reuse the existing toolchain and pinned native-arm64 images. Select Java/javac21
 process-locally using `TRACEPERMIT_JAVA_HOME`, the established Gradle cache and
 existing Docker socket configuration. Do not install, restart, prune or rebuild
-the environment. Run one heavy Gradle/coverage writer, with 32 actual installed
-processes retained inside each race:
+the environment. Run one heavy Gradle/coverage writer. For both 32-process races
+on each engine, all 32 installed supervisor process handles are created and retained
+first, all 32 live owned worker processes are positively observed blocked before
+command by withheld protocol input, and work is released together with pre-release
+and failure cleanup:
 
 ```bash
 caffeinate -i java/gradlew -p java :agentcore-registration-cli:check \
@@ -139,16 +150,16 @@ skips are recorded below. The archive test writes
 with its SHA256, actual Java version and sorted runtime inventory. Public-key
 pins and locally generated tokens are synthetic compatibility evidence only.
 
-| Gating evidence                                  | Boundary                                                                                                                                               |
-| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Three `InstalledRegistrationContract` subclasses | Exact PostgreSQL16.4, MariaDB11.4.13 and10.6.25; archive unpacked outside every checkout with Java-only runtime PATH                                   |
-| Restart, replay, original-return, conflict       | Fresh processes, immutable operation/facts/head, spent tokens, exact counts and no authority effects                                                   |
-| Both 32-process races on each engine             | One acknowledged creation for a shared token or 32 distinct tokens/one key; 31 original returns for the latter                                         |
-| Signature/enrollment/body/human negatives        | Real locally generated signatures; no request-derived authority or unauthorized writes                                                                 |
-| Schema/capacity/grants controls                  | Empty and malformed existing schemas, mismatch/saturation, actual privilege denials and valid admin positives; no repair/fallback                      |
-| Real `CommitGate` TCP fixtures                   | Forward real COMMIT, hold reply, independently observe durability, lose JDBC reply/kill worker/deny readback; unknown never OK                         |
-| `BoundaryTest`                                   | Closed nested schemas, malformed framing/UTF8/Unicode/JSON, offline DNS/network/JDBC guard                                                             |
-| `SupervisorTest`, `ArchiveBoundaryTest`          | Positive stalled children, blocked reads/writes, pressure, exit/interrupt, actual installed open-input watchdog, owned child/thread/connection cleanup |
+| Gating evidence                                  | Boundary                                                                                                                                                                                                                                                                                                                                |
+| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Three `InstalledRegistrationContract` subclasses | Exact PostgreSQL16.4, MariaDB11.4.13 and10.6.25; archive unpacked outside every checkout with Java-only runtime PATH                                                                                                                                                                                                                    |
+| Restart, replay, original-return, conflict       | Fresh processes, immutable operation/facts/head, spent tokens, exact counts and no authority effects                                                                                                                                                                                                                                    |
+| Both 32-process races on each engine             | 32 supervisor handles retained first, 32 live owned workers blocked on withheld input positively observed, simultaneous release; one acknowledged creation for a shared token or 32 distinct tokens/one key; 31 original returns for the latter                                                                                         |
+| Signature/enrollment/body/human negatives        | Real locally generated signatures; no request-derived authority or unauthorized writes                                                                                                                                                                                                                                                  |
+| Schema/capacity/grants controls                  | Empty and malformed existing schemas, mismatch/saturation, actual privilege denials and valid admin positives; no repair/fallback                                                                                                                                                                                                       |
+| Real `CommitGate` TCP fixtures                   | Forward real COMMIT, hold reply, independently observe durability, lose JDBC reply/kill worker/deny readback; unknown never OK                                                                                                                                                                                                          |
+| `BoundaryTest`                                   | Closed nested schemas, strict AST string types for schemaVersion/profile/outcome with single-property negative vectors, malformed framing/UTF8/Unicode/JSON, offline DNS/network/JDBC guard                                                                                                                                             |
+| `SupervisorTest`, `ArchiveBoundaryTest`          | Interrupted cleanup with live worker and active I/O awaiting forced exit within monotonic cleanup reserve, positive stalled children, blocked reads/writes, pressure, exit/interrupt, actual installed open-input watchdog, anonymous pipe provenance enforcement vs linked/unlinked named FIFOs, owned child/thread/connection cleanup |
 
 ### Completed local evidence
 

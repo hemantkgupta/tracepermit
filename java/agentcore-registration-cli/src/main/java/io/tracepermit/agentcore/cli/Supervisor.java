@@ -14,10 +14,15 @@ final class Supervisor {
   static final Duration CLEANUP = Duration.ofSeconds(5);
   private final AtomicReference<Process> owned = new AtomicReference<>();
 
+  Process ownedProcess() { return owned.get(); }
+
   Receipt run(ProcessBuilder builder, Duration total, Duration cleanup) {
     long deadline = System.nanoTime() + total.toNanos();
     Process child = null;
+    Thread out = null;
+    Thread err = null;
     boolean interrupted = false;
+    Receipt result = Receipt.failure("UNKNOWN");
     try {
       // Process creation itself has platform limits. The creation daemon retains ownership even
       // if creation returns after the command deadline, and immediately kills that late child.
@@ -27,7 +32,7 @@ final class Supervisor {
         try {
           Process process = builder.start();
           owned.set(process);
-          if (expired.get()) terminate(process, cleanup);
+          if (expired.get()) terminate(process, cleanup, null, null);
         } catch (Exception failure) { startFailure.set(true); }
       });
       try {
@@ -38,8 +43,8 @@ final class Supervisor {
         return Receipt.failure("UNKNOWN");
       var stdout = new Capture(child.getInputStream(), 1_024);
       var stderr = new Capture(child.getErrorStream(), 1_024);
-      Thread out = daemon("registration-stdout", stdout);
-      Thread err = daemon("registration-stderr", stderr);
+      out = daemon("registration-stdout", stdout);
+      err = daemon("registration-stderr", stderr);
       while (child.isAlive()) {
         if (stdout.failed.get() || stderr.failed.get() || System.nanoTime() >= deadline)
           return Receipt.failure("UNKNOWN");
@@ -49,17 +54,23 @@ final class Supervisor {
       if (out.isAlive() || err.isAlive() || stdout.failed.get() || stderr.failed.get()
           || stderr.bytes.size() != 0 || System.nanoTime() >= deadline)
         return Receipt.failure("UNKNOWN");
-      return Receipt.decode(stdout.bytes.toByteArray(), child.exitValue());
+      result = Receipt.decode(stdout.bytes.toByteArray(), child.exitValue());
     } catch (InterruptedException stop) {
-      interrupted = true; return Receipt.failure("UNKNOWN");
-    } catch (RuntimeException failure) { return Receipt.failure("UNKNOWN"); }
-    finally {
-      terminate(child == null ? owned.get() : child, cleanup);
+      interrupted = true;
+      result = Receipt.failure("UNKNOWN");
+    } catch (RuntimeException failure) {
+      result = Receipt.failure("UNKNOWN");
+    } finally {
+      boolean reaped = terminate(child == null ? owned.get() : child, cleanup, out, err);
       if (interrupted) Thread.currentThread().interrupt();
+      if (!reaped || interrupted) {
+        result = Receipt.failure("UNKNOWN");
+      }
     }
+    return result;
   }
 
-  void stop() { terminate(owned.get(), CLEANUP); }
+  void stop() { terminate(owned.get(), CLEANUP, null, null); }
 
   static boolean send(OutputStream target, byte[] bytes, Duration budget) {
     var failed = new AtomicBoolean();
@@ -83,30 +94,69 @@ final class Supervisor {
     Thread thread = new Thread(runnable, name); thread.setDaemon(true); thread.start(); return thread;
   }
 
-  private static void terminate(Process process, Duration reserve) {
-    if (process == null) return;
+  private static boolean terminate(Process process, Duration reserve, Thread out, Thread err) {
+    if (process == null) return true;
     boolean interrupted = Thread.interrupted();
     long deadline = System.nanoTime() + reserve.toNanos();
+    Thread closer = null;
     try {
       // Never close a blocked child pipe before terminating the child.
       // Process.destroy also closes pipes internally. Use the handle to signal before any close.
       process.toHandle().destroy();
-      if (!process.waitFor(Math.min(100, remainingMillis(deadline)), TimeUnit.MILLISECONDS)) {
-        process.toHandle().destroyForcibly();
-        process.waitFor(remainingMillis(deadline), TimeUnit.MILLISECONDS);
+      long graceDeadline = Math.min(deadline, System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(100));
+      while (process.isAlive() && System.nanoTime() < graceDeadline) {
+        try {
+          if (process.waitFor(remainingMillis(graceDeadline), TimeUnit.MILLISECONDS)) break;
+        } catch (InterruptedException stop) {
+          interrupted = true;
+          break;
+        }
       }
-    } catch (InterruptedException stop) { interrupted = true; process.toHandle().destroyForcibly(); }
-    finally {
+      if (process.isAlive()) {
+        process.toHandle().destroyForcibly();
+        while (process.isAlive() && System.nanoTime() < deadline) {
+          try {
+            if (process.waitFor(remainingMillis(deadline), TimeUnit.MILLISECONDS)) break;
+          } catch (InterruptedException stop) {
+            interrupted = true;
+          }
+        }
+      }
+    } finally {
       // Closing is also bounded; platform pipe-close bugs cannot hold the supervisor thread.
-      Thread closer = daemon("registration-pipe-cleanup", () -> {
+      closer = daemon("registration-pipe-cleanup", () -> {
         try { process.getOutputStream().close(); } catch (Exception ignored) { }
         try { process.getInputStream().close(); } catch (Exception ignored) { }
         try { process.getErrorStream().close(); } catch (Exception ignored) { }
       });
-      try { closer.join(remainingMillis(deadline)); }
-      catch (InterruptedException stop) { interrupted = true; }
+      while (closer.isAlive() && System.nanoTime() < deadline) {
+        try {
+          closer.join(remainingMillis(deadline));
+        } catch (InterruptedException stop) {
+          interrupted = true;
+        }
+      }
+      if (out != null) {
+        while (out.isAlive() && System.nanoTime() < deadline) {
+          try {
+            out.join(remainingMillis(deadline));
+          } catch (InterruptedException stop) {
+            interrupted = true;
+          }
+        }
+      }
+      if (err != null) {
+        while (err.isAlive() && System.nanoTime() < deadline) {
+          try {
+            err.join(remainingMillis(deadline));
+          } catch (InterruptedException stop) {
+            interrupted = true;
+          }
+        }
+      }
       if (interrupted) Thread.currentThread().interrupt();
     }
+    return !process.isAlive() && (closer == null || !closer.isAlive()) && (out == null || !out.isAlive()) && (err == null || !err.isAlive());
   }
 
   private static final class Capture implements Runnable {

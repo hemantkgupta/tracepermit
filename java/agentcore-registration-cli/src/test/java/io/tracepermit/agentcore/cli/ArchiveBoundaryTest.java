@@ -100,6 +100,130 @@ final class ArchiveBoundaryTest {
     }
   }
 
+  @Test void namedFifoAndUnlinkedFifoRejectedAtSupervisorBoundary() throws Exception {
+    try (var installed = new InstalledArchive()) {
+      Path fifoDir = Files.createTempDirectory("tp-fifo-sup-");
+      Path linkedFifo = fifoDir.resolve("linked.fifo");
+      Path unlinkedFifo = fifoDir.resolve("unlinked.fifo");
+      var mk1 = new ProcessBuilder("mkfifo", linkedFifo.toString()).start();
+      assertThat(mk1.waitFor(5, TimeUnit.SECONDS)).isTrue(); assertThat(mk1.exitValue()).isZero();
+      var mk2 = new ProcessBuilder("mkfifo", unlinkedFifo.toString()).start();
+      assertThat(mk2.waitFor(5, TimeUnit.SECONDS)).isTrue(); assertThat(mk2.exitValue()).isZero();
+
+      try {
+        // 1. Linked named FIFO at supervisor boundary
+        var b1 = new ProcessBuilder("/bin/sh", "-c",
+            "exec \"$1\" check-config", "sh", installed.launcher.toString()).directory(installed.root.toFile());
+        b1.redirectInput(linkedFifo.toFile());
+        b1.environment().clear();
+        b1.environment().put("JAVA_HOME", System.getProperty("java.home"));
+        b1.environment().put("PATH", "/usr/bin:/bin");
+        Thread w1 = new Thread(() -> {
+          try (var fos = new java.io.FileOutputStream(linkedFifo.toFile())) {
+            fos.write(new byte[]{0, 0, 0, 1, 0});
+          } catch (Exception ignored) { }
+        });
+        w1.setDaemon(true); w1.start();
+        Process p1 = b1.start();
+        try {
+          assertThat(p1.waitFor(5, TimeUnit.SECONDS)).isTrue();
+          assertThat(p1.exitValue()).isNotZero();
+          assertThat(Receipt.decode(p1.getInputStream().readNBytes(1024), p1.exitValue()).outcome()).isEqualTo("INPUT_INVALID");
+        } finally { p1.toHandle().destroyForcibly(); p1.waitFor(2, TimeUnit.SECONDS); }
+
+        // 2. Unlinked named FIFO at supervisor boundary
+        var b2 = new ProcessBuilder("/bin/sh", "-c",
+            "rm -f \"$1\" && exec \"$2\" check-config",
+            "sh", unlinkedFifo.toString(), installed.launcher.toString()).directory(installed.root.toFile());
+        b2.redirectInput(unlinkedFifo.toFile());
+        b2.environment().clear();
+        b2.environment().put("JAVA_HOME", System.getProperty("java.home"));
+        b2.environment().put("PATH", "/usr/bin:/bin");
+        Thread w2 = new Thread(() -> {
+          try (var fos = new java.io.FileOutputStream(unlinkedFifo.toFile())) {
+            fos.write(new byte[]{0, 0, 0, 1, 0});
+          } catch (Exception ignored) { }
+        });
+        w2.setDaemon(true); w2.start();
+        Process p2 = b2.start();
+        try {
+          assertThat(p2.waitFor(5, TimeUnit.SECONDS)).isTrue();
+          assertThat(p2.exitValue()).isNotZero();
+          assertThat(Receipt.decode(p2.getInputStream().readNBytes(1024), p2.exitValue()).outcome()).isEqualTo("INPUT_INVALID");
+        } finally { p2.toHandle().destroyForcibly(); p2.waitFor(2, TimeUnit.SECONDS); }
+      } finally {
+        try { Files.deleteIfExists(linkedFifo); } catch (Exception ignored) { }
+        try { Files.deleteIfExists(unlinkedFifo); } catch (Exception ignored) { }
+        try { Files.deleteIfExists(fifoDir); } catch (Exception ignored) { }
+      }
+    }
+  }
+
+  @Test void namedFifoAndUnlinkedFifoRejectedAtWorkerBoundary() throws Exception {
+    String java = Path.of(System.getProperty("java.home"), "bin", "java").toString();
+    String cp = System.getProperty("tracepermit.cli.testClasspath");
+    Path fifoDir = Files.createTempDirectory("tp-fifo-worker-");
+    Path linkedFifo = fifoDir.resolve("linked.fifo");
+    Path unlinkedFifo = fifoDir.resolve("unlinked.fifo");
+    var mk1 = new ProcessBuilder("mkfifo", linkedFifo.toString()).start();
+    assertThat(mk1.waitFor(5, TimeUnit.SECONDS)).isTrue(); assertThat(mk1.exitValue()).isZero();
+    var mk2 = new ProcessBuilder("mkfifo", unlinkedFifo.toString()).start();
+    assertThat(mk2.waitFor(5, TimeUnit.SECONDS)).isTrue(); assertThat(mk2.exitValue()).isZero();
+
+    try {
+      // 1. Linked named FIFO at worker boundary
+      var b1 = new ProcessBuilder("/bin/sh", "-c",
+          "exec \"$1\" -cp \"$2\" io.tracepermit.agentcore.cli.Worker check-config", "sh", java, cp);
+      b1.redirectInput(linkedFifo.toFile());
+      Thread w1 = new Thread(() -> {
+        try (var fos = new java.io.FileOutputStream(linkedFifo.toFile())) {
+          fos.write(new byte[]{0, 0, 0, 1, 0});
+        } catch (Exception ignored) { }
+      });
+      w1.setDaemon(true); w1.start();
+      Process p1 = b1.start();
+      try {
+        assertThat(p1.waitFor(5, TimeUnit.SECONDS)).isTrue();
+        assertThat(p1.exitValue()).isNotZero();
+        assertThat(Receipt.decode(p1.getInputStream().readNBytes(1024), p1.exitValue()).outcome()).isEqualTo("INPUT_INVALID");
+      } finally { p1.toHandle().destroyForcibly(); p1.waitFor(2, TimeUnit.SECONDS); }
+
+      // 2. Unlinked named FIFO at worker boundary
+      var b2 = new ProcessBuilder("/bin/sh", "-c",
+          "rm -f \"$1\" && exec \"$2\" -cp \"$3\" io.tracepermit.agentcore.cli.Worker check-config",
+          "sh", unlinkedFifo.toString(), java, cp);
+      b2.redirectInput(unlinkedFifo.toFile());
+      Thread w2 = new Thread(() -> {
+        try (var fos = new java.io.FileOutputStream(unlinkedFifo.toFile())) {
+          fos.write(new byte[]{0, 0, 0, 1, 0});
+        } catch (Exception ignored) { }
+      });
+      w2.setDaemon(true); w2.start();
+      Process p2 = b2.start();
+      try {
+        assertThat(p2.waitFor(5, TimeUnit.SECONDS)).isTrue();
+        assertThat(p2.exitValue()).isNotZero();
+        assertThat(Receipt.decode(p2.getInputStream().readNBytes(1024), p2.exitValue()).outcome()).isEqualTo("INPUT_INVALID");
+      } finally { p2.toHandle().destroyForcibly(); p2.waitFor(2, TimeUnit.SECONDS); }
+
+      // 3. Positive control: anonymous pipe is accepted at worker boundary
+      var b3 = new ProcessBuilder(java, "-cp", cp, Worker.class.getName(), "check-config");
+      Process p3 = b3.start();
+      try (var out = p3.getOutputStream()) {
+        out.write(frames(bytes(config())));
+      }
+      try {
+        assertThat(p3.waitFor(5, TimeUnit.SECONDS)).isTrue();
+        assertThat(p3.exitValue()).isZero();
+        assertThat(Receipt.decode(p3.getInputStream().readNBytes(1024), p3.exitValue()).outcome()).isEqualTo("CONFIG_VALID");
+      } finally { p3.toHandle().destroyForcibly(); p3.waitFor(2, TimeUnit.SECONDS); }
+    } finally {
+      try { Files.deleteIfExists(linkedFifo); } catch (Exception ignored) { }
+      try { Files.deleteIfExists(unlinkedFifo); } catch (Exception ignored) { }
+      try { Files.deleteIfExists(fifoDir); } catch (Exception ignored) { }
+    }
+  }
+
   @ParameterizedTest @ValueSource(strings = {"duplicate", "utf8", "trailing", "truncated", "oversized", "extra", "remoteOptions"})
   void installedMalformedFramesNeverPass(String mode) throws Exception {
     byte[] value = bytes(config());

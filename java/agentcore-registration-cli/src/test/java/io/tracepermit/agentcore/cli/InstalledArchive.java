@@ -32,33 +32,55 @@ final class InstalledArchive implements AutoCloseable {
     return builder.start();
   }
 
-  Receipt call(String command, byte[] input) throws Exception {
-    Process process = start(command);
-    var output = new ByteArrayOutputStream(); var errors = new ByteArrayOutputStream();
-    var failed = new AtomicBoolean(); var ioError = new AtomicReference<Throwable>();
-    Thread writer = thread(() -> {
-      try { process.getOutputStream().write(input); process.getOutputStream().close(); }
-      catch (Throwable failure) { ioError.set(failure); }
-    });
-    Thread reader = thread(() -> capture(process.getInputStream(), output, failed));
-    Thread stderr = thread(() -> capture(process.getErrorStream(), errors, failed));
-    try {
-      assertThat(process.waitFor(70, TimeUnit.SECONDS)).as("installed command deadline").isTrue();
-      writer.join(1000); reader.join(1000); stderr.join(1000);
-      assertThat(writer.isAlive() || reader.isAlive() || stderr.isAlive()).as("pipe threads joined").isFalse();
-      assertThat(failed.get()).isFalse(); assertThat(ioError.get() == null).isTrue();
-      assertThat(errors.size()).as("fixed diagnostics only").isZero();
-      Receipt receipt = Receipt.decode(output.toByteArray(), process.exitValue());
-      assertThat(java.util.Arrays.equals(output.toByteArray(), receipt.bytes())).as("exact closed receipt bytes").isTrue();
-      return receipt;
-    } finally {
-      process.toHandle().destroyForcibly(); process.waitFor(5, TimeUnit.SECONDS);
-      Thread closer = thread(() -> {
-        try { process.getOutputStream().close(); process.getInputStream().close(); process.getErrorStream().close(); }
-        catch (Exception ignored) { }
-      });
-      closer.join(1000); assertThat(closer.isAlive()).as("bounded pipe cleanup").isFalse();
+  static final class RunningCommand {
+    final Process process;
+    final ByteArrayOutputStream output = new ByteArrayOutputStream();
+    final ByteArrayOutputStream errors = new ByteArrayOutputStream();
+    final AtomicBoolean failed = new AtomicBoolean();
+    final AtomicReference<Throwable> ioError = new AtomicReference<>();
+    final Thread reader;
+    final Thread stderr;
+
+    RunningCommand(Process process) {
+      this.process = process;
+      this.reader = thread(() -> capture(process.getInputStream(), output, failed));
+      this.stderr = thread(() -> capture(process.getErrorStream(), errors, failed));
     }
+
+    void writeInput(byte[] input) {
+      try {
+        process.getOutputStream().write(input);
+        process.getOutputStream().close();
+      } catch (Throwable failure) {
+        ioError.set(failure);
+      }
+    }
+
+    Receipt finish() throws Exception {
+      try {
+        assertThat(process.waitFor(70, TimeUnit.SECONDS)).as("installed command deadline").isTrue();
+        reader.join(1000); stderr.join(1000);
+        assertThat(reader.isAlive() || stderr.isAlive()).as("pipe threads joined").isFalse();
+        assertThat(failed.get()).isFalse(); assertThat(ioError.get() == null).isTrue();
+        assertThat(errors.size()).as("fixed diagnostics only").isZero();
+        Receipt receipt = Receipt.decode(output.toByteArray(), process.exitValue());
+        assertThat(java.util.Arrays.equals(output.toByteArray(), receipt.bytes())).as("exact closed receipt bytes").isTrue();
+        return receipt;
+      } finally {
+        process.toHandle().destroyForcibly(); process.waitFor(5, TimeUnit.SECONDS);
+        Thread closer = thread(() -> {
+          try { process.getOutputStream().close(); process.getInputStream().close(); process.getErrorStream().close(); }
+          catch (Exception ignored) { }
+        });
+        closer.join(1000); assertThat(closer.isAlive()).as("bounded pipe cleanup").isFalse();
+      }
+    }
+  }
+
+  Receipt call(String command, byte[] input) throws Exception {
+    RunningCommand cmd = new RunningCommand(start(command));
+    cmd.writeInput(input);
+    return cmd.finish();
   }
 
   static Thread thread(Runnable action) { var t = new Thread(action); t.setDaemon(true); t.start(); return t; }

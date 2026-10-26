@@ -145,6 +145,61 @@ final class BoundaryTest {
     assertThat(Worker.execute(new ByteArrayInputStream(new byte[0]), "execute").outcome()).isEqualTo("USAGE");
   }
 
+  @Test void receiptStringTypesClosedAgainstNumericAndTypeCoercion() {
+    String base = "{\"schemaVersion\":\"1.0\",\"profile\":\"%s\",\"outcome\":\"CREATED\",\"executionEnabled\":false,\"created\":true,\"operationId\":\"op-1\"}"
+        .formatted(Protocol.PROFILE);
+    assertThat(Receipt.decode(base.getBytes(StandardCharsets.UTF_8), 0).outcome()).isEqualTo("CREATED");
+
+    // Single-property type coercion vectors must all be rejected as UNKNOWN
+    String numVersion = base.replace("\"schemaVersion\":\"1.0\"", "\"schemaVersion\":1.0");
+    assertThat(Receipt.decode(numVersion.getBytes(StandardCharsets.UTF_8), 0).outcome())
+        .as("numeric schemaVersion 1.0 must not coerce to string").isEqualTo("UNKNOWN");
+
+    String boolVersion = base.replace("\"schemaVersion\":\"1.0\"", "\"schemaVersion\":true");
+    assertThat(Receipt.decode(boolVersion.getBytes(StandardCharsets.UTF_8), 0).outcome())
+        .as("boolean schemaVersion").isEqualTo("UNKNOWN");
+
+    String numProfile = base.replace("\"profile\":\"" + Protocol.PROFILE + "\"", "\"profile\":100");
+    assertThat(Receipt.decode(numProfile.getBytes(StandardCharsets.UTF_8), 0).outcome())
+        .as("numeric profile").isEqualTo("UNKNOWN");
+
+    String boolProfile = base.replace("\"profile\":\"" + Protocol.PROFILE + "\"", "\"profile\":false");
+    assertThat(Receipt.decode(boolProfile.getBytes(StandardCharsets.UTF_8), 0).outcome())
+        .as("boolean profile").isEqualTo("UNKNOWN");
+
+    String numOutcome = base.replace("\"outcome\":\"CREATED\"", "\"outcome\":0");
+    assertThat(Receipt.decode(numOutcome.getBytes(StandardCharsets.UTF_8), 0).outcome())
+        .as("numeric outcome").isEqualTo("UNKNOWN");
+
+    String boolOutcome = base.replace("\"outcome\":\"CREATED\"", "\"outcome\":true");
+    assertThat(Receipt.decode(boolOutcome.getBytes(StandardCharsets.UTF_8), 0).outcome())
+        .as("boolean outcome").isEqualTo("UNKNOWN");
+
+    String numExecution = base.replace("\"executionEnabled\":false", "\"executionEnabled\":0");
+    assertThat(Receipt.decode(numExecution.getBytes(StandardCharsets.UTF_8), 0).outcome())
+        .as("numeric executionEnabled").isEqualTo("UNKNOWN");
+
+    String strExecution = base.replace("\"executionEnabled\":false", "\"executionEnabled\":\"false\"");
+    assertThat(Receipt.decode(strExecution.getBytes(StandardCharsets.UTF_8), 0).outcome())
+        .as("string executionEnabled").isEqualTo("UNKNOWN");
+
+    String numCreated = base.replace("\"created\":true", "\"created\":1");
+    assertThat(Receipt.decode(numCreated.getBytes(StandardCharsets.UTF_8), 0).outcome())
+        .as("numeric created").isEqualTo("UNKNOWN");
+
+    String strCreated = base.replace("\"created\":true", "\"created\":\"true\"");
+    assertThat(Receipt.decode(strCreated.getBytes(StandardCharsets.UTF_8), 0).outcome())
+        .as("string created").isEqualTo("UNKNOWN");
+
+    String numOpId = base.replace("\"operationId\":\"op-1\"", "\"operationId\":12345");
+    assertThat(Receipt.decode(numOpId.getBytes(StandardCharsets.UTF_8), 0).outcome())
+        .as("numeric operationId").isEqualTo("UNKNOWN");
+
+    String boolOpId = base.replace("\"operationId\":\"op-1\"", "\"operationId\":false");
+    assertThat(Receipt.decode(boolOpId.getBytes(StandardCharsets.UTF_8), 0).outcome())
+        .as("boolean operationId").isEqualTo("UNKNOWN");
+  }
+
   private static void invalid(ObjectNode config) {
     assertThat(Worker.execute(new ByteArrayInputStream(frames(bytes(config))), "check-config").outcome()).isEqualTo("CONFIG_INVALID");
   }

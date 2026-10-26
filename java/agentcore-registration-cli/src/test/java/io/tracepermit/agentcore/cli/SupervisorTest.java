@@ -39,14 +39,85 @@ final class SupervisorTest {
   }
 
   @Test void interruptionKillsOwnedChildAndPreservesCallerInterrupt() throws Exception {
-    var supervisor = new Supervisor(); var outcome = new java.util.concurrent.atomic.AtomicReference<Receipt>();
+    var supervisor = new Supervisor();
+    var outcome = new java.util.concurrent.atomic.AtomicReference<Receipt>();
+    var preserved = new java.util.concurrent.atomic.AtomicBoolean();
+    var childObserved = new java.util.concurrent.atomic.AtomicReference<Process>();
+    Thread caller = new Thread(() -> {
+      outcome.set(supervisor.run(child("stdout"), Duration.ofSeconds(10), Duration.ofSeconds(2)));
+      preserved.set(Thread.currentThread().isInterrupted());
+    }, "supervisor-caller-test");
+    try {
+      caller.start();
+      // Wait until child is created, retained by supervisor, alive, and actively streaming I/O
+      long deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
+      while (System.nanoTime() < deadline) {
+        Process p = supervisor.ownedProcess();
+        if (p != null && p.isAlive()) {
+          childObserved.set(p);
+          break;
+        }
+        Thread.sleep(10);
+      }
+      Process childProcess = childObserved.get();
+      assertThat(childProcess).as("child process retained before interrupt").isNotNull();
+      assertThat(childProcess.isAlive()).as("child process alive with active I/O").isTrue();
+
+      // Interrupt caller thread while child is alive and I/O is active
+      caller.interrupt();
+      caller.join(5000);
+
+      assertThat(caller.isAlive()).as("caller thread terminated").isFalse();
+      assertThat(outcome.get().outcome()).as("honest UNKNOWN reported on interrupted cleanup").isEqualTo("UNKNOWN");
+      assertThat(preserved.get()).as("caller thread interrupt status preserved").isTrue();
+      assertThat(childProcess.isAlive()).as("reaped owned child worker is not alive").isFalse();
+
+      // Owned reader/writer/drainer threads must all be terminated
+      long drainDeadline = System.nanoTime() + Duration.ofSeconds(2).toNanos();
+      while (supervisorThreads() != 0 && System.nanoTime() < drainDeadline) {
+        Thread.sleep(10);
+      }
+      assertThat(supervisorThreads()).as("owned supervisor reader/drainer threads terminated").isZero();
+    } finally {
+      Process p = childObserved.get();
+      if (p != null && p.isAlive()) {
+        p.destroyForcibly();
+        p.waitFor(2, TimeUnit.SECONDS);
+      }
+    }
+  }
+
+  @Test void interruptionDuringCleanupAwaitsForcedExitAndPreservesInterrupt() throws Exception {
+    var supervisor = new Supervisor();
+    var outcome = new java.util.concurrent.atomic.AtomicReference<Receipt>();
     var preserved = new java.util.concurrent.atomic.AtomicBoolean();
     Thread caller = new Thread(() -> {
-      outcome.set(supervisor.run(child("stall"), Duration.ofSeconds(10), Duration.ofSeconds(2)));
+      Thread.currentThread().interrupt(); // Pre-set interrupt entering supervisor
+      outcome.set(supervisor.run(child("stall"), Duration.ofSeconds(5), Duration.ofSeconds(2)));
       preserved.set(Thread.currentThread().isInterrupted());
-    });
-    caller.start(); Thread.sleep(500); caller.interrupt(); caller.join(4000);
-    assertThat(caller.isAlive()).isFalse(); assertThat(outcome.get().outcome()).isEqualTo("UNKNOWN"); assertThat(preserved.get()).isTrue();
+    }, "supervisor-caller-pre-interrupted");
+    try {
+      caller.start();
+      caller.join(5000);
+      assertThat(caller.isAlive()).isFalse();
+      assertThat(outcome.get().outcome()).isEqualTo("UNKNOWN");
+      assertThat(preserved.get()).isTrue();
+      Process p = supervisor.ownedProcess();
+      if (p != null) {
+        assertThat(p.isAlive()).as("child reaped even when caller was pre-interrupted").isFalse();
+      }
+      long drainDeadline = System.nanoTime() + Duration.ofSeconds(2).toNanos();
+      while (supervisorThreads() != 0 && System.nanoTime() < drainDeadline) {
+        Thread.sleep(10);
+      }
+      assertThat(supervisorThreads()).isZero();
+    } finally {
+      Process p = supervisor.ownedProcess();
+      if (p != null && p.isAlive()) {
+        p.destroyForcibly();
+        p.waitFor(2, TimeUnit.SECONDS);
+      }
+    }
   }
 
   @Test void nonReadingOutputAndThrowingOutputAreBounded() throws Exception {

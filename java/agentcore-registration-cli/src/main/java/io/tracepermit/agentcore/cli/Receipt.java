@@ -35,13 +35,16 @@ record Receipt(String outcome, Boolean created, String operationId) {
       var json = Protocol.object(bytes);
       Protocol.fields(json, Set.of("schemaVersion", "profile", "outcome", "executionEnabled",
           "created", "operationId"), Set.of());
-      if (!json.path("schemaVersion").asText().equals("1.0")
-          || !json.path("profile").asText().equals(Protocol.PROFILE)
+      if (!json.path("schemaVersion").isTextual()
+          || !json.path("schemaVersion").textValue().equals("1.0")
+          || !json.path("profile").isTextual()
+          || !json.path("profile").textValue().equals(Protocol.PROFILE)
+          || !json.path("outcome").isTextual()
           || !json.path("executionEnabled").isBoolean() || json.path("executionEnabled").booleanValue()
-          || !json.path("created").isNull() && !json.path("created").isBoolean()
-          || !json.path("operationId").isNull() && !json.path("operationId").isTextual())
+          || (!json.path("created").isNull() && !json.path("created").isBoolean())
+          || (!json.path("operationId").isNull() && !json.path("operationId").isTextual()))
         return failure("UNKNOWN");
-      var receipt = new Receipt(json.path("outcome").asText(),
+      var receipt = new Receipt(json.path("outcome").textValue(),
           json.path("created").isNull() ? null : json.path("created").booleanValue(),
           json.path("operationId").isNull() ? null : json.path("operationId").textValue());
       return receipt.exitCode() == exit ? receipt : failure("UNKNOWN");

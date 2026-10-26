@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -71,16 +72,68 @@ abstract class InstalledRegistrationContract {
   @Test void thirtyTwoInstalledProcessesDistinctTokensOneKey() throws Exception { race(true); counts(32, 1); }
 
   private void race(boolean distinct) throws Exception {
-    String shared = token(); var tokens = new ArrayList<String>();
+    String shared = token();
+    var tokens = new ArrayList<String>();
     for (int i = 0; i < 32; i++) tokens.add(distinct ? token() : shared);
-    var pool = Executors.newFixedThreadPool(32); var ready = new CountDownLatch(32); var go = new CountDownLatch(1);
+    var inputs = new ArrayList<byte[]>();
+    for (int i = 0; i < 32; i++) inputs.add(input(db.config(false), tokens.get(i), request()));
+
+    var commands = new java.util.concurrent.CopyOnWriteArrayList<InstalledArchive.RunningCommand>();
+    var workers = new java.util.concurrent.ConcurrentHashMap<Long, ProcessHandle>();
+    var pool = Executors.newFixedThreadPool(32);
+    var ready = new CountDownLatch(32);
+    var go = new CountDownLatch(1);
     List<java.util.concurrent.Future<Receipt>> futures = new ArrayList<>();
     try {
-      for (int i = 0; i < 32; i++) { int index = i; futures.add(pool.submit(() -> {
-        ready.countDown(); if (!go.await(10, TimeUnit.SECONDS)) throw new AssertionError("RACE_NOT_RELEASED");
-        return call(tokens.get(index), request());
-      })); }
-      assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue(); go.countDown();
+      // 1. Create and retain 32 actual installed supervisor processes concurrently
+      var startLatch = new CountDownLatch(32);
+      for (int i = 0; i < 32; i++) {
+        pool.submit(() -> {
+          try {
+            commands.add(new InstalledArchive.RunningCommand(installed.start("register-once")));
+          } catch (Exception e) {
+            throw new RuntimeException(e);
+          } finally {
+            startLatch.countDown();
+          }
+        });
+      }
+      assertThat(startLatch.await(15, TimeUnit.SECONDS)).as("all 32 supervisor processes started").isTrue();
+      assertThat(commands).as("retained 32 installed supervisor commands").hasSize(32);
+
+      // 2. Positively observe 32 live owned workers blocked before command by withheld input
+      long barrierDeadline = System.nanoTime() + Duration.ofSeconds(15).toNanos();
+      while (workers.size() < 32 && System.nanoTime() < barrierDeadline) {
+        for (var cmd : commands) {
+          cmd.process.descendants().filter(d -> d.isAlive() && d.info().arguments()
+              .map(a -> java.util.Arrays.asList(a).contains(Worker.class.getName())).orElse(false))
+              .findFirst().ifPresent(w -> workers.put(w.pid(), w));
+        }
+        if (workers.size() < 32) Thread.sleep(20);
+      }
+      // Assert actual count of live processes before releasing work
+      assertThat(commands.stream().map(c -> c.process).allMatch(Process::isAlive))
+          .as("all 32 supervisor processes alive").isTrue();
+      assertThat(workers.size()).as("positively observed 32 live owned workers blocked before command").isEqualTo(32);
+      assertThat(workers.values().stream().allMatch(ProcessHandle::isAlive))
+          .as("all 32 owned workers alive and blocked on withheld input").isTrue();
+
+      // 3. Coordinate synchronized release across all 32 processes
+      for (int i = 0; i < 32; i++) {
+        int index = i;
+        var cmd = commands.get(index);
+        byte[] inputBytes = inputs.get(index);
+        futures.add(pool.submit(() -> {
+          ready.countDown();
+          if (!go.await(10, TimeUnit.SECONDS)) throw new AssertionError("RACE_NOT_RELEASED");
+          cmd.writeInput(inputBytes);
+          return cmd.finish();
+        }));
+      }
+      assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
+      go.countDown();
+
+      // 4. Assert aggregate race results
       var receipts = new ArrayList<Receipt>();
       for (var future : futures) receipts.add(future.get(80, TimeUnit.SECONDS));
       assertThat(receipts.stream().filter(r -> r.outcome().equals("CREATED")).count()).isEqualTo(1);
@@ -88,7 +141,25 @@ abstract class InstalledRegistrationContract {
       assertThat(receipts.stream().filter(r -> r.outcome().equals("EXISTING")).count()).as("fixed outcomes %s", outcomes).isEqualTo(distinct ? 31 : 0);
       if (distinct) assertThat(receipts.stream().map(Receipt::operationId).distinct().count()).isEqualTo(1);
       else assertThat(receipts.stream().filter(r -> r.exitCode() != 0).count()).isEqualTo(31);
-    } finally { go.countDown(); pool.shutdownNow(); assertThat(pool.awaitTermination(10, TimeUnit.SECONDS)).isTrue(); }
+    } finally {
+      go.countDown();
+      pool.shutdownNow();
+      pool.awaitTermination(10, TimeUnit.SECONDS);
+      for (var cmd : commands) {
+        try {
+          cmd.process.toHandle().destroyForcibly();
+          cmd.process.waitFor(2, TimeUnit.SECONDS);
+        } catch (Exception ignored) { }
+        try { cmd.process.getOutputStream().close(); } catch (Exception ignored) { }
+        try { cmd.process.getInputStream().close(); } catch (Exception ignored) { }
+        try { cmd.process.getErrorStream().close(); } catch (Exception ignored) { }
+      }
+      for (var worker : workers.values()) {
+        if (worker.isAlive()) {
+          try { worker.destroyForcibly(); } catch (Exception ignored) { }
+        }
+      }
+    }
   }
 
   @ParameterizedTest @ValueSource(strings = {"signature", "issuer", "audience", "scope", "subject", "client", "tenant", "expired"})

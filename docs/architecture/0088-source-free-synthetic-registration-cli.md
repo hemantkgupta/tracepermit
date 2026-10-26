@@ -25,10 +25,17 @@ Gradle, Node, pnpm, compiler or test classes at runtime.
 The trusted local operator starts the private process. A bounded anonymous stdin
 pipe carries a separate, closed operator JSON frame, then (for registration) a
 bearer frame and closed untrusted request frame. EOF is mandatory before any
-database access. Duplicate keys, unknown fields, invalid UTF8, trailing JSON,
-truncation, oversized lengths and extra frames fail before effects. Regular-file
-and terminal input are refused. Configuration, token, request and credentials
-never come from argv, environment variables or credential files.
+database access. Anonymous pipe provenance is enforced on supported platforms
+(Linux `/proc/self/fd/0` symlink target matching `pipe:[\d+]` in `pipefs`; Darwin
+`/dev/fd/0` in `devfs` with zero link count, epoch birthtime and no vnode pathname
+rewrite) and fails closed on unverified platforms or when provenance cannot be
+established. File type (`S_IFIFO`), link count or path absence alone are not
+accepted as proof: filesystem-named FIFOs (including opened FIFOs whose path has
+been unlinked) are rejected with `INPUT_INVALID`. Duplicate keys, unknown fields,
+invalid UTF8, trailing JSON, truncation, oversized lengths and extra frames fail
+before effects. Regular-file, FIFO and terminal input are refused. Configuration,
+token, request and credentials never come from argv, environment variables or
+credential files.
 
 The operator explicitly pins the public RSA key, key ID, algorithm, issuer,
 audience, provider claim/scope policy, exact workload enrollment, strict existing
@@ -54,12 +61,15 @@ Tests guard DNS/network calls and JDBC, and use an actual installed TCP sentinel
 
 `register-once` constructs the real `DurableAgentCoreRegistration` factory and
 invokes it exactly once. A receipt has closed version/profile/outcome fields,
-nullable `created`/`operationId`, and constant `executionEnabled=false`. Identity
-and conflict refusals are `REJECTED`; uncertain replay/storage failures are
-conservatively `UNKNOWN`, including producer replay refusals whose public code
-does not distinguish replay from commit uncertainty. Initialization is `NOT_READY`.
-All failures are nonzero. There is no retry or acknowledgement reconstruction
-through database readback. Replay and registration remain separate transactions.
+nullable `created`/`operationId`, and constant `executionEnabled=false`. Receipt
+decoding strictly requires textual JSON AST nodes for `schemaVersion`, `profile`,
+and `outcome`, refusing numeric coercion (such as JSON numeric `1.0`) and non-string
+types as `UNKNOWN`. Identity and conflict refusals are `REJECTED`; uncertain
+replay/storage failures are conservatively `UNKNOWN`, including producer replay
+refusals whose public code does not distinguish replay from commit uncertainty.
+Initialization is `NOT_READY`. All failures are nonzero. There is no retry or
+acknowledgement reconstruction through database readback. Replay and registration
+remain separate transactions.
 
 ## Process and diagnostic boundary
 
@@ -74,10 +84,13 @@ become public output. Stderr pressure still causes an unknown result.
 The fixed command budget is 60 seconds including setup and receipt send, with a
 separate 5 second cleanup reserve. Worker supervision gets the remaining budget
 minus a 1 second output reserve. Pipe writes/reads/flush/close execute only on
-bounded supervised or daemon paths. Cleanup terminates the owned child before
-pipe closure, escalates to forcible termination, bounds reap/drain and restores
-caller interrupts. It never kills unrelated processes. Shutdown handles ordinary
-termination; final `halt` avoids unbounded JVM stream/shutdown-hook flushing.
+bounded supervised or daemon paths. Cleanup operates against one monotonic
+cleanup deadline: initial and arriving interrupts are collected and preserved,
+forced worker termination is positively awaited and observed within the remaining
+cleanup reserve, and owned pipe closer and output drainer threads are joined.
+Unobserved exit or interrupt during cleanup reports `UNKNOWN`. It never kills
+unrelated processes. Shutdown handles ordinary termination; final `halt` avoids
+unbounded JVM stream/shutdown-hook flushing.
 
 These are cooperative JVM/OS scheduling bounds, not a hard real-time guarantee.
 A stalled kernel, process creation before Java returns an owned handle, host
