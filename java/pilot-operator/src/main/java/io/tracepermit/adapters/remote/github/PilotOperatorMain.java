@@ -37,6 +37,8 @@ public final class PilotOperatorMain {
   static Result bounded(String[] args, String file, Preflights preflights, Duration deadline) {
     if (args.length != 1 || !("--check".equals(args[0]) || "--preflight".equals(args[0]))) return Result.USAGE_REJECTED;
     if (Runtime.version().feature() != 21 || file == null || file.isEmpty()) return Result.CONFIGURATION_REJECTED;
+    // A pre-cancelled caller must never race a completed diagnostic Future.
+    if (Thread.currentThread().isInterrupted()) return Result.CANCELLED;
     var worker = Executors.newSingleThreadExecutor(task -> {
       var thread = new Thread(task, "pilot-diagnostic"); thread.setDaemon(true); return thread;
     });

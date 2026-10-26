@@ -1162,3 +1162,18 @@ unimplemented by this lane. No other requirement status or lane claim changes.
 | SEC-001/002/003/012          | `pilot-operator` private bounded strict JSON/key validation; `PilotConfigurationTest`; `PilotArchiveTest`       | Operator pins only; no identity/authority claims or secret rendering                                         |
 | SEC-007/015; REL-001/005/009 | Concrete existing credential provider + exact existing target GET preflight; `PilotPreflightTest`               | Synthetic only; no dispatch, reconciliation, live compatibility or absence proof                             |
 | OPS-002/004                  | Clean-source manifest, dependency hashes, source-free launcher/archive and operator runbook; distribution tests | Integrity metadata is not current policy, a signature or production authority; macOS host validation pending |
+
+## Selective CI and cancellation determinism (ADR0088)
+
+- REL-001/009: `PilotOperatorMain.bounded` rejects an already-interrupted caller
+  before worker/provider construction; `PilotPreflightTest` retains exact
+  cancellation/interrupt assertions and additionally proves zero provider calls.
+  Synthetic diagnostics only; no new target or authority.
+- OPS-002: base-branch change selection, explicit planned skips, fresh database
+  shards, exact-source/run coverage manifests and unchanged 94%/75% coverage gates
+  are covered by `scripts/ci-*.test.mjs`, local Java checks and exact-head PR CI.
+  A selective pass is not full backend or production qualification.
+
+See [ADR0088](../architecture/0088-selective-ci-and-complete-coverage.md) and the
+[learning note](../learning/ci-selection-is-not-qualification.md). No existing
+requirement status or simulator-only boundary is promoted.

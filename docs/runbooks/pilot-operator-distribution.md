@@ -167,3 +167,11 @@ is canonicalized; all-component no-follow enforcement remains unchanged.
 Cloud Linux tests of this repair are synthetic portability regressions. They do
 not replace the coordinator's default-Mac rerun of the pushed exact head or
 qualify a native Mac archive, provider or target.
+
+### Pre-existing cancellation
+
+An already-interrupted Java caller returns the fixed cancellation diagnostic
+before creating a worker/provider and preserves the interrupt flag.
+`PilotPreflightTest.interruptedCallerGetsCancellationAndPreservesInterrupt`
+asserts cancellation and zero provider construction. No timeout, retry or
+authority rule is relaxed; see [ADR0088](../architecture/0088-selective-ci-and-complete-coverage.md).
