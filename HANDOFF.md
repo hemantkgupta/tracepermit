@@ -3,6 +3,508 @@
 GitHub is authoritative. Credentials, private customer/provider planning and local
 operator values remain outside Git. Historical receipts are not fresh results.
 
+## Closed V6 atomic admission — current Mac checkpoint
+
+Mac retains the sole PR108 writer. The preceding issuer head
+94778166f3b45f42222a6e0610a7588ad58ca258 has all eight exact-head checks
+in CI40203926733 passed. Independent Cloud1 qualification passed50 existing
+issuer/profile/codec cases; Cloud2R's static issuer review had no substantiated
+scoped finding, with all reviewer execution NOT RUN. Both complete receipts
+were consumed in [the coordinator intake](https://github.com/hemantkgupta/tracepermit/pull/108#issuecomment-6399211367).
+Those results do NOT cover this separate admission checkpoint.
+
+New `JdbcGitHubOperationAdmissionRepository` owns signature verification before
+locks and one control-first/head-next atomic consumption/initial-attempt/fact/
+head/outbox transaction. Writer time is rechecked after provisional UNIQUE/FK
+waits and again after all remaining writes. New closed metadata/reader support
+is installed before writing facts. Explicit V5/V6 each contain one table CREATE;
+partial V5 refuses; populated V4 replay precedes either DDL. Default V2 and
+existing V1–V4 SQL remain unchanged. No network/signing under locks or sender,
+endpoint/target/execution lease is introduced.
+
+Focused candidate evidence:36 cases across three exact engines passed, including
+32 contenders, four permits, rollback/commit/cleanup, metadata/grants and populated
+upgrade. The next6 focused partial-V5/protocol cases passed after an explicit null
+version guard corrected the new repeatable-entry diagnostic. Removing BOTH
+post-write rechecks made3/3 real UNIQUE-wait-expiry cases fail; the production
+file was restored byte-identically. Initial fixture and diagnostic failures are
+preserved in [the candidate runbook](docs/runbooks/closed-operation-admission.md).
+The first forced/cache-disabled complete operation matrix PASSED451 cases across
+15 suites, zero failures/errors/skips, all18 tasks executed in8m21; actual XML
+counts verified. Final `pnpm check` PASS:124 React/2060 recorded Java cases across
+159 suites, zero failures/errors and one existing absent-archive native-PTY skip.
+Gradle4m15,4 executed/61 up-to-date; fresh451 operations and other valid results
+were reused, NOT all tests fresh. Coverage94.7650% line/78.2000% branch passed
+unchanged94/75 gates. Final format,1182 links/3 helpers and13 flow/drift cases
+passed after documentation edits. New-head hosted and
+independent admission checks remain separate. No writer release is made.
+
+Cloud1/Cloud2R are now idle after consumed issuer tasks, awaiting a useful frozen
+next checkpoint rather than duplicate work. Gemini PR121's hardening prompt is
+confirmed sent, but no newer pushed repair is verified. Mac Air's last saved
+handoff remains sequence5/IN_PROGRESS and PR120 is still integration-only.
+Original Cloud2/PR115's unpushed files/session/log remain preserved. All PRs
+draft/unmerged; no stopped physical-schema audit is resumed or rerouted.
+
+## Timestamp compatibility repair and next admission contract
+
+### Preceding closed JDBC permit-issuance checkpoint
+
+Mac retains the only PR108 writer. Pushed e230972 has all eight exact-head hosted
+checks green in CI40196383943; they do not qualify the new local issuance source.
+The next slice implements an opt-in `JdbcGitHubOperationPermitIssuer`, explicit
+profile-v3 admission settings and new closed Ed25519 wire codec on existing V4
+storage. Actual approved/current history is loaded under control/head locks and
+every approved identity deadline is bounded; the read transaction and connection
+end before private-key signing. No arbitrary approved JSON, clock/signing port,
+public verifier, mutation, endpoint, consumption, durable attempt/outbox or
+target is introduced. Default V2, V1-V4 SQL and legacy profile recipes remain
+unchanged. See [issuance scope](docs/runbooks/closed-operation-permit-issuance.md)
+and [ADR0087](docs/architecture/0087-fully-bound-operation-permit-and-admission.md).
+
+Focused qualification passed 36 issuer/codec cases on the exact three engines;
+application outputs were valid/reused. Initial new-vector failures were an
+accidentally canonicalized-away floating spelling and a duplicate-stage test
+expecting the wrong existing error; the actual wire vector/operator replacement
+API now exercise the intended rules. Four deliberate profile-pin/pre-lock-clock
+negative-control failures were observed; both production files are restored
+byte-identically. The final forced/cache-disabled complete operation suite passed
+409 cases across 12 suites, zero failures/errors/skips, 18 tasks executed in
+7m36. Final `pnpm check` passed 124 React and 2018 recorded Java cases across
+156 suites, zero failures/errors and one existing absent-archive native-PTY skip.
+The fresh 409-case operation result was reused; other valid outputs were reused
+or restored from cache. Gradle4m18, 9 executed/1 from cache/55 up-to-date, NOT all
+tests fresh. Coverage94.7211% line/78.5906% branch passed unchanged94/75 gates.
+Formatting,1173 links/3 helpers,13 flow/drift cases and diff checks passed.
+Exact new-head hosted checks remain separate; Mac retains writer ownership.
+
+Gemini PR121 at 41a8b9a has eight green checks and a reported clean/released
+handoff. Source intake identified process-supervision/acknowledgement and
+operator-fixture qualification gaps; the human was given a follow-up repair
+prompt, not a production-bypass claim. The human now confirms that follow-up
+prompt was sent; reacquired writer ownership/new head is not yet independently
+verified. Do not take over that branch or silently repin its frozen aab5c03
+parent. Mac Air's fixed Page still reports its second aggregate in progress.
+All PRs remain draft/unmerged; old Cloud2 files/session/log remain preserved.
+
+### Preceding timestamp checkpoint history
+
+Mac retains sole PR108 writer ownership. The preceding aab5c03 checkpoint has all
+eight exact-head checks green in CI40188482042. Cloud2R's bounded static actual
+V4 review is consumed: one timestamp compatibility defect, all reviewer execution
+NOT RUN, [review](https://github.com/hemantkgupta/tracepermit/pull/108#issuecomment-6397157388).
+The owned follow-up fixes the clock-regression comparison's operation timestamp
+parser without changing stored bytes/hashes, frozen validation or new journal
+metadata strictness. Three-engine positive/upgrade/withdrawal tests first
+reproduced the defect, then all12 selected cases passed after repair, including
+clock-regression refusal. The first complete373-case follow-up ran372pass/1fail
+in an unchanged MariaDB10.6 contention repetition; no raw SQL cause is proven.
+Original XML receipts remain in /private/tmp/tp108-timestamp-matrix.q6glOv.
+An unchanged-workload30-repetition diagnostic passed after fixed-category-only
+assertion reporting was added, not a runtime repair. Required aggregate is now
+complete as the second broad attempt: PASS124 React/1979 recorded Java cases,
+155 suites, zero failures/errors and one existing absent-archive native-PTY skip.
+All373 operation cases ran freshly in that aggregate; other valid outputs were
+reused. Gradle18m15,5 executed/60 up-to-date, coverage94.6493% line/78.5804% branch
+passed unchanged94/75 gates. The first failure remains unresolved history; no
+third retry was run. See the detailed
+[history](docs/runbooks/durable-operation-review.md#timestamp-compatibility-follow-up).
+
+The human approved the strict admission contract: fresh exact owner identity
+with operation_requester/operations.execute and a separately versioned Ed25519
+permit with explicit issuer/key/audience, no default positive lifetime, maximum
+60 seconds and approval/identity deadline bounds. [ADR0087](docs/architecture/0087-fully-bound-operation-permit-and-admission.md)
+records this next implementation design only. No operation permit/admission,
+attempt/outbox or target is implemented/enabled by this follow-up.
+
+After publication of ade668a, the human explicitly approved including the original
+evaluator authentication expiry as well as approval, recorded reviewer
+authentication/membership and fresh owner-execute identity deadlines. ADR0087 now
+records the complete minimum-deadline rule; no further applicability choice is
+pending. This results-only design amendment changes no Java or SQL. The next
+implementation must enforce the approved rule, not a default or renewed deadline.
+
+The human confirms Gemini received the new cross-process review qualification
+packet; Gemini uses GitHub-only handoff, not Space read/write. Its new branch is
+separate and frozen at aab5c03; no automatic repin is authorized. Mac Air retains
+PR120: producer reports105 fresh module cases passed, but its first aggregate
+failed two existing HTTP timeouts; a human-approved second attempt is running.
+Feature changes remain local/unpublished, without a final handoff/release.
+Original Cloud2/PR115's unpushed files/session/log remain preserved. All PRs stay
+draft/unmerged.
+
+Cloud1 independently qualified all30 unchanged contention repetitions at the
+published aab5c03 baseline in48s/18 fresh tasks, no failures/errors/skips and no
+tracked edits. Its [receipt](https://github.com/hemantkgupta/tracepermit/pull/108#issuecomment-6397891809)
+does not qualify this repair or explain the earlier failure. Root observed a
+separate active Gradle build on the same physical Mac in Gemini's reserved
+qualification checkout; only cwd/Git metadata was inspected, not its unpublished
+source. This confirms shared compute, not causality. No other process or Docker
+was interrupted; future heavy builds on this Mac should be serialized.
+
+## Closed durable review — current V4 Mac checkpoint
+
+Mac retains sole PR108 writer ownership. The opt-in
+[ADR0085](docs/architecture/0085-closed-durable-operation-review.md) implementation
+adds the actual one-connection/control-first evaluation, independent-human review
+and pending-withdrawal transaction, immutable evaluation binding and closed
+versioned journal reader. It reuses the strict pure GitHub join on loaded state;
+V1-V3 migration bytes and default V2 remain unchanged. No endpoint, permit,
+admission, attempt/outbox, IdP/provider call or target is enabled. This candidate
+passed local qualification; exact pushed-head hosted checks remain separate.
+The prior 2dee hosted green checks do not cover it. See the
+[runbook](docs/runbooks/durable-operation-review.md).
+
+After a new-fixture compile error and24/36 new-fixture assertion failures were
+diagnosed and corrected without changing authorization, nine selected cases
+passed, then all42 new three-engine review cases passed freshly in1m58 with18
+executed tasks. The first complete355-case operation run then failed one existing
+PostgreSQL32-activation test: it expected stale state but observed schema-not-ready.
+The new version-routing helper unnecessarily held its probe connection while
+validation/Flyway borrowed more. A deterministic bounded-source test failed on
+all3 engines before repair; closing the probe before validation made those3 plus
+the existing3 contention cases pass in37s. That proves the nested-borrow defect;
+the original fixed-code failure did not retain a raw PostgreSQL diagnostic, so
+its exact server-side cause is not claimed proven. At that intermediate
+checkpoint the final complete operation, aggregate, formatting/docs and
+pushed-head gates were still pending; the local results below supersede that
+intermediate status.
+
+Later declared-version cases exposed retained V4 instances accepting an unknown
+installed version and success-only history filtering hiding a failed/repeatable
+later entry. Both new three-engine regressions first failed3/3; the owner and
+current reader now require the latest installed entry to be successful version4.
+The complete forced/cache-disabled matrix then passed361 cases/11 suites,
+zero failures/errors/skips,18 tasks in4m22. New review fixtures additionally pin
+and assert their owned database publications to numeric127.0.0.1. The final
+`pnpm check` including that test-only loopback assertion passed124 React and1967
+recorded Java cases/155 suites, zero failures/errors and1 existing absent-archive
+native-PTY skip. The361 operation cases ran freshly in this final aggregate;
+other valid outputs were reused. Gradle19m49:5 executed/60 up-to-date, not all
+tests fresh. Coverage94.6493% line/78.5678% branch passed unchanged94/75 gates.
+An earlier358-case candidate aggregate is not substituted for the final source.
+Formatting,1161 links/3 helpers and13 flow/drift cases passed before results-only
+updates and are checked again for publication. One bounded worker stack sample
+showed active PostgreSQL authentication/control-case work during the longer
+final run, not a proved hang or reason to restart Docker/change test limits.
+
+Cloud1's PR119 atddcfbec2 had all8 hosted checks green and a clean released
+three-path tooling handoff. Root read both scripts, the runbook and handoff, then
+native macOS/Bash3.2 failed shell case58. A minimal conditional-source reproduction
+exits early under errexit rather than returning to the caller's else branch.
+Cloud1 reacquired only its tooling branch and published3e92aa6104914706d749f1cd07b6105a8c05ab5d.
+Root read the complete follow-up/handoff, verified all8 exact-head green checks,
+then independently passed all152 unchanged native macOS/Bash3.2 scenarios and
+actual selected-JDK/cache/precedence checks. Root's focused
+[intake](https://github.com/hemantkgupta/tracepermit/pull/119#issuecomment-6396596462)
+does not claim a coordinator full-repository or automatic macOS-discovery run.
+The branch is clean/released by Cloud1; root acquired no writer ownership.
+The stopped physical-schema audit remains stopped. The clean detached Mac
+review tree is separate from this authority checkout.
+
+Mac Air's fixed handoff Page now reports IN_PROGRESS and draft PR120; GitHub
+confirms integration-only head eb0fdb30a163e4aed36adf54f207b0c939e891ab stacked on
+PR118. Its new registration module is not qualified yet, and that lane retains
+its independent writer reservation. Original Cloud2/PR115's unpushed repair
+files/session/log stay preserved; Cloud2R is idle until a useful new checkpoint.
+All PRs remain draft/unmerged.
+
+## Explicit review input/settings — current Mac checkpoint
+
+Mac retains sole PR108 writer ownership. This slice implements the approved
+[ADR0084](docs/architecture/0084-durable-review-membership-and-lifetime.md)
+input/settings prerequisites: explicit exact group/enrollment provenance and
+positive approval lifetime through five minutes, all pinned by a new v2 profile
+recipe; exact fresh group checks for both review decisions; and separate fresh
+evaluation permission for the exact owner/workspace. Legacy v1 hashes, six-field
+review actors, migration bytes, grants, runtime wiring and simulator behavior
+remain unchanged. The new gates refuse missing explicit settings rather than
+invent a default. Internal carriers are trusted-adapter data, not verified tokens.
+
+Focused application qualification first used an incorrectly selected JDK through
+a nested login shell:26 cases passed but the unchanged build gate failed, so the
+command is not a qualifying pass. Explicit selection of the installed JDK21 and
+strict setup passed26 fresh cases/11 executed tasks. The first new three-engine
+test expected the wrong error for mismatching pins and failed all3 cases; only
+the new expectations changed to the existing `OPERATION_PROFILE_MISMATCH`.
+Matching inactive pins still require `OPERATION_AUTHORITY_NOT_READY`; all3
+corrected engine cases passed freshly in22s/14 executed tasks.
+
+Temporarily omitting the v2 settings pins and exact membership-source check made
+both selected distinguishing cases fail. Both production files were restored
+byte-identically before final verification. The restored26 selected application
+cases passed freshly in7s/11 executed tasks. The complete fresh/cache-disabled
+operation suite passed313 cases/8 suites, zero failures/errors/skips,14 tasks
+executed in2m29. Full `pnpm check` passed124 React and1919 recorded Java cases/
+152 suites, zero failures/errors and1 existing absent-archive/native-PTY skip.
+Gradle3m7:10executed/55up-to-date, reusing the fresh operation suite and other
+unchanged results; not all tests fresh. Coverage94.5760% line/78.9952% branch
+passed unchanged94/75 thresholds. Format,1149 links/3 helpers,13 flows/drift and
+diff checks passed. Exact-final-head hosted checks remain pending; the previous
+d85459f hosted checks do not cover these new files.
+
+The actual immutable pending-binding/deadline writer, closed decision-journal
+vocabulary/reader, strict loaded target join, and single durable evaluation/review
+transaction remain unimplemented. Separate fully bound permit, atomic admission,
+attempt/evidence/outbox and synthetic dispatch remain later gates. No endpoint,
+network/provider enrollment verification, credential minting or target call is
+enabled. See the [qualification runbook](docs/runbooks/operation-review-settings.md).
+
+The human has launched the independent Mac Air PR113 repair qualification on its
+own reserved branch; this Mac has no verified Air thread/host or writer takeover.
+Cloud2R's tests/docs-only [PR117](https://github.com/hemantkgupta/tracepermit/pull/117)
+is clean/released at8c020c6aaa134e7f2d0a9d9a94b448f7d73e1714 and all8 exact-head
+hosted checks passed. Root read all five new files and published a scoped static
+[intake](https://github.com/hemantkgupta/tracepermit/pull/117#issuecomment-6395555849),
+not independent Mac execution. Producer's12 focused metadata cases passed; its
+local full check failed3 existing endpoint cleanup cases and retained1 existing
+PTY skip. Those failures are not waived by hosted green checks. Original Cloud2
+PR115's four unpushed repair files/session/log remain preserved and reserved.
+Cloud1's interrupted PR108 audit remains incomplete: its already-completed310-case
+module pass does not turn the stopped review into a no-findings certification.
+The stopped audit is not being retried or reassigned.
+
+## Physical-schema repair — preceding pushed checkpoint
+
+Mac retains sole PR108 writer ownership. The physical-readiness follow-up to
+Cloud2's static review now checks actual required structure in addition to
+migration history. It does not change migration bytes/grants or implement durable
+review/admission. See [ADR0083](docs/architecture/0083-writer-locked-operation-authority-control.md)
+and the [qualification history](docs/runbooks/operation-authority-control.md).
+
+The original reproduction had8 accepted-drift assertion failures plus2 invalid
+MariaDB inline-CHECK-removal fixture errors, corrected without skipping tests.
+All60 focused control cases passed. Removing the new physical guard and restoring
+the old PostgreSQL trigger query made13/13 selected cases fail; guards restored.
+The first full305-case run then failed6 restricted-runtime MariaDB cases.
+Owned probes proved the table-scoped runtime sees zero CHECK rows while the
+owner sees7 on both exact MariaDB versions; SHOW CREATE works under the same
+grants. Temporary diagnostic printing was removed. A bounded closed declaration
+validator preserves exact CHECK requirements and grants; two table-scoped
+positive/removal/restoration cases and three lexical tests qualify that path.
+The final forced/cache-disabled310-case operation suite passed across8 suites,
+zero failures/errors/skips,14 tasks executed in3m50. Full `pnpm check` then
+passed124 React and1907 recorded Java cases/151 suites, zero failures/errors,
+one existing absent-archive/native-PTY skip. Gradle3m41:4executed/61up-to-date,
+not all fresh. Coverage94.5532% line/78.7399% branch passed unchanged thresholds.
+Format,1144 links/3 helpers,13 flow/drift and diff checks passed; final
+results-only documentation and exact-final-head hosted gates remain separate.
+
+Limited MariaDB metadata cannot establish complete absence of hidden routines,
+events or triggers. Operator-controlled full-visibility pre-start inspection is
+a future deployment prerequisite, not an implemented attestation/DBA-proof fence.
+No runtime admin/DDL/TRIGGER/EVENT grant, live action or new authority is added.
+
+The human sent Gemini the PR113 repair packet; a new repaired head remains to
+be independently consumed. Cloud1's PR116 is a released tests/docs handoff at
+5a09deafd7c8bc3b8199e2add70542852f681213 with all8 exact-head checks green.
+TP-Cloud-2R has a distinct new tests/docs metadata-visibility assignment from
+the prior pushed d6b7b9b baseline, not ownership of this implementation or of
+old PR115. The old unavailable Cloud2's uncommitted files/log/session stay
+preserved. Replacement runtime readiness is separate from dispatch delivery.
+
+## Approved next authority slice and independent replay repair
+
+The human approved the strict group/lifetime/evaluation contract in
+[ADR0084](docs/architecture/0084-durable-review-membership-and-lifetime.md).
+This is an approved design, not a newly implemented durable reviewer transaction.
+Mac retains sole PR108 writer ownership. Cloud2's
+[design critique](https://github.com/hemantkgupta/tracepermit/pull/108#issuecomment-6394413528)
+is consumed; every reviewer execution gate was NOT RUN. Closed journal-reader
+compatibility and the strict target-join reuse remain implementation prerequisites.
+
+Current additional test-only qualification passed42 focused cases and a complete
+fresh/cache-disabled287-case operation suite in2m21,14 tasks executed, zero
+failures/errors/skips. It isolates stored generation, races32 operator activations
+across4 datasources on each engine, and upgrades a real withdrawal journal while
+rejecting corrupt actor linkage before DDL. Removing generation/staged-state
+guards failed all6 selected cases, then both production files were restored
+byte-identically. This does not qualify complete reviewer/admission contention.
+The subsequent full `pnpm check` passed124 React and1884 recorded Java cases/
+150 suites, zero failures/errors and the one existing absent-archive/native-PTY
+skip. Gradle2m54:4executed/61up-to-date, reusing the freshly forced operation
+suite and unchanged outputs; not all fresh. Coverage94.50% line/78.64% branch,
+unchanged thresholds. Final docs/format gates are reported with the checkpoint.
+
+Cloud1's [PR113 independent audit](https://github.com/hemantkgupta/tracepermit/pull/113#issuecomment-6394443819)
+reported four substantiated repair areas despite61 passing producer cases and
+green CI: suppressed private cleanup diagnostics, unbounded DML/post-wait expiry,
+conflicting local capacities and accepted physical-schema drift. PostgreSQL
+post-wait/missing-column observations must not be attributed to MariaDB; the
+auditor's MariaDB wait-view probe and diagnostic retry were inconclusive.
+Gemini keeps exclusive producer ownership. The human-coordinated
+[repair packet](docs/planning/packets/wave4-gemini-durable-replay-repair.md)
+requires distinguishing controls and exact-head qualification, not certification
+or integration of the unrepaired head.
+
+Cloud1's next separate tests/docs branch qualifies real synthetic HTTP credential
+exchange→target-preflight composition, using existing restricted test seams, not
+live providers. Cloud2's next GitHub-only static review compares actual physical
+schema checks with claimed V3/V2 readiness, while its unavailable PR115 runtime
+and four uncommitted repair files/reservation remain untouched. The human will
+inspect that existing runtime; this is not permission to recreate it.
+
+## Current Mac authority-control prerequisite
+
+Mac retains sole writer ownership of `codex/durable-operation-authority`/PR108.
+[ADR0083](docs/architecture/0083-writer-locked-operation-authority-control.md)
+adds opt-in V3 current policy/profile/recovery control, not durable reviewer
+approval or admission. Default initialization remains V2; V1/V2 bytes are
+unchanged. Explicit populated upgrade validates immutable/current journals before
+DDL. Runtime startup validates exact V2/V3 without auto-migrate or repair.
+
+New profiles/replacements start inactive. Quarantined generations cannot be
+reactivated; replacements need a greater generation. A restricted runtime can
+lock/recheck current control on the caller's READ COMMITTED writer transaction,
+but cannot mutate authority columns. Only a separately privileged operator
+datasource can stage/activate/quarantine/replace. There is no endpoint, permit,
+attempt/outbox, target call or complete authority transaction. The next owner
+must retain this lock, acquire remaining authority locks, sample fresh writer
+time and atomically recheck/commit the whole closed approval/admission boundary.
+
+All33 initial control cases passed,11 per exact engine. Added populated/corrupt
+upgrade checks also passed all33. Removing profile/readiness guards made all6
+selected cases fail; guards were restored, then the full forced/cache-disabled
+operation suite passed278 cases,14tasks executed in1m50. An intermediate full
+`pnpm check` passed after that run. Subsequent review found unchecked datasource
+diagnostics escaping the new schema-version detection. Three new engine cases
+failed before the fixed-code catch repair. The final forced/cache-disabled
+operation suite then passed281 cases/7 suites, zero failures/errors/skips,
+14tasks executed in1m50. Additional activation-acknowledgement assertions also
+passed the complete281-case forced suite in1m52: an activation can commit while
+the caller receives unknown, never proof of rollback. The final aggregate gate
+passed afterward:124 React cases and1878 recorded Java cases/150 suites,
+zero failures/errors and one existing archive-dependent native-PTY skip.
+The final incremental Gradle gate took4s (3 tasks executed/62 up-to-date), reusing
+the freshly forced operation result and previously qualified unchanged suites;
+these are not all fresh executions. Coverage94.50% line/78.63% branch passed
+unchanged thresholds. Formatting,1132 links/3 helpers,13 flows/drift and diff
+checks passed; final results-only documentation is checked separately. Hosted
+checks must match the final pushed head, not the earlier green `c3f2b2d`.
+
+Cloud2's [static control audit](https://github.com/hemantkgupta/tracepermit/pull/108#issuecomment-6394291995)
+found an INSERT-denial test gap: duplicate keys could satisfy both old negative
+assertions even with an incorrect INSERT grant. The shared case now inserts a
+valid unused scope under the administrator in a rolled-back positive control,
+requires the engine's actual permission SQLState/vendor code for the runtime,
+uses the unused scope through the administration API, and verifies no new row.
+All3 selected engine cases passed fresh; temporarily granting only INSERT in
+the disposable fixtures made all3 fail because the insert succeeded. Grants
+were restored before complete qualification: the fresh forced281-case suite
+passed in1m57 (14 executed), then full `pnpm check` passed124 React and1878
+recorded Java cases with one existing archive-dependent skip, no failures or
+errors. Gradle2m46:4executed/61up-to-date, not all fresh tests. This is test-only
+hardening, not a demonstrated runtime privilege bypass. The static reviewer ran
+no tests. All8 hosted checks passed at331911c; a new checkpoint requires new CI.
+
+Cloud1's [PR114](https://github.com/hemantkgupta/tracepermit/pull/114) handoff at
+`b1a88473573efbd9dd942ef265c3a757985d93ad` was consumed with its green exact-head
+checks/released writer. Independent Mac default-temp qualification failed3/56
+configuration cases; the identical source passed56/56 with a canonical-temp
+diagnostic control. [The review receipt](https://github.com/hemantkgupta/tracepermit/pull/114#issuecomment-6394125895)
+records this limit. Cloud1's tests/docs-only repair at
+`76aa4fe19b290fda7d0813aa9f65dc85d96506ac` was subsequently consumed with all8
+exact-head checks green and writer release. Independent default-temp Mac checks
+passed58 configuration,3 archive inventory/hash and8 installed-process cases;
+[the receipt](https://github.com/hemantkgupta/tracepermit/pull/114#issuecomment-6394270217)
+preserves the historical failures and diagnostic-only override. Production
+link/private-mode gates stay intact. The clean detached Mac review worktree
+never acquired producer writer ownership. Cloud1 now independently audits
+Gemini's replay implementation without acquiring its branch.
+
+Cloud2's [PR115](https://github.com/hemantkgupta/tracepermit/pull/115) is still
+producer-owned. Its new HTTP runtime was read at
+`928d5ca796888178f661ab3fcf229fb9ccbbf8cc`; a provisional accepted-socket setup
+cleanup finding was sent for investigation/regression before release. Its four
+repair files remain local, uncommitted and unpushed in the unavailable prepared
+Cloud2 runtime; the second broad run's final outcome is unknown. The published
+head still contains the setup leak. Preserve the files/logs and reservation;
+no takeover, rebuild or automatic third broad run. Cloud2 can perform bounded
+GitHub-only static reviews meanwhile. No duplicate assignment or PR merge is
+authorized. Gemini's persistence-identity remains
+exclusive. The standing coordinator records exact heads and gates, then assigns
+subsequent non-overlapping tasks only after review/release.
+
+## Wave 2 Mac ownership checkpoint
+
+The operator authorized the eight-hour durable authority/admission lane and two
+separate cloud lanes, with every PR left unmerged. Mac has sole writer ownership
+of `codex/durable-operation-authority` from main
+`0bc6b618aa9eac7df3bacf7a6d4bcafe2a824c4f` in the isolated
+`tracepermit-durable-authority` checkout. The [wave-two board](docs/planning/wave2-durable-authority-batch.md)
+records exclusive paths, design prerequisites and bounded completion gates.
+The initial documentation checkpoint claimed no runtime change or new test pass.
+The generic cloud launches stopped at environment selection before editing;
+their creation is not evidence that either approved cloud lane is running.
+
+The first implementation checkpoint adds unwired application contracts only:
+closed independent-human review inputs and a copied/pinned static review policy
+profile; see [ADR0077](docs/architecture/0077-closed-operation-authority-contracts.md).
+No V2 database schema, withdrawal behavior, permit, admission, API or target wiring
+changes. Durable transaction implementation and multi-engine qualification remain
+pending. Mac retains exclusive writer ownership of this draft branch; it is not
+released for another environment to edit.
+
+### Current repair and standing coordination
+
+The operator extended Cloud1/Cloud2 coordination until explicitly stopped. The
+Mac keeps this branch; every PR remains draft/unmerged and each new cloud slice
+has a separate branch. GitHub packets describe the
+[operator diagnostics lane](docs/planning/packets/wave3-cloud1-github-operator-diagnostics.md)
+and [loopback registration lane](docs/planning/packets/wave3-cloud2-loopback-registration-http.md).
+Gemini retains the separate [durable replay lane](docs/planning/packets/wave3-gemini-durable-workload-replay.md).
+The local recurring coordinator is not a guarantee of uninterrupted execution;
+it stops/escalates for missing authority, unsafe prerequisites or repeated
+no-progress failures rather than manufacturing work or retrying to green.
+
+Both preceding cloud reviews were consumed. Cloud1 independently passed174 real
+HTTP-ingress/JDBC-composition test cases across the three required engines on
+[PR111](https://github.com/hemantkgupta/tracepermit/pull/111), with no substantiated
+finding and no whole-product certification. Cloud2's
+[PR108 review](https://github.com/hemantkgupta/tracepermit/pull/108#issuecomment-6393630502)
+found one P2 malformed-Unicode policy/snapshot alias. The local regression first
+failed three of eleven profile cases. Strict UTF-8 encoding before hashing then
+passed17 profile/review cases with caches disabled, without altering frozen
+canonical-v1 behavior or valid-input hashes. The subsequent full `pnpm check`
+passed:124 React cases and1842 recorded Java cases across147 suites, zero
+failures/errors and one existing installed-archive/native-PTY skip. Gradle6m50:
+23 tasks executed and42 up-to-date, so these are not all fresh executions.
+Coverage94.48% line/78.56% branch, with unchanged thresholds. Exact-final-head
+hosted checks remain separate. Final documentation passed formatting,1123 links/
+three link-helper cases,13 flow/drift cases and `git diff --check`.
+
+The [database fixture repair](docs/runbooks/operation-lock-wait-expiry-qualification.md)
+is pushed at `6b86be959e9b649a995557929dbd510e4cce06a0`. It measures fresh writer
+time during the genuine lock wait; it does not widen expiry, concurrency or wait
+bounds and leaves production lifecycle code unchanged. All three engine cases
+failed when production time sampling was deliberately moved before the lock;
+after restoration the complete forced/cache-disabled operation suite passed245
+cases. The original broad failure below is retained. A fresh container clock and
+bounded writer-time observation did not establish current clock skew; the old
+Docker-info observation is not a reason to restart Docker. The original
+transient cause remains unproven. The later aggregate pass is a separate result,
+not erasure or relabeling of that first failed run.
+
+First contract checkpoint evidence:13 focused application tests passed. Removing
+only the independent-human and resource-binding guards made both selected
+negative-control cases fail; both guards were restored, and the application
+tests passed in the subsequent broad run. Formatting,1121 documentation links,
+three link helpers and13 flow/drift cases passed. The first `pnpm check` is a
+**failure**, not qualification:124 React cases passed, but the unchanged real
+PostgreSQL head-lock expiry case unexpectedly succeeded (244/245 operation cases
+passed). Gradle stopped after30m44; later aggregate/coverage gates did not finish.
+No test or timing assertion was weakened and no retry-to-green was performed.
+An independent bounded Docker health observation later showed its server clock
+approximately9852seconds behind the Mac clock. This is an environmental lead,
+not yet an independently verified database-clock diagnosis or runtime fix.
+No Docker restart, clock change or unrelated cleanup is authorized/performed.
+The broad failure must be diagnosed/resolved before this checkpoint is qualified.
+A subsequent owned, network-disabled container clock probe agreed with the Mac
+within its one-second measurement resolution. The earlier Docker-info timestamp
+therefore does not establish a current VM/database clock skew or justify a
+restart. Fresh database-time observations and the original failure still need
+investigation; do not widen expiry margins or rerun solely to get green.
+
 ## Current PR104 reconciliation
 
 The user requested a normal merge of current main

@@ -1,5 +1,155 @@
 # Requirements traceability matrix
 
+## Closed durable operation review — opt-in V4 library
+
+[ADR0085](../architecture/0085-closed-durable-operation-review.md) adds the closed
+`JdbcGitHubOperationReviewRepository`: one READ COMMITTED connection locks current
+control first, then the actual operation head, samples writer time after waits
+and rechecks exact state/policy/generation/identity/group/deadline. It reuses the
+pure strict GitHub binding rather than accepting a caller's bound flag. A V4
+immutable evaluation binding and closed versioned fact are committed with the
+conditional head update; no independently committing stores are called atomic.
+The coherent reader preserves legacy withdrawal facts, validates closed new
+metadata/cardinality and replays historical facts at their own time. Explicit
+V4 install/upgrade is separate; default V2 and V1-V3 SQL bytes remain unchanged.
+
+`OperationReviewContract` supplies real three-engine qualification of review,
+block and pending withdrawal, one-connection/lock order, strict target checks,
+expiry after genuine waits,32 mixed contenders, atomic rollback, unknown
+commit/cleanup, populated pre-DDL validation, retained old-writer refusal and
+least-privileged immutable-binding grants. See the
+[qualification history](../runbooks/durable-operation-review.md) for current
+results and limits; previous green input/settings gates are not this candidate's
+qualification. Partial FR-003/007/008/012, SEC-001/002/003/005/009/012,
+REL-001/002/004/005 and OPS-002/004 evidence only. No authenticated endpoint,
+live IdP, permit, admission, attempt/outbox, target, restore fence or whole-ID
+completion is claimed.
+
+The timestamp follow-up preserves valid operation-v1 fractional spellings through
+evaluation, review, pre-evaluation withdrawal and populated V3 upgrade without
+rewriting immutable originals or weakening clock-regression refusal. Its
+three-engine cases are in the same contract; new journal metadata remains strict.
+
+[ADR0087](../architecture/0087-fully-bound-operation-permit-and-admission.md)
+records the human-approved admission trust contract and separate closed
+`JdbcGitHubOperationPermitIssuer` slice. Profile v3 pins exact Ed25519 key
+material/issuer/key ID/audience/positive lifetime before evaluation; legacy
+v1/v2 recipes remain exact. Fresh exact-owner operations.execute permission,
+actual loaded approved state and all original deadline minima are required.
+The read transaction/cleanup finish before signing; no DML or consumption occurs.
+`BusinessOperationAuthorityProfileTest`, `OperationPermitCodecTest` and new
+three-engine `OperationReviewContract` cases cover settings/format/key/type
+substitutions, closed actual-history anchors, original evaluator expiry,
+real wait expiry, private-key use after cleanup, operator changes and read
+uncertainty. See the [qualified boundary and retained failures](../runbooks/closed-operation-permit-issuance.md).
+This is partial FR-007/008/009/012, SEC-001/002/003/004/005/006/009/010/012,
+REL-001/002/004/005, DATA-001/004 and OPS-002/004 evidence only. Fully bound
+single-use admission is a separately qualified boundary, not supplied by the
+issuer itself. No whole-ID completion is claimed.
+
+The opt-in V6 `JdbcGitHubOperationAdmissionRepository` library now owns
+consumption/initial attempt, execution-claimed fact, conditional head and immutable
+outbox in one transaction. `OperationAdmissionJournal` extends coherent closed
+historical replay/cardinality without persisting a raw token/signature. New
+`OperationAdmissionContract` cases and exact three-engine wrappers exercise
+one attempt across32 contenders/four permits, genuine implicit UNIQUE-wait expiry
+after holder rollback, binding/time substitutions, rollback/commit/cleanup
+uncertainty, valid-admin-positive privilege denials, populated pre-DDL validation
+and protocol refusal. See [scoped evidence/retained failures](../runbooks/closed-operation-admission.md).
+Local complete matrix/aggregate gates passed; independent/hosted checks remain
+separate. No public endpoint, sender,
+external evidence sink, restore fence or target is claimed. The requirement IDs
+above receive scoped evidence only, not whole-ID status promotion.
+
+## Explicit durable-review rules — input/settings prerequisite
+
+[ADR0084](../architecture/0084-durable-review-membership-and-lifetime.md)
+records human-approved exact independent group enrollment, an explicit positive
+approval lifetime capped at five minutes with no default, and separate fresh
+evaluation authority. `BusinessOperationReviewSettings` and the explicit v2
+authority profile bind every settings field; the legacy v1 recipe stays exact.
+The new group and evaluation gates require matching scope/generation, fresh
+authentication and exact independently derived group/provenance. A cancellation
+scope is not evaluation authority. These are internal inputs, not verified body
+claims or proof that a transaction committed.
+
+`BusinessOperationReviewSettingsTest` covers exact pins, lifetime bounds, both
+review decisions, enrollment substitutions/time, separate evaluation permission
+and v1 refusal. The three-engine control contract verifies settings substitutions
+cannot match current pins, replacements require a newer generation and explicit
+activation, and these controls produce no operation/journal effects. See the
+[qualification runbook](../runbooks/operation-review-settings.md).
+That input/settings checkpoint alone supplies no durable reviewer transaction,
+IdP/provider integration, admission or whole-ID
+completion is claimed for FR-003/007/008/012, SEC-001/002/003/005/009/012,
+REL-001/002/004/005 and OPS-002/004.
+
+## Writer-locked operation policy/recovery controls — prerequisite only
+
+Requirements: FR-003/007/008/012; SEC-001/002/003/005/009/012; REL-001/002/004/005;
+OPS-002/004. No whole-ID or production status promotion.
+
+Opt-in V3 adds an exact owner-scope/profile/generation control row, separately
+privileged inactive staging/activation/quarantine and strictly newer-generation
+replacement. `OperationAuthorityControl` retains the caller's READ COMMITTED
+writer lock without committing. Restricted runtime users can lock but cannot
+alter authority columns. The three-engine `OperationAuthorityControlContract`
+tests current pins, genuine waits, grants, uncertainty and pre-DDL upgrade checks.
+See [ADR0083](../architecture/0083-writer-locked-operation-authority-control.md),
+[runbook](../runbooks/operation-authority-control.md) and
+[learning note](../learning/current-control-is-not-admission.md).
+
+Additional tests independently change stored generation without changing the
+profile hash, race32 activation contenders across4 independent datasources, and
+upgrade a real populated withdrawal journal while rejecting a corrupt actor
+hash before DDL. Removing the generation and activation-state guards made all6
+selected engine cases fail; the runtime was restored byte-identically. These
+are prerequisite controls, not approval/admission races or production scaling.
+
+Default V2/migration bytes and existing registration/withdrawal semantics remain.
+`OperationPhysicalSchema` additionally checks observable required physical
+columns/types/nullability/defaults/collations, primary/foreign keys and exact
+CHECKs instead of treating intact migration history as physical proof.
+MariaDB's filtered table-scoped CHECK metadata is handled by bounded exact
+declaration validation without new grants; PostgreSQL protected-table trigger
+inspection includes TRUNCATE and out-of-schema functions. The control contract,
+two MariaDB table-scoped regressions and lexical negative vectors cover these
+prerequisites. Hidden MariaDB executable-object absence remains a separately
+unimplemented operator deployment gate, not runtime attestation. This strengthens
+SEC-003/012 and REL-001/004 only within the stated qualification boundary.
+
+No approval/admission/permit/attempt/outbox/target, signed control journal,
+instant revocation, older-backup or paused-sender fencing is supplied. The future
+single transaction must recheck all deadlines/identity/authority after all locks.
+
+## Closed operation-review authority inputs — first checkpoint
+
+Requirements: FR-002/003/007/008/009/012; SEC-001/002/003/005/009/012;
+REL-001/002/004/005; OPS-002/004. No whole-ID status promotion.
+
+`BusinessOperationReview` and `TrustedOperationReviewerContext` close independent
+human/tenant/workspace/role/scope/deadline inputs without changing legacy reviewer
+contexts. `BusinessOperationAuthorityProfile` copies operator policy and pins exact
+scope/adapter/generation/policy/artifacts/resource bindings, with bounded canonical
+UTF-8 and actual review-only policy evaluation. Focused application tests cover
+negative controls, coherent rehashed substitutions, defensive copies and fixed
+cause/suppression-safe rejection. See [ADR0077](../architecture/0077-closed-operation-authority-contracts.md)
+and the [learning note](../learning/closed-review-is-not-admission.md).
+
+Independent review found a profile-local malformed-Unicode input alias before
+hashing, not a SHA-256 collision or execution bypass. Strict encoder validation
+now rejects lone surrogates before policy/snapshot hashing while retaining valid
+canonical-v1 bytes. Four regressions include parsed replacement aliases and valid
+supplementary/non-normalized Unicode; three failed before repair, then all17
+profile/review cases passed freshly. This strengthens SEC-003/012 and REL-001/004
+at this unwired boundary only; it is not durable authority qualification.
+
+These are unwired application contracts, **not** durable approval/admission,
+current database policy/recovery proof, verified provider enrollment, a permit,
+claim, target executor, outbox or new API. V2 storage/withdrawal and migration
+bytes remain unchanged; complete transaction and three-engine qualification
+remain required. Existing simulator qualifications do not qualify this path.
+
 ## Pure GitHub business-operation binding
 
 Requirements: FR-002/010/012; SEC-001/002/003/005/009/012; REL-003/005/008;
@@ -25,6 +175,15 @@ Constructors and unkeyed hashes grant no authority; a future executor must join
 and recheck those independent boundaries.
 
 ## Durable pending-operation withdrawal
+
+The [row-lock expiry fixture repair](../runbooks/operation-lock-wait-expiry-qualification.md)
+uses fresh writer-time observations on both sides of a genuine wait instead of
+assuming the test-host clock proves writer expiry. The same800ms window/150ms
+margin and bounded waits remain, with new pre-expiry arrival/continued-blocking
+assertions. A pre-lock-production-time negative control failed all three engines;
+restored production passed the complete forced245-case suite. This is test-only
+evidence (FR-003/007/012; SEC-002/009; REL-001/004; OPS-004), not a runtime change,
+new skew allowance or qualification of unwired operation authority.
 
 Follow-up fail-closed decoding evidence (SEC-003/012; REL-001/004; DATA-001;
 OPS-002/004): package-local `StoredOperationJson` and its focused tests reject
