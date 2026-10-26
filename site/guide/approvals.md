@@ -33,7 +33,9 @@ control, or Slack/Teams notification workflow. A separate loopback-only Java
 API foundation verifies access tokens plus operator-owned reviewer membership
 and persists exact action snapshots with pending approvals. Its automated
 qualification uses a synthetic IdP and safe simulator, including rendered browser
-sign-in, not live external-provider compatibility. A separate `pnpm dev:approvals` entry point accepts explicit private
+sign-in. A separate named Auth0/native composition was live-qualified on
+2026-10-22; neither result is general provider compatibility. A separate
+`pnpm dev:approvals` entry point accepts explicit private
 operator configuration; `--check` validates files and trust configuration
 offline, not IdP or database readiness. It is not started by existing demo launchers. See the
 [API qualification runbook](https://github.com/hemantkgupta/tracepermit/blob/main/docs/runbooks/authenticated-approval-api-foundation.md).
@@ -42,8 +44,7 @@ browser adapter now provides OIDC code/PKCE sign-in and a role-scoped React
 approval inbox over the fixed simulator. Tokens stay server-side; all API
 role, scope, ownership and exact-request checks still apply. Run
 `pnpm demo:approvals:browser` for the test-only synthetic IdP/disposable DB
-qualification. It is not a public browser deployment or live external-IdP
-qualification. See the
+qualification. It is not a public browser deployment. See the
 [browser runbook](https://github.com/hemantkgupta/tracepermit/blob/main/docs/runbooks/browser-approval-inbox.md).
 
 The separate Codex MCP composition exposes only request, status and explicit
@@ -70,10 +71,35 @@ the [history API contract](https://github.com/hemantkgupta/tracepermit/blob/main
 For a step-by-step second-machine test, use the
 [fresh Mac walkthrough](/guide/fresh-macbook-evaluation).
 
+## Withdraw your pending request
+
+The optional local inbox lets an eligible requester withdraw their own live
+pending proposal. It requires current requester enrollment and an explicit
+`approvals.cancel` grant; reviewer or viewer access alone is insufficient.
+
+Select **Withdraw request**, inspect the exact ID/hash and then choose
+**Confirm withdrawal**. **Back** only closes the confirmation. Java rechecks
+ownership, scope, state and expiry before committing `cancelled` with
+`not_executed`; no execution authority is created. The cancelled history filter
+helps find the terminal request. A pending-only filter will no longer include it.
+
+This is **not an emergency stop**: an approved or already admitted action cannot
+be withdrawn by this flow. If review wins first, withdrawal conflicts. If the
+response is lost, the UI does not claim success or retry automatically; inspect
+current server state before taking further action.
+
+Built-source synthetic-browser tests cover this path. A named source-free
+same-Mac Auth0 profile exercised owner withdrawal on 2026-10-21, while the
+2026-10-22 installed release-candidate rerun covered request, distinct review,
+execution and restart durability. Other providers, public ingress and real
+targets remain separate gates. See the
+[sanitized installed record](https://github.com/hemantkgupta/tracepermit/blob/main/docs/demo-scenarios/evidence/installed-auth0-approval-2026-10-22.md).
+See the [withdrawal walkthrough](https://github.com/hemantkgupta/tracepermit/blob/main/docs/runbooks/pending-approval-withdrawal.md).
+
 ## Expiry while reviewing
 
 Loaded pending/approved requests update their local expiry labels without a
-refresh. When an approval lifetime elapses, review/execute controls and an open
+refresh. When an approval lifetime elapses, review/withdraw/execute controls and an open
 confirmation become unavailable; stored status remains visible rather than being
 rewritten. The confirmation handler also rechecks eligibility immediately before
 POST. No timer approves, executes or retries anything. Browser time is advisory

@@ -21,12 +21,23 @@ public final class BrowserIdTokenVerifier {
   private final OidcProviderConfiguration provider;
   private final OidcVerificationKeyResolver keys;
   private final Clock clock;
+  private final String organization;
 
   public BrowserIdTokenVerifier(OidcProviderConfiguration provider,
       OidcVerificationKeyResolver keys, Clock clock) {
+    this(provider, keys, clock, null);
+  }
+
+  public BrowserIdTokenVerifier(OidcProviderConfiguration provider,
+      OidcVerificationKeyResolver keys, Clock clock, String organization) {
     this.provider = java.util.Objects.requireNonNull(provider);
     this.keys = java.util.Objects.requireNonNull(keys);
     this.clock = java.util.Objects.requireNonNull(clock);
+    if (organization != null && (!"org_id".equals(provider.tenantClaim())
+        || provider.tenantId(organization) == null)) {
+      throw new IllegalArgumentException("INVALID_BROWSER_ORGANIZATION");
+    }
+    this.organization = organization;
   }
 
   public java.time.Instant verify(String token, String clientId, String nonce, String accessToken,
@@ -57,6 +68,7 @@ public final class BrowserIdTokenVerifier {
           || !connector.subjectId().equals(provider.issuer() + "#" + text(claims, "sub"))
           || !clientId.equals(connector.clientId())
           || !nonce.equals(text(claims, "nonce"))
+          || (organization != null && !organization.equals(text(claims, "org_id")))
           || (claims.has("azp") && !clientId.equals(text(claims, "azp")))
           || issued > now + 30 || expires <= now || expires <= issued || expires - issued > 900
           || (claims.has("nbf") && integer(claims, "nbf") > now + 30)) {

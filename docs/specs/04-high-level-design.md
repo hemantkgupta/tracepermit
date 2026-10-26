@@ -173,6 +173,14 @@ The recommended starting point is a modular Java service with clearly separated
 ports and schemas, backed by PostgreSQL. It can later split into control-plane
 and data-plane services when scaling or isolation requires it.
 
+The implemented Linux container-install foundation does not change that logical
+shape or create a remote edge. Java/React and PostgreSQL share the host network
+without port publishing and independently retain numeric-loopback binds. A
+non-root read-only application container consumes an operator-prepared private
+volume; database initialization remains a separate one-shot command. This is a
+repeatable local simulator installation, not one of the enterprise deployment
+models below. See [ADR 0062](../architecture/0062-loopback-container-install-profile.md).
+
 Enterprise deployment should support one or more of:
 
 - vendor-hosted control and data plane;
@@ -263,6 +271,12 @@ and owns same-origin OIDC code/PKCE login and cookie/CSRF-protected browser APIs
 Server-held sessions converge with bearer API requests before the same current
 role/scope/tenant/owner and exact approval checks. This browser profile is numeric
 loopback HTTP only, separate from the default read console and hosted MCP tunnel.
+An explicit schema1.1 public-client candidate adds method `none`, code/S256
+PKCE and configured organization binding in both signed tokens. It shares the
+same server-session and durable approval boundary; it creates no new ingress.
+The client ID is identification, not authentication or enrollment authority.
+Schema1.0 confidential Basic behavior is retained. See
+[ADR0063](../architecture/0063-explicit-public-browser-code-pkce.md).
 Its synthetic IdP qualifier is test-classpath-only; an external browser provider
 and a public TLS deployment are not qualified. See
 [ADR 0036](../architecture/0036-local-browser-approval-boundary.md).
@@ -284,3 +298,17 @@ keys, independent reviewer authentication, shared edge state, target credential
 custody and egress enforcement, an external evidence sink, operations, and
 client qualification. See the [current-state baseline](03-current-state-baseline.md)
 and [threat model](10-security-threat-model.md).
+
+## 10. Installed requester helper
+
+One optional source-free helper runs beside the numeric-loopback approval
+service. It owns a one-shot public-client callback and short-lived local
+credential, while the approval service remains authoritative for signed token,
+tenant, membership, role, scope and request checks. A pre-storage qualification
+route is read-only and grants no session or execution authority. An explicit
+one-use launcher consumes the requester credential before starting only the
+pinned Codex executable; the separate browser reviewer remains independent.
+
+This composition introduces no public listener, provider secret, refresh token,
+real target, automatic approval/request retry or endpoint-attestation claim. See
+[ADR0065](../architecture/0065-installed-requester-public-sign-in.md).

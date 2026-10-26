@@ -2,6 +2,7 @@ package io.tracepermit.adapters.remote;
 
 import java.net.InetAddress;
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.Set;
@@ -10,16 +11,41 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import javax.net.ssl.SSLServerSocket;
+import javax.net.ssl.SSLSocket;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
 import okhttp3.mockwebserver.SocketPolicy;
+import okhttp3.tls.HandshakeCertificates;
+import okhttp3.tls.HeldCertificate;
 import okio.Buffer;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 final class SsrfSafeHttpsJwkSetSourceTest {
+  @Test void publicTokenPostOmitsAuthorizationAndRefusesRedirects() throws Exception {
+    var tls = RemoteTestSupport.tlsMaterial();
+    try (MockWebServer server = tlsServer(tls)) {
+      URI uri = server.url("/token").uri();
+      var source = source(uri, tls);
+      server.enqueue(new MockResponse().setHeader("Content-Type", "application/json").setBody("{}"));
+      assertThat(source.postForm(uri, java.util.Map.of("client_id", "synthetic-client",
+          "code", "synthetic+code", "code_verifier", "synthetic-verifier"), null)).isEqualTo("{}");
+      var request = server.takeRequest(2, TimeUnit.SECONDS);
+      assertThat(request).isNotNull();
+      assertThat(request.getMethod()).isEqualTo("POST");
+      assertThat(request.getHeader("Authorization") == null).isTrue();
+      assertThat(request.getBody().readUtf8()).contains("client_id=synthetic-client", "code=synthetic%2Bcode")
+          .doesNotContain("client_secret");
+      server.enqueue(new MockResponse().setResponseCode(302).setHeader("Location", "https://attacker.invalid/token"));
+      assertSafeFailure(() -> source.postForm(uri, java.util.Map.of("code", "synthetic"), null));
+      assertThat(server.getRequestCount()).isEqualTo(2);
+    }
+  }
   @Test void tokenPostUsesSamePinnedTlsAndNeverFollowsRedirectWithCredentials() throws Exception {
     var tls = RemoteTestSupport.tlsMaterial();
     try (MockWebServer server = tlsServer(tls)) {
@@ -108,6 +134,76 @@ final class SsrfSafeHttpsJwkSetSourceTest {
       SsrfSafeHttpsJwkSetSource shortTimeout =
           source(uri, tls, Duration.ofMillis(150));
       assertSafeFailure(() -> shortTimeout.fetch(uri));
+    }
+  }
+
+  @ParameterizedTest
+  @ValueSource(booleans = {false, true})
+  void untrustedCertificateAndWrongHostnameFailWithOnlyTheSafePublicError(boolean wrongHostname)
+      throws Exception {
+    var certificate = new HeldCertificate.Builder()
+        .commonName("synthetic-peer")
+        .addSubjectAlternativeName(wrongHostname ? "other.example.invalid" : "localhost")
+        .build();
+    var serverCertificates = new HandshakeCertificates.Builder().heldCertificate(certificate).build();
+    var trustedCertificate = wrongHostname ? certificate : new HeldCertificate.Builder().build();
+    var clientCertificates = new HandshakeCertificates.Builder()
+        .addTrustedCertificate(trustedCertificate.certificate()).build();
+    var tls = new RemoteTestSupport.TlsMaterial(serverCertificates, clientCertificates);
+    try (MockWebServer server = new MockWebServer()) {
+      server.useHttps(serverCertificates.sslSocketFactory(), false);
+      server.start(InetAddress.getByName("127.0.0.1"), 0);
+      // A healthy response makes disabling certificate or hostname validation observable.
+      server.enqueue(new MockResponse().setHeader("Content-Type", "application/json").setBody("{}"));
+      URI uri = URI.create("https://localhost:" + server.getPort() + "/jwks");
+      assertSafeFailure(() -> source(uri, tls).fetch(uri));
+    }
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"status", "media-type", "declared-size"})
+  void rejectedResponseClosesTlsBodyBeforeTheCallDeadline(String rejection) throws Exception {
+    var tls = RemoteTestSupport.tlsMaterial();
+    var peer = Executors.newSingleThreadExecutor(task -> {
+      var thread = new Thread(task, "synthetic-response-close-peer");
+      thread.setDaemon(true);
+      return thread;
+    });
+    try (SSLServerSocket listener = (SSLServerSocket) tls.server().sslContext()
+        .getServerSocketFactory().createServerSocket(0, 1, InetAddress.getByName("127.0.0.1"))) {
+      listener.setSoTimeout(3_000);
+      Future<?> closed = peer.submit(() -> {
+        try (SSLSocket socket = (SSLSocket) listener.accept()) {
+          socket.setSoTimeout(3_000);
+          var input = socket.getInputStream();
+          byte[] end = {'\r', '\n', '\r', '\n'};
+          int matched = 0;
+          for (int bytes = 0; matched < end.length && bytes < 8192; bytes++) {
+            int value = input.read();
+            if (value < 0) throw new java.io.IOException("SYNTHETIC_HEADERS_INCOMPLETE");
+            matched = value == end[matched] ? matched + 1 : value == '\r' ? 1 : 0;
+          }
+          assertThat(matched).as("bounded synthetic request headers").isEqualTo(end.length);
+          int status = rejection.equals("status") ? 500 : 200;
+          String mediaType = rejection.equals("media-type") ? "text/plain" : "application/json";
+          int length = rejection.equals("declared-size")
+              ? SsrfSafeHttpsJwkSetSource.MAXIMUM_RESPONSE_BYTES + 1 : 1024;
+          var output = socket.getOutputStream();
+          output.write(("HTTP/1.1 " + status + " Synthetic\r\nContent-Type: " + mediaType
+              + "\r\nContent-Length: " + length + "\r\n\r\n").getBytes(StandardCharsets.US_ASCII));
+          output.flush();
+          // Withhold the body and keep the peer open. A forgotten Response.close() must fail
+          // this independent three-second peer read, before the eight-second client deadline.
+          assertThat(input.read()).as("rejected TLS response must be closed by the client").isEqualTo(-1);
+        }
+        return null;
+      });
+      URI uri = URI.create("https://localhost:" + listener.getLocalPort() + "/jwks");
+      assertSafeFailure(() -> source(uri, tls, Duration.ofSeconds(8)).fetch(uri));
+      closed.get(5, TimeUnit.SECONDS);
+    } finally {
+      peer.shutdownNow();
+      assertThat(peer.awaitTermination(5, TimeUnit.SECONDS)).as("owned TLS peer stopped").isTrue();
     }
   }
 

@@ -1,0 +1,3160 @@
+import assert from "node:assert/strict";
+import { execSync, spawn, spawnSync } from "node:child_process";
+import crypto from "node:crypto";
+import { EventEmitter } from "node:events";
+import net, { createServer } from "node:net";
+import {
+  chmodSync,
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, relative } from "node:path";
+import { after, test } from "node:test";
+import { fileURLToPath } from "node:url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+if (process.platform === "darwin" && !process.env._TP_ENDPOINT_UNDER_BASH) {
+  const nodeReal = realpathSync(process.execPath);
+  const args = [...process.execArgv, ...process.argv.slice(1)];
+  const child = spawnSync(
+    "/bin/bash",
+    [
+      "-c",
+      `"${nodeReal}" ${args.map((a) => JSON.stringify(a)).join(" ")}; exit $?`,
+    ],
+    {
+      stdio: "inherit",
+      env: { ...process.env, _TP_ENDPOINT_UNDER_BASH: "1" },
+    },
+  );
+  process.exit(child.status ?? 1);
+}
+
+const repoRoot = join(__dirname, "..");
+const distArchive = join(
+  repoRoot,
+  "java/endpoint-connector/build/distributions/tracepermit-endpoint-connector-0.1.0.tar.gz",
+);
+const distSha256File = `${distArchive}.sha256`;
+let distributionBuilt = false;
+
+function ensureDistributionBuilt() {
+  if (!distributionBuilt) {
+    const buildResult = spawnSync(
+      join(repoRoot, "scripts/build-endpoint-connector-distribution.sh"),
+      {
+        cwd: repoRoot,
+        encoding: "utf8",
+        timeout: 180_000,
+      },
+    );
+    if (buildResult.status !== 0) {
+      throw new Error(
+        `Failed to build endpoint connector distribution:\n${buildResult.stdout}\n${buildResult.stderr}`,
+      );
+    }
+    distributionBuilt = true;
+  }
+}
+
+function command(cmd, args, cwd) {
+  const result = spawnSync(cmd, args, {
+    cwd,
+    encoding: "utf8",
+    timeout: 180_000,
+  });
+  assert.equal(
+    result.status,
+    0,
+    `${cmd} failed: ${result.stdout}\n${result.stderr}`,
+  );
+  return result.stdout.trim();
+}
+
+function sha256OfFile(filePath) {
+  const content = readFileSync(filePath);
+  return crypto.createHash("sha256").update(content).digest("hex");
+}
+
+export async function gracefulTerminate(
+  proc,
+  name = "child",
+  timeoutMs = 2000,
+  primaryError = null,
+) {
+  if (!proc) {
+    if (primaryError) throw primaryError;
+    return;
+  }
+
+  function isExited() {
+    return (
+      (proc.exitCode !== null && proc.exitCode !== undefined) ||
+      (proc.signalCode !== null && proc.signalCode !== undefined)
+    );
+  }
+
+  // If already confirmed exited, return immediately
+  if (isExited()) {
+    if (primaryError) throw primaryError;
+    return;
+  }
+
+  const startNano = process.hrtime.bigint();
+  const boundedTimeout = Math.max(50, timeoutMs);
+  const gracefulTimeout = Math.max(25, Math.floor(boundedTimeout / 2));
+
+  try {
+    proc.stdin?.end();
+  } catch {}
+
+  function waitForExit(waitLimitMs) {
+    return new Promise((resolve) => {
+      if (isExited()) {
+        resolve(true);
+        return;
+      }
+      let timer = null;
+      let done = false;
+
+      function cleanup() {
+        if (!done) {
+          done = true;
+          if (timer) clearTimeout(timer);
+          proc.removeListener?.("exit", onExit);
+          proc.removeListener?.("close", onClose);
+        }
+      }
+
+      function onExit() {
+        cleanup();
+        resolve(true);
+      }
+
+      function onClose() {
+        cleanup();
+        resolve(true);
+      }
+
+      timer = setTimeout(
+        () => {
+          cleanup();
+          resolve(isExited());
+        },
+        Math.max(10, waitLimitMs),
+      );
+
+      proc.once?.("exit", onExit);
+      proc.once?.("close", onClose);
+    });
+  }
+
+  // 1. Graceful SIGTERM. Delivery diagnostics use fixed phase categories only;
+  // kill-failure error text is never embedded in public error messages.
+  let termSent = false;
+  let termPhase = "SKIPPED";
+  try {
+    if (proc.kill) {
+      termSent = Boolean(proc.kill("SIGTERM"));
+      termPhase = termSent ? "DELIVERED" : "REJECTED";
+    }
+  } catch {
+    termPhase = "FAILED";
+  }
+
+  let exited = await waitForExit(gracefulTimeout);
+
+  // 2. Escalation to SIGKILL if exit not confirmed
+  let killSent = false;
+  let killPhase = "SKIPPED";
+  if (!exited && !isExited()) {
+    const elapsedMs = Number(
+      (process.hrtime.bigint() - startNano) / 1_000_000n,
+    );
+    const remainingMs = Math.max(25, boundedTimeout - elapsedMs);
+    try {
+      if (proc.kill) {
+        killSent = Boolean(proc.kill("SIGKILL"));
+        killPhase = killSent ? "DELIVERED" : "REJECTED";
+      }
+    } catch {
+      killPhase = "FAILED";
+    }
+    exited = await waitForExit(remainingMs);
+  }
+
+  const confirmed = exited || isExited();
+  if (!confirmed) {
+    const cleanupErr = new Error(
+      `[ERR_CLEANUP_UNCONFIRMED] Failed to confirm exit of child process "${name}" [pid: ${proc.pid ?? "unknown"}] within ${timeoutMs}ms (termSent: ${termSent}, termPhase: ${termPhase}, killSent: ${killSent}, killPhase: ${killPhase})`,
+    );
+    cleanupErr.code = "ERR_CLEANUP_UNCONFIRMED";
+    cleanupErr.name = "CleanupUnconfirmedError";
+
+    if (primaryError) {
+      if (typeof primaryError.addSuppressed === "function") {
+        primaryError.addSuppressed(cleanupErr);
+      } else if (Array.isArray(primaryError.suppressed)) {
+        primaryError.suppressed.push(cleanupErr);
+      } else {
+        try {
+          primaryError.suppressed = [cleanupErr];
+        } catch {}
+      }
+      if (!primaryError.cause) {
+        try {
+          primaryError.cause = cleanupErr;
+        } catch {}
+      }
+      throw primaryError;
+    }
+    throw cleanupErr;
+  }
+
+  if (primaryError) {
+    throw primaryError;
+  }
+}
+
+export async function checkPortReleased(port, timeoutMs = 2000) {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    const free = await new Promise((resolve) => {
+      const s = net.createServer();
+      s.once("error", () => resolve(false));
+      s.once("listening", () => {
+        s.close(() => resolve(true));
+      });
+      s.listen(port, "127.0.0.1");
+    });
+    if (free) return true;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return false;
+}
+
+export function runChildAsync(cmd, args, options = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(cmd, args, options);
+    let stdout = "";
+    let stderr = "";
+    const timeoutMs = options.timeout || 15_000;
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      reject(
+        new Error(
+          `Timeout (${timeoutMs}ms) executing: ${cmd} ${args.join(" ")}`,
+        ),
+      );
+    }, timeoutMs);
+    if (child.stdout) {
+      child.stdout.on("data", (d) => {
+        stdout += d;
+      });
+    }
+    if (child.stderr) {
+      child.stderr.on("data", (d) => {
+        stderr += d;
+      });
+    }
+    child.on("error", (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+    child.on("close", (code, signal) => {
+      clearTimeout(timer);
+      resolve({ status: code, signal, stdout, stderr });
+    });
+  });
+}
+
+export function redactDiagnosticText(text, maxChars = 200) {
+  if (!text) return "";
+  let str = typeof text === "string" ? text : String(text);
+  // Redact private keys (generic PKCS#8, specific algorithm variants, and truncated blocks)
+  str = str.replace(
+    /-----BEGIN (?:[A-Z ]+ )?PRIVATE KEY-----[\s\S]*?(?:-----END (?:[A-Z ]+ )?PRIVATE KEY-----|$)/g,
+    "[REDACTED_PRIVATE_KEY]",
+  );
+  // Redact Bearer tokens
+  str = str.replace(/(Bearer\s+)[A-Za-z0-9._~+/-]+=*/gi, "$1[REDACTED_TOKEN]");
+  // Redact JWT tokens (eyJ...)
+  str = str.replace(
+    /eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9._-]+\.[A-Za-z0-9._-]+/g,
+    "[REDACTED_JWT]",
+  );
+  // Redact credential/token/secret/canary/proof assignments
+  str = str.replace(
+    /(["']?(?:token|secret|password|bearer|canary|proof|key|credential)["']?\s*[:=]\s*["']?)[A-Za-z0-9._~+/-]{6,}["']?/gi,
+    "$1[REDACTED_CREDENTIAL]",
+  );
+  // Redact standalone hex credentials (32 to 64 chars)
+  str = str.replace(/\b[0-9a-fA-F]{32,64}\b/g, "[REDACTED_HEX]");
+  if (str.length > maxChars) {
+    str = str.slice(0, maxChars) + " ...[truncated]";
+  }
+  return str;
+}
+
+function createReadinessError(code, message) {
+  const err = new Error(message);
+  err.code = code;
+  return err;
+}
+
+export function waitForProcessPattern(
+  child,
+  pattern,
+  timeoutMs = 15_000,
+  desc = "pattern",
+  options = {},
+) {
+  const maxBufferBytes = options.maxBufferBytes ?? 64 * 1024;
+  const maxTotalBytes = options.maxTotalBytes ?? 512 * 1024;
+  // Neutralize options.redact: public failure diagnostics NEVER include child stdout/stderr
+
+  return new Promise((resolve, reject) => {
+    if (!child) {
+      return reject(
+        createReadinessError(
+          "ERR_CHILD_NOT_FOUND",
+          `[ERR_CHILD_NOT_FOUND] Cannot wait for ${desc}: child process is null or undefined`,
+        ),
+      );
+    }
+    if (child.exitCode !== null || child.signalCode !== null) {
+      const safeCode =
+        typeof child.exitCode === "number" ? child.exitCode : "none";
+      const safeSignal =
+        typeof child.signalCode === "string" ? child.signalCode : "none";
+      return reject(
+        createReadinessError(
+          "ERR_CHILD_ALREADY_EXITED",
+          `[ERR_CHILD_ALREADY_EXITED] Child process already exited with code ${safeCode} (signal ${safeSignal}) before waiting for ${desc}`,
+        ),
+      );
+    }
+
+    const startNano = process.hrtime.bigint();
+    let buffer = "";
+    let totalBytes = 0;
+    let timer = null;
+    let done = false;
+
+    function cleanup() {
+      if (!done) {
+        done = true;
+        if (timer) clearTimeout(timer);
+        child.stdout?.removeListener("data", onData);
+        child.stderr?.removeListener("data", onData);
+        child.removeListener("error", onError);
+        child.removeListener("exit", onExit);
+      }
+    }
+
+    function onData(chunk) {
+      if (done) return;
+      const chunkStr = chunk.toString("utf8");
+      totalBytes += Buffer.byteLength(chunk);
+      if (totalBytes > maxTotalBytes) {
+        cleanup();
+        reject(
+          createReadinessError(
+            "ERR_READINESS_FLOOD",
+            `[ERR_READINESS_FLOOD] Output stream exceeded ${maxTotalBytes} bytes without matching ${desc} [pid: ${child.pid ?? "unknown"}, bytesRead: ${totalBytes}]`,
+          ),
+        );
+        return;
+      }
+      buffer += chunkStr;
+      if (buffer.length > maxBufferBytes) {
+        buffer = buffer.slice(-maxBufferBytes);
+      }
+      const match = pattern.exec(buffer);
+      if (match) {
+        cleanup();
+        resolve(match);
+      }
+    }
+
+    function onError(err) {
+      if (done) return;
+      cleanup();
+      // Do NOT include uncontrolled child Error.message in public diagnostics!
+      reject(
+        createReadinessError(
+          "ERR_CHILD_EMITTED_ERROR",
+          `[ERR_CHILD_EMITTED_ERROR] Child process emitted error before matching ${desc} [pid: ${child.pid ?? "unknown"}]`,
+        ),
+      );
+    }
+
+    function onExit(code, signal) {
+      if (done) return;
+      cleanup();
+      const elapsedMs = Math.round(
+        Number(process.hrtime.bigint() - startNano) / 1e6,
+      );
+      const safeCode = typeof code === "number" ? code : "none";
+      const safeSignal = typeof signal === "string" ? signal : "none";
+      reject(
+        createReadinessError(
+          "ERR_READINESS_EARLY_EXIT",
+          `[ERR_READINESS_EARLY_EXIT] Child process exited early with code ${safeCode} (signal ${safeSignal}) before matching ${desc} [pid: ${child.pid ?? "unknown"}, elapsedMs: ${elapsedMs}, bytesRead: ${totalBytes}]`,
+        ),
+      );
+    }
+
+    timer = setTimeout(() => {
+      if (done) return;
+      cleanup();
+      const elapsedMs = Math.round(
+        Number(process.hrtime.bigint() - startNano) / 1e6,
+      );
+      reject(
+        createReadinessError(
+          "ERR_READINESS_TIMEOUT",
+          `[ERR_READINESS_TIMEOUT] Timeout (${timeoutMs}ms) waiting for ${desc} on child process [pid: ${child.pid ?? "unknown"}, elapsedMs: ${elapsedMs}, bytesRead: ${totalBytes}]`,
+        ),
+      );
+    }, timeoutMs);
+
+    child.stdout?.on("data", onData);
+    child.stderr?.on("data", onData);
+    child.once("error", onError);
+    child.once("exit", onExit);
+  });
+}
+
+function findJavaBinDir() {
+  if (process.env.JAVA_HOME) {
+    const candidate = join(process.env.JAVA_HOME, "bin");
+    if (existsSync(join(candidate, "java"))) return candidate;
+  }
+  const whichJava = execSync("which java", { encoding: "utf8" }).trim();
+  return dirname(whichJava);
+}
+
+let cachedSanitizedPath = null;
+let sanitizedBinDirectory;
+after(() => {
+  if (sanitizedBinDirectory) {
+    rmSync(sanitizedBinDirectory, { recursive: true, force: true });
+  }
+});
+
+function createSanitizedPath() {
+  if (cachedSanitizedPath) return cachedSanitizedPath;
+  const binDir = mkdtempSync(join(tmpdir(), "tp-endpoint-sanitized-bin-"));
+  sanitizedBinDirectory = binDir;
+  const javaBin = findJavaBinDir();
+  const requiredTools = [
+    "bash",
+    "sh",
+    "env",
+    "dirname",
+    "sed",
+    "head",
+    "which",
+    "cat",
+    "uname",
+    "tar",
+    "grep",
+    "ps",
+  ];
+  for (const tool of requiredTools) {
+    try {
+      const toolLocation = execSync(`which ${tool}`, {
+        encoding: "utf8",
+      }).trim();
+      symlinkSync(toolLocation, join(binDir, tool));
+    } catch {
+      // tool not found on host, continue
+    }
+  }
+  cachedSanitizedPath = [binDir, javaBin].join(":");
+  return cachedSanitizedPath;
+}
+
+let cachedTestClasspath = null;
+function getEndpointTestClasspath() {
+  if (cachedTestClasspath) return cachedTestClasspath;
+  const result = spawnSync(
+    join(repoRoot, "java/gradlew"),
+    [
+      "-p",
+      join(repoRoot, "java"),
+      "-q",
+      ":endpoint-connector:printTestClasspath",
+    ],
+    {
+      cwd: repoRoot,
+      encoding: "utf8",
+      timeout: 60_000,
+    },
+  );
+  if (result.status !== 0) {
+    throw new Error(`Failed to get test classpath: ${result.stderr}`);
+  }
+  cachedTestClasspath = result.stdout.trim();
+  return cachedTestClasspath;
+}
+
+test("packaging refreshes commit-only provenance and rejects dirty or unavailable source metadata", (t) => {
+  const fixture = mkdtempSync(
+    join(tmpdir(), "tp endpoint provenance fixture "),
+  );
+  t.after(() => rmSync(fixture, { recursive: true, force: true }));
+  const modules = ["contracts", "identity", "endpoint-connector"];
+  for (const module of modules) {
+    mkdirSync(join(fixture, "java", module), { recursive: true });
+  }
+  writeFileSync(join(fixture, ".gitignore"), "**/build/\n**/.gradle/\n");
+  writeFileSync(
+    join(fixture, "java/settings.gradle.kts"),
+    modules.map((m) => `include(":${m}")`).join("\n"),
+  );
+  writeFileSync(
+    join(fixture, "java/build.gradle.kts"),
+    'allprojects { version = "0.1.0-SNAPSHOT" }\nsubprojects { apply(plugin = "java-library") }\n',
+  );
+
+  const buildFile = "java/endpoint-connector/build.gradle.kts";
+  copyFileSync(join(repoRoot, buildFile), join(fixture, buildFile));
+
+  for (const file of [
+    "java/endpoint-connector/src/main/scripts/tracepermit-endpoint-connector",
+    "docs/runbooks/endpoint-connector-distribution.md",
+    "LICENSE",
+    "NOTICE",
+  ]) {
+    mkdirSync(dirname(join(fixture, file)), { recursive: true });
+    copyFileSync(join(repoRoot, file), join(fixture, file));
+  }
+
+  const git = (...args) => command("git", args, fixture);
+  git("init", "--quiet");
+  git("config", "user.name", "Synthetic qualification");
+  git("config", "user.email", "qualification@example.invalid");
+  git("config", "commit.gpgsign", "false");
+  git("add", ".");
+  git("commit", "--quiet", "-m", "Synthetic fixture A");
+
+  const gradleArgs = [
+    "-p",
+    join(fixture, "java"),
+    "--no-daemon",
+    "--offline",
+    "--configuration-cache",
+    "--build-cache",
+    ":endpoint-connector:packageEndpointConnectorDistribution",
+  ];
+  const build = (...extra) =>
+    spawnSync(join(repoRoot, "java/gradlew"), [...gradleArgs, ...extra], {
+      cwd: fixture,
+      encoding: "utf8",
+      timeout: 180_000,
+    });
+  const buildOk = (...extra) => {
+    const result = build(...extra);
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    return result.stdout;
+  };
+  const archive = join(
+    fixture,
+    "java/endpoint-connector/build/distributions/tracepermit-endpoint-connector-0.1.0.tar.gz",
+  );
+  const manifest = () =>
+    JSON.parse(
+      command(
+        "tar",
+        ["-xOf", archive, "tracepermit-endpoint-connector-0.1.0/manifest.json"],
+        fixture,
+      ),
+    );
+
+  buildOk();
+  const commitA = git("rev-parse", "--verify", "HEAD");
+  assert.equal(manifest().sourceCommit, commitA);
+
+  const originalNotice = readFileSync(join(fixture, "NOTICE"), "utf8");
+  const assertDirtyBuildRejected = () => {
+    const committedHash = sha256OfFile(archive);
+    const dirty = build();
+    assert.notEqual(
+      dirty.status,
+      0,
+      "Packaging must fail closed when the source tree is dirty",
+    );
+    assert.match(
+      dirty.stderr + dirty.stdout,
+      /requires a clean Git source tree/,
+    );
+    assert.equal(sha256OfFile(archive), committedHash);
+  };
+
+  writeFileSync(join(fixture, "NOTICE"), `${originalNotice}\nmodified\n`);
+  assertDirtyBuildRejected();
+  writeFileSync(join(fixture, "NOTICE"), originalNotice);
+
+  const untracked = join(fixture, "untracked-source.txt");
+  writeFileSync(untracked, "uncommitted input\n");
+  assertDirtyBuildRejected();
+  rmSync(untracked);
+
+  git("commit", "--allow-empty", "--quiet", "-m", "Synthetic fixture B");
+  const commitB = git("rev-parse", "--verify", "HEAD");
+  assert.notEqual(commitA, commitB);
+  buildOk();
+  assert.equal(manifest().sourceCommit, commitB);
+
+  renameSync(join(fixture, ".git"), join(fixture, ".git-unavailable"));
+  assert.notEqual(
+    build().status,
+    0,
+    "Missing Git metadata must fail; never label an archive unknown",
+  );
+});
+
+test("distribution archive exists and matches sha256 checksum file", () => {
+  ensureDistributionBuilt();
+  assert.ok(existsSync(distArchive), "Distribution archive must exist");
+  assert.ok(existsSync(distSha256File), "Checksum file must exist");
+  const expectedHash = readFileSync(distSha256File, "utf8")
+    .trim()
+    .split(/\s+/)[0];
+  const actualHash = sha256OfFile(distArchive);
+  assert.equal(
+    actualHash,
+    expectedHash,
+    "Archive sha256 must match checksum file",
+  );
+});
+
+test("archive layout, strict allowlist, and permissions in path with spaces", (t) => {
+  ensureDistributionBuilt();
+  const extractRoot = mkdtempSync(join(tmpdir(), "tp endpoint space path "));
+  t.after(() => rmSync(extractRoot, { recursive: true, force: true }));
+
+  execSync(`tar -xzf "${distArchive}" -C "${extractRoot}"`);
+  const distDir = join(extractRoot, "tracepermit-endpoint-connector-0.1.0");
+  assert.ok(existsSync(distDir), "Root distribution directory must exist");
+
+  const expectedAllowlist = new Set([
+    "bin/tracepermit-endpoint-connector",
+    "docs/setup-runbook.md",
+    "docs/LICENSE",
+    "docs/NOTICE",
+    "manifest.json",
+    "SHA256SUMS",
+  ]);
+
+  function walk(dir, relPrefix = "") {
+    const entries = readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const rel = relPrefix ? `${relPrefix}/${entry.name}` : entry.name;
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(full, rel);
+      } else if (entry.isFile()) {
+        if (rel.startsWith("lib/") && rel.endsWith(".jar")) {
+          // Allowed JAR
+        } else {
+          assert.ok(
+            expectedAllowlist.has(rel),
+            `File ${rel} is not in the allowlist!`,
+          );
+        }
+      }
+    }
+  }
+  walk(distDir);
+
+  // Check launcher executable bit (0755)
+  const launcher = join(distDir, "bin/tracepermit-endpoint-connector");
+  const launcherStat = statSync(launcher);
+  assert.equal(
+    launcherStat.mode & 0o777,
+    0o755,
+    "Launcher must be executable (0755)",
+  );
+
+  // Check file permissions (0644)
+  for (const rel of [
+    "docs/setup-runbook.md",
+    "docs/LICENSE",
+    "docs/NOTICE",
+    "manifest.json",
+    "SHA256SUMS",
+  ]) {
+    const stat = statSync(join(distDir, rel));
+    assert.equal(stat.mode & 0o777, 0o644, `${rel} must have 0644 permissions`);
+  }
+
+  // Verify SHA256SUMS
+  const sumsFile = readFileSync(join(distDir, "SHA256SUMS"), "utf8");
+  const sumLines = sumsFile
+    .split("\n")
+    .filter((l) => l.trim() && !l.startsWith("#"));
+  assert.ok(sumLines.length > 5, "SHA256SUMS must contain entries");
+  for (const line of sumLines) {
+    const [hash, fileRel] = line.trim().split(/\s+/);
+    const targetFile = join(distDir, fileRel);
+    assert.ok(existsSync(targetFile), `Target file ${fileRel} must exist`);
+    assert.equal(
+      sha256OfFile(targetFile),
+      hash,
+      `Hash for ${fileRel} must match`,
+    );
+  }
+
+  // Verify manifest.json
+  const manifest = JSON.parse(
+    readFileSync(join(distDir, "manifest.json"), "utf8"),
+  );
+  assert.equal(manifest.schemaVersion, "1.1");
+  assert.equal(manifest.packageName, "tracepermit-endpoint-connector");
+  assert.equal(manifest.packageVersion, "0.1.0");
+  assert.equal(manifest.requiredJava, "21");
+  assert.deepEqual(manifest.supportedPlatforms, ["macOS"]);
+  assert.equal(
+    manifest.entryPoint,
+    "io.tracepermit.endpoint.EndpointConnectorMain",
+  );
+  assert.equal(manifest.launcher, "bin/tracepermit-endpoint-connector");
+  assert.equal(manifest.sourceTree, "clean");
+  assert.ok(Array.isArray(manifest.dependencyInventory));
+  assert.ok(manifest.dependencyInventory.length > 0);
+  for (const jar of manifest.dependencyInventory) {
+    const jarPath = join(distDir, "lib", jar.name);
+    assert.ok(existsSync(jarPath), `Dependency jar ${jar.name} must exist`);
+    assert.equal(statSync(jarPath).size, jar.sizeBytes);
+    assert.equal(sha256OfFile(jarPath), jar.sha256);
+  }
+
+  // Check setup-runbook.md has rewritten links
+  const runbookContent = readFileSync(
+    join(distDir, "docs/setup-runbook.md"),
+    "utf8",
+  );
+  assert.ok(
+    !runbookContent.includes("](../architecture/"),
+    "Runbook relative architecture links must be relocated",
+  );
+  assert.ok(
+    runbookContent.includes(
+      "https://github.com/hemantkgupta/tracepermit/blob/",
+    ),
+    "Runbook must use absolute GitHub blob URL for relocated links",
+  );
+});
+
+test("sanitized minimal PATH execution and launcher CLI flags", (t) => {
+  ensureDistributionBuilt();
+  const extractRoot = mkdtempSync(join(tmpdir(), "tp endpoint cli test "));
+  const unrelatedCwd = mkdtempSync(join(tmpdir(), "tp endpoint cwd "));
+  t.after(() => {
+    rmSync(extractRoot, { recursive: true, force: true });
+    rmSync(unrelatedCwd, { recursive: true, force: true });
+  });
+
+  execSync(`tar -xzf "${distArchive}" -C "${extractRoot}"`);
+  const distDir = join(extractRoot, "tracepermit-endpoint-connector-0.1.0");
+  const launcher = join(distDir, "bin/tracepermit-endpoint-connector");
+  const sanitizedPath = createSanitizedPath();
+
+  // 1. --help / -h
+  for (const flag of ["--help", "-h"]) {
+    const res = spawnSync(launcher, [flag], {
+      cwd: unrelatedCwd,
+      env: { PATH: sanitizedPath },
+      encoding: "utf8",
+    });
+    assert.equal(res.status, 0);
+    assert.ok(res.stdout.includes("Usage: tracepermit-endpoint-connector"));
+    assert.ok(res.stdout.includes("Platform: macOS (ARM64 / x86_64) only"));
+    assert.ok(res.stdout.includes("--check"));
+    assert.ok(res.stdout.includes("--run"));
+    assert.equal(res.stderr, "");
+  }
+
+  // 2. Unrecognized flag
+  const unknownRes = spawnSync(launcher, ["--unknown-flag"], {
+    cwd: unrelatedCwd,
+    env: { PATH: sanitizedPath },
+    encoding: "utf8",
+  });
+  assert.equal(unknownRes.status, 2);
+  assert.ok(
+    unknownRes.stderr.includes(
+      "TracePermit endpoint connector: CONFIGURATION_INVALID",
+    ),
+  );
+
+  // 3. Extra arguments
+  const extraRes = spawnSync(launcher, ["--check", "extra-arg"], {
+    cwd: unrelatedCwd,
+    env: { PATH: sanitizedPath },
+    encoding: "utf8",
+  });
+  assert.equal(extraRes.status, 2);
+  assert.ok(
+    extraRes.stderr.includes(
+      "TracePermit endpoint connector: CONFIGURATION_INVALID",
+    ),
+  );
+});
+
+test("ambient JVM diagnostic options are unset and secret sentinels are not echoed", (t) => {
+  ensureDistributionBuilt();
+  const extractRoot = mkdtempSync(join(tmpdir(), "tp endpoint sentinel test "));
+  const unrelatedCwd = mkdtempSync(join(tmpdir(), "tp endpoint sentinel cwd "));
+  const privateDir = realpathSync(
+    mkdtempSync(join(tmpdir(), "tp endpoint sentinel priv ")),
+  );
+  chmodSync(privateDir, 0o700);
+  t.after(() => {
+    rmSync(extractRoot, { recursive: true, force: true });
+    rmSync(unrelatedCwd, { recursive: true, force: true });
+    rmSync(privateDir, { recursive: true, force: true });
+  });
+
+  execSync(`tar -xzf "${distArchive}" -C "${extractRoot}"`);
+  const distDir = join(extractRoot, "tracepermit-endpoint-connector-0.1.0");
+  const launcher = join(distDir, "bin/tracepermit-endpoint-connector");
+  const sanitizedPath = createSanitizedPath();
+
+  const secretSentinel1 = "SENTINEL_SECRET_TOKEN_ALPHA_12345";
+  const secretSentinel2 = "SENTINEL_SECRET_TOKEN_BETA_67890";
+  const secretSentinel3 = "SENTINEL_SECRET_TOKEN_GAMMA_ABCDE";
+
+  // 1. Help flag invocation (before Java)
+  const res = spawnSync(launcher, ["--help"], {
+    cwd: unrelatedCwd,
+    env: {
+      PATH: sanitizedPath,
+      JAVA_TOOL_OPTIONS: `-Dtest.secret=${secretSentinel1}`,
+      _JAVA_OPTIONS: `-Dtest.secret2=${secretSentinel2}`,
+      JDK_JAVA_OPTIONS: `-Dtest.secret3=${secretSentinel3}`,
+    },
+    encoding: "utf8",
+  });
+
+  assert.equal(res.status, 0);
+  assert.ok(!res.stdout.includes(secretSentinel1));
+  assert.ok(!res.stdout.includes(secretSentinel2));
+  assert.ok(!res.stdout.includes(secretSentinel3));
+  assert.ok(!res.stderr.includes(secretSentinel1));
+  assert.ok(!res.stderr.includes(secretSentinel2));
+  assert.ok(!res.stderr.includes(secretSentinel3));
+  assert.ok(!res.stderr.includes("Picked up JAVA_TOOL_OPTIONS"));
+  assert.ok(!res.stderr.includes("Picked up _JAVA_OPTIONS"));
+  assert.ok(!res.stderr.includes("Picked up JDK_JAVA_OPTIONS"));
+
+  // 2. Failure exit before Java
+  const failRes = spawnSync(launcher, ["--unknown"], {
+    cwd: unrelatedCwd,
+    env: {
+      PATH: sanitizedPath,
+      JAVA_TOOL_OPTIONS: `-Dtest.secret=${secretSentinel1}`,
+    },
+    encoding: "utf8",
+  });
+  assert.equal(failRes.status, 2);
+  assert.ok(!failRes.stderr.includes(secretSentinel1));
+  assert.ok(!failRes.stderr.includes("Picked up JAVA_TOOL_OPTIONS"));
+
+  // 3. Actual valid --check JVM invocation with all three diagnostic variables
+  const { privateKey } = crypto.generateKeyPairSync("ed25519");
+  const pk8Der = privateKey.export({ type: "pkcs8", format: "der" });
+  const keyPath = join(privateDir, "endpoint.pk8");
+  writeFileSync(keyPath, pk8Der);
+  chmodSync(keyPath, 0o600);
+
+  const validCheckEnv = {
+    PATH: sanitizedPath,
+    TRACEPERMIT_GATEWAY_URL: "http://127.0.0.1:8080/mcp",
+    TRACEPERMIT_ENDPOINT_ISSUER: "tracepermit-endpoint:test",
+    TRACEPERMIT_ENDPOINT_KEY_ID: "endpoint-key-test",
+    TRACEPERMIT_ENDPOINT_DEVICE_ID: "device-test",
+    TRACEPERMIT_ENDPOINT_PRIVATE_KEY_PKCS8_PATH: keyPath,
+    TRACEPERMIT_CONNECTOR_BEARER_TOKEN: "valid-bearer-token",
+    JAVA_TOOL_OPTIONS: `-Dtest.secret=${secretSentinel1}`,
+    _JAVA_OPTIONS: `-Dtest.secret2=${secretSentinel2}`,
+    JDK_JAVA_OPTIONS: `-Dtest.secret3=${secretSentinel3}`,
+  };
+
+  if (process.platform === "darwin") {
+    const jvmCheckRes = spawnSync(launcher, ["--check"], {
+      cwd: unrelatedCwd,
+      env: validCheckEnv,
+      encoding: "utf8",
+    });
+    assert.equal(jvmCheckRes.status, 0, jvmCheckRes.stderr);
+    assert.ok(
+      jvmCheckRes.stdout.includes(
+        "ENDPOINT_CONFIGURATION_VALID: offline only; no gateway, IdP, observer or client checked.",
+      ),
+    );
+    assert.ok(!jvmCheckRes.stdout.includes(secretSentinel1));
+    assert.ok(!jvmCheckRes.stdout.includes(secretSentinel2));
+    assert.ok(!jvmCheckRes.stdout.includes(secretSentinel3));
+    assert.ok(!jvmCheckRes.stderr.includes(secretSentinel1));
+    assert.ok(!jvmCheckRes.stderr.includes(secretSentinel2));
+    assert.ok(!jvmCheckRes.stderr.includes(secretSentinel3));
+    assert.ok(!jvmCheckRes.stderr.includes("Picked up JAVA_TOOL_OPTIONS"));
+    assert.ok(!jvmCheckRes.stderr.includes("Picked up _JAVA_OPTIONS"));
+    assert.ok(!jvmCheckRes.stderr.includes("Picked up JDK_JAVA_OPTIONS"));
+
+    // 4. Negative probe sensitivity control:
+    // A private launcher copy with unset removed must leak banners/sentinels.
+    // NOTE: The real launcher in distDir is NEVER modified.
+    const privateLauncher = join(distDir, "bin/private-launcher-no-unset");
+    const originalLauncherContent = readFileSync(launcher, "utf8");
+    const brokenLauncherContent = originalLauncherContent.replace(
+      /unset (-v )?JAVA_TOOL_OPTIONS _JAVA_OPTIONS JDK_JAVA_OPTIONS/g,
+      "# unset removed for negative probe sensitivity verification",
+    );
+    assert.notEqual(
+      brokenLauncherContent,
+      originalLauncherContent,
+      "Sanity check: unset must have been matched and replaced in private copy",
+    );
+    writeFileSync(privateLauncher, brokenLauncherContent, { mode: 0o755 });
+
+    const brokenRes = spawnSync(privateLauncher, ["--check"], {
+      cwd: unrelatedCwd,
+      env: validCheckEnv,
+      encoding: "utf8",
+    });
+    const leakedBanner =
+      brokenRes.stderr.includes("Picked up JAVA_TOOL_OPTIONS") ||
+      brokenRes.stderr.includes("Picked up _JAVA_OPTIONS") ||
+      brokenRes.stderr.includes("Picked up JDK_JAVA_OPTIONS") ||
+      brokenRes.stderr.includes(secretSentinel1) ||
+      brokenRes.stderr.includes(secretSentinel2) ||
+      brokenRes.stderr.includes(secretSentinel3);
+    assert.ok(
+      leakedBanner,
+      "Negative probe sensitivity: removing unset from launcher must leak JVM diagnostic banners or secret sentinels to stderr",
+    );
+  } else {
+    const nonMacCheck = spawnSync(launcher, ["--check"], {
+      cwd: unrelatedCwd,
+      env: validCheckEnv,
+      encoding: "utf8",
+    });
+    assert.equal(nonMacCheck.status, 2);
+    assert.ok(
+      nonMacCheck.stderr.includes(
+        "TracePermit endpoint connector: UNSUPPORTED_PLATFORM",
+      ),
+    );
+    assert.ok(!nonMacCheck.stderr.includes(secretSentinel1));
+  }
+});
+
+test("installed launcher rejects unsupported non-macOS platforms fail-closed with code 2", (t) => {
+  ensureDistributionBuilt();
+  const extractRoot = mkdtempSync(
+    join(tmpdir(), "tp endpoint unsupported test "),
+  );
+  const unrelatedCwd = mkdtempSync(
+    join(tmpdir(), "tp endpoint unsupported cwd "),
+  );
+  const fakeBinDir = mkdtempSync(join(tmpdir(), "tp endpoint fake uname "));
+  t.after(() => {
+    rmSync(extractRoot, { recursive: true, force: true });
+    rmSync(unrelatedCwd, { recursive: true, force: true });
+    rmSync(fakeBinDir, { recursive: true, force: true });
+  });
+
+  execSync(`tar -xzf "${distArchive}" -C "${extractRoot}"`);
+  const distDir = join(extractRoot, "tracepermit-endpoint-connector-0.1.0");
+  const launcher = join(distDir, "bin/tracepermit-endpoint-connector");
+  const sanitizedPath = createSanitizedPath();
+
+  // Create a fake uname script that returns Linux
+  const fakeUname = join(fakeBinDir, "uname");
+  writeFileSync(fakeUname, '#!/bin/sh\necho "Linux"\n', { mode: 0o755 });
+  chmodSync(fakeUname, 0o755);
+
+  const fakePath = `${fakeBinDir}:${sanitizedPath}`;
+
+  // 1. --check with unsupported platform fails immediately with code 2 and UNSUPPORTED_PLATFORM
+  const checkRes = spawnSync(launcher, ["--check"], {
+    cwd: unrelatedCwd,
+    env: { PATH: fakePath },
+    encoding: "utf8",
+  });
+  assert.equal(checkRes.status, 2);
+  assert.equal(checkRes.stdout, "");
+  assert.ok(
+    checkRes.stderr.includes(
+      "TracePermit endpoint connector: UNSUPPORTED_PLATFORM",
+    ),
+  );
+
+  // 2. --run with unsupported platform fails immediately with code 2 and UNSUPPORTED_PLATFORM
+  const runRes = spawnSync(launcher, ["--run"], {
+    cwd: unrelatedCwd,
+    env: { PATH: fakePath },
+    encoding: "utf8",
+  });
+  assert.equal(runRes.status, 2);
+  assert.equal(runRes.stdout, "");
+  assert.ok(
+    runRes.stderr.includes(
+      "TracePermit endpoint connector: UNSUPPORTED_PLATFORM",
+    ),
+  );
+
+  // 3. default (no args) with unsupported platform fails immediately with code 2 and UNSUPPORTED_PLATFORM
+  const defaultRes = spawnSync(launcher, [], {
+    cwd: unrelatedCwd,
+    env: { PATH: fakePath },
+    encoding: "utf8",
+  });
+  assert.equal(defaultRes.status, 2);
+  assert.equal(defaultRes.stdout, "");
+  assert.ok(
+    defaultRes.stderr.includes(
+      "TracePermit endpoint connector: UNSUPPORTED_PLATFORM",
+    ),
+  );
+
+  // 4. --help on unsupported platform still displays usage honestly with code 0
+  const helpRes = spawnSync(launcher, ["--help"], {
+    cwd: unrelatedCwd,
+    env: { PATH: fakePath },
+    encoding: "utf8",
+  });
+  assert.equal(helpRes.status, 0);
+  assert.ok(helpRes.stdout.includes("Platform: macOS (ARM64 / x86_64) only"));
+
+  // 5. Preserved legacy source entry behavior: direct EndpointConnectorMain with zero args does not reject with UNSUPPORTED_PLATFORM
+  const javaBin = join(findJavaBinDir(), "java");
+  const classpath = join(distDir, "lib", "*");
+  const legacyRes = spawnSync(
+    javaBin,
+    ["-cp", classpath, "io.tracepermit.endpoint.EndpointConnectorMain"],
+    {
+      cwd: unrelatedCwd,
+      env: {
+        PATH: fakePath,
+        TRACEPERMIT_CONNECTOR_BEARER_TOKEN: "sentinel-invalid",
+      },
+      encoding: "utf8",
+    },
+  );
+  assert.equal(legacyRes.status, 2);
+  assert.ok(
+    legacyRes.stderr.includes(
+      "TracePermit endpoint connector: CONFIGURATION_INVALID",
+    ),
+  );
+  assert.ok(
+    !legacyRes.stderr.includes("UNSUPPORTED_PLATFORM"),
+    "Legacy zero-argument source entry must not be blocked by installed platform check",
+  );
+});
+
+test("offline --check verifies configuration with zero network calls and zero file creations", async (t) => {
+  ensureDistributionBuilt();
+  const extractRoot = mkdtempSync(join(tmpdir(), "tp endpoint offline test "));
+  const unrelatedCwd = mkdtempSync(join(tmpdir(), "tp endpoint offline cwd "));
+  const privateDir = realpathSync(
+    mkdtempSync(join(tmpdir(), "tp endpoint private ")),
+  );
+  chmodSync(privateDir, 0o700);
+
+  let probeNetworkRequests = 0;
+  const mockServer = createServer((socket) => {
+    probeNetworkRequests++;
+    socket.destroy();
+  });
+  await new Promise((resolve) => mockServer.listen(0, "127.0.0.1", resolve));
+
+  t.after(() => {
+    mockServer.close();
+    rmSync(extractRoot, { recursive: true, force: true });
+    rmSync(unrelatedCwd, { recursive: true, force: true });
+    rmSync(privateDir, { recursive: true, force: true });
+  });
+
+  const mockPort = mockServer.address().port;
+  execSync(`tar -xzf "${distArchive}" -C "${extractRoot}"`);
+  const distDir = join(extractRoot, "tracepermit-endpoint-connector-0.1.0");
+  const launcher = join(distDir, "bin/tracepermit-endpoint-connector");
+  const sanitizedPath = createSanitizedPath();
+
+  // Generate synthetic Ed25519 PKCS#8 private key
+  const { privateKey } = crypto.generateKeyPairSync("ed25519");
+  const pk8Der = privateKey.export({ type: "pkcs8", format: "der" });
+  const keyPath = join(privateDir, "endpoint.pk8");
+  writeFileSync(keyPath, pk8Der);
+  chmodSync(keyPath, 0o600);
+
+  // Optional observation dir
+  const obsDir = join(privateDir, "obs");
+  mkdirSync(obsDir, { mode: 0o700 });
+  chmodSync(obsDir, 0o700);
+
+  const validEnv = {
+    PATH: sanitizedPath,
+    TRACEPERMIT_GATEWAY_URL: `http://127.0.0.1:${mockPort}/mcp`,
+    TRACEPERMIT_ENDPOINT_ISSUER: "tracepermit-endpoint:test",
+    TRACEPERMIT_ENDPOINT_KEY_ID: "endpoint-key-test",
+    TRACEPERMIT_ENDPOINT_DEVICE_ID: "device-test",
+    TRACEPERMIT_ENDPOINT_PRIVATE_KEY_PKCS8_PATH: keyPath,
+    TRACEPERMIT_CONNECTOR_BEARER_TOKEN: "synthetic-offline-token",
+    TRACEPERMIT_ENDPOINT_OBSERVATION_DIRECTORY: obsDir,
+  };
+
+  if (process.platform !== "darwin") {
+    const nonMacCheck = spawnSync(launcher, ["--check"], {
+      cwd: unrelatedCwd,
+      env: validEnv,
+      encoding: "utf8",
+    });
+    assert.equal(nonMacCheck.status, 2);
+    assert.ok(
+      nonMacCheck.stderr.includes(
+        "TracePermit endpoint connector: UNSUPPORTED_PLATFORM",
+      ),
+    );
+    assert.equal(probeNetworkRequests, 0);
+    return;
+  }
+
+  // 1. Valid offline --check (async execution preserves Node event loop for mockServer)
+  const validCheck = await runChildAsync(launcher, ["--check"], {
+    cwd: unrelatedCwd,
+    env: validEnv,
+  });
+  // Finite settle barrier ensuring any asynchronous network callbacks drain
+  await new Promise((resolve) => setTimeout(resolve, 50));
+
+  assert.equal(validCheck.status, 0, validCheck.stderr);
+  assert.ok(
+    validCheck.stdout.includes(
+      "ENDPOINT_CONFIGURATION_VALID: offline only; no gateway, IdP, observer or client checked.",
+    ),
+  );
+  assert.equal(validCheck.stderr, "");
+
+  // PROVE: zero network requests made during check
+  assert.equal(
+    probeNetworkRequests,
+    0,
+    "Offline check must make zero network calls",
+  );
+
+  // PROVE: zero files created in observation directory
+  assert.equal(
+    readdirSync(obsDir).length,
+    0,
+    "Offline check must create zero files in observation directory",
+  );
+
+  // 2. Failure: missing required variable (async execution preserves event loop)
+  const missingVar = await runChildAsync(launcher, ["--check"], {
+    cwd: unrelatedCwd,
+    env: { ...validEnv, TRACEPERMIT_CONNECTOR_BEARER_TOKEN: "" },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(missingVar.status, 2);
+  assert.ok(
+    missingVar.stderr.includes(
+      "TracePermit endpoint connector: CONFIGURATION_INVALID",
+    ),
+  );
+
+  // 3. Failure: non-loopback gateway URL
+  const nonLoopback = await runChildAsync(launcher, ["--check"], {
+    cwd: unrelatedCwd,
+    env: { ...validEnv, TRACEPERMIT_GATEWAY_URL: "http://example.com/mcp" },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(nonLoopback.status, 2);
+  assert.ok(
+    nonLoopback.stderr.includes(
+      "TracePermit endpoint connector: CONFIGURATION_INVALID",
+    ),
+  );
+
+  // 4. Failure: HTTPS gateway URL
+  const httpsUrl = await runChildAsync(launcher, ["--check"], {
+    cwd: unrelatedCwd,
+    env: {
+      ...validEnv,
+      TRACEPERMIT_GATEWAY_URL: `https://127.0.0.1:${mockPort}/mcp`,
+    },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(httpsUrl.status, 2);
+  assert.ok(
+    httpsUrl.stderr.includes(
+      "TracePermit endpoint connector: CONFIGURATION_INVALID",
+    ),
+  );
+
+  // 5. Failure: non-/mcp path
+  const nonMcpPath = await runChildAsync(launcher, ["--check"], {
+    cwd: unrelatedCwd,
+    env: {
+      ...validEnv,
+      TRACEPERMIT_GATEWAY_URL: `http://127.0.0.1:${mockPort}/api`,
+    },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(nonMcpPath.status, 2);
+  assert.ok(
+    nonMcpPath.stderr.includes(
+      "TracePermit endpoint connector: CONFIGURATION_INVALID",
+    ),
+  );
+
+  // 6. Failure: symlink key
+  const symlinkKey = join(privateDir, "symlink-key.pk8");
+  symlinkSync(keyPath, symlinkKey);
+  const symlinkCheck = await runChildAsync(launcher, ["--check"], {
+    cwd: unrelatedCwd,
+    env: {
+      ...validEnv,
+      TRACEPERMIT_ENDPOINT_PRIVATE_KEY_PKCS8_PATH: symlinkKey,
+    },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(symlinkCheck.status, 2);
+  assert.ok(
+    symlinkCheck.stderr.includes(
+      "TracePermit endpoint connector: CONFIGURATION_INVALID",
+    ),
+  );
+
+  // 7. Failure: insecure key permissions (0666)
+  const insecureKey = join(privateDir, "insecure-key.pk8");
+  writeFileSync(insecureKey, pk8Der);
+  chmodSync(insecureKey, 0o666);
+  const insecureCheck = await runChildAsync(launcher, ["--check"], {
+    cwd: unrelatedCwd,
+    env: {
+      ...validEnv,
+      TRACEPERMIT_ENDPOINT_PRIVATE_KEY_PKCS8_PATH: insecureKey,
+    },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(insecureCheck.status, 2);
+  assert.ok(
+    insecureCheck.stderr.includes(
+      "TracePermit endpoint connector: CONFIGURATION_INVALID",
+    ),
+  );
+
+  // PROVE: zero network calls across all 7 monitored test cases
+  assert.equal(
+    probeNetworkRequests,
+    0,
+    "Total network requests during check tests must be zero across all cases",
+  );
+
+  // SENSITIVITY CONTROL:
+  // Prove that a deliberately broken launcher that connects when token is empty
+  // (as tested in private audit) is genuinely detected and causes the zero-network regression to FAIL.
+  const privateBrokenLauncher = join(
+    distDir,
+    "bin/private-broken-launcher-token-connect",
+  );
+  const launcherText = readFileSync(launcher, "utf8");
+  const rogueScript = `
+if [ -z "\${TRACEPERMIT_CONNECTOR_BEARER_TOKEN:-}" ]; then
+  (exec 3<>/dev/tcp/127.0.0.1/${mockPort}; exec 3>&-) 2>/dev/null || true
+fi
+`;
+  const brokenLauncherText = launcherText.replace(
+    'exec "$JAVA_BIN"',
+    `${rogueScript}\nexec "$JAVA_BIN"`,
+  );
+  writeFileSync(privateBrokenLauncher, brokenLauncherText);
+  chmodSync(privateBrokenLauncher, 0o755);
+
+  const preBrokenProbeCount = probeNetworkRequests;
+  await runChildAsync(privateBrokenLauncher, ["--check"], {
+    cwd: unrelatedCwd,
+    env: { ...validEnv, TRACEPERMIT_CONNECTOR_BEARER_TOKEN: "" },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  const rogueRequests = probeNetworkRequests - preBrokenProbeCount;
+  assert.ok(
+    rogueRequests > 0,
+    "Deliberately broken launcher with empty token MUST trigger network probe detection (> 0)",
+  );
+
+  // Prove that the actual zero-network assertion FAILS on rogueRequests:
+  assert.throws(
+    () =>
+      assert.equal(
+        rogueRequests,
+        0,
+        "Offline check must make zero network calls",
+      ),
+    /Offline check must make zero network calls/,
+    "Zero-network regression check MUST fail when broken launcher makes network calls",
+  );
+
+  // Deliberate connect-on-check private control:
+  // Prove that a direct deliberate network connection to mockServer is also detected
+  const preProbeCount = probeNetworkRequests;
+  await new Promise((resolve, reject) => {
+    const probeSocket = net.connect(
+      { host: "127.0.0.1", port: mockPort },
+      () => {
+        probeSocket.destroy();
+        resolve();
+      },
+    );
+    probeSocket.on("error", reject);
+    setTimeout(() => {
+      probeSocket.destroy();
+      reject(new Error("Timeout in sensitivity network probe"));
+    }, 2000);
+  });
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.ok(
+    probeNetworkRequests > preProbeCount,
+    "Deliberate network connection to mockServer must be detected by probe (> 0)",
+  );
+});
+
+test("live stdio client execution against ephemeral local Java simulator gateway", async (t) => {
+  if (process.platform !== "darwin") {
+    t.skip(
+      "macOS-only distribution: live macOS process observation and stdio connector execution is skipped on non-macOS (Linux).",
+    );
+    return;
+  }
+  ensureDistributionBuilt();
+  const extractRoot = mkdtempSync(join(tmpdir(), "tp endpoint live test "));
+  const unrelatedCwd = mkdtempSync(join(tmpdir(), "tp endpoint live cwd "));
+  const privateDir = realpathSync(
+    mkdtempSync(join(tmpdir(), "tp endpoint live priv ")),
+  );
+  chmodSync(privateDir, 0o700);
+
+  execSync(`tar -xzf "${distArchive}" -C "${extractRoot}"`);
+  const distDir = join(extractRoot, "tracepermit-endpoint-connector-0.1.0");
+  const launcher = join(distDir, "bin/tracepermit-endpoint-connector");
+  const sanitizedPath = createSanitizedPath();
+  const testClasspath = getEndpointTestClasspath();
+
+  // Generate Ed25519 keypair
+  const { publicKey, privateKey } = crypto.generateKeyPairSync("ed25519");
+  const pk8Der = privateKey.export({ type: "pkcs8", format: "der" });
+  const spkiDer = publicKey.export({ type: "spki", format: "der" });
+  const spkiBase64 = spkiDer.toString("base64");
+
+  const keyPath = join(privateDir, "endpoint.pk8");
+  writeFileSync(keyPath, pk8Der);
+  chmodSync(keyPath, 0o600);
+
+  // Start EphemeralSimulatorGatewayMain
+  const javaBin = join(findJavaBinDir(), "java");
+  let gatewayProcess = null;
+  let connector = null;
+  let expiredConnector = null;
+
+  t.after(async () => {
+    await gracefulTerminate(connector, "connector");
+    await gracefulTerminate(expiredConnector, "expiredConnector");
+    if (gatewayProcess) {
+      try {
+        gatewayProcess.stdin?.write("SHUTDOWN\n");
+      } catch {}
+      await gracefulTerminate(gatewayProcess, "gatewayProcess");
+    }
+    if (gatewayPort) {
+      const released = await checkPortReleased(gatewayPort);
+      assert.ok(released, `Gateway port ${gatewayPort} must be released`);
+    }
+    rmSync(extractRoot, { recursive: true, force: true });
+    rmSync(unrelatedCwd, { recursive: true, force: true });
+    rmSync(privateDir, { recursive: true, force: true });
+  });
+
+  // Start EphemeralSimulatorGatewayMain (mock protocol smoke server for transport wire-framing)
+  gatewayProcess = spawn(
+    javaBin,
+    [
+      "-cp",
+      testClasspath,
+      "io.tracepermit.endpoint.EphemeralSimulatorGatewayMain",
+    ],
+    {
+      env: {
+        ...process.env,
+        PATH: sanitizedPath,
+        TRACEPERMIT_ENDPOINT_ISSUER: "tracepermit-endpoint:test",
+        TRACEPERMIT_ENDPOINT_KEY_ID: "endpoint-key-test",
+        TRACEPERMIT_ENDPOINT_DEVICE_ID: "device-test",
+        TRACEPERMIT_ENDPOINT_PUBLIC_KEY_SPKI_BASE64: spkiBase64,
+      },
+      stdio: ["pipe", "pipe", "pipe"],
+    },
+  );
+
+  // Wait for gateway ready
+  let gatewayPort = null;
+  const gatewayMatch = await waitForProcessPattern(
+    gatewayProcess,
+    /GATEWAY_READY port=(\d+)/,
+    15_000,
+    "gateway ready",
+  );
+  gatewayPort = parseInt(gatewayMatch[1], 10);
+
+  assert.ok(gatewayPort > 0, `Gateway port must be positive: ${gatewayPort}`);
+
+  // Base client environment
+  const clientEnv = {
+    PATH: sanitizedPath,
+    TRACEPERMIT_GATEWAY_URL: `http://127.0.0.1:${gatewayPort}/mcp`,
+    TRACEPERMIT_ENDPOINT_ISSUER: "tracepermit-endpoint:test",
+    TRACEPERMIT_ENDPOINT_KEY_ID: "endpoint-key-test",
+    TRACEPERMIT_ENDPOINT_DEVICE_ID: "device-test",
+    TRACEPERMIT_ENDPOINT_PRIVATE_KEY_PKCS8_PATH: keyPath,
+    TRACEPERMIT_CONNECTOR_BEARER_TOKEN: "valid-bearer-token",
+  };
+
+  // Launch connector process
+  connector = spawn(launcher, ["--run"], {
+    cwd: unrelatedCwd,
+    env: clientEnv,
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+
+  // PROTECT: process parentage check.
+  // Because launcher uses `exec java ...`, connector.pid IS replaced by the Java process directly.
+  assert.ok(connector.pid > 0);
+  let psOutput = null;
+  let osInspectionError = null;
+  const psDeadline = Date.now() + 3000;
+  while (Date.now() < psDeadline) {
+    try {
+      psOutput = execSync(`ps -o ppid=,comm= -p ${connector.pid}`, {
+        encoding: "utf8",
+      }).trim();
+      const parts = psOutput.split(/\s+/);
+      if (
+        parts.length >= 2 &&
+        parts.slice(1).join(" ").toLowerCase().includes("java")
+      ) {
+        break;
+      }
+    } catch (err) {
+      osInspectionError = err;
+      break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+
+  if (psOutput != null) {
+    // Assertions are outside of try-catch; mismatches will fail the test!
+    const parts = psOutput.trim().split(/\s+/);
+    assert.ok(parts.length >= 2, `ps output format invalid: "${psOutput}"`);
+    const observedPpid = parseInt(parts[0], 10);
+    const observedComm = parts.slice(1).join(" ").toLowerCase();
+    assert.equal(
+      observedPpid,
+      process.pid,
+      `Connector PPID must equal native spawning client PID (${process.pid}), observed: ${observedPpid}`,
+    );
+    assert.ok(
+      observedComm.includes("java"),
+      `Connector process command must be java, observed: ${observedComm}`,
+    );
+  } else {
+    // Explicitly record skipped proof with reason rather than silently counting as passed
+    t.diagnostic(
+      `SKIPPED OS process parentage verification: ps command unavailable (${osInspectionError?.message})`,
+    );
+  }
+
+  // Communication helper: send JSON line, read response line
+  let responseBuffer = "";
+  let pendingLines = [];
+  let lineWaiters = [];
+  let connectorFailure = null;
+
+  connector.stdout.setEncoding("utf8");
+  connector.stdout.on("data", (chunk) => {
+    responseBuffer += chunk;
+    const lines = responseBuffer.split("\n");
+    responseBuffer = lines.pop(); // incomplete line
+    for (const l of lines) {
+      if (l.trim()) {
+        if (lineWaiters.length > 0) {
+          const waiter = lineWaiters.shift();
+          waiter.resolve(l.trim());
+        } else {
+          pendingLines.push(l.trim());
+        }
+      }
+    }
+  });
+
+  const onConnectorExit = (code, signal) => {
+    connectorFailure = new Error(
+      `Connector process exited unexpectedly with code ${code} (signal ${signal}) while waiting for response`,
+    );
+    while (lineWaiters.length > 0) {
+      const waiter = lineWaiters.shift();
+      waiter.reject(connectorFailure);
+    }
+  };
+  const onConnectorError = (err) => {
+    connectorFailure = new Error(
+      `Connector process emitted error: ${err.message}`,
+    );
+    while (lineWaiters.length > 0) {
+      const waiter = lineWaiters.shift();
+      waiter.reject(connectorFailure);
+    }
+  };
+  connector.once("exit", onConnectorExit);
+  connector.once("error", onConnectorError);
+
+  function nextResponse(timeoutMs = 10_000) {
+    if (connectorFailure) {
+      return Promise.reject(connectorFailure);
+    }
+    if (pendingLines.length > 0) {
+      return Promise.resolve(pendingLines.shift());
+    }
+    return new Promise((resolve, reject) => {
+      let waiterObj = null;
+      const timer = setTimeout(() => {
+        const idx = lineWaiters.indexOf(waiterObj);
+        if (idx !== -1) lineWaiters.splice(idx, 1);
+        reject(
+          new Error(`Timeout (${timeoutMs}ms) waiting for connector response`),
+        );
+      }, timeoutMs);
+      waiterObj = {
+        resolve: (line) => {
+          clearTimeout(timer);
+          resolve(line);
+        },
+        reject: (err) => {
+          clearTimeout(timer);
+          reject(err);
+        },
+      };
+      lineWaiters.push(waiterObj);
+    });
+  }
+
+  // 1. Initialize
+  connector.stdin.write(
+    JSON.stringify({
+      jsonrpc: "2.0",
+      id: "init-1",
+      method: "initialize",
+      params: {
+        protocolVersion: "2025-06-18",
+        capabilities: {},
+        clientInfo: { name: "test-client", version: "1.0.0" },
+      },
+    }) + "\n",
+  );
+  const initRes = JSON.parse(await nextResponse());
+  assert.equal(initRes.id, "init-1");
+  assert.equal(initRes.result.serverInfo.name, "TracePermit");
+
+  // 2. Initialized notification
+  connector.stdin.write(
+    JSON.stringify({
+      jsonrpc: "2.0",
+      method: "notifications/initialized",
+      params: {},
+    }) + "\n",
+  );
+
+  // 3. Tools list
+  connector.stdin.write(
+    JSON.stringify({
+      jsonrpc: "2.0",
+      id: 2,
+      method: "tools/list",
+      params: {},
+    }) + "\n",
+  );
+  const listRes = JSON.parse(await nextResponse());
+  assert.equal(listRes.id, 2);
+  const toolNames = listRes.result.tools.map((t) => t.name);
+  assert.ok(toolNames.includes("aws.logs.filter_log_events"));
+  assert.ok(toolNames.includes("aws.ec2.terminate_instances"));
+
+  // 4. Tools call: read allowed (aws.logs.filter_log_events)
+  connector.stdin.write(
+    JSON.stringify({
+      jsonrpc: "2.0",
+      id: 3,
+      method: "tools/call",
+      params: {
+        name: "aws.logs.filter_log_events",
+        arguments: {
+          logGroupName: "/app/staging",
+          filterPattern: "WARN",
+          limit: 2,
+        },
+      },
+    }) + "\n",
+  );
+  const readRes = JSON.parse(await nextResponse());
+  assert.equal(readRes.id, 3);
+  const readPayload = JSON.parse(readRes.result.content[0].text);
+  assert.equal(readPayload.evaluation.decision.outcome, "allow");
+  assert.equal(readPayload.execution.status, "executed");
+
+  // 5. Tools call: termination blocked by policy (aws.ec2.terminate_instances)
+  connector.stdin.write(
+    JSON.stringify({
+      jsonrpc: "2.0",
+      id: 4,
+      method: "tools/call",
+      params: {
+        name: "aws.ec2.terminate_instances",
+        arguments: { instanceIds: ["i-simulated-1"] },
+      },
+    }) + "\n",
+  );
+  const terminateRes = JSON.parse(await nextResponse());
+  assert.equal(terminateRes.id, 4);
+  assert.equal(terminateRes.result.isError, true);
+  const terminatePayload = JSON.parse(terminateRes.result.content[0].text);
+  assert.equal(terminatePayload.evaluation.decision.outcome, "block");
+  assert.equal(terminatePayload.execution.status, "denied");
+
+  // 6. Tools call: unknown tool rejected
+  connector.stdin.write(
+    JSON.stringify({
+      jsonrpc: "2.0",
+      id: 5,
+      method: "tools/call",
+      params: {
+        name: "aws.ec2.unknown_operation",
+        arguments: {},
+      },
+    }) + "\n",
+  );
+  const unknownRes = JSON.parse(await nextResponse());
+  assert.equal(unknownRes.id, 5);
+  assert.equal(unknownRes.error.code, -32602);
+
+  // 7. Expired credential rejection test
+  expiredConnector = spawn(launcher, ["--run"], {
+    cwd: unrelatedCwd,
+    env: {
+      ...clientEnv,
+      TRACEPERMIT_CONNECTOR_BEARER_TOKEN: "expired-test-token",
+    },
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+
+  let expiredResp = "";
+  expiredConnector.stdout.setEncoding("utf8");
+  const expiredPromise = new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(new Error("Timeout waiting for expired connector response line"));
+    }, 5000);
+    const onData = (chunk) => {
+      expiredResp += chunk;
+      if (expiredResp.includes("\n")) {
+        cleanup();
+        resolve(expiredResp.trim());
+      }
+    };
+    const onError = (err) => {
+      cleanup();
+      reject(err);
+    };
+    const onExit = (code) => {
+      cleanup();
+      if (!expiredResp.includes("\n")) {
+        reject(new Error(`Expired connector exited early with code ${code}`));
+      }
+    };
+    function cleanup() {
+      clearTimeout(timer);
+      expiredConnector.stdout.removeListener("data", onData);
+      expiredConnector.removeListener("error", onError);
+      expiredConnector.removeListener("exit", onExit);
+    }
+    expiredConnector.stdout.on("data", onData);
+    expiredConnector.on("error", onError);
+    expiredConnector.on("exit", onExit);
+  });
+
+  expiredConnector.stdin.write(
+    JSON.stringify({
+      jsonrpc: "2.0",
+      id: "exp-1",
+      method: "tools/list",
+      params: {},
+    }) + "\n",
+  );
+
+  const expRes = JSON.parse(await expiredPromise);
+  assert.equal(expRes.id, "exp-1");
+  assert.equal(expRes.error.code, -32000);
+  assert.equal(expRes.error.data.tracepermitCode, "EXPIRED_BEARER_TOKEN");
+  expiredConnector.stdin.end();
+
+  // 8. Clean EOF / shutdown on primary connector
+  connector.removeListener("exit", onConnectorExit);
+  connector.removeListener("error", onConnectorError);
+  connector.stdin.end();
+  const exitCode = await new Promise((resolve) => {
+    connector.once("exit", (code) => resolve(code));
+    setTimeout(() => resolve("TIMEOUT"), 5000);
+  });
+  assert.equal(exitCode, 0, "Connector must exit cleanly with code 0 on EOF");
+
+  // 9. Fetch gateway counters and assert exact values with bounded fetch timeout!
+  const countersRes = await fetch(`http://127.0.0.1:${gatewayPort}/counters`, {
+    signal: AbortSignal.timeout(5000),
+  });
+  assert.equal(countersRes.status, 200);
+  const counters = await countersRes.json();
+
+  assert.ok(
+    counters.requestsReceived >= 6,
+    `requestsReceived: ${counters.requestsReceived}`,
+  );
+  assert.equal(counters.initializeCount, 1, "initializeCount must be 1");
+  assert.ok(counters.toolsListCount >= 1, "toolsListCount must be >= 1");
+  assert.equal(counters.readAllowedCount, 1, "readAllowedCount must be 1");
+  assert.equal(counters.policyBlockedCount, 1, "policyBlockedCount must be 1");
+  assert.equal(
+    counters.unknownToolRejectedCount,
+    1,
+    "unknownToolRejectedCount must be 1",
+  );
+  assert.equal(
+    counters.expiredCredentialRejectedCount,
+    1,
+    "expiredCredentialRejectedCount must be 1",
+  );
+
+  // CRITICAL REQUIREMENT: policy block and unknown tool must NOT invoke target executor!
+  // Only the single allowed read invokes the executor!
+  assert.equal(
+    counters.targetExecutorInvocations,
+    1,
+    "Target executor must ONLY be invoked for the allowed read (not for blocks or unknown tools)",
+  );
+
+  // 10. Clean shutdown of gateway
+  gatewayProcess.stdin.write("SHUTDOWN\n");
+  gatewayProcess.stdin.end();
+  const gatewayExit = await new Promise((resolve) => {
+    gatewayProcess.once("exit", (code) => resolve(code));
+    setTimeout(() => resolve("TIMEOUT"), 5000);
+  });
+  assert.equal(gatewayExit, 0, "Gateway must exit cleanly with code 0");
+});
+
+test("fixture failure bounds and graceful termination: silent child, early exit, ignored SIGTERM, stalled response, failed setup", async (t) => {
+  // 1. Test waitForProcessPattern on genuinely silent child: alive and producing no output, times out boundedly
+  const silentChild = spawn(
+    process.execPath,
+    ["-e", "setInterval(() => {}, 1000)"],
+    {
+      stdio: ["pipe", "pipe", "pipe"],
+    },
+  );
+  // Register cleanup before waiting
+  t.after(() => gracefulTerminate(silentChild, "silentChild"));
+
+  const silentStart = Date.now();
+  await assert.rejects(
+    waitForProcessPattern(silentChild, /READY/, 300, "silentChild ready"),
+    /Timeout \(300ms\) waiting for silentChild ready/,
+    "Genuinely silent child must timeout within bound",
+  );
+  assert.ok(
+    Date.now() - silentStart < 1500,
+    "Silent child timeout must be bounded",
+  );
+  await gracefulTerminate(silentChild, "silentChild", 1000);
+  assert.ok(
+    silentChild.exitCode !== null || silentChild.signalCode !== null,
+    "Silent child must be terminated by gracefulTerminate",
+  );
+
+  // 2. Test waitForProcessPattern on early-exited child: rejects immediately with exit code
+  const earlyExitChild = spawn(process.execPath, ["-e", "process.exit(42)"], {
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  // Register cleanup before waiting
+  t.after(() => gracefulTerminate(earlyExitChild, "earlyExitChild"));
+
+  const earlyStart = Date.now();
+  await assert.rejects(
+    waitForProcessPattern(
+      earlyExitChild,
+      /READY/,
+      5000,
+      "earlyExitChild ready",
+    ),
+    /Child process exited early with code 42/,
+    "Early exit child must reject immediately before timeout",
+  );
+  assert.ok(
+    Date.now() - earlyStart < 1000,
+    "Early-exited child must reject promptly without waiting for timeout",
+  );
+  await gracefulTerminate(earlyExitChild, "earlyExitChild", 1000);
+
+  // 3. Test waitForProcessPattern on child spawn error (e.g. non-existent command)
+  const errorChild = spawn(
+    "tp-nonexistent-command-probe-for-failure-bounds",
+    [],
+    {
+      stdio: ["pipe", "pipe", "pipe"],
+    },
+  );
+  t.after(() => gracefulTerminate(errorChild, "errorChild"));
+  await assert.rejects(
+    waitForProcessPattern(errorChild, /READY/, 5000, "errorChild ready"),
+    /Child process emitted error/,
+    "Spawn error must reject immediately",
+  );
+
+  // 4. Test gracefulTerminate on already-exited child: returns immediately without hanging
+  const alreadyExited = spawn(process.execPath, ["-e", "process.exit(0)"], {
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  await new Promise((resolve) => alreadyExited.once("exit", resolve));
+  const termStart = Date.now();
+  await gracefulTerminate(alreadyExited, "alreadyExited", 2000);
+  assert.ok(
+    Date.now() - termStart < 100,
+    "gracefulTerminate on already-exited child must return immediately without waiting for timeout",
+  );
+
+  // 5. Test gracefulTerminate on ignored SIGTERM: escalates to SIGKILL and observes exit
+  const stubbornChild = spawn(
+    process.execPath,
+    [
+      "-e",
+      "process.on('SIGTERM', () => {}); console.log('READY'); setInterval(() => {}, 1000)",
+    ],
+    { stdio: ["pipe", "pipe", "pipe"] },
+  );
+  // Register cleanup before waiting
+  t.after(() => {
+    try {
+      stubbornChild.kill("SIGKILL");
+    } catch {}
+  });
+  await waitForProcessPattern(
+    stubbornChild,
+    /READY/,
+    2000,
+    "stubborn child ready",
+  );
+  assert.ok(stubbornChild.pid > 0);
+  await gracefulTerminate(stubbornChild, "stubbornChild", 400);
+  assert.ok(
+    stubbornChild.exitCode !== null || stubbornChild.signalCode !== null,
+    "Stubborn child ignoring SIGTERM must be terminated by escalated SIGKILL",
+  );
+  assert.equal(
+    stubbornChild.signalCode,
+    "SIGKILL",
+    "Stubborn child must have been terminated with SIGKILL",
+  );
+
+  // 4. Stalled counter response: fetch aborts on timeout, sockets destroyed, server closed, port release verified
+  const sockets = new Set();
+  const stalledServer = createServer((_req, _res) => {
+    // Deliberately hold connection open without responding
+  });
+  stalledServer.on("connection", (s) => {
+    sockets.add(s);
+    s.on("close", () => sockets.delete(s));
+  });
+  await new Promise((resolve) => stalledServer.listen(0, "127.0.0.1", resolve));
+  const stalledPort = stalledServer.address().port;
+  assert.ok(stalledPort > 0);
+
+  const abortSignal = AbortSignal.timeout(500);
+  await assert.rejects(
+    fetch(`http://127.0.0.1:${stalledPort}/counters`, { signal: abortSignal }),
+    (err) => err.name === "TimeoutError" || err.name === "AbortError",
+    "Stalled counter response must abort within finite deadline rather than hang",
+  );
+
+  for (const s of sockets) {
+    try {
+      s.destroy();
+    } catch {}
+  }
+  stalledServer.closeAllConnections?.();
+  await new Promise((resolve) => stalledServer.close(resolve));
+
+  const stalledPortReleased = await checkPortReleased(stalledPort, 2000);
+  assert.ok(
+    stalledPortReleased,
+    `Stalled server port ${stalledPort} must be released after socket cleanup and server close`,
+  );
+
+  // 5. Failed setup with port release: resource acquired during setup is freed and port release verified
+  let failedSetupPort = null;
+  const setupError = await (async () => {
+    let tempServer = null;
+    try {
+      tempServer = createServer();
+      await new Promise((resolve) =>
+        tempServer.listen(0, "127.0.0.1", resolve),
+      );
+      failedSetupPort = tempServer.address().port;
+      assert.ok(failedSetupPort > 0);
+      throw new Error("Simulated setup initialization failure");
+    } catch (err) {
+      if (tempServer) {
+        await new Promise((resolve) => tempServer.close(resolve));
+      }
+      return err;
+    }
+  })();
+  assert.equal(setupError.message, "Simulated setup initialization failure");
+  const failedSetupPortReleased = await checkPortReleased(
+    failedSetupPort,
+    2000,
+  );
+  assert.ok(
+    failedSetupPortReleased,
+    `Port ${failedSetupPort} must be released after failed setup cleanup`,
+  );
+
+  // 6. Real owned child that exits cleanly on SIGTERM
+  const termChild = spawn(
+    process.execPath,
+    ["-e", "setInterval(() => {}, 1000)"],
+    {
+      stdio: ["pipe", "pipe", "pipe"],
+    },
+  );
+  t.after(() => gracefulTerminate(termChild, "termChild"));
+  await gracefulTerminate(termChild, "termChild", 2000);
+  assert.ok(
+    termChild.exitCode !== null || termChild.signalCode !== null,
+    "Real child must have confirmed exit after graceful SIGTERM",
+  );
+  assert.equal(
+    termChild.signalCode,
+    "SIGTERM",
+    "Real child must exit on SIGTERM",
+  );
+
+  // 7. Synthetic model child with kill=false and no exit: must reject with ERR_CLEANUP_UNCONFIRMED
+  const modelKillFalse = new EventEmitter();
+  modelKillFalse.exitCode = null;
+  modelKillFalse.signalCode = null;
+  modelKillFalse.pid = 99901;
+  modelKillFalse.kill = () => false;
+
+  await assert.rejects(
+    gracefulTerminate(modelKillFalse, "modelKillFalse", 100),
+    (err) => {
+      assert.equal(err.code, "ERR_CLEANUP_UNCONFIRMED");
+      assert.ok(
+        err.message.includes("[ERR_CLEANUP_UNCONFIRMED]"),
+        `Error must contain stable code: ${err.message}`,
+      );
+      assert.ok(
+        err.message.includes("pid: 99901"),
+        `Error must include bounded PID metadata: ${err.message}`,
+      );
+      assert.ok(
+        err.message.includes("termSent: false") &&
+          err.message.includes("termPhase: REJECTED") &&
+          err.message.includes("killSent: false") &&
+          err.message.includes("killPhase: REJECTED"),
+        `Error must carry fixed safe phase categories: ${err.message}`,
+      );
+      return true;
+    },
+    "Model with kill=false and no exit must reject with ERR_CLEANUP_UNCONFIRMED",
+  );
+  // Verify timer and listeners were completely cleaned up on rejection
+  assert.equal(
+    modelKillFalse.listenerCount("exit"),
+    0,
+    "Exit listener must be cleaned up on unconfirmed cleanup",
+  );
+  assert.equal(
+    modelKillFalse.listenerCount("close"),
+    0,
+    "Close listener must be cleaned up on unconfirmed cleanup",
+  );
+
+  // 8. Synthetic model child with kill throwing and no exit: must reject with ERR_CLEANUP_UNCONFIRMED
+  const modelKillThrow = new EventEmitter();
+  modelKillThrow.exitCode = null;
+  modelKillThrow.signalCode = null;
+  modelKillThrow.pid = 99902;
+  modelKillThrow.kill = () => {
+    throw new Error("simulated ESRCH / permission denied");
+  };
+
+  await assert.rejects(
+    gracefulTerminate(modelKillThrow, "modelKillThrow", 100),
+    (err) => {
+      assert.equal(err.code, "ERR_CLEANUP_UNCONFIRMED");
+      assert.ok(
+        err.message.includes("[ERR_CLEANUP_UNCONFIRMED]"),
+        `Error must contain stable code: ${err.message}`,
+      );
+      assert.ok(
+        err.message.includes("termPhase: FAILED") &&
+          err.message.includes("killPhase: FAILED"),
+        `Error must carry fixed safe phase categories: ${err.message}`,
+      );
+      assert.ok(
+        !err.message.includes("simulated ESRCH"),
+        "Kill error text must never be embedded in public cleanup diagnostics",
+      );
+      assert.equal(
+        err.cause,
+        undefined,
+        "Cleanup error must not attach a raw kill-error cause",
+      );
+      return true;
+    },
+    "Model with kill throwing and no exit must reject with ERR_CLEANUP_UNCONFIRMED",
+  );
+  assert.equal(
+    modelKillThrow.listenerCount("exit"),
+    0,
+    "Exit listener must be cleaned up on throw rejection",
+  );
+  assert.equal(
+    modelKillThrow.listenerCount("close"),
+    0,
+    "Close listener must be cleaned up on throw rejection",
+  );
+
+  // 9. Synthetic model child that exits on TERM: resolves cleanly and cleans up listeners
+  const modelExitOnTerm = new EventEmitter();
+  modelExitOnTerm.exitCode = null;
+  modelExitOnTerm.signalCode = null;
+  modelExitOnTerm.pid = 99903;
+  modelExitOnTerm.kill = (sig) => {
+    setTimeout(() => {
+      modelExitOnTerm.signalCode = sig;
+      modelExitOnTerm.emit("exit", null, sig);
+    }, 15);
+    return true;
+  };
+  await gracefulTerminate(modelExitOnTerm, "modelExitOnTerm", 500);
+  assert.equal(
+    modelExitOnTerm.listenerCount("exit"),
+    0,
+    "Exit listener must be cleaned up on successful exit",
+  );
+  assert.equal(
+    modelExitOnTerm.listenerCount("close"),
+    0,
+    "Close listener must be cleaned up on successful exit",
+  );
+
+  // 10. Preserving primary test failure when cleanup also fails
+  const primaryTestFailure = new Error("primary test assertion failure");
+  const modelFailingCleanup = new EventEmitter();
+  modelFailingCleanup.exitCode = null;
+  modelFailingCleanup.signalCode = null;
+  modelFailingCleanup.pid = 99904;
+  modelFailingCleanup.kill = () => false;
+
+  await assert.rejects(
+    gracefulTerminate(
+      modelFailingCleanup,
+      "modelFailingCleanup",
+      100,
+      primaryTestFailure,
+    ),
+    (err) => {
+      assert.equal(
+        err,
+        primaryTestFailure,
+        "Must rethrow primary test error rather than masking it",
+      );
+      const cleanupErr = err.suppressed?.[0] || err.cause;
+      assert.ok(
+        cleanupErr,
+        "Cleanup error must be attached to primary error as suppressed or cause",
+      );
+      assert.equal(cleanupErr.code, "ERR_CLEANUP_UNCONFIRMED");
+      return true;
+    },
+    "gracefulTerminate must preserve primary error and attach unconfirmed cleanup error",
+  );
+
+  // 11. Timeout diagnostics: unlabelled opaque synthetic output is omitted from public error
+  const opaqueCanary1 = "OPAQUE_UNLABELLED_CANARY_SECRET_TIMEOUT_1234567890";
+  const canaryTimeoutChild = spawn(
+    process.execPath,
+    ["-e", `console.log('${opaqueCanary1}'); setInterval(() => {}, 1000)`],
+    { stdio: ["pipe", "pipe", "pipe"] },
+  );
+  t.after(() => gracefulTerminate(canaryTimeoutChild, "canaryTimeoutChild"));
+  const canaryTimeoutStart = Date.now();
+  await assert.rejects(
+    waitForProcessPattern(
+      canaryTimeoutChild,
+      /UNMATCHABLE_CANARY_PATTERN/,
+      250,
+      "canaryTimeoutChild ready",
+    ),
+    (err) => {
+      assert.equal(err.code, "ERR_READINESS_TIMEOUT");
+      assert.ok(
+        !err.message.includes(opaqueCanary1),
+        "Timeout error message must not leak unlabelled synthetic child output",
+      );
+      assert.ok(
+        err.message.includes("[ERR_READINESS_TIMEOUT]"),
+        `Error message must contain stable error code: ${err.message}`,
+      );
+      assert.ok(
+        err.message.includes("pid:"),
+        `Error message must contain bounded metadata: ${err.message}`,
+      );
+      return true;
+    },
+    "Opaque synthetic timeout must fail with ERR_READINESS_TIMEOUT and omit child output",
+  );
+  assert.ok(
+    Date.now() - canaryTimeoutStart < 1500,
+    "Canary timeout must fail within bounded duration",
+  );
+  await gracefulTerminate(canaryTimeoutChild, "canaryTimeoutChild", 1000);
+
+  // 12. Timeout diagnostics: generic PKCS#8 private-key block is omitted from public error
+  const genericKeyBody = "CANARY_GENERIC_KEY_BODY_DATA_PROBE_9876543210";
+  const genericKeyChild = spawn(
+    process.execPath,
+    [
+      "-e",
+      `console.log('-----BEGIN PRIVATE KEY-----\\n${genericKeyBody}\\n-----END PRIVATE KEY-----'); setInterval(() => {}, 1000)`,
+    ],
+    { stdio: ["pipe", "pipe", "pipe"] },
+  );
+  t.after(() => gracefulTerminate(genericKeyChild, "genericKeyChild"));
+  await assert.rejects(
+    waitForProcessPattern(
+      genericKeyChild,
+      /UNMATCHABLE_KEY_PATTERN/,
+      250,
+      "genericKeyChild ready",
+    ),
+    (err) => {
+      assert.equal(err.code, "ERR_READINESS_TIMEOUT");
+      assert.ok(
+        !err.message.includes(genericKeyBody),
+        "Timeout error message must not leak generic private key body",
+      );
+      assert.ok(
+        !err.message.includes("BEGIN PRIVATE KEY"),
+        "Timeout error message must not include private key headers",
+      );
+      return true;
+    },
+    "Generic PKCS#8 timeout must fail with ERR_READINESS_TIMEOUT and omit key material",
+  );
+  await gracefulTerminate(genericKeyChild, "genericKeyChild", 1000);
+
+  // 13. Timeout diagnostics: truncated private-key block is omitted from public error
+  const truncatedKeyBody = "CANARY_TRUNCATED_KEY_BODY_PROBE_456789";
+  const truncatedKeyChild = spawn(
+    process.execPath,
+    [
+      "-e",
+      `console.log('-----BEGIN PRIVATE KEY-----\\n${truncatedKeyBody}'); setInterval(() => {}, 1000)`,
+    ],
+    { stdio: ["pipe", "pipe", "pipe"] },
+  );
+  t.after(() => gracefulTerminate(truncatedKeyChild, "truncatedKeyChild"));
+  await assert.rejects(
+    waitForProcessPattern(
+      truncatedKeyChild,
+      /UNMATCHABLE_TRUNCATED_PATTERN/,
+      250,
+      "truncatedKeyChild ready",
+    ),
+    (err) => {
+      assert.equal(err.code, "ERR_READINESS_TIMEOUT");
+      assert.ok(
+        !err.message.includes(truncatedKeyBody),
+        "Timeout error message must not leak truncated private key body",
+      );
+      return true;
+    },
+    "Truncated PKCS#8 timeout must fail with ERR_READINESS_TIMEOUT and omit key material",
+  );
+  await gracefulTerminate(truncatedKeyChild, "truncatedKeyChild", 1000);
+
+  // 14. Early-exit diagnostics: unlabelled opaque synthetic output is omitted from public error
+  const opaqueCanary2 = "OPAQUE_UNLABELLED_CANARY_EXIT_SECRET_abcdef123456";
+  const opaqueExitChild = spawn(
+    process.execPath,
+    ["-e", `console.log('${opaqueCanary2}'); process.exit(17)`],
+    { stdio: ["pipe", "pipe", "pipe"] },
+  );
+  t.after(() => gracefulTerminate(opaqueExitChild, "opaqueExitChild"));
+  await assert.rejects(
+    waitForProcessPattern(
+      opaqueExitChild,
+      /UNMATCHABLE_EXIT_PATTERN/,
+      3000,
+      "opaqueExitChild ready",
+    ),
+    (err) => {
+      assert.equal(err.code, "ERR_READINESS_EARLY_EXIT");
+      assert.ok(
+        !err.message.includes(opaqueCanary2),
+        "Early exit error message must not leak unlabelled child output",
+      );
+      assert.ok(
+        err.message.includes("code 17"),
+        `Early exit error message must report validated exit code 17: ${err.message}`,
+      );
+      return true;
+    },
+    "Opaque synthetic early exit must fail with ERR_READINESS_EARLY_EXIT and omit child output",
+  );
+  await gracefulTerminate(opaqueExitChild, "opaqueExitChild", 1000);
+
+  // 15. Early-exit diagnostics: Bearer token is omitted from public error
+  const bearerSecret = "canary-bearer-token-1234567890abcdef-secret";
+  const canaryEarlyExitChild = spawn(
+    process.execPath,
+    [
+      "-e",
+      `console.log('Authorization: Bearer ${bearerSecret}'); process.exit(19)`,
+    ],
+    { stdio: ["pipe", "pipe", "pipe"] },
+  );
+  t.after(() =>
+    gracefulTerminate(canaryEarlyExitChild, "canaryEarlyExitChild"),
+  );
+  const canaryExitStart = Date.now();
+  await assert.rejects(
+    waitForProcessPattern(
+      canaryEarlyExitChild,
+      /UNMATCHABLE_CANARY_PATTERN/,
+      3000,
+      "canaryEarlyExitChild ready",
+    ),
+    (err) => {
+      assert.equal(err.code, "ERR_READINESS_EARLY_EXIT");
+      assert.ok(
+        !err.message.includes(bearerSecret),
+        "Early exit error message must not leak bearer token",
+      );
+      assert.ok(
+        err.message.includes("code 19"),
+        `Error message must report exit code 19: ${err.message}`,
+      );
+      return true;
+    },
+    "Synthetic canary early exit must fail with ERR_READINESS_EARLY_EXIT and omit token",
+  );
+  assert.ok(
+    Date.now() - canaryExitStart < 1500,
+    "Canary early exit must reject promptly",
+  );
+  await gracefulTerminate(canaryEarlyExitChild, "canaryEarlyExitChild", 1000);
+
+  // 16. Early-exit diagnostics: JWT token is omitted from public error
+  const jwtSecret =
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjYW5hcnkiOiJzZWNyZXQifQ.synthetic_signature_1234567890";
+  const jwtExitChild = spawn(
+    process.execPath,
+    [
+      "-e",
+      `console.log('Authorization: Bearer ${jwtSecret}'); process.exit(23)`,
+    ],
+    { stdio: ["pipe", "pipe", "pipe"] },
+  );
+  t.after(() => gracefulTerminate(jwtExitChild, "jwtExitChild"));
+  await assert.rejects(
+    waitForProcessPattern(
+      jwtExitChild,
+      /UNMATCHABLE_JWT_PATTERN/,
+      3000,
+      "jwtExitChild ready",
+    ),
+    (err) => {
+      assert.equal(err.code, "ERR_READINESS_EARLY_EXIT");
+      assert.ok(
+        !err.message.includes(jwtSecret),
+        "Early exit error message must not leak JWT token",
+      );
+      assert.ok(
+        err.message.includes("code 23"),
+        `Error message must report exit code 23: ${err.message}`,
+      );
+      return true;
+    },
+    "JWT early exit must fail with ERR_READINESS_EARLY_EXIT and omit token",
+  );
+  await gracefulTerminate(jwtExitChild, "jwtExitChild", 1000);
+
+  // 17. Emitted-error diagnostics: child error message is omitted from public error
+  const errorLeakSecret = "CANARY_ERROR_LEAK_SECRET_1234567890";
+  const emitErrorChild = new EventEmitter();
+  emitErrorChild.exitCode = null;
+  emitErrorChild.signalCode = null;
+  emitErrorChild.pid = 99905;
+  emitErrorChild.stdout = new EventEmitter();
+  emitErrorChild.stderr = new EventEmitter();
+
+  const emitPromise = waitForProcessPattern(
+    emitErrorChild,
+    /UNMATCHABLE_PATTERN/,
+    3000,
+    "emitErrorChild ready",
+  );
+  emitErrorChild.emit(
+    "error",
+    new Error(`Internal connection failure: ${errorLeakSecret}`),
+  );
+  await assert.rejects(
+    emitPromise,
+    (err) => {
+      assert.equal(err.code, "ERR_CHILD_EMITTED_ERROR");
+      assert.ok(
+        !err.message.includes(errorLeakSecret),
+        "Emitted error message must not leak child error message text",
+      );
+      assert.ok(
+        err.message.includes("[ERR_CHILD_EMITTED_ERROR]"),
+        `Error message must contain stable code: ${err.message}`,
+      );
+      return true;
+    },
+    "Child emitted error must fail with ERR_CHILD_EMITTED_ERROR and omit internal error text",
+  );
+
+  // 18. Bounded flood control regression: flood of output rejects with ERR_READINESS_FLOOD within bounded total bytes
+  const floodChild = spawn(
+    process.execPath,
+    [
+      "-e",
+      "for (let i = 0; i < 200; i++) console.log('spam_flood_line_chunk_data_probe_'.repeat(20)); setInterval(() => console.log('more_flood_data'), 50)",
+    ],
+    { stdio: ["pipe", "pipe", "pipe"] },
+  );
+  t.after(() => gracefulTerminate(floodChild, "floodChild"));
+  await assert.rejects(
+    waitForProcessPattern(
+      floodChild,
+      /NON_EXISTENT_FLOOD_PATTERN/,
+      5000,
+      "floodChild",
+      { maxTotalBytes: 4096 },
+    ),
+    (err) => {
+      assert.equal(err.code, "ERR_READINESS_FLOOD");
+      assert.ok(
+        err.message.includes("exceeded 4096 bytes"),
+        `Error must mention exceeded bytes limit: ${err.message}`,
+      );
+      return true;
+    },
+    "Stream flood exceeding maxTotalBytes must reject with ERR_READINESS_FLOOD",
+  );
+  await gracefulTerminate(floodChild, "floodChild", 1000);
+
+  // 19. Direct unit verification of redactDiagnosticText helper
+  assert.equal(
+    redactDiagnosticText(
+      "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.e30.t-IDcSemACt8x4iTMCda8Yhe3iZaWbvV5XKSTbuAn0M",
+    ),
+    "Bearer [REDACTED_TOKEN]",
+  );
+  assert.equal(
+    redactDiagnosticText(
+      "-----BEGIN EC PRIVATE KEY-----\nMIGkAgEBBA...\n-----END EC PRIVATE KEY-----",
+    ),
+    "[REDACTED_PRIVATE_KEY]",
+  );
+  assert.equal(
+    redactDiagnosticText(
+      "-----BEGIN PRIVATE KEY-----\nMIGkAgEBBA...\n-----END PRIVATE KEY-----",
+    ),
+    "[REDACTED_PRIVATE_KEY]",
+  );
+  assert.equal(
+    redactDiagnosticText(
+      "-----BEGIN PRIVATE KEY-----\nMIGkAgEBBA... truncated without end",
+    ),
+    "[REDACTED_PRIVATE_KEY]",
+  );
+  assert.equal(
+    redactDiagnosticText("my_secret=abcdef1234567890"),
+    "my_secret=[REDACTED_CREDENTIAL]",
+  );
+  const longText = "a".repeat(300);
+  const truncated = redactDiagnosticText(longText, 50);
+  assert.ok(
+    truncated.length <= 70 && truncated.endsWith("...[truncated]"),
+    "Long diagnostic text must be bounded and truncated",
+  );
+});
+
+test("unconfirmed cleanup diagnostics expose only fixed safe phase categories and never kill-error text", async () => {
+  // Synthetic kill-throw models; these prove diagnostic hygiene, not OS unkillability.
+  const killCanaryPrimaryAbsent =
+    "CLEANUP_KILL_ERROR_CANARY_PRIMARY_ABSENT_1234567890";
+  const modelThrowPrimaryAbsent = new EventEmitter();
+  modelThrowPrimaryAbsent.exitCode = null;
+  modelThrowPrimaryAbsent.signalCode = null;
+  modelThrowPrimaryAbsent.pid = 99906;
+  modelThrowPrimaryAbsent.kill = () => {
+    throw new Error(`internal delivery fault: ${killCanaryPrimaryAbsent}`);
+  };
+
+  await assert.rejects(
+    gracefulTerminate(modelThrowPrimaryAbsent, "modelThrowPrimaryAbsent", 100),
+    (err) => {
+      assert.equal(err.code, "ERR_CLEANUP_UNCONFIRMED");
+      assert.ok(
+        !err.message.includes(killCanaryPrimaryAbsent),
+        "Unconfirmed cleanup message must not embed kill-error text (primary absent)",
+      );
+      assert.ok(
+        !err.stack.includes(killCanaryPrimaryAbsent),
+        "Unconfirmed cleanup stack must not embed kill-error text (primary absent)",
+      );
+      assert.equal(
+        err.cause,
+        undefined,
+        "Cleanup error must not attach a raw kill-error cause",
+      );
+      assert.ok(
+        err.message.includes("termSent: false") &&
+          err.message.includes("termPhase: FAILED") &&
+          err.message.includes("killSent: false") &&
+          err.message.includes("killPhase: FAILED"),
+        `Error must carry fixed safe phase categories: ${err.message}`,
+      );
+      return true;
+    },
+    "Throwing kill with primary absent must reject canary-free with fixed phases",
+  );
+  assert.equal(
+    modelThrowPrimaryAbsent.listenerCount("exit"),
+    0,
+    "Exit listener must be cleaned up on canary rejection (primary absent)",
+  );
+  assert.equal(
+    modelThrowPrimaryAbsent.listenerCount("close"),
+    0,
+    "Close listener must be cleaned up on canary rejection (primary absent)",
+  );
+
+  const killCanaryPrimaryPresent =
+    "CLEANUP_KILL_ERROR_CANARY_PRIMARY_PRESENT_0987654321";
+  const primaryFailure = new Error("primary test assertion failure");
+  const modelThrowPrimaryPresent = new EventEmitter();
+  modelThrowPrimaryPresent.exitCode = null;
+  modelThrowPrimaryPresent.signalCode = null;
+  modelThrowPrimaryPresent.pid = 99907;
+  modelThrowPrimaryPresent.kill = () => {
+    throw new Error(`internal delivery fault: ${killCanaryPrimaryPresent}`);
+  };
+
+  await assert.rejects(
+    gracefulTerminate(
+      modelThrowPrimaryPresent,
+      "modelThrowPrimaryPresent",
+      100,
+      primaryFailure,
+    ),
+    (err) => {
+      assert.equal(err, primaryFailure, "Must rethrow primary error");
+      const cleanupErr = err.suppressed?.[0] || err.cause;
+      assert.ok(
+        cleanupErr,
+        "Cleanup error must stay attached to the primary error",
+      );
+      assert.equal(cleanupErr.code, "ERR_CLEANUP_UNCONFIRMED");
+      const publicText = `${err.message}\n${err.stack}\n${cleanupErr.message}\n${cleanupErr.stack}`;
+      assert.ok(
+        !publicText.includes(killCanaryPrimaryPresent),
+        "Primary-preserved diagnostics must not embed kill-error text",
+      );
+      assert.ok(
+        cleanupErr.message.includes("termPhase: FAILED") &&
+          cleanupErr.message.includes("killPhase: FAILED"),
+        `Attached cleanup error must carry fixed safe phase categories: ${cleanupErr.message}`,
+      );
+      return true;
+    },
+    "Throwing kill with primary present must preserve primary and attach canary-free cleanup error",
+  );
+  assert.equal(
+    modelThrowPrimaryPresent.listenerCount("exit"),
+    0,
+    "Exit listener must be cleaned up on canary rejection (primary present)",
+  );
+  assert.equal(
+    modelThrowPrimaryPresent.listenerCount("close"),
+    0,
+    "Close listener must be cleaned up on canary rejection (primary present)",
+  );
+
+  const modelTermDeliveredKillRejected = new EventEmitter();
+  modelTermDeliveredKillRejected.exitCode = null;
+  modelTermDeliveredKillRejected.signalCode = null;
+  modelTermDeliveredKillRejected.pid = 99908;
+  modelTermDeliveredKillRejected.kill = (sig) => sig === "SIGTERM";
+
+  await assert.rejects(
+    gracefulTerminate(
+      modelTermDeliveredKillRejected,
+      "modelTermDeliveredKillRejected",
+      100,
+    ),
+    (err) => {
+      assert.equal(err.code, "ERR_CLEANUP_UNCONFIRMED");
+      assert.ok(
+        err.message.includes("termSent: true") &&
+          err.message.includes("termPhase: DELIVERED") &&
+          err.message.includes("killSent: false") &&
+          err.message.includes("killPhase: REJECTED"),
+        `Escalation path must carry per-phase categories: ${err.message}`,
+      );
+      return true;
+    },
+    "Delivered TERM with rejected KILL escalation must carry per-phase categories",
+  );
+  assert.equal(
+    modelTermDeliveredKillRejected.listenerCount("exit"),
+    0,
+    "Exit listener must be cleaned up on escalation rejection",
+  );
+  assert.equal(
+    modelTermDeliveredKillRejected.listenerCount("close"),
+    0,
+    "Close listener must be cleaned up on escalation rejection",
+  );
+
+  const modelCooperative = new EventEmitter();
+  modelCooperative.exitCode = null;
+  modelCooperative.signalCode = null;
+  modelCooperative.pid = 99909;
+  modelCooperative.kill = (sig) => {
+    setTimeout(() => {
+      modelCooperative.signalCode = sig;
+      modelCooperative.emit("exit", null, sig);
+    }, 10);
+    return true;
+  };
+  await gracefulTerminate(modelCooperative, "modelCooperative", 500);
+  assert.equal(
+    modelCooperative.listenerCount("exit"),
+    0,
+    "Exit listener must be cleaned up on cooperative success",
+  );
+  assert.equal(
+    modelCooperative.listenerCount("close"),
+    0,
+    "Close listener must be cleaned up on cooperative success",
+  );
+});
+
+test("process parentage verification helper detects PPID and command mismatches", () => {
+  function verifyParentage(psOutput, expectedPpid) {
+    if (!psOutput) throw new Error("OS inspection unavailable");
+    const parts = psOutput.trim().split(/\s+/);
+    if (parts.length < 2)
+      throw new Error(`Invalid ps output format: ${psOutput}`);
+    const observedPpid = parseInt(parts[0], 10);
+    const observedComm = parts.slice(1).join(" ").toLowerCase();
+    assert.equal(
+      observedPpid,
+      expectedPpid,
+      `Connector PPID must equal native spawning client PID (${expectedPpid}), observed: ${observedPpid}`,
+    );
+    assert.ok(
+      observedComm.includes("java"),
+      `Connector process command must be java, observed: ${observedComm}`,
+    );
+  }
+
+  // 1. Matching ppid and java comm succeeds
+  assert.doesNotThrow(() => verifyParentage(`12345 /usr/bin/java`, 12345));
+
+  // 2. PPID mismatch throws AssertionError
+  assert.throws(
+    () => verifyParentage(`99999 /usr/bin/java`, 12345),
+    /Connector PPID must equal native spawning client PID \(12345\)/,
+  );
+
+  // 3. Command mismatch throws AssertionError
+  assert.throws(
+    () => verifyParentage(`12345 /bin/bash`, 12345),
+    /Connector process command must be java/,
+  );
+});
+
+test("Gradle test task tracks connector archive input and invalidates cached green result when archive is replaced", async (t) => {
+  ensureDistributionBuilt();
+  assert.ok(
+    existsSync(distArchive),
+    `Distribution archive must exist at ${distArchive}`,
+  );
+
+  // Backup original archive
+  const backupArchive = `${distArchive}.cache-test-backup`;
+  copyFileSync(distArchive, backupArchive);
+  let restored = false;
+  const restoreArchive = () => {
+    if (!restored && existsSync(backupArchive)) {
+      copyFileSync(backupArchive, distArchive);
+      rmSync(backupArchive, { force: true });
+      restored = true;
+    }
+  };
+  t.after(restoreArchive);
+
+  // 1. Initial run: execute targeted Gradle test against current valid archive
+  const firstRun = spawnSync(
+    join(repoRoot, "java/gradlew"),
+    [
+      "-p",
+      join(repoRoot, "java"),
+      "--no-daemon",
+      ":adapters-http:test",
+      "-Dtracepermit.endpointConnector.requireInstalledArchive=true",
+      "--tests",
+      "io.tracepermit.adapters.http.JavaBackendEndpointConnectorE2eTest.installedArchiveConnectorAgainstRealBackendWithNativePty",
+    ],
+    {
+      cwd: repoRoot,
+      encoding: "utf8",
+      timeout: 180_000,
+    },
+  );
+  assert.equal(
+    firstRun.status,
+    0,
+    `Initial Gradle test run must succeed: ${firstRun.stdout}\n${firstRun.stderr}`,
+  );
+
+  // 2. Corrupt/replace the tracked distribution archive with broken bytes
+  writeFileSync(
+    distArchive,
+    "CORRUPTED_NON_TAR_CONTENT_FOR_CACHE_INVALIDATION_PROOF\n",
+  );
+
+  // 3. Re-run Gradle test for installed archive qualification requiring installed archive
+  // Note: NO --rerun-tasks flag is passed!
+  // If inputs were NOT tracked, Gradle would return UP-TO-DATE / FROM-CACHE.
+  // Because inputs.files(endpointDistributionArchive) is tracked, Gradle detects the change,
+  // re-runs the task, and fails on extracting/validating the corrupt archive.
+  const rerunBroken = spawnSync(
+    join(repoRoot, "java/gradlew"),
+    [
+      "-p",
+      join(repoRoot, "java"),
+      "--no-daemon",
+      ":adapters-http:test",
+      "-Dtracepermit.endpointConnector.requireInstalledArchive=true",
+      "--tests",
+      "io.tracepermit.adapters.http.JavaBackendEndpointConnectorE2eTest.installedArchiveConnectorAgainstRealBackendWithNativePty",
+    ],
+    {
+      cwd: repoRoot,
+      encoding: "utf8",
+      timeout: 180_000,
+    },
+  );
+
+  assert.notEqual(
+    rerunBroken.status,
+    0,
+    "Gradle must fail when archive is replaced with a corrupted one; cached green result must not occur",
+  );
+  const rerunOutput = `${rerunBroken.stdout}\n${rerunBroken.stderr}`;
+  assert.ok(
+    !rerunOutput.includes(":adapters-http:test UP-TO-DATE") &&
+      !rerunOutput.includes(":adapters-http:test FROM-CACHE"),
+    "Task :adapters-http:test must be executed out-of-date, not served from cache",
+  );
+
+  // 4. Restore valid archive
+  restoreArchive();
+});
+
+test("isolated temporary repo proves ordinary Gradle target cannot be UP-TO-DATE or green with stale archive after Git commit advances", async (t) => {
+  ensureDistributionBuilt();
+  assert.ok(
+    existsSync(distArchive),
+    `Distribution archive must exist at ${distArchive}`,
+  );
+
+  const tempRepo = mkdtempSync(join(tmpdir(), "tp-isolated-repo-"));
+  t.after(() => {
+    rmSync(tempRepo, { recursive: true, force: true });
+  });
+
+  // Clone repository using git clone -s -l into tempRepo
+  command("git", ["clone", "-s", "-l", repoRoot, tempRepo], repoRoot);
+
+  // Copy distribution archive to expected build/distributions path in tempRepo
+  const tempDistDir = join(
+    tempRepo,
+    "java/endpoint-connector/build/distributions",
+  );
+  mkdirSync(tempDistDir, { recursive: true });
+  const archiveBaseName = "tracepermit-endpoint-connector-0.1.0.tar.gz";
+  copyFileSync(distArchive, join(tempDistDir, archiveBaseName));
+  if (existsSync(distSha256File)) {
+    copyFileSync(
+      distSha256File,
+      join(tempDistDir, `${archiveBaseName}.sha256`),
+    );
+  }
+
+  // 1. Establish strict success at commit A
+  const runA = spawnSync(
+    join(tempRepo, "java/gradlew"),
+    [
+      "-p",
+      join(tempRepo, "java"),
+      "--no-daemon",
+      ":adapters-http:test",
+      "-Dtracepermit.endpointConnector.requireInstalledArchive=true",
+      "--tests",
+      "io.tracepermit.adapters.http.JavaBackendEndpointConnectorE2eTest.installedArchiveConnectorAgainstRealBackendWithNativePty",
+    ],
+    {
+      cwd: tempRepo,
+      encoding: "utf8",
+      timeout: 180_000,
+    },
+  );
+  assert.equal(
+    runA.status,
+    0,
+    `Strict qualification at commit A must succeed:\n${runA.stdout}\n${runA.stderr}`,
+  );
+
+  // 2. Advance HEAD to commit B in tempRepo without rebuilding or changing archive bytes
+  command(
+    "git",
+    [
+      "-c",
+      "user.name=Test Runner",
+      "-c",
+      "user.email=test@example.com",
+      "commit",
+      "--allow-empty",
+      "-m",
+      "Commit B advancing HEAD without rebuilding archive",
+    ],
+    tempRepo,
+  );
+  const commitB = command("git", ["rev-parse", "HEAD"], tempRepo);
+  assert.ok(
+    commitB && commitB.length >= 40,
+    `Commit B HEAD must be resolved: ${commitB}`,
+  );
+
+  // 3. Prove ordinary non-forced target CANNOT be UP-TO-DATE or green with stale archive A
+  // Notice: NO --rerun-tasks flag is provided!
+  const runB = spawnSync(
+    join(tempRepo, "java/gradlew"),
+    [
+      "-p",
+      join(tempRepo, "java"),
+      "--no-daemon",
+      ":adapters-http:test",
+      "-Dtracepermit.endpointConnector.requireInstalledArchive=true",
+      "--tests",
+      "io.tracepermit.adapters.http.JavaBackendEndpointConnectorE2eTest.installedArchiveConnectorAgainstRealBackendWithNativePty",
+    ],
+    {
+      cwd: tempRepo,
+      encoding: "utf8",
+      timeout: 180_000,
+    },
+  );
+  assert.notEqual(
+    runB.status,
+    0,
+    "Ordinary Gradle target must fail closed when Git advances to commit B with stale archive A",
+  );
+  const outB = `${runB.stdout}\n${runB.stderr}`;
+  assert.ok(
+    !outB.includes(":adapters-http:test UP-TO-DATE") &&
+      !outB.includes(":adapters-http:test FROM-CACHE"),
+    "Task :adapters-http:test must NOT be UP-TO-DATE or served FROM-CACHE when Git HEAD advances",
+  );
+  assert.ok(
+    outB.includes("expected current git HEAD") ||
+      outB.includes("Archive manifest commit was"),
+    `Failure output must identify stale commit mismatch against commit B:\n${outB}`,
+  );
+
+  // 4. Forced-failure sensitivity control: prove explicit mismatched expected commit fails reliably
+  const runSensitivity = spawnSync(
+    join(tempRepo, "java/gradlew"),
+    [
+      "-p",
+      join(tempRepo, "java"),
+      "--no-daemon",
+      ":adapters-http:test",
+      "-Dtracepermit.endpointConnector.requireInstalledArchive=true",
+      "-Dtracepermit.endpointConnector.expectedHeadCommit=0000000000000000000000000000000000000000",
+      "--tests",
+      "io.tracepermit.adapters.http.JavaBackendEndpointConnectorE2eTest.installedArchiveConnectorAgainstRealBackendWithNativePty",
+    ],
+    {
+      cwd: tempRepo,
+      encoding: "utf8",
+      timeout: 180_000,
+    },
+  );
+  assert.notEqual(
+    runSensitivity.status,
+    0,
+    "Forced-failure sensitivity control: mismatched expected commit must fail",
+  );
+  const sensOut = `${runSensitivity.stdout}\n${runSensitivity.stderr}`;
+  assert.ok(
+    sensOut.includes("0000000000000000000000000000000000000000"),
+    `Sensitivity control failure must reflect forced expected commit:\n${sensOut}`,
+  );
+});
+
+test("adapters-http Gradle wiring fails closed on unhealthy git provenance and forwards only validated output", (t) => {
+  const wrapperDir = mkdtempSync(join(tmpdir(), "tp-git-wrapper-"));
+  t.after(() => rmSync(wrapperDir, { recursive: true, force: true }));
+
+  const writeGitWrapper = (body) => {
+    const wrapper = join(wrapperDir, "git");
+    writeFileSync(wrapper, `#!/bin/sh\n${body}\n`);
+    chmodSync(wrapper, 0o755);
+  };
+
+  const gradleArgs = [
+    "-p",
+    join(repoRoot, "java"),
+    "--no-daemon",
+    ":adapters-http:printEndpointConnectorExpectedHead",
+  ];
+  const runWiredPrint = (wrapperBody, { timeoutMs = 150_000 } = {}) => {
+    const env = { ...process.env };
+    if (wrapperBody !== null) {
+      writeGitWrapper(wrapperBody);
+      env.PATH = `${wrapperDir}:${env.PATH ?? ""}`;
+    }
+    return spawnSync(join(repoRoot, "java/gradlew"), gradleArgs, {
+      cwd: repoRoot,
+      encoding: "utf8",
+      timeout: timeoutMs,
+      env,
+    });
+  };
+
+  const printedHead = (result, label) => {
+    assert.equal(
+      result.status,
+      0,
+      `${label} must succeed:\n${result.stdout}\n${result.stderr}`,
+    );
+    const line = result.stdout
+      .split("\n")
+      .find((candidate) =>
+        candidate.startsWith("TRACEPERMIT_ENDPOINT_CONNECTOR_EXPECTED_HEAD="),
+      );
+    assert.ok(
+      line,
+      `Wiring must print the resolved expected head (${label}):\n${result.stdout}`,
+    );
+    return line.split("=")[1];
+  };
+
+  // Positive control 1: healthy real git resolves exactly the current HEAD.
+  const actualHead = command("git", ["rev-parse", "HEAD"], repoRoot);
+  assert.equal(
+    printedHead(runWiredPrint(null), "healthy real git"),
+    actualHead,
+    "Wiring must forward exactly the validated git HEAD",
+  );
+
+  // Positive control 2: wrapper forwarding to the real git yields the same value,
+  // proving the wiring consults git via PATH at the provider boundary. The wrapper
+  // embeds the absolute real-git path resolved before any PATH poisoning; a
+  // `command -v git` self-reference would loop instead of forwarding.
+  const realGitPath = command("sh", ["-c", "command -v git"], repoRoot);
+  assert.equal(
+    printedHead(
+      runWiredPrint(`exec '${realGitPath}' rev-parse HEAD`),
+      "wrapper-forwarded git",
+    ),
+    actualHead,
+    "PATH-forwarded git output must reach the injected value unchanged",
+  );
+
+  const staleSha = "1234567890abcdef1234567890abcdef12345678";
+
+  // Exploit sensitivity: a private git wrapper printing a valid stale SHA then exiting 73
+  // must fail configuration closed; the stale value must never be authorized or printed.
+  const exploit = runWiredPrint(`echo '${staleSha}'; exit 73`);
+  assert.notEqual(
+    exploit.status,
+    0,
+    "Non-zero git probe exit (73) with a stale valid-format SHA must fail the build",
+  );
+  const exploitOut = `${exploit.stdout}\n${exploit.stderr}`;
+  assert.match(
+    exploitOut,
+    /non-zero exit value 73/,
+    `Failure must identify the failed git probe exit code:\n${exploitOut}`,
+  );
+  assert.ok(
+    !exploitOut.includes("TRACEPERMIT_ENDPOINT_CONNECTOR_EXPECTED_HEAD="),
+    "No expected-head value may be printed when the git probe fails",
+  );
+
+  // Empty probe output must fail closed (never authorize an empty expectation).
+  const empty = runWiredPrint("exit 0");
+  assert.notEqual(
+    empty.status,
+    0,
+    "Empty git probe output must fail the build",
+  );
+  assert.match(
+    empty.stderr + empty.stdout,
+    /provenance is unavailable, ambiguous, or malformed/,
+    `Empty output must produce the fixed fail-closed message:\n${empty.stdout}\n${empty.stderr}`,
+  );
+
+  // Malformed probe output must fail closed.
+  const malformed = runWiredPrint("echo 'not-a-commit-value'; exit 0");
+  assert.notEqual(
+    malformed.status,
+    0,
+    "Malformed git probe output must fail the build",
+  );
+  assert.match(
+    malformed.stderr + malformed.stdout,
+    /provenance is unavailable, ambiguous, or malformed/,
+    `Malformed output must produce the fixed fail-closed message:\n${malformed.stdout}\n${malformed.stderr}`,
+  );
+
+  // Ambiguous multi-line probe output must fail closed.
+  const ambiguous = runWiredPrint(
+    `echo '${staleSha}'; echo 'warning: ambiguous refname'; exit 0`,
+  );
+  assert.notEqual(
+    ambiguous.status,
+    0,
+    "Ambiguous git probe output must fail the build",
+  );
+  assert.match(
+    ambiguous.stderr + ambiguous.stdout,
+    /provenance is unavailable, ambiguous, or malformed/,
+    `Ambiguous output must produce the fixed fail-closed message:\n${ambiguous.stdout}\n${ambiguous.stderr}`,
+  );
+
+  // Unusable git models missing provenance tooling and must fail closed. At the
+  // supervising-perl boundary a failed exec (tooling absent) exits 127, so an
+  // executable stub exiting 127 exercises the same fail-closed exit path. A
+  // non-executable PATH entry is not a faithful model here: execvp skips it and
+  // resolves real git further down PATH, which returns true provenance.
+  const missing = runWiredPrint("exit 127");
+  assert.notEqual(
+    missing.status,
+    0,
+    "Unusable git probe (models missing provenance tooling, exit 127) must fail the build",
+  );
+
+  // Stalled probe: the build wiring's supervising perl bounds the child (kills it at
+  // the 10s deadline from the parent process, which never execs) and this test bounds
+  // the parent (spawnSync timeout). The wrapper models a stalled git; this proves the
+  // finite-deadline fail-closed behavior, not real git behavior.
+  const stalledStart = Date.now();
+  const stalled = runWiredPrint("sleep 120", { timeoutMs: 150_000 });
+  const stalledElapsed = Date.now() - stalledStart;
+  assert.notEqual(stalled.status, 0, "Stalled git probe must fail closed");
+  assert.match(
+    stalled.stderr + stalled.stdout,
+    /non-zero exit value 124/,
+    `Stalled probe must be killed by the supervisor at the finite deadline:\n${stalled.stdout}\n${stalled.stderr}`,
+  );
+  assert.ok(
+    stalledElapsed < 75_000,
+    `Stalled probe must hit the finite deadline promptly; elapsed ${stalledElapsed}ms`,
+  );
+
+  // The deadline must cover complete output collection, not just git's own exit.
+  // A healthy git exiting 0 while a descendant inherits the probe's stdout and
+  // stderr and outlives it must not authorize provenance: the supervisor cannot
+  // prove collection is complete, so it fails closed at the finite deadline
+  // (intentional red control proving bounded collection, not real git behavior).
+  const collectionStart = Date.now();
+  const collection = runWiredPrint(
+    `${realGitPath} rev-parse HEAD; sleep 120 &\nexit 0`,
+    { timeoutMs: 150_000 },
+  );
+  const collectionElapsed = Date.now() - collectionStart;
+  assert.notEqual(
+    collection.status,
+    0,
+    "Exit-0 probe with a lingering inherited-pipe descendant must fail closed",
+  );
+  assert.match(
+    collection.stderr + collection.stdout,
+    /non-zero exit value 124/,
+    `Collection-bounded supervisor must kill the whole probe group at the deadline:\n${collection.stdout}\n${collection.stderr}`,
+  );
+  assert.ok(
+    !(collection.stderr + collection.stdout).includes(
+      "TRACEPERMIT_ENDPOINT_CONNECTOR_EXPECTED_HEAD=",
+    ),
+    "No expected-head value may be printed when collection cannot be proven complete",
+  );
+  assert.ok(
+    collectionElapsed < 75_000,
+    `Collection deadline must bound a lingering descendant; elapsed ${collectionElapsed}ms`,
+  );
+
+  // A sabotaged git (valid-format stale SHA, exit 73) that leaves a descendant
+  // holding the inherited streams must still fail closed and promptly: the
+  // supervisor kills the whole group and relays nothing on a non-zero exit.
+  const sabotageStart = Date.now();
+  const sabotage = runWiredPrint(`echo '${staleSha}'; sleep 120 &\nexit 73`, {
+    timeoutMs: 150_000,
+  });
+  const sabotageElapsed = Date.now() - sabotageStart;
+  assert.notEqual(
+    sabotage.status,
+    0,
+    "Exit-73 probe with a lingering inherited-pipe descendant must fail closed",
+  );
+  assert.match(
+    sabotage.stderr + sabotage.stdout,
+    /non-zero exit value 73/,
+    `Non-zero exit must fail promptly even with a lingering descendant:\n${sabotage.stdout}\n${sabotage.stderr}`,
+  );
+  assert.ok(
+    !(sabotage.stderr + sabotage.stdout).includes(
+      "TRACEPERMIT_ENDPOINT_CONNECTOR_EXPECTED_HEAD=",
+    ),
+    "No expected-head value may be printed when the git probe fails",
+  );
+  assert.ok(
+    sabotageElapsed < 75_000,
+    `Exit-73 with a lingering descendant must fail promptly; elapsed ${sabotageElapsed}ms`,
+  );
+});
+
+test("adapters-http provenance wiring re-resolves git head after commit-only advance in isolated clone", (t) => {
+  const tempRepo = mkdtempSync(join(tmpdir(), "tp-adapters-provenance-clone-"));
+  t.after(() => rmSync(tempRepo, { recursive: true, force: true }));
+  command("git", ["clone", "-s", "-l", repoRoot, tempRepo], repoRoot);
+
+  // The clone carries committed HEAD state only; overlay the live wiring under
+  // qualification so the test exercises the current build script, not HEAD's.
+  copyFileSync(
+    join(repoRoot, "java/adapters-http/build.gradle.kts"),
+    join(tempRepo, "java/adapters-http/build.gradle.kts"),
+  );
+
+  const printWiredHead = () =>
+    spawnSync(
+      join(tempRepo, "java/gradlew"),
+      [
+        "-p",
+        join(tempRepo, "java"),
+        "--no-daemon",
+        ":adapters-http:printEndpointConnectorExpectedHead",
+      ],
+      { cwd: tempRepo, encoding: "utf8", timeout: 180_000 },
+    );
+  const printedHead = (result, label) => {
+    assert.equal(
+      result.status,
+      0,
+      `${label} must succeed:\n${result.stdout}\n${result.stderr}`,
+    );
+    const line = result.stdout
+      .split("\n")
+      .find((candidate) =>
+        candidate.startsWith("TRACEPERMIT_ENDPOINT_CONNECTOR_EXPECTED_HEAD="),
+      );
+    assert.ok(
+      line,
+      `Wiring must print the resolved expected head (${label}):\n${result.stdout}`,
+    );
+    return line.split("=")[1];
+  };
+
+  const runA = printWiredHead();
+  const headA = printedHead(runA, "commit A");
+  assert.equal(
+    headA,
+    command("git", ["rev-parse", "HEAD"], tempRepo),
+    "Wiring must resolve the isolated clone's HEAD at commit A",
+  );
+
+  command(
+    "git",
+    [
+      "-c",
+      "user.name=Test Runner",
+      "-c",
+      "user.email=test@example.com",
+      "commit",
+      "--allow-empty",
+      "--quiet",
+      "-m",
+      "Commit B advancing adapters-http provenance wiring",
+    ],
+    tempRepo,
+  );
+  const headB = command("git", ["rev-parse", "HEAD"], tempRepo);
+  assert.notEqual(headA, headB);
+
+  const resolvedB = printedHead(printWiredHead(), "commit B");
+  assert.equal(
+    resolvedB,
+    headB,
+    "Commit-only advance must re-resolve provenance (configuration and task caches invalidated)",
+  );
+});

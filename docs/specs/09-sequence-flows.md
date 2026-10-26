@@ -54,6 +54,32 @@ sequenceDiagram
   G-->>C: MCP tool result
 ```
 
+### Public-client browser login (synthetic qualification)
+
+```mermaid
+sequenceDiagram
+  participant B as Same-Mac browser
+  participant J as Loopback Java adapter
+  participant I as Configured test IdP
+  B->>J: GET /auth/login
+  J-->>B: Binder cookie and code/S256 authorization redirect
+  B->>I: client_id, exact redirect, configured organization, state, nonce, challenge
+  I-->>B: code, state, exact iss
+  B->>J: Callback plus binder cookie
+  J->>J: Atomically consume state, verify binder/state/issuer
+  J->>I: code + verifier + exact redirect + client_id; no secret/header
+  I-->>J: Signed API and ID tokens
+  J->>J: Independently verify keys, claims, organization and nonce
+  J->>J: Require API approvals.read and current human enrollment
+  J-->>B: Opaque expiring local session; tokens stay in Java
+```
+
+Callback replay or concurrent loss stops before another exchange. ID-token
+nonce substitution prevents replay into a new flow. `openid` requests OIDC,
+not API authority. Schema1.0 uses confidential Basic on the same PKCE path.
+The synthetic fixture does not prove Auth0 emits `iss` or compatible tokens;
+see [ADR0063](../architecture/0063-explicit-public-browser-code-pkce.md).
+
 ## 1A. Production OAuth/JWKS verification foundation
 
 The Java verification flow is implemented through the verified-identity
@@ -703,3 +729,22 @@ The tunnel runtime key authenticates `tunnel-client` to the provider transport.
 The local development bearer authenticates a fixed simulated web profile to
 Java. Neither establishes who is signed into ChatGPT; production attribution
 requires application OAuth/OIDC claims independently verified by TracePermit.
+
+## 13. Installed requester login and one-use Codex launch
+
+1. The owner runs the offline helper check against a closed `0600` config and
+   existing `0700` credential directory; no network or file is created.
+2. Login binds the exact `127.0.0.1` callback before opening the browser and sends
+   one Code + S256 request with state, nonce, organization and exact requester
+   scopes.
+3. One callback attempt must match method, path, Host, state and issuer. The
+   helper exchanges the code without a secret, then independently verifies both
+   signed tokens and exact subject/client/org/scope/time.
+4. A bodyless bearer qualification call rechecks current requester-only
+   enrollment. Only then is one short-lived no-replace credential published.
+5. Explicit `--codex` revalidates and unlinks the credential before launching the
+   pinned child. The bearer exists only in its environment; the HTTP MCP route
+   continues to authenticate and authorize every method.
+6. Expiry or any uncertainty stops. A human may explicitly re-login as the same
+   identity, check the saved ID/hash and resume once; no request is recreated or
+   retried automatically.

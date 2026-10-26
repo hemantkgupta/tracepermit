@@ -50,6 +50,30 @@
 | SEC-019 | Automated reconciliation MUST use read-only lookup bound to the durable tenant, adapter, and idempotency identity and MUST NOT retry the original target effect.                                         |
 | SEC-020 | Security telemetry MUST use bounded low-cardinality fields, exclude credentials and sensitive payloads, and fail closed before authorized remote dispatch when required telemetry is unavailable.        |
 
+## Local public-client browser interpretation
+
+FR-003/007/012 and SEC-002/003/004/009/011/012/015 apply to the optional
+schema1.1 native/public candidate. Method `none` SHALL require code/S256 PKCE,
+exact numeric-loopback callback and one-use browser-bound state/nonce. It MUST
+NOT accept a client secret or infer public behavior from a missing confidential
+secret. Signed ID and API tokens SHALL independently validate their issuer,
+audience, subject, client, organization, time and trusted key bindings.
+`openid` selects OIDC in the authorization request; the API token SHALL carry
+`approvals.read` for public login and the operation-specific approval scopes
+for API use. It need not echo `openid`. Existing schema1.0 confidential behavior
+SHALL remain compatible. See [ADR0063](../architecture/0063-explicit-public-browser-code-pkce.md).
+
+OPS-001/004/005 do not turn offline validation or local DB readiness into live
+IdP or production readiness. Auth0 `at+jwt`, callback `iss` and native
+organization interoperability remain pending qualification.
+
+Rejected browser login callbacks SHALL keep the HTTP response generic while
+the local operator process MAY emit one fixed stage and one allowlisted reason.
+That diagnostic MUST NOT include exception text, URLs, identifiers, claims,
+credentials or sensitive payloads; a diagnostic-sink failure MUST NOT change
+the authentication result. These local signals are troubleshooting evidence,
+not an authorization input or a successful IdP qualification.
+
 ## Reliability requirements
 
 | ID      | Requirement                                                                                                                                         |
@@ -103,3 +127,18 @@ The following are proposed initial objectives and require product confirmation:
 | PORT-002 | Canonicalization SHALL be versioned and backed by deterministic golden vectors.                                |
 | PORT-003 | Java conformance tests SHALL validate checked-in contract artifacts and behavior.                              |
 | PORT-004 | Supported origin adapters SHALL preserve the canonical action and enforcement behavior through contract tests. |
+
+## Installed requester public-client interpretation
+
+The source-free requester helper applies FR-003/007/012,
+SEC-002/003/004/009/011/012/015, REL-001/004/006/009 and
+OPS-001/002/004/005 to one same-Mac simulator profile. It SHALL use a fixed
+numeric-loopback callback, public Code + S256, independently verified tokens,
+exact requester-only enrollment and a no-replace owner-only credential. The
+bearer SHALL be consumed before a fixed Codex child starts and SHALL appear only
+in a child environment variable, never argv, persistent configuration, output or
+evidence. No refresh, retry, replacement request or automatic resume is allowed.
+
+Automated qualification does not establish live provider interoperability,
+prompt/executable identity, endpoint posture, production isolation or a public
+deployment. See [ADR0065](../architecture/0065-installed-requester-public-sign-in.md).

@@ -30,6 +30,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import org.testcontainers.containers.PostgreSQLContainer;
@@ -45,6 +46,16 @@ final class SimulatorApprovalBrowserFixture implements AutoCloseable {
   final SimulatorApprovalConfiguration config;
   final PostgresDurableEnforcementState state;
   final KeyPair rsa;
+  final String issuer;
+  final String organization;
+  final AtomicInteger tokenPosts = new AtomicInteger();
+  final List<String> loginDiagnosticLines = new CopyOnWriteArrayList<>();
+  volatile Consumer<String> loginDiagnostics = loginDiagnosticLines::add;
+  volatile KeyPair signingKey;
+  volatile Consumer<ObjectNode> idHeader = header -> {};
+  volatile Consumer<ObjectNode> accessHeader = header -> {};
+  volatile Consumer<Map<String, String>> exchangeForm = form -> {};
+  volatile String lastTokenResponse;
   final HttpServer idp;
   final Map<String, Map<String, String>> codes = new ConcurrentHashMap<>();
   volatile Consumer<ObjectNode> idClaims = claims -> {};
@@ -53,7 +64,23 @@ final class SimulatorApprovalBrowserFixture implements AutoCloseable {
   SimulatorApprovalServer server;
 
   SimulatorApprovalBrowserFixture(Path directory, PostgreSQLContainer<?> postgres) throws Exception {
+    this(directory, postgres, false);
+  }
+
+  SimulatorApprovalBrowserFixture(Path directory, PostgreSQLContainer<?> postgres, boolean publicClient) throws Exception {
+    issuer = publicClient ? ISSUER + "/" : ISSUER;
+    organization = publicClient ? "org_synthetic" : null;
     var files = new SimulatorApprovalFixture(directory);
+    if (publicClient) {
+      java.nio.file.Files.createDirectories(directory.resolve("console"));
+      java.nio.file.Files.writeString(directory.resolve("console/index.html"), "<html></html>");
+      files.json.put("schemaVersion", "1.1");
+      files.json.withObject("/oidc").put("issuer", issuer).put("tenantValue", organization)
+          .put("jwksUri", issuer + ".well-known/jwks.json");
+      files.json.putObject("browser").put("tokenEndpointAuthMethod", "none")
+          .put("authorizationUri", issuer + "authorize").put("tokenUri", issuer + "oauth/token")
+          .put("consoleDirectory", "console");
+    }
     files.json.withObject("/postgres").put("port", postgres.getMappedPort(5432))
         .put("database", postgres.getDatabaseName()).put("user", postgres.getUsername());
     files.write("database.secret", postgres.getPassword().getBytes(StandardCharsets.UTF_8));
@@ -71,6 +98,7 @@ final class SimulatorApprovalBrowserFixture implements AutoCloseable {
     config.database().setCurrentSchema(schema);
     state = new PostgresDurableEnforcementState(config.database(), clock, () -> UUID.randomUUID().toString());
     rsa = KeyPairGenerator.getInstance("RSA").generateKeyPair();
+    signingKey = rsa;
     idp = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 16);
     idp.createContext("/authorize", request -> {
       var params = parse(request.getRequestURI().getRawQuery());
@@ -88,7 +116,7 @@ final class SimulatorApprovalBrowserFixture implements AutoCloseable {
       } else {
         String code = UUID.randomUUID().toString(); codes.put(code, params);
         request.getResponseHeaders().set("Location", params.get("redirect_uri") + "?"
-            + ApprovalBrowserAdapter.form(Map.of("code", code, "state", params.get("state"), "iss", ISSUER)));
+            + ApprovalBrowserAdapter.form(Map.of("code", code, "state", params.get("state"), "iss", issuer)));
         request.sendResponseHeaders(303, -1);
       }
       request.close();
@@ -99,12 +127,26 @@ final class SimulatorApprovalBrowserFixture implements AutoCloseable {
 
   void restart() throws Exception {
     if (server != null) server.close();
-    var resolver = (io.tracepermit.identity.OidcVerificationKeyResolver) (p, kid, alg, now) -> (RSAPublicKey) rsa.getPublic();
+    var resolver = (io.tracepermit.identity.OidcVerificationKeyResolver) (p, kid, alg, now) -> {
+      if (!"fixture-key".equals(kid) || !"RS256".equals(alg)) throw new SecurityException("SYNTHETIC_UNKNOWN_KEY");
+      return (RSAPublicKey) rsa.getPublic();
+    };
     var verifier = new OidcAccessTokenVerifier(new StaticOidcProviderRegistry(List.of(config.provider())), resolver, clock);
-    var browser = new ApprovalBrowserAdapter(URI.create(idpOrigin() + "/authorize"), ISSUER,
+    var browser = new ApprovalBrowserAdapter(URI.create(idpOrigin() + "/authorize"), issuer,
         config.provider().resourceAudience(), CLIENT,
-        Path.of(System.getProperty("tracepermit.repositoryRoot"), "apps/console/dist"), this::exchange,
-        verifier, new BrowserIdTokenVerifier(config.provider(), resolver, clock), config.memberships(), clock);
+        Path.of(System.getProperty("tracepermit.repositoryRoot"), "apps/console/dist"), form -> {
+          var changed = new HashMap<>(form); exchangeForm.accept(changed);
+          if (organization == null) return exchange(changed);
+          return new BrowserCodeExchange(config.browser().tokenUri, server.port(), CLIENT, "none", null,
+              (uri, body, auth) -> {
+                tokenPosts.incrementAndGet();
+                if (auth != null || !CLIENT.equals(body.get("client_id")) || body.containsKey("client_secret"))
+                  throw new SecurityException("SYNTHETIC_CLIENT_REJECTED");
+                return exchange(body);
+              }).exchange(changed);
+        }, verifier, new BrowserIdTokenVerifier(config.provider(), resolver, clock, organization),
+        config.memberships(), clock, organization,
+        new BrowserLoginDiagnostics(line -> loginDiagnostics.accept(line)));
     var permits = new ExecutionPermitAuthority(ExecutionPermitAuthority.DEFAULT_ISSUER,
         config.keyId(), config.permitKey(), 30, clock, () -> UUID.randomUUID().toString(),
         new PostgresPermitConsumptionStore(config.database()));
@@ -118,9 +160,9 @@ final class SimulatorApprovalBrowserFixture implements AutoCloseable {
   // Test/qualification only. No issuer or minting endpoint is selectable in normal runtime.
   String accessToken(String subject) throws Exception {
     long now = clock.instant().getEpochSecond();
-    ObjectNode claims = JsonSupport.MAPPER.createObjectNode().put("iss", ISSUER)
+    ObjectNode claims = JsonSupport.MAPPER.createObjectNode().put("iss", issuer)
         .put("aud", config.provider().resourceAudience()).put("sub", subject)
-        .put("client_id", CLIENT).put("org_id", "alpha")
+        .put("client_id", CLIENT).put("org_id", organization == null ? "alpha" : organization)
         .put("scope", "approvals.read approvals.request approvals.execute")
         .put("iat", now - 10).put("exp", now + 290).put("jti", UUID.randomUUID().toString());
     accessClaims.accept(claims);
@@ -137,27 +179,30 @@ final class SimulatorApprovalBrowserFixture implements AutoCloseable {
           || !form.get("redirect_uri").equals(params.get("redirect_uri"))) throw new SecurityException();
       if (tokenResponse != null) return tokenResponse;
       long now = clock.instant().getEpochSecond();
-      ObjectNode access = JsonSupport.MAPPER.createObjectNode().put("iss", ISSUER)
+      ObjectNode access = JsonSupport.MAPPER.createObjectNode().put("iss", issuer)
           .put("aud", config.provider().resourceAudience()).put("sub", params.get("synthetic_subject"))
-          .put("client_id", CLIENT).put("org_id", "alpha")
-          .put("scope", "approvals.read approvals.request approvals.decide approvals.execute")
+          .put("client_id", CLIENT).put("org_id", organization == null ? "alpha" : organization)
+          .put("scope", "approvals.read approvals.request approvals.decide approvals.execute approvals.cancel")
           .put("iat", now - 10).put("exp", now + 290).put("jti", UUID.randomUUID().toString());
       accessClaims.accept(access);
-      ObjectNode identity = JsonSupport.MAPPER.createObjectNode().put("iss", ISSUER).put("aud", CLIENT)
+      ObjectNode identity = JsonSupport.MAPPER.createObjectNode().put("iss", issuer).put("aud", CLIENT)
           .put("sub", params.get("synthetic_subject")).put("nonce", params.get("nonce"))
           .put("iat", now - 10).put("exp", now + 290);
+      if (organization != null) identity.put("org_id", organization);
       idClaims.accept(identity);
-      return JsonSupport.MAPPER.createObjectNode().put("access_token", sign(access, "at+jwt"))
+      lastTokenResponse = JsonSupport.MAPPER.createObjectNode().put("access_token", sign(access, "at+jwt"))
           .put("id_token", sign(identity, "JWT")).put("token_type", "Bearer").toString();
+      return lastTokenResponse;
     } catch (Exception failure) { throw new SecurityException("SYNTHETIC_CODE_REJECTED"); }
   }
 
   String sign(ObjectNode claims, String type) throws Exception {
     var encoder = Base64.getUrlEncoder().withoutPadding();
-    String input = encoder.encodeToString(JsonSupport.MAPPER.writeValueAsBytes(JsonSupport.MAPPER.createObjectNode()
-        .put("alg", "RS256").put("typ", type).put("kid", "fixture-key"))) + "."
+    var header = JsonSupport.MAPPER.createObjectNode().put("alg", "RS256").put("typ", type).put("kid", "fixture-key");
+    if ("JWT".equals(type)) idHeader.accept(header); else accessHeader.accept(header);
+    String input = encoder.encodeToString(JsonSupport.MAPPER.writeValueAsBytes(header)) + "."
         + encoder.encodeToString(JsonSupport.MAPPER.writeValueAsBytes(claims));
-    var signer = Signature.getInstance("SHA256withRSA"); signer.initSign(rsa.getPrivate());
+    var signer = Signature.getInstance("SHA256withRSA"); signer.initSign(signingKey.getPrivate());
     signer.update(input.getBytes(StandardCharsets.UTF_8));
     return input + "." + encoder.encodeToString(signer.sign());
   }

@@ -79,6 +79,10 @@ export default defineConfig({
       {
         text: "Guide",
         items: [
+          {
+            text: "Agent Security Foundations",
+            link: "/learn/securing-mcp-tool-execution",
+          },
           { text: "What is TracePermit?", link: "/guide/what-is-tracepermit" },
           { text: "What Works Today", link: "/guide/working-today" },
           { text: "Verification & Compatibility", link: "/guide/verification" },
@@ -105,6 +109,15 @@ export default defineConfig({
     ],
 
     sidebar: [
+      {
+        text: "Agent Security Foundations",
+        items: [
+          {
+            text: "Securing MCP Tool Execution",
+            link: "/learn/securing-mcp-tool-execution",
+          },
+        ],
+      },
       {
         text: "Overview",
         items: [

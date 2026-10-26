@@ -5,6 +5,10 @@ simulator approval application (`tracepermit-simulator-approval`).
 This archive bundles the authenticated Java backend and built React inbox
 without requiring Node.js, pnpm, Gradle, or a source checkout on the host.
 
+For the separate Linux Docker Engine packaging of this same archive, use the
+[container install profile](container-install-profile.md). That profile retains
+numeric-loopback binding and is not a Docker Desktop/public-edge qualification.
+
 > [!IMPORTANT]
 > This distribution is a **simulator-alpha qualification foundation**, not a
 > production deployment, cloud target gateway, or external IdP qualification.
@@ -41,7 +45,7 @@ cd tracepermit-simulator-approval-0.1.0
 shasum -a 256 -c SHA256SUMS
 ```
 
-Inspect `manifest.json`: schema `1.1` records `sourceCommit`,
+Inspect `manifest.json`: schema `1.2` records `sourceCommit`,
 `sourceCommitTimestamp` (the commit time, not the packaging time), `sourceTree: "clean"`,
 and an exact runtime JAR inventory. Compare the commit to the release you intended
 to install. These fields identify a trusted local build; they are not signed
@@ -52,16 +56,19 @@ The extracted archive layout:
 ```text
 tracepermit-simulator-approval-0.1.0/
 ├── bin/
-│   └── tracepermit-simulator-approval
+│   ├── tracepermit-simulator-approval
+│   └── tracepermit-requester-auth
 ├── lib/
 │   └── *.jar
 ├── console/
 │   ├── index.html
 │   └── assets/
 ├── examples/
-│   └── simulator-approvals.example.json
+│   ├── simulator-approvals.example.json
+│   └── installed-requester-sign-in.example.json
 ├── docs/
 │   ├── setup-runbook.md
+│   ├── requester-sign-in-runbook.md
 │   ├── LICENSE
 │   └── NOTICE
 ├── manifest.json
@@ -113,12 +120,17 @@ chmod 600 database.secret
 
 ### 3. Configure browser client secret (optional)
 
-If using the browser approval inbox, similarly create `browser.secret` with the
+For a schema1.0/confidential browser client, create `browser.secret` with the
 OIDC client secret in your private editor. Do not overwrite it on subsequent starts:
 
 ```bash
 chmod 600 browser.secret
 ```
+
+Schema1.1 public method `none` forbids a client-secret file. Its synthetic
+qualification does not establish actual Auth0 compatibility; follow the
+[public-client procedure](https://github.com/hemantkgupta/tracepermit/blob/main/docs/runbooks/auth0-native-oidc-qualification.md)
+for the separate pending local-Mac gate. Do not create a secret for a native app.
 
 ### 4. Create operator configuration
 
@@ -159,6 +171,10 @@ APPROVAL_CONFIGURATION_VALID: offline only; no database, IdP or listener checked
 ```
 
 and exits with status `0`.
+
+The separate installed requester helper has its own closed private config and
+offline check. Follow `docs/requester-sign-in-runbook.md`; do not put requester
+tokens or provider credentials in the approval-service config.
 
 ### Offline check guarantees
 
@@ -229,10 +245,34 @@ started; not recovery authorization.` and exits 0. It validates exactly the
    incident-affected DB remains disconnected under the recovery runbook; this
    command never grants safe-resume authority.
 
-V10 recognizes terminal cancelled storage records but exposes **no cancellation
-API, scope, tool or button**. Reported inspection format is now2.0 (adds the
-cancelled count); API projections remain1.0. Details and limits:
-[ADR 0059](../architecture/0059-explicit-v9-v10-simulator-upgrade.md).
+The V10 **schema upgrade itself** adds cancelled storage records and requester
+provenance; it does not enroll a requester, grant a scope or authorize a
+withdrawal. [ADR 0059](../architecture/0059-explicit-v9-v10-simulator-upgrade.md)
+describes that storage-only foundation, not the current application's entire
+feature set.
+
+The current Java API and React inbox implement owner withdrawal of a live
+pending request. Use the [withdrawal runbook](pending-approval-withdrawal.md)
+for the separately verified identity/client/tenant enrollment, REQUESTER role
+and provider-granted `approvals.cancel` scope. Upgrading an older database or
+passing `--check` establishes none of those prerequisites. There is no new MCP
+withdrawal tool, revocation of approved work or automatic rollback.
+
+Keep these version boundaries distinct:
+
+| Surface                            | Current version | Meaning                                                                  |
+| ---------------------------------- | --------------- | ------------------------------------------------------------------------ |
+| Database contract                  | 10              | Storage/consumer compatibility, not authentication authority             |
+| Owner recovery-inspection report   | 2.0             | Adds the cancelled count; inspection does not permit resume              |
+| Approval API projection            | 1.0             | Existing response contract remains unchanged                             |
+| New cancellation lifecycle payload | 3.0             | Bounded requester-derived cancellation evidence, not execution authority |
+
+One authenticated source-free same-Mac Auth0 profile exercised owner withdrawal
+on 2026-10-21. That named simulator composition does not establish arbitrary
+external-IdP interoperability, public ingress or production identity. The
+source-based synthetic browser demo, schema-upgrade checks and older-binary
+refusal checks do not close those broader gates. See the
+[installed qualification record](../demo-scenarios/evidence/installed-auth0-approval-2026-10-22.md).
 
 ## Running the application (`--run`)
 
@@ -305,6 +345,11 @@ and releases the port immediately.
 6. **Redaction scope:** Launcher validation and Java bootstrap handlers omit private
    paths and secret values. Damaged archives or JVM/OS errors can produce diagnostics
    outside those handlers; preserve logs privately and verify integrity first.
+7. **Requester credential boundary:** The optional requester helper uses a separate
+   one-shot numeric-loopback public-client flow, exact requester-only enrollment
+   and one-use child environment. It is not an issuer, reviewer, endpoint
+   attestation mechanism, refresh service or production identity profile. See the
+   packaged requester sign-in runbook.
 
 ## Building and qualifying from source (maintainers only)
 
@@ -330,4 +375,6 @@ cross-host/JDK bit-for-bit reproducibility and signed release publication are no
 - [ADR 0035: Explicit operator bootstrap](../architecture/0035-local-approval-operator-bootstrap.md)
 - [ADR 0036: Local browser sign-in and inbox](../architecture/0036-local-browser-approval-boundary.md)
 - [ADR 0040: Source-free simulator approval distribution](../architecture/0040-source-free-simulator-approval-distribution.md)
+- [ADR 0065: Installed requester public sign-in](../architecture/0065-installed-requester-public-sign-in.md)
 - [Authenticated approval API runbook](authenticated-approval-api-foundation.md)
+- [Installed requester public sign-in](installed-requester-public-sign-in.md)

@@ -6,6 +6,8 @@ import {
   canExecute,
   canRequest,
   canReview,
+  canWithdraw,
+  cancelApproval,
   decideApproval,
   isExpired,
   loadApprovalPage,
@@ -13,11 +15,17 @@ import {
   signOut,
   submitApproval,
   type Approval,
-  type ApprovalDecision,
+  type ApprovalAction,
   type ApprovalQuery,
   type ApprovalSession,
   type ApprovalStatusFilter,
 } from "./approval-api.js";
+import {
+  canDownloadReviewExport,
+  downloadApprovalReviewExport,
+  fetchApprovalReviewExport,
+  isExportResponseValid,
+} from "./approval-export.js";
 import {
   MAX_ACCUMULATED_ROWS,
   authorityContext,
@@ -37,13 +45,15 @@ import "./approval-history.css";
 
 type Confirmation = {
   approval: Approval;
-  decision: ApprovalDecision;
+  decision: ApprovalAction;
+  authority: string;
 };
 
 export function ApprovalInbox() {
   const [session, setSession] = useState<ApprovalSession | null>(null);
   const [state, setState] = useState<HistoryState>(initialHistoryState);
   const [busy, setBusy] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const submitting = useRef(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null);
@@ -56,6 +66,7 @@ export function ApprovalInbox() {
   const sessionRef = useRef(session);
   const generationRef = useRef(0);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const exportAbortRef = useRef<AbortController | null>(null);
   const selected = state.items.find(
     (item) => item.approvalRequestId === state.selectedId,
   );
@@ -70,6 +81,8 @@ export function ApprovalInbox() {
   );
   const confirmationReady = Boolean(
     confirmation &&
+    session &&
+    confirmation.authority === authorityContext(session) &&
     canConfirmApproval(
       session,
       selected,
@@ -91,6 +104,9 @@ export function ApprovalInbox() {
 
   function invalidate(status?: number, error?: string) {
     abortControllerRef.current?.abort();
+    exportAbortRef.current?.abort();
+    exportAbortRef.current = null;
+    setExporting(false);
     const cleared = sessionLoggedOut({
       ...stateRef.current,
       generation: generationRef.current,
@@ -116,6 +132,9 @@ export function ApprovalInbox() {
     isOlder: boolean,
   ) {
     abortControllerRef.current?.abort();
+    exportAbortRef.current?.abort();
+    exportAbortRef.current = null;
+    setExporting(false);
     const controller = new AbortController();
     abortControllerRef.current = controller;
     setConfirmation(null);
@@ -194,6 +213,7 @@ export function ApprovalInbox() {
     begin(startRefresh(stateRef.current));
     return () => {
       abortControllerRef.current?.abort();
+      exportAbortRef.current?.abort();
       generationRef.current++;
       stateRef.current = {
         ...stateRef.current,
@@ -239,6 +259,8 @@ export function ApprovalInbox() {
     );
     if (
       !confirmation ||
+      !currentSession ||
+      confirmation.authority !== authorityContext(currentSession) ||
       !historyAuthorityReady(stateRef.current, currentSession) ||
       !canConfirmApproval(
         currentSession,
@@ -258,9 +280,22 @@ export function ApprovalInbox() {
     // ticks. The server still independently verifies identity, binding and time.
     if (!currentSession || !current) return;
     void perform(
-      () => decideApproval(currentSession, current, confirmation.decision),
-      `${confirmation.decision === "execute" ? "Simulator execution completed" : "Review decision recorded"}. Refresh shows durable server state.`,
+      () =>
+        confirmation.decision === "withdraw"
+          ? cancelApproval(currentSession, current)
+          : decideApproval(currentSession, current, confirmation.decision),
+      `${confirmation.decision === "withdraw" ? "Pending request withdrawn" : confirmation.decision === "execute" ? "Simulator execution completed" : "Review decision recorded"}. Refresh shows durable server state.`,
     );
+  }
+
+  function openConfirmation(approval: Approval, decision: ApprovalAction) {
+    const currentSession = sessionRef.current;
+    if (!currentSession || submitting.current) return;
+    setConfirmation({
+      approval,
+      decision,
+      authority: authorityContext(currentSession),
+    });
   }
 
   function handleApplyFilters(event: React.FormEvent) {
@@ -336,6 +371,95 @@ export function ApprovalInbox() {
     } finally {
       submitting.current = false;
       setBusy(false);
+    }
+  }
+
+  async function handleDownloadExport() {
+    if (
+      busy ||
+      exporting ||
+      !sessionRef.current ||
+      !selected ||
+      !authorityReady ||
+      !canDownloadReviewExport(sessionRef.current, selected, observedNow)
+    ) {
+      return;
+    }
+
+    const clickGeneration = generationRef.current;
+    const clickSession = sessionRef.current;
+    const clickSessionAuth = authorityContext(clickSession);
+    const clickRequestId = selected.approvalRequestId;
+    const clickRequestHash = selected.requestHash;
+    const clickSessionExpiresAt = Date.parse(clickSession.expiresAt);
+
+    exportAbortRef.current?.abort();
+    const controller = new AbortController();
+    exportAbortRef.current = controller;
+    setExporting(true);
+
+    try {
+      const record = await fetchApprovalReviewExport(
+        clickRequestId,
+        clickRequestHash,
+        controller.signal,
+      );
+
+      // Verify in-flight guards:
+      // Logout, session expiry, changed authority, request selection/hash or later responses must invalidate an in-flight download
+      if (
+        controller.signal.aborted ||
+        !isExportResponseValid(
+          {
+            generation: clickGeneration,
+            authority: clickSessionAuth,
+            approvalRequestId: clickRequestId,
+            requestHash: clickRequestHash,
+            sessionExpiresAt: clickSessionExpiresAt,
+          },
+          {
+            generation: generationRef.current,
+            session: sessionRef.current,
+            selectedId: stateRef.current.selectedId,
+            currentHash: stateRef.current.items.find(
+              (i) => i.approvalRequestId === clickRequestId,
+            )?.requestHash,
+          },
+        )
+      ) {
+        return;
+      }
+
+      downloadApprovalReviewExport(record);
+      setNotice(null);
+    } catch (error) {
+      if (
+        controller.signal.aborted ||
+        generationRef.current !== clickGeneration ||
+        !sessionRef.current ||
+        authorityContext(sessionRef.current) !== clickSessionAuth ||
+        stateRef.current.selectedId !== clickRequestId
+      ) {
+        return;
+      }
+      const status = error instanceof ApprovalApiError ? error.status : 502;
+      if (status === 401) {
+        invalidate(401);
+        return;
+      }
+      setNotice(
+        status === 403
+          ? "This operation is not authorized. Refresh to check your current role."
+          : status === 404
+            ? "The requested approval was not found or is no longer visible. Refresh to update."
+            : status === 503
+              ? "The approval service could not complete this export. Check its state before retrying."
+              : "The review export record was invalid or could not be verified. Server state remains authoritative.",
+      );
+    } finally {
+      if (exportAbortRef.current === controller) {
+        setExporting(false);
+      }
     }
   }
 
@@ -553,6 +677,7 @@ export function ApprovalInbox() {
                       <option value="denied">Denied</option>
                       <option value="expired">Expired</option>
                       <option value="consumed">Consumed</option>
+                      <option value="cancelled">Cancelled (withdrawn)</option>
                     </select>
                   </div>
 
@@ -626,6 +751,9 @@ export function ApprovalInbox() {
                     disabled={busy}
                     key={item.approvalRequestId}
                     onClick={() => {
+                      exportAbortRef.current?.abort();
+                      exportAbortRef.current = null;
+                      setExporting(false);
                       commit({
                         ...stateRef.current,
                         selectedId: item.approvalRequestId,
@@ -757,9 +885,9 @@ export function ApprovalInbox() {
                     isExpired(selected, observedNow) && (
                       <p className="approval-muted" role="status">
                         Approval lifetime has elapsed. The stored status is
-                        unchanged; no review or execution is available. Refresh
-                        to read server state. Local time is advisory; Java
-                        remains authoritative.
+                        unchanged; no review, withdrawal or execution is
+                        available. Refresh to read server state. Local time is
+                        advisory; Java remains authoritative.
                       </p>
                     )}
                   <h3>Target and arguments</h3>
@@ -779,24 +907,14 @@ export function ApprovalInbox() {
                         <button
                           className="approval-primary"
                           disabled={busy || !authorityReady}
-                          onClick={() =>
-                            setConfirmation({
-                              approval: selected,
-                              decision: "approve",
-                            })
-                          }
+                          onClick={() => openConfirmation(selected, "approve")}
                         >
                           Approve exact action
                         </button>
                         <button
                           className="approval-danger"
                           disabled={busy || !authorityReady}
-                          onClick={() =>
-                            setConfirmation({
-                              approval: selected,
-                              decision: "deny",
-                            })
-                          }
+                          onClick={() => openConfirmation(selected, "deny")}
                         >
                           Deny
                         </button>
@@ -806,31 +924,67 @@ export function ApprovalInbox() {
                       <button
                         className="approval-primary"
                         disabled={busy || !authorityReady}
-                        onClick={() =>
-                          setConfirmation({
-                            approval: selected,
-                            decision: "execute",
-                          })
-                        }
+                        onClick={() => openConfirmation(selected, "execute")}
                       >
                         Execute approved simulation
                       </button>
                     )}
+                    {canWithdraw(session, selected, observedNow) && (
+                      <button
+                        className="approval-danger"
+                        disabled={busy || !authorityReady}
+                        onClick={() => openConfirmation(selected, "withdraw")}
+                      >
+                        Withdraw request
+                      </button>
+                    )}
                   </div>
+                  {selected.status === "cancelled" && (
+                    <p className="approval-muted" role="status">
+                      Withdrawn by its requester. This request cannot be
+                      reviewed or executed. Withdrawal does not stop or reverse
+                      other work.
+                    </p>
+                  )}
                   {selected.requesterId === session.principalId &&
                     selected.status === "pending" && (
                       <p className="approval-muted">
                         A different enrolled human reviewer must decide this
-                        request.
+                        request before execution. Withdrawing a pending request
+                        is a separate owner action, not reviewer denial.
                       </p>
                     )}
                   {session.roles.includes("VIEWER") &&
                     !canReview(session, selected, observedNow) &&
-                    !canExecute(session, selected, observedNow) && (
+                    !canExecute(session, selected, observedNow) &&
+                    !canWithdraw(session, selected, observedNow) && (
                       <p className="approval-muted">
                         Read-only access. No authorized mutation is available.
                       </p>
                     )}
+                  <div className="approval-export-section">
+                    <h3>Review record</h3>
+                    <p className="approval-muted">
+                      Review records are simulator-only, metadata-only,
+                      unsigned, and incomplete. Export inherits current read
+                      visibility, not review or execution authority, and cannot
+                      authorize actions.
+                    </p>
+                    <button
+                      type="button"
+                      disabled={
+                        busy ||
+                        exporting ||
+                        !authorityReady ||
+                        !canDownloadReviewExport(session, selected, observedNow)
+                      }
+                      onClick={handleDownloadExport}
+                    >
+                      {exporting
+                        ? "Downloading review JSON…"
+                        : "Download review JSON"}
+                    </button>
+                  </div>
                   {confirmation && authorityReady && !confirmationReady && (
                     <p role="status">
                       This confirmation is no longer available. Refresh the
@@ -842,16 +996,37 @@ export function ApprovalInbox() {
                       className="approval-confirm"
                       aria-label="Confirm exact action"
                     >
-                      <h3>Confirm: {confirmation.decision}</h3>
+                      <h3>
+                        {confirmation.decision === "withdraw"
+                          ? "Withdraw this pending request?"
+                          : `Confirm: ${confirmation.decision}`}
+                      </h3>
                       <p>
                         This applies only to the displayed request and hash.{" "}
-                        {confirmation.decision === "approve"
-                          ? "It does not execute the action."
-                          : confirmation.decision === "execute"
-                            ? "The server rechecks policy and atomically claims one simulator execution."
-                            : "The action will not execute."}
+                        {confirmation.decision === "withdraw"
+                          ? "Only this still-pending request can become cancelled, without execution. This is not an emergency stop, revocation of approved work or rollback. Java rechecks current ownership, scope, state and expiry."
+                          : confirmation.decision === "approve"
+                            ? "It does not execute the action."
+                            : confirmation.decision === "execute"
+                              ? "The server rechecks policy and atomically claims one simulator execution."
+                              : "The action will not execute."}
                       </p>
-                      <code>{confirmation.approval.requestHash}</code>
+                      {confirmation.decision === "withdraw" ? (
+                        <>
+                          <p>
+                            Request ID
+                            <code>
+                              {confirmation.approval.approvalRequestId}
+                            </code>
+                          </p>
+                          <p>
+                            Request hash
+                            <code>{confirmation.approval.requestHash}</code>
+                          </p>
+                        </>
+                      ) : (
+                        <code>{confirmation.approval.requestHash}</code>
+                      )}
                       <div className="approval-toolbar">
                         <button
                           className="approval-primary"
@@ -860,13 +1035,15 @@ export function ApprovalInbox() {
                         >
                           {busy
                             ? "Submitting…"
-                            : `Confirm ${confirmation.decision}`}
+                            : confirmation.decision === "withdraw"
+                              ? "Confirm withdrawal"
+                              : `Confirm ${confirmation.decision}`}
                         </button>
                         <button
                           disabled={busy}
                           onClick={() => setConfirmation(null)}
                         >
-                          Cancel
+                          Back
                         </button>
                       </div>
                     </section>

@@ -14,14 +14,19 @@ holds its connection while it waits. An offer beyond the pending bound is
 rejected by the executor before any handler runs and surfaces as a closed
 connection with no response; a closed or closing foundation answers
 `503 SERVER_SHUTDOWN` during the race window or refuses connections. See
-[ADR 0050](../architecture/0050-bounded-simulator-approval-admission.md).
+[ADR 0050](../architecture/0050-bounded-simulator-approval-admission.md) and its
+queue-first mechanism replacement,
+[ADR0074](../architecture/0074-reserved-lane-bounded-dispatch.md). A reserved
+lane includes one assigned task before its worker wakes. Assignment uses free
+lanes before pending slots, preserving the same total 8+16 outstanding ceiling
+without depending on idle-worker dequeue timing.
 
 ---
 
 ## Guarantees under qualification
 
 1. **Admission precedes every handler statement.** A lane only starts a
-   handler after taking an exchange from the bounded queue, so a queued or
+   handler after receiving a lane reservation, so a queued or
    rejected exchange runs no handler code at all — no host or URI validation,
    no key resolution, no body parsing, no database work, no target dispatch.
    The host/URI/closed checks themselves run inside an admitted lane: a
@@ -159,6 +164,18 @@ injected-failure test. Its assertion includes up to 4096 characters of the
 runner's existing safe stderr; HTTP-module test failures log full exception
 context so CI retains that diagnostic. All default benchmark sweeps, success
 assertions, request/phase budgets, and production behavior remain unchanged.
+The harness now offers each warmup and measured population in waves no larger
+than the reported client concurrency and places a bounded executor barrier after
+every wave. All previously admitted handlers therefore return before the next
+wave is offered. This is test coordination, not a retry or a larger admission
+bound; the default eight active lanes and sixteen pending exchanges remain
+unchanged.
+After each complete concurrency sweep, the qualification harness also retires
+its Java HTTP client within two fixed five-second shutdown bounds and creates a
+fresh client for the next sweep. That isolates idle loopback connections across
+sweeps without retrying any operation, reducing concurrency, or changing the
+server's admission capacity. A shutdown that cannot complete inside those
+bounds fails the qualification.
 Diagnostic context is not a latency fix or permission to accept a failed
 qualification; a local success does not override a failed required CI check.
 

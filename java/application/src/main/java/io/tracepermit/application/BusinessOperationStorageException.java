@@ -1,0 +1,57 @@
+package io.tracepermit.application;
+
+/** Fixed diagnostic codes intentionally exclude SQL, connection details, identifiers and payloads. */
+public final class BusinessOperationStorageException extends RuntimeException {
+  private static final long serialVersionUID = 1L;
+
+  public enum Code {
+    OPERATION_SCOPE_MISMATCH,
+    OPERATION_INITIAL_STATE_REQUIRED,
+    OPERATION_TOO_LARGE,
+    OPERATION_ID_INVALID,
+    OPERATION_REQUEST_KEY_CONFLICT,
+    OPERATION_ID_CONFLICT,
+    OPERATION_STORAGE_UNAVAILABLE,
+    OPERATION_COMMIT_UNKNOWN,
+    OPERATION_STORAGE_CORRUPT,
+    OPERATION_SCHEMA_NOT_READY,
+    OPERATION_DATABASE_UNSUPPORTED,
+    OPERATION_WRITER_REQUIRED,
+    OPERATION_COMMAND_INVALID,
+    OPERATION_REQUESTER_NOT_AUTHORIZED,
+    OPERATION_REVIEWER_NOT_AUTHORIZED,
+    OPERATION_EVALUATOR_NOT_AUTHORIZED,
+    OPERATION_EXECUTOR_NOT_AUTHORIZED,
+    OPERATION_ADMISSION_SETTINGS_REQUIRED,
+    OPERATION_NOT_APPROVED,
+    OPERATION_PERMIT_INVALID,
+    OPERATION_PERMIT_EXPIRED,
+    OPERATION_REVIEW_SETTINGS_REQUIRED,
+    OPERATION_GROUP_MEMBERSHIP_INVALID,
+    OPERATION_GROUP_MEMBERSHIP_EXPIRED,
+    OPERATION_NOT_REVIEWABLE,
+    OPERATION_APPROVAL_EXPIRED,
+    OPERATION_PROFILE_INVALID,
+    OPERATION_PROFILE_MISMATCH,
+    OPERATION_POLICY_OUTCOME_UNSUPPORTED,
+    OPERATION_AUTHORITY_NOT_READY,
+    OPERATION_AUTHENTICATION_EXPIRED,
+    OPERATION_NOT_FOUND,
+    OPERATION_STATE_STALE,
+    OPERATION_NOT_WITHDRAWABLE,
+    OPERATION_CLOCK_REGRESSION
+  }
+
+  private final Code code;
+
+  public BusinessOperationStorageException(Code code) {
+    // try-with-resources otherwise attaches a raw JDBC close failure to a fixed-code primary
+    // exception. Disable cause initialization/suppression so diagnostics cannot retain driver data.
+    super(code.name(), null, false, true);
+    this.code = code;
+  }
+
+  public Code code() {
+    return code;
+  }
+}

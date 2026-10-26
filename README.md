@@ -75,6 +75,33 @@ Follow the [Codex approval runbook](docs/runbooks/codex-durable-approvals.md);
 no personal IdP login or real target is required. Native client qualification
 and model-driven rehearsal are separate from protocol tests.
 
+## Continuous integration
+
+Pull-request updates and pushes to `main` run the [CI workflow](.github/workflows/ci.yml).
+CI selects checks from the complete PR diff using the base branch's policy:
+
+| Change scope                                                                                                 | Required checks                                                                          |
+| ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
+| Only documentation Markdown, root README/contribution/security Markdown, or `site/`                          | Documentation, script invariants, site build/audit and site browser tests                |
+| Console `src/`, `public/` or `index.html` changes mixed only with those documentation/site paths             | The above plus console build/types/tests, installed packaging and approval browser tests |
+| Java, contracts, dependencies, scripts, CI, deployment, unknown paths, uncertain diff, or any push to `main` | Every check, including all Java/database shards, combined coverage and Gate C            |
+
+The final `verify` check requires successful change detection and every selected
+job. It accepts a skipped job only when that known plan makes it optional;
+failed, cancelled, missing or unknown results cannot pass. CI uses separate
+runners for core/common tests, PostgreSQL, MariaDB and three operation-engine
+shards. Their complete coverage is bound to the same commit and workflow run,
+then checked against the unchanged 94% line / 75% branch floors. Database tests
+always execute fresh, once per lane; the former repeated qualification passes
+are consolidated into these mandatory shards. Local `pnpm check` remains the
+complete suite.
+
+A newer update to the same PR cancels its older CI run. Different PRs and pushes
+to `main` keep their own runs. Per-job Gradle caches refresh after successful
+runs; fork PRs can restore caches but cannot write them. Parallel builds can
+increase runner minutes. See the [CI decision](docs/architecture/0088-selective-ci-and-complete-coverage.md)
+for selection, coverage and qualification limits.
+
 ## What is qualified
 
 - Java 21 is the sole backend. The React/TypeScript console is a
@@ -104,7 +131,9 @@ and model-driven rehearsal are separate from protocol tests.
   explicitly initializes an empty database, and normal run never migrates or
   repairs state. A separate owner-only stopped-service `--upgrade-db` supports
   exactly V9→V10; see the [upgrade procedure](docs/runbooks/simulator-approval-distribution.md#explicit-stopped-service-upgrade-v9-to-v10).
-  This prepares cancelled storage only, not a cancellation API or UI.
+  The Java [pending-request withdrawal API](docs/runbooks/pending-approval-withdrawal.md)
+  requires owner/requester enrollment and an explicit scope; requester UI and
+  installed withdrawal qualification remain separate.
   `--recovery-status` and owner-only `--quarantine-db` add
   [one-way declared containment](docs/runbooks/operator-recovery-quarantine.md),
   not automatic rollback detection or effectful resume. Owner-only `--recovery-inspect` provides a
@@ -114,7 +143,15 @@ and model-driven rehearsal are separate from protocol tests.
   a role-scoped React inbox; tokens stay in Java session memory. Try the
   test-classpath-only synthetic profile with `pnpm demo:approvals:browser`.
   See the [browser inbox runbook](docs/runbooks/browser-approval-inbox.md).
-  External browser IdP compatibility is not yet live-qualified.
+  External browser IdP compatibility is not yet live-qualified. An explicit
+  schema1.1 native/public code-PKCE candidate is tested synthetically; see the
+  [pending Auth0 local-Mac qualification](docs/runbooks/auth0-native-oidc-qualification.md).
+- A separate [Linux container install profile](docs/runbooks/container-install-profile.md)
+  packages that source-free Java/React runtime with digest-pinned PostgreSQL,
+  explicit private preparation and initialization, and bounded health/readiness.
+  It uses host networking with **no published ports** so both services retain
+  numeric-loopback binding. It is not qualified on Docker Desktop and does not
+  add TLS, a public edge, external IdP compatibility or a real target.
 
 The [current-state capability matrix](docs/specs/03-current-state-baseline.md)
 distinguishes implemented code, local demonstrations, live-client

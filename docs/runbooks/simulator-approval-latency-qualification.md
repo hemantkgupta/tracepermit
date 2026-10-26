@@ -60,6 +60,24 @@ Synthetic access tokens, review lifetimes, and execution permits require tempora
 - **Population Isolation**: Percentiles reflect `success_only` steady-state samples. Failures and timeouts are never manufactured as 0.0 ms observations; any failure or timeout immediately records an error and invalidates the PASS status of the qualification.
 - **Warmup Correctness**: Warmup operations exercise JIT compilation, classloading, and initial TCP handshakes. Warmup counts are excluded from steady-state latency percentiles, but any warmup failure immediately invalidates qualification and prevents dependent phases from executing with incomplete IDs.
 - **Closed-Loop Phase Throughput**: $\text{Throughput} = \frac{\text{Success Count}}{\text{Elapsed Wall Seconds}}$. This represents bounded closed-loop phase operations per second, not open-loop system capacity or end-to-end workflows per second.
+- **Phase Quiescence Attempt**: Warmup and measured populations are offered
+  in waves no larger than the reported client concurrency. After each wave, one
+  bounded barrier task per server lane waits behind every previously admitted
+  exchange. The next wave starts after all eight barrier futures complete.
+  The qualification-only helper then waits for zero active workers and an
+  empty queue under the same total deadline. Future completion alone was
+  insufficient, as the [controlled counterexample](latency-qualification-transport-diagnostics.md)
+  demonstrates. The caller must own submissions; this does not promise global
+  quiescence with concurrent unowned submitters. Barrier time is excluded
+  from operation wall time and per-request samples and performs no HTTP retry.
+  Hosted reliability and burst-acceptance guarantees remain unproved.
+- **Sweep Transport Isolation**: After the last phase in a concurrency sweep has
+  quiesced, the harness retires that sweep's Java HTTP client within a fixed
+  five-second graceful bound (plus a fixed five-second forced bound) and creates
+  a fresh client for the next sweep. This prevents a loopback connection that
+  became idle during a slower sweep from being reused after the server closed it.
+  It does not retry an operation, lower the reported client concurrency, enlarge
+  server admission, or convert a transport failure into success.
 
 ### Inclusions and Exclusions
 
@@ -120,6 +138,11 @@ effect, increase limits, or accept a locally passing run instead of required CI.
 
 `LatencyFailureDiagnosticsTest` checks category bounds, exact failure accounting,
 known HTTP statuses, unknown-message canaries, and PostgreSQL log projection.
+`LatencyTransportDiagnosticsTest` adds bounded cause-chain projection,
+consequential missing-ID separation and unchanged rejection-handler delegation.
+The [diagnostic evidence/runbook](latency-qualification-transport-diagnostics.md)
+records the frozen runtime, opt-in counterexample, bounded cleanup and narrowly
+authorized qualification-helper repair. It does not certify hosted reliability.
 
 ### Historical measurements
 

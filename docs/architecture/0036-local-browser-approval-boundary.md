@@ -39,7 +39,7 @@ flowchart TD
 
 - One explicit HTTPS issuer/client and exact operator-configured authorization,
   token and JWKS URLs. No dynamic discovery, registration or user-selected issuer.
-- Confidential client, `client_secret_basic`, authorization code plus S256 PKCE.
+- Schema1.0 uses a confidential client, `client_secret_basic`, authorization code plus S256 PKCE.
   Callback is exactly `http://127.0.0.1:<port>/auth/callback`.
 - Random 256-bit login binder cookie, state, nonce, verifier and session/CSRF
   values. Login state expires after 120 seconds and is consumed before code exchange.
@@ -92,8 +92,13 @@ is only guidance. Review and execution are separate explicit confirmations.
 No mutation is automatically retried. Approval expiry, stale policy, changed
 hash, reviewer removal and consumed claims remain enforced by the existing API.
 
+[ADR 0061](0061-requester-withdrawal-inbox.md) adds explicit owner-only pending
+withdrawal over ADR0060's Java cancellation route. It requires requester
+membership and the separate cancel scope, not reviewer authority. **Back** only
+dismisses confirmation; **Confirm withdrawal** sends the exact-hash POST.
+
 The inbox samples one shared local clock while loaded pending/approved requests
-are still live, and on focus/visible-tab events. Expiry removes review/execute
+are still live, and on focus/visible-tab events. Expiry removes review/withdraw/execute
 controls and invalidates the displayed confirmation without a network refresh or
 mutation. A last-moment click rechecks current selection, ID/hash, role/scope,
 session lifetime, status and approval expiry before POST. Observed local time is
@@ -115,7 +120,7 @@ Stored status is never rewritten merely because the browser labels it expired.
   operator JSON and is not evidence of real-provider compatibility.
 - The existing unauthenticated read console stays separate; this does not
   authenticate every existing demo endpoint or compose hosted MCP approvals.
-- No administrator provisioning UI, approval cancellation, managed key custody,
+- No administrator provisioning UI, approved-authority revocation, managed key custody,
   real target adapter, enterprise SLO or independent security audit is claimed.
 
 ## Sources
@@ -124,3 +129,10 @@ Stored status is never rewritten merely because the browser labels it expired.
 - [OIDC Core code flow](https://openid.net/specs/openid-connect-core-1_0.html#CodeFlowAuth)
 - [Issuer identification, RFC 9207](https://www.rfc-editor.org/rfc/rfc9207.html)
 - [OWASP session guidance](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html)
+
+## Explicit public-client extension
+
+[ADR0063](0063-explicit-public-browser-code-pkce.md) adds schema1.1 explicit
+`none` without a secret, preserving this confidential profile. It adds exact
+organization binding in both tokens. One named native/public Auth0 composition
+was live-qualified on 2026-10-22; broader provider compatibility remains pending.

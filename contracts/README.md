@@ -15,6 +15,11 @@ the Java backend.
 - `evidence-anchor-receipt-v1` — the exact secret-free, Ed25519-signed external
   checkpoint receipt structure
 - `errors/` — stable public error-code catalog
+- `approval-review-export-v1` — unsigned metadata-only simulator review schema
+  and a synthetic golden checksum vector; not an authorization or signed proof
+- `business-operation-v1` — strict internal aggregate schema and synthetic
+  draft-PR vector separating transport, event, operation, semantic, resource,
+  request-key and target-idempotency identities; persistence is not implied
 - `protocols/` — HTTP and MCP compatibility snapshots
 - `canonicalization/` — the exact byte-generation profile used before hashing
   or signing
@@ -67,3 +72,10 @@ in.
 
 The Java policy and contract tests validate the checked-in active policy
 schema and deterministic security vectors directly.
+
+The business-operation artifact is trusted-adapter output, not a public request
+body. Its tenant, workspace and requester fields must be derived from verified
+context. Java additionally recomputes the action, payload, resource and target
+digests and validates append-only lifecycle semantics that JSON Schema alone
+cannot express. Repository-level request-key conflicts, access control,
+retention enforcement and atomic persistence remain separate work.

@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# TracePermit Endpoint Connector Launcher
+# Host-native thin launcher for EndpointConnectorMain.
+# Requires: Java 21 or newer on PATH or JAVA_HOME.
+# Does NOT require: Node.js, pnpm, Gradle, or source repository checkout.
+
+# Explicitly unset ambient JVM diagnostic-option variables so launch and error output
+# cannot echo secret sentinels or JVM diagnostic banners.
+unset JAVA_TOOL_OPTIONS _JAVA_OPTIONS JDK_JAVA_OPTIONS
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DIST_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# Verify arguments: exactly one supported command or default no-argument run.
+MODE="--run"
+if [ "$#" -eq 0 ]; then
+  MODE="--run"
+elif [ "$#" -eq 1 ]; then
+  case "$1" in
+    --help|-h)
+      MODE="--help"
+      ;;
+    --check)
+      MODE="--check"
+      ;;
+    --run)
+      MODE="--run"
+      ;;
+    *)
+      echo "TracePermit endpoint connector: CONFIGURATION_INVALID" >&2
+      exit 2
+      ;;
+  esac
+else
+  echo "TracePermit endpoint connector: CONFIGURATION_INVALID" >&2
+  exit 2
+fi
+
+if [ "$MODE" = "--help" ]; then
+  cat <<'EOF'
+Usage: tracepermit-endpoint-connector [--help | --check | --run]
+Platform: macOS (ARM64 / x86_64) only; simulator-only qualification bundle.
+
+Commands:
+  --help, -h  Display this help message and exit.
+  --check     Perform offline configuration validation without network calls.
+  --run       Start the stdio Model Context Protocol (MCP) connector (default).
+
+Required environment variables:
+  TRACEPERMIT_GATEWAY_URL                      Numeric loopback HTTP /mcp URL (e.g. http://127.0.0.1:8080/mcp)
+  TRACEPERMIT_ENDPOINT_ISSUER                  Endpoint identity issuer
+  TRACEPERMIT_ENDPOINT_KEY_ID                  Key identifier matching private key
+  TRACEPERMIT_ENDPOINT_DEVICE_ID                Device identifier matching private key
+  TRACEPERMIT_ENDPOINT_PRIVATE_KEY_PKCS8_PATH  Path to owner-only Ed25519 PKCS#8 private key
+  TRACEPERMIT_CONNECTOR_BEARER_TOKEN           Short-lived connector bearer token
+
+Optional environment variables:
+  TRACEPERMIT_ENDPOINT_OBSERVATION_DIRECTORY   Private directory (0700) for optional process observations
+EOF
+  exit 0
+fi
+
+# Verify platform: macOS only for this distribution bundle
+OS_NAME="$(uname -s 2>/dev/null || echo "Unknown")"
+if [ "$OS_NAME" != "Darwin" ]; then
+  echo "TracePermit endpoint connector: UNSUPPORTED_PLATFORM" >&2
+  exit 2
+fi
+
+# Locate java executable
+JAVA_BIN=""
+if [ -n "${JAVA_HOME:-}" ] && [ -x "$JAVA_HOME/bin/java" ]; then
+  JAVA_BIN="$JAVA_HOME/bin/java"
+elif command -v java >/dev/null 2>&1; then
+  JAVA_BIN="$(command -v java)"
+fi
+
+if [ -z "$JAVA_BIN" ]; then
+  echo "TracePermit endpoint connector: CONFIGURATION_INVALID" >&2
+  exit 2
+fi
+
+# Verify Java major version is 21 or newer
+JAVA_VERSION_OUTPUT="$("$JAVA_BIN" -version 2>&1 || true)"
+JAVA_MAJOR="$(echo "$JAVA_VERSION_OUTPUT" | sed -n 's/.*version "\([0-9]*\).*/\1/p' | head -n 1)"
+if [ -z "$JAVA_MAJOR" ] || [ "$JAVA_MAJOR" -lt 21 ]; then
+  echo "TracePermit endpoint connector: CONFIGURATION_INVALID" >&2
+  exit 2
+fi
+
+# Verify runtime library directory
+if [ ! -d "$DIST_DIR/lib" ]; then
+  echo "TracePermit endpoint connector: CONFIGURATION_INVALID" >&2
+  exit 2
+fi
+
+# Assemble classpath using Java wildcard expansion
+CLASSPATH="$DIST_DIR/lib/*"
+
+# Execute Java connector directly with exec so the caller remains the immediate parent process
+exec "$JAVA_BIN" -cp "$CLASSPATH" io.tracepermit.endpoint.EndpointConnectorMain "$MODE"

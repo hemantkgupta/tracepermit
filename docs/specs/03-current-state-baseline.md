@@ -1,12 +1,105 @@
 # Current-state capability matrix
 
-**As of:** 2026-10-17
+**As of:** 2026-10-25
 **Scope:** public Java-backend/React-console proof of concept
 
 This is the authoritative boundary between running POC behavior and product
 design. A passing test proves the named composition, not deployment to an
 enterprise network or control over arbitrary agent tools. The detailed
 requirement-to-test mapping is in the [traceability matrix](12-traceability-matrix.md).
+
+## Opt-in closed durable operation review
+
+[ADR0085](../architecture/0085-closed-durable-operation-review.md) adds an opt-in
+V4 Java/JDBC transaction for policy evaluation, independent-human approve/deny
+and pending withdrawal. Current profile/generation control is locked before the
+actual operation head, then fresh writer time and exact state/identity/group/
+deadline/strict target pins are checked. Immutable evaluation bindings, closed
+facts and head changes share one commit; coherent readers replay at fact time.
+Default V2 installation and V1-V3 migration bytes remain unchanged. See the
+[candidate qualification record](../runbooks/durable-operation-review.md).
+
+This library is not wired into an authenticated endpoint or simulator. It does
+not itself provide permit/admission, attempt/outbox, target dispatch, live IdP/AWS/RDS
+qualification, complete operator metadata visibility or restore/sender fencing.
+Existing simulator flows below remain separately qualified compositions.
+
+The human-approved next [permit/admission contract](../architecture/0087-fully-bound-operation-permit-and-admission.md)
+requires fresh owner execute permission and separately versioned, explicitly
+configured Ed25519 authority capped at 60 seconds and all original approval/
+identity deadlines. The separate opt-in `JdbcGitHubOperationPermitIssuer` now
+loads actual approved V4 history under current control/head locks, captures
+the exact approved state/settings/review/target bindings, then rolls back and
+closes before signing. Profile v3 pins explicit settings before evaluation;
+legacy v1/v2 recipes and V4 SQL stay unchanged. See [issuance scope and tests](../runbooks/closed-operation-permit-issuance.md).
+This is not wired to a route or service. Signature validity is not consumption.
+The separate opt-in V6 [admission library](../runbooks/closed-operation-admission.md)
+adds atomic single-use consumption/initial-attempt metadata, claimed fact/head
+and immutable outbox, with a compatible closed reader. It rechecks writer time
+after implicit write waits and has scoped three-engine local qualification;
+earlier issuer results are separate. Default V2/V1–V4 bytes remain unchanged.
+There is still no sender, authenticated endpoint, target call or execution lease.
+
+## Approval review export and browser download
+
+The local authenticated simulator approval API provides a bounded per-request
+[metadata export](../runbooks/approval-review-export.md), governed by current
+read scope/enrollment and the existing owner/workspace visibility rules. It omits
+arguments, raw evidence, credentials and target responses. The unsigned payload
+checksum is not an original-action, full-history, transactional-snapshot or
+authorship proof. It grants no execution authority. The React inbox exposes an
+explicit, session-bound download after closed-schema and request-binding checks;
+a required browser gate saves the file from the real Java route and passes it to
+the installed Java-only offline checker for closed-structure and checksum
+validation. See [ADR0064](../architecture/0064-unsigned-approval-review-export.md).
+
+## AgentCore GitHub draft pull request adapter foundation
+
+The Java backend adds `GitHubDraftPullRequestAdapter` and `GitHubPullRequestOutcomeResolver`
+in `adapters-remote` for the first AgentCore pilot operation `github.pull_request.create`.
+The adapter strictly pins the production origin HTTPS `api.github.com`, repository
+`tracepermit/agentcore-pr-pilot`, base branch `main`, and enforces mandatory `draft: true`.
+Transport invariants enforce public-only pinned DNS, platform TLS, `Proxy.NO_PROXY`,
+disabled redirects/retries, bounded connect/read/write and a ten-second total
+preflight/write or lookup budget, and a 65,536-byte decoded
+response limit enforced while reading (at most one overflow byte beyond the limit).
+GitHub App installation credentials are provided via a trusted provider port and masked in
+memory; audit evidence stores only the cryptographic `credentialFingerprint` (`sha256:...`)
+and stable installation/repository identifiers. Because GitHub PR creation lacks a native
+idempotency key, an explicit stable operation key (`sha256(installId:repo:head:base)`) and
+read-only lookup port (`GET /repos/{owner}/{repo}/pulls?head={owner}:{head}&base={base}&state=all`)
+support uncertain timeouts and transport disconnects without re-execution
+([ADR 0069](../architecture/0069-github-app-draft-pr-adapter-and-reconciliation.md)).
+Oversized HTTP 201 confirmations and unavailable lookups (including 401/403/404,
+redirects and oversized lookup bodies) retain `unknown`; they do not prove failure.
+An explicit operator record pins installation/repository/owner IDs and exact
+head/base refs and SHAs. GET installation-access/repository/ref observations
+must match before POST. Typed 201 identity and original content must match;
+malformed success remains unknown. GET lookup confirms only one complete exact
+open draft; empty, duplicate, paginated, unavailable or mismatching results
+remain unknown. Legacy unbound construction cannot dispatch/certify. See
+[ADR0073](../architecture/0073-github-pilot-target-preflight.md). The token's
+installation provenance remains a trusted credential-provider responsibility;
+GET visibility alone cannot prove it. Ref races and process-local state remain:
+there is no native CAS, exactly-once claim or durable executor. The separate
+pure [binding bridge](../architecture/0075-github-business-operation-binding.md)
+checks operation scope/policy/artifacts/generation and exact target/precondition
+hashes using a strict non-production profile. It returns data only and does not
+compose the existing permit, claim transaction or adapter execution.
+In-memory simulator target executions (`mode: "simulated"`) remain explicitly distinguished
+from live pilot operations (`mode: "pilot"`). See the [operator runbook](../runbooks/agentcore-github-pr-pilot.md).
+
+## Uncommitted operation transition proposals
+
+The Java application layer also provides an
+[uncommitted transition proposal primitive](../architecture/0071-uncommitted-operation-transition-proposals.md).
+It checks exact scope and optimistic state identity, appends one valid v1 fact,
+and preserves other fields/history. It neither commits nor authorizes anything;
+the registration repository rejects progressed candidates. Atomic lifecycle
+persistence exists only for the closed pending-owner withdrawal command in
+[ADR 0072](../architecture/0072-durable-pending-operation-withdrawal.md): separate
+heads/journal, locked token/authority checks and explicit V2 migration. Generic
+transitions, policy/approval decisions and service/API wiring remain pending.
 
 ## Assurance vocabulary
 
@@ -17,20 +110,55 @@ requirement-to-test mapping is in the [traceability matrix](12-traceability-matr
 - **Target:** an architectural design or port without a qualified production
   implementation.
 
+## Business-operation contract foundation
+
+Java and the checked-in language-neutral artifacts now validate a strict
+business-operation snapshot around an immutable canonical action. Deterministic
+tests bind canonical, semantic, resource/precondition and target-generation
+digests; keep transport/event/operation/request/target identities separate; and
+enforce three independent append-only lifecycle dimensions. The isolated JDBC
+registration library additionally commits an initial snapshot and all three
+initial facts atomically, returns an original scoped-key retry, rejects changed
+bindings and reports commit uncertainty. One shared test suite runs on MariaDB
+11.4.13/10.6.25 and PostgreSQL 16.4, including concurrent repository instances,
+restart, restricted runtime grants and corruption checks. This library remains
+unwired: operation APIs, authority-bearing lifecycle transitions, AgentCore,
+GitHub dispatch, S3 delivery, RDS and production deployment remain pending. See
+[ADR 0068](../architecture/0068-versioned-business-operation-contract.md),
+[ADR 0070](../architecture/0070-durable-business-operation-registration.md) and the
+[repository runbook](../runbooks/business-operation-repository.md).
+
 ## Current capability by boundary
 
-| Boundary                    | Implemented and verified                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Important limit                                                                                                                                                                                                                                                                                                                                                         |
-| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Canonical action and policy | Java derives action/sequence risk and evaluates ordered allow/block/sanitize/approval policy. An optional Java lifecycle library with in-memory and PostgreSQL durable stores validates/stages candidates, preserves immutable revisions, simulates decisions, and atomically activates/rolls back revision snapshots under optimistic concurrency. Numeric ingestion is bounded to the current Java `int` profile.                                                                                                                           | No learned-model classifier or private-model reasoning. Policy lifecycle is an internal Java/PostgreSQL foundation; authenticated policy administration endpoints and UI wiring remain deferred. Approvals compose with active policy generations via opt-in lifecycle integration. Default launchers retain static policies.                                           |
-| Local MCP/CLI origin        | Loopback Java MCP adapter authenticates development credentials. The CLI profile verifies an exact request- and credential-bound Ed25519 source proof from the Java stdio connector.                                                                                                                                                                                                                                                                                                                                                          | The development key provider and process observer are not managed-device or hardware-backed attestation. A source proof does not authorize an action.                                                                                                                                                                                                                   |
-| Scheduled origin            | Java verifies an operator-trusted signed workload identity and a complete, parent-linked, monotonically narrowed delegation chain.                                                                                                                                                                                                                                                                                                                                                                                                            | The qualified path is a local simulator composition; no production scheduler transport, durable registry/revocation service, or real target credential exists.                                                                                                                                                                                                          |
-| Hosted MCP origin           | Java OAuth/JWKS verifier and remote MCP adapter perform issuer/audience/client/tenant/scope/time checks, protected-resource discovery, per-invocation authorization, and server-owned action normalization.                                                                                                                                                                                                                                                                                                                                   | One Auth0 + ChatGPT + private-tunnel profile was live-qualified on 2026-10-11. Claude web, other IdPs, general provider compatibility, and a public production runtime are not qualified.                                                                                                                                                                               |
-| Hardened remote edge        | Direct-TLS sender-constraint, Host/Origin checks, independent pre/post-auth rate-limit ports, readiness, and bounded telemetry have automated tests.                                                                                                                                                                                                                                                                                                                                                                                          | The hosted loopback demo does not turn these ports into a managed distributed edge. Shared abuse state, certificate lifecycle, exporter, and deployment bootstrap remain target work.                                                                                                                                                                                   |
-| Permit and execution        | Request-bound permits guard simulator dispatch. Existing PostgreSQL execution/approval atomically claims permit, idempotency, attempt and evidence. A separate standalone consumption adapter has verified-tenant routing, explicit action hashes and commit-before-success tests. Per-principal lock striping and linearized authorization timestamps in `SecureExecutionService` protect sequence and policy evaluation across distinct principals without global serialization. Dispatcher admission bounds concurrent execution attempts. | Default local stores are process-local. Standalone consumption is not the composed execution transaction; production signing keys, target credentials and anti-bypass remain absent. Striping and admission control are process-local; they do not provide distributed concurrency guarantees, per-tenant fair queuing, or an end-to-end throughput SLA.                |
-| Human approval              | Separate authenticated loopback API plus optional same-origin browser sign-in/React inbox share operator roles, exact PostgreSQL snapshots, distinct review and atomic simulator execution. An opt-in Java factory additionally binds approvals to durable active-policy generations.                                                                                                                                                                                                                                                         | Default launchers and the host-native source-free distribution use static policies, not the opt-in lifecycle composition. Generation-bound stale claims cannot dispatch; later activation does not cancel a committed claim. Synthetic browser profile qualified; no live external browser IdP, public reviewer edge or real target. Default console remains read-only. |
-| Evidence and recovery       | Java adds a bounded credential/pattern redaction library and applies its default profile to approval-response action projections (ADR 0043), preserving original request hashes and exact action snapshots. It appends redacted, hash-linked evidence; PostgreSQL outbox publication, independently verified signed receipt, and lookup-only unknown-outcome reconciliation have tests.                                                                                                                                                       | No global log/export or before-persistence redaction hook; unkeyed hashes are not secret confidentiality. The development stream is process-local. No production external sink, external target lookup, retention program, or independent audit account is configured.                                                                                                  |
-| Read console                | React displays bounded Java action, evidence, lineage, and policy projections over loopback.                                                                                                                                                                                                                                                                                                                                                                                                                                                  | It cannot authorize, approve, execute, or mutate policy. It is not remotely authenticated or tenant-authorized.                                                                                                                                                                                                                                                         |
-| Downstream targets          | Deterministic, stateful AWS/Jira simulators support the numbered scenarios.                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | No real AWS/Jira SDK, cloud credential, or production side-effect route is present.                                                                                                                                                                                                                                                                                     |
+| Boundary                    | Implemented and verified                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Important limit                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Canonical action and policy | Java derives action/sequence risk and evaluates ordered allow/block/sanitize/approval policy. An optional Java lifecycle library with in-memory and PostgreSQL durable stores validates/stages candidates, preserves immutable revisions, simulates decisions, and atomically activates/rolls back revision snapshots under optimistic concurrency. Numeric ingestion is bounded to the current Java `int` profile.                                                                                                                                                                                                               | No learned-model classifier or private-model reasoning. Policy lifecycle is an internal Java/PostgreSQL foundation; authenticated policy administration endpoints and UI wiring remain deferred. Approvals compose with active policy generations via opt-in lifecycle integration. Default launchers retain static policies.                                                                                                                                          |
+| Local MCP/CLI origin        | Loopback Java MCP adapter authenticates development credentials. The CLI profile verifies an exact request- and credential-bound Ed25519 source proof from the Java stdio connector.                                                                                                                                                                                                                                                                                                                                                                                                                                              | The development key provider and process observer are not managed-device or hardware-backed attestation. A source proof does not authorize an action.                                                                                                                                                                                                                                                                                                                  |
+| Scheduled origin            | Java verifies an operator-trusted signed workload identity and a complete, parent-linked, monotonically narrowed delegation chain.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | The qualified path is a local simulator composition; no production scheduler transport, durable registry/revocation service, or real target credential exists.                                                                                                                                                                                                                                                                                                         |
+| Hosted MCP origin           | Java OAuth/JWKS verifier and remote MCP adapter perform issuer/audience/client/tenant/scope/time checks, protected-resource discovery, per-invocation authorization, and server-owned action normalization.                                                                                                                                                                                                                                                                                                                                                                                                                       | One Auth0 + ChatGPT + private-tunnel profile was live-qualified on 2026-10-11. Claude web, other IdPs, general provider compatibility, and a public production runtime are not qualified.                                                                                                                                                                                                                                                                              |
+| Hardened remote edge        | Direct-TLS sender-constraint, Host/Origin checks, independent pre/post-auth rate-limit ports, readiness, and bounded telemetry have automated tests.                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | The hosted loopback demo does not turn these ports into a managed distributed edge. Shared abuse state, certificate lifecycle, exporter, and deployment bootstrap remain target work.                                                                                                                                                                                                                                                                                  |
+| Permit and execution        | Request-bound permits guard simulator dispatch. Existing PostgreSQL execution/approval atomically claims permit, idempotency, attempt and evidence. Separate PostgreSQL and unwired MariaDB standalone consumption adapters have verified-tenant routing, explicit action hashes and commit-before-success tests; MariaDB 11.4.13 is primary and 10.6.25 transitional. Per-principal lock striping and linearized authorization timestamps in `SecureExecutionService` protect sequence and policy evaluation across distinct principals without global serialization. Dispatcher admission bounds concurrent execution attempts. | Default local stores are process-local. Standalone consumption is not the composed execution transaction. MariaDB has no approval, evidence, policy or recovery composition and is not launcher-wired or RDS-qualified. Production signing keys, target credentials and anti-bypass remain absent. Striping and admission control are process-local; they do not provide distributed concurrency guarantees, per-tenant fair queuing, or an end-to-end throughput SLA. |
+| Human approval              | Separate authenticated loopback API plus optional same-origin browser sign-in/React inbox share operator roles, exact PostgreSQL snapshots, distinct review and atomic simulator execution. An opt-in Java factory additionally binds approvals to durable active-policy generations. One Auth0 native/public same-Mac source-free composition was live-qualified on 2026-10-22.                                                                                                                                                                                                                                                  | Default launchers and the host-native source-free distribution use static policies, not the opt-in lifecycle composition. Generation-bound stale claims cannot dispatch; later activation does not cancel a committed claim. The live result covers one synthetic test registration only; no public reviewer edge, arbitrary IdP or real target. Default console remains read-only.                                                                                    |
+| Container install profile   | A Linux Docker Engine profile packages the source-free Java/React distribution with digest-pinned PostgreSQL, explicit prepare/check/init/run phases, non-root read-only application runtime, numeric-loopback host networking, safe health/readiness and disposable qualification.                                                                                                                                                                                                                                                                                                                                               | TP-MVP-05 foundation only. Linux host networking, external IdP, TLS/reverse proxy, sender constraint, shared abuse state, signed provenance, backup/restore and public/production deployment remain unqualified.                                                                                                                                                                                                                                                       |
+| Evidence and recovery       | Java adds a bounded credential/pattern redaction library and applies its default profile to approval-response action projections (ADR 0043), preserving original request hashes and exact action snapshots. It appends redacted, hash-linked evidence; PostgreSQL outbox publication, independently verified signed receipt, and lookup-only unknown-outcome reconciliation have tests.                                                                                                                                                                                                                                           | No global log/export or before-persistence redaction hook; unkeyed hashes are not secret confidentiality. The development stream is process-local. No production external sink, external target lookup, retention program, or independent audit account is configured.                                                                                                                                                                                                 |
+| Read console                | React displays bounded Java action, evidence, lineage, and policy projections over loopback.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | It cannot authorize, approve, execute, or mutate policy. It is not remotely authenticated or tenant-authorized.                                                                                                                                                                                                                                                                                                                                                        |
+| Downstream targets          | Deterministic, stateful AWS/Jira simulators support the numbered scenarios.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | No real AWS/Jira SDK, cloud credential, or production side-effect route is present.                                                                                                                                                                                                                                                                                                                                                                                    |
+
+## Public-client browser candidate
+
+Schema1.1 explicitly selects `none` for a native/public client, with code/S256
+PKCE, no secret or Authorization header, exact loopback redirect and configured
+organization binding in both signed tokens. Baseline API read scope is required;
+`openid` is requested for OIDC and need not be echoed into API-token scope.
+Schema1.0 confidential behavior remains compatible. Synthetic protocol,
+local-TLS and PostgreSQL tests exercise these boundaries. One exact Auth0
+native/public registration completed live sign-in, organization binding,
+distinct review, explicit execution and restart durability on 2026-10-22.
+A missing/unsupported response still fails closed. The
+[local-Mac procedure](../runbooks/auth0-native-oidc-qualification.md) and
+[sanitized record](../demo-scenarios/evidence/installed-auth0-approval-2026-10-22.md)
+bound that result. It does not qualify the container preparation profile,
+a public edge, arbitrary OIDC providers or production identity.
 
 ## OIDC refresh isolation
 
@@ -119,8 +247,16 @@ empty/partial/incompatible state. See [ADR 0045](../architecture/0045-explicit-d
 Strict operator startup now requires V1–V10. A separate owner-only `--upgrade-db`
 accepts exactly V9→V10 while services are stopped; ready/unresolved-work, ownership,
 history/checksum and lock failures refuse migration. V10 adds cancelled storage
-compatibility, not an authenticated withdrawal feature. No cancellation route,
-scope or button is enabled. See [ADR 0059](../architecture/0059-explicit-v9-v10-simulator-upgrade.md).
+compatibility. [ADR 0060](../architecture/0060-authenticated-pending-request-withdrawal.md)
+adds the Java owner-only pending withdrawal route with explicit requester scope,
+locked deadline/binding checks and atomic version3 cancellation evidence/outbox.
+The local React inbox adds an eligible-owner **Withdraw request** confirmation,
+exact-hash POST, cancelled history filter and no automatic retry, with mounted
+synthetic-browser regression coverage ([ADR 0061](../architecture/0061-requester-withdrawal-inbox.md)).
+No new MCP tool is enabled. A separate named installed Auth0 profile exercised
+owner withdrawal on 2026-10-21; the 2026-10-22 release-candidate rerun did not
+repeat that case. See
+[ADR 0059](../architecture/0059-explicit-v9-v10-simulator-upgrade.md) for upgrade limits.
 This does not detect a valid older restored snapshot or add a recovery fence.
 The five [generation-bound restore cases](../runbooks/policy-bound-restore-qualification.md)
 compare populated current-schema state (V8 policy bindings plus the V9 recovery
@@ -179,6 +315,27 @@ redacted fail-closed errors, clean SIGTERM shutdown with port release, commit-on
 cache invalidation, exact file/JAR inventories and repeated staging stability.
 See [ADR 0040](../architecture/0040-source-free-simulator-approval-distribution.md) and
 the [distribution runbook](../runbooks/simulator-approval-distribution.md).
+
+### Loopback container install profile foundation
+
+`deploy/container/compose.yaml` assembles the same source-free Java/React archive
+with digest-pinned PostgreSQL 16 for a Linux Docker Engine host. Application and
+database use host networking without published ports and retain their exact
+`127.0.0.1` binds. The app runs non-root with a read-only root filesystem, no
+capabilities and a read-only private configuration volume. A separate one-shot
+setup container copies only named private files and refuses changed retained
+keys/secrets. Setup, offline check, empty-only initialization and run remain
+explicit operator steps.
+
+The approval listener now exposes bounded local `/health` and `/ready` documents.
+Readiness validates the exact PostgreSQL schema and requires non-quarantined
+recovery state; it does not contact or qualify an IdP. The container qualification
+generates keys/secrets at runtime, verifies source/build-tool exclusion, Compose
+hardening, React serving, loopback-only sockets, no remote bind and database-outage
+readiness behavior. No target is invoked. See [ADR 0062](../architecture/0062-loopback-container-install-profile.md)
+and the [container runbook](../runbooks/container-install-profile.md). Docker
+Desktop, bridge/public ingress, TLS/reverse proxy, sender constraint, shared
+abuse state, external IdP compatibility and production readiness remain target work.
 
 - `pnpm demo` starts the combined loopback Java backend and read-only React
   console. [Scenarios 0–11](../demo-scenarios/README.md) cover source proof,
@@ -292,3 +449,20 @@ trusted adapter. Its schema cannot turn a client-provided `verified` flag into
 proof. The supported local composition binds development HTTP surfaces to
 loopback; authenticated remote MCP is the external trust boundary. The read
 API is also loopback-only and has no remote tenant authorization.
+
+## Installed requester sign-in and Codex handoff
+
+The Java approval runtime has a read-only, bearer-authenticated requester
+qualification route, and the source-free archive packages a separate requester
+helper. It validates an exact owner-only configuration offline, performs one
+public Code + S256 login through a fixed numeric-loopback callback, verifies
+access and ID tokens, confirms exact requester-only enrollment, publishes one
+short-lived no-replace credential and consumes it before starting the pinned
+Codex executable with an environment-variable-referenced MCP bearer.
+
+Automated tests cover closed configuration, callback/state/issuer parsing,
+public authorization/token shape, role/scope/expiry rejection, credential
+permission/link/concurrency behavior, no-body qualification and token-free child
+argv. Live provider registration, browser selection, installed Codex catalog,
+expiry/re-login continuity and replay remain a separate Mac gate. This is a
+same-UID simulator boundary, not production identity or endpoint attestation.

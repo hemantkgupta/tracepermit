@@ -1,0 +1,12 @@
+// Opt-in negative scheduling probe only; never part of the default success gate.
+gradle.projectsEvaluated {
+  def probeRoot = System.getenv('TRACEPERMIT_LATENCY_PROBE_ROOT')
+  if (probeRoot == null || !new File(probeRoot).isDirectory()) {
+    throw new GradleException('LATENCY_PROBE_ROOT_REQUIRED')
+  }
+  def target = gradle.rootProject.project(':adapters-http')
+  target.sourceSets.test.java.srcDir(probeRoot)
+  target.tasks.withType(Test).configureEach {
+    jvmArgs '-XX:ActiveProcessorCount=2'
+  }
+}

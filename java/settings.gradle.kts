@@ -11,7 +11,11 @@ include(
   "adapters-http",
   "adapters-remote",
   "endpoint-connector",
+  "review-verifier",
+  "pilot-operator",
   "persistence-postgres",
+  "persistence-mariadb",
+  "persistence-operations",
   "observability-otel",
   "conformance",
 )

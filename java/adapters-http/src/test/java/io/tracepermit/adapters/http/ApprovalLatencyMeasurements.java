@@ -391,6 +391,11 @@ public final class ApprovalLatencyMeasurements {
     void execute(ApprovalItem item) throws Exception;
   }
 
+  @FunctionalInterface
+  interface PhaseBoundary {
+    boolean awaitQuiescence();
+  }
+
   /**
    * Executes a bounded concurrent batch of operations with exact accounting.
    * Every planned operation is accounted for exactly once in the terminal outcomes:
@@ -525,6 +530,88 @@ public final class ApprovalLatencyMeasurements {
   }
 
   /**
+   * Executes one client-concurrency wave at a time and proves that the server has
+   * returned every accepted handler lane before offering the next wave. The
+   * operation timeout remains one budget across all waves; barrier time is bounded
+   * separately and is not counted as operation wall time. This is qualification
+   * coordination only: it never retries an item or changes server admission bounds.
+   */
+  static BatchExecution runConcurrentWaves(
+      int concurrency,
+      List<ApprovalItem> items,
+      ItemOperation operation,
+      Duration timeout,
+      String phaseName,
+      String population,
+      PhaseBoundary phaseBoundary) {
+
+    if (items.isEmpty()) {
+      return new BatchExecution(0, 0, 0, 0, 0, new long[0], 0L, List.of());
+    }
+
+    int waveSize = Math.max(1, Math.min(concurrency, MAX_CONCURRENCY));
+    long remainingBudgetNanos;
+    try {
+      remainingBudgetNanos = timeout.toNanos();
+    } catch (ArithmeticException overflow) {
+      remainingBudgetNanos = Long.MAX_VALUE;
+    }
+
+    int successes = 0;
+    int failures = 0;
+    int timeouts = 0;
+    int cancelled = 0;
+    long operationWallNanos = 0L;
+    var successDurations = new ArrayList<Long>();
+    var failureCodes = new ArrayList<String>();
+
+    for (int from = 0; from < items.size(); from += waveSize) {
+      int to = Math.min(items.size(), from + waveSize);
+      if (remainingBudgetNanos <= 0L) {
+        cancelled += items.size() - from;
+        break;
+      }
+
+      BatchExecution wave = runConcurrent(
+          waveSize,
+          items.subList(from, to),
+          operation,
+          Duration.ofNanos(remainingBudgetNanos));
+      successes += wave.successCount();
+      failures += wave.failureCount();
+      timeouts += wave.timeoutCount();
+      cancelled += wave.cancelledCount();
+      operationWallNanos = saturatedAdd(operationWallNanos, wave.wallElapsedNanos());
+      remainingBudgetNanos = Math.max(0L, remainingBudgetNanos - wave.wallElapsedNanos());
+      for (long duration : wave.successDurationsNanos()) {
+        successDurations.add(duration);
+      }
+      failureCodes.addAll(wave.failureCodes());
+
+      requirePhaseQuiescence(phaseName, population + " wave " + ((from / waveSize) + 1), phaseBoundary);
+    }
+
+    long[] durationArray = new long[successDurations.size()];
+    for (int i = 0; i < successDurations.size(); i++) {
+      durationArray[i] = successDurations.get(i);
+    }
+    return new BatchExecution(
+        items.size(),
+        successes,
+        failures,
+        timeouts,
+        cancelled,
+        durationArray,
+        operationWallNanos,
+        List.copyOf(failureCodes));
+  }
+
+  private static long saturatedAdd(long left, long right) {
+    if (right > 0L && left > Long.MAX_VALUE - right) return Long.MAX_VALUE;
+    return left + right;
+  }
+
+  /**
    * Executes a workflow phase with separate warmup and measured operations.
    * Any unexpected failure in warm-up or measured batches records an explicit failure.
    */
@@ -535,12 +622,24 @@ public final class ApprovalLatencyMeasurements {
       List<ApprovalItem> measuredItems,
       ItemOperation operation,
       List<String> failures) {
+    return runPhase(phaseName, concurrency, warmupItems, measuredItems, operation, () -> true, failures);
+  }
+
+  static PhaseMetrics runPhase(
+      String phaseName,
+      int concurrency,
+      List<ApprovalItem> warmupItems,
+      List<ApprovalItem> measuredItems,
+      ItemOperation operation,
+      PhaseBoundary phaseBoundary,
+      List<String> failures) {
 
     Duration phaseTimeout = Duration.ofSeconds(30);
 
     // 1. Warm-up operations (exercise exact code path; fail closed on warmup error)
     if (!warmupItems.isEmpty()) {
-      BatchExecution warmupBatch = runConcurrent(concurrency, warmupItems, operation, phaseTimeout);
+      BatchExecution warmupBatch = runConcurrentWaves(
+          concurrency, warmupItems, operation, phaseTimeout, phaseName, "warmup", phaseBoundary);
       if (warmupBatch.failureCount() > 0 || warmupBatch.timeoutCount() > 0 || warmupBatch.cancelledCount() > 0) {
         failures.add(String.format("Phase %s (concurrency=%d) warmup had unexpected failures: %d failed, %d timed out, %d cancelled out of %d operations.",
             phaseName, concurrency, warmupBatch.failureCount(), warmupBatch.timeoutCount(), warmupBatch.cancelledCount(), warmupItems.size())
@@ -560,7 +659,8 @@ public final class ApprovalLatencyMeasurements {
 
     // 2. Measured steady-state operations
     int measuredCount = measuredItems.size();
-    BatchExecution measuredBatch = runConcurrent(concurrency, measuredItems, operation, phaseTimeout);
+    BatchExecution measuredBatch = runConcurrentWaves(
+        concurrency, measuredItems, operation, phaseTimeout, phaseName, "measured", phaseBoundary);
     int successes = measuredBatch.successCount();
     int failed = measuredBatch.failureCount();
     int timeouts = measuredBatch.timeoutCount();
@@ -588,6 +688,14 @@ public final class ApprovalLatencyMeasurements {
         percentiles);
   }
 
+  private static void requirePhaseQuiescence(
+      String phaseName, String population, PhaseBoundary phaseBoundary) {
+    if (!phaseBoundary.awaitQuiescence()) {
+      throw new IllegalStateException(
+          "PHASE_" + sanitizeCode(phaseName) + "_" + sanitizeCode(population) + "_QUIESCENCE_TIMEOUT");
+    }
+  }
+
   /**
    * Executes the full closed-loop qualification against a disposable PostgreSQL container.
    */
@@ -596,6 +704,11 @@ public final class ApprovalLatencyMeasurements {
       int[] concurrencyLevels,
       int[] warmupCounts,
       int[] measuredCounts) throws Exception {
+    return runQualification(postgres, concurrencyLevels, warmupCounts, measuredCounts, new LatencyFailureDiagnostics());
+  }
+
+  static LatencyQualificationReport runQualification(PostgreSQLContainer<?> postgres,
+      int[] concurrencyLevels, int[] warmupCounts, int[] measuredCounts, LatencyFailureDiagnostics diagnostics) throws Exception {
 
     Objects.requireNonNull(postgres, "PostgreSQL container must not be null");
     if (!postgres.isRunning()) {
@@ -722,6 +835,7 @@ public final class ApprovalLatencyMeasurements {
 
     SimulatorApprovalServer server = null;
     HttpClient client = null;
+    LatencyAdmissionObservation admissionObservation = null;
 
     List<SweepMetrics> sweepResults = new ArrayList<>();
     List<String> failures = new ArrayList<>();
@@ -743,13 +857,16 @@ public final class ApprovalLatencyMeasurements {
           simulator,
           clock);
 
-      client = HttpClient.newBuilder()
-          .connectTimeout(Duration.ofSeconds(5))
-          .build();
+      client = newQualificationHttpClient();
+      admissionObservation = LatencyAdmissionObservation.attach(server, diagnostics);
 
       performMcpHandshake(server.port(), requesterToken, client);
 
       for (int i = 0; i < concurrencyLevels.length; i++) {
+        if (i > 0) {
+          retireQualificationHttpClient(client);
+          client = newQualificationHttpClient();
+        }
         int concurrency = concurrencyLevels[i];
         int warmup = warmupCounts[i];
         int measured = measuredCounts[i];
@@ -780,6 +897,7 @@ public final class ApprovalLatencyMeasurements {
             warmupItems,
             measuredItems,
             (item) -> executeMcpRequest(currentServer.port(), requesterToken, item, currentClient),
+            () -> currentServer.awaitDispatchQuiescence(Duration.ofSeconds(5)),
             failures);
         phaseMetricsMap.put("mcp_request", reqMetrics);
         assertZeroStateDeltas("mcp_request", simulator, dataSource, sweepStartRules, sweepStartPermits, sweepStartAttempts, failures);
@@ -791,6 +909,7 @@ public final class ApprovalLatencyMeasurements {
             warmupItems,
             measuredItems,
             (item) -> executeMcpStatus(currentServer.port(), requesterToken, item, currentClient),
+            () -> currentServer.awaitDispatchQuiescence(Duration.ofSeconds(5)),
             failures);
         phaseMetricsMap.put("mcp_status", statusMetrics);
         assertZeroStateDeltas("mcp_status", simulator, dataSource, sweepStartRules, sweepStartPermits, sweepStartAttempts, failures);
@@ -802,6 +921,7 @@ public final class ApprovalLatencyMeasurements {
             warmupItems,
             measuredItems,
             (item) -> executeHttpReview(currentServer.port(), reviewerToken, item, currentClient),
+            () -> currentServer.awaitDispatchQuiescence(Duration.ofSeconds(5)),
             failures);
         phaseMetricsMap.put("http_review", reviewMetrics);
         assertZeroStateDeltas("http_review", simulator, dataSource, sweepStartRules, sweepStartPermits, sweepStartAttempts, failures);
@@ -813,6 +933,7 @@ public final class ApprovalLatencyMeasurements {
             warmupItems,
             measuredItems,
             (item) -> executeMcpResume(currentServer.port(), requesterToken, item, currentClient),
+            () -> currentServer.awaitDispatchQuiescence(Duration.ofSeconds(5)),
             failures);
         phaseMetricsMap.put("mcp_resume", resumeMetrics);
 
@@ -905,15 +1026,28 @@ public final class ApprovalLatencyMeasurements {
       failures.add("Execution exception: " + classifySafeErrorCode(e));
       overallPassed = false;
     } finally {
+      if (admissionObservation != null) {
+        try { admissionObservation.close(); }
+        catch (RuntimeException failure) {
+          failures.add("ADMISSION_DIAGNOSTIC_CLEANUP_FAILED"); overallPassed = false;
+        }
+      }
       if (server != null) {
         try {
           server.close();
-        } catch (Throwable ignored) {}
+        } catch (Throwable failure) {
+          failures.add("FIXTURE_SERVER_CLEANUP_FAILED"); overallPassed = false;
+        }
       }
       if (client != null) {
         try {
-          client.close();
-        } catch (Throwable ignored) {}
+          retireQualificationHttpClient(client);
+        } catch (InterruptedException interrupted) {
+          Thread.currentThread().interrupt();
+          failures.add("HTTP_CLIENT_CLEANUP_INTERRUPTED"); overallPassed = false;
+        } catch (RuntimeException failure) {
+          failures.add("HTTP_CLIENT_SHUTDOWN_TIMEOUT"); overallPassed = false;
+        }
       }
     }
 
@@ -941,6 +1075,28 @@ public final class ApprovalLatencyMeasurements {
         replayRuleDelta,
         overallPassed,
         failures);
+  }
+
+  static HttpClient newQualificationHttpClient() {
+    return HttpClient.newBuilder()
+        .connectTimeout(Duration.ofSeconds(5))
+        .build();
+  }
+
+  /**
+   * Retires one sweep's transport pool before the next sweep begins. This keeps
+   * an idle connection closed by the JDK loopback server from leaking into a
+   * later, slower sweep as an unrelated transport failure. No operation is
+   * retried, and the fixed server admission capacity is unchanged.
+   */
+  static void retireQualificationHttpClient(HttpClient client) throws InterruptedException {
+    client.shutdown();
+    if (!client.awaitTermination(Duration.ofSeconds(5))) {
+      client.shutdownNow();
+      if (!client.awaitTermination(Duration.ofSeconds(5))) {
+        throw new IllegalStateException("HTTP_CLIENT_SHUTDOWN_TIMEOUT");
+      }
+    }
   }
 
   private static void assertZeroStateDeltas(
@@ -1264,12 +1420,12 @@ public final class ApprovalLatencyMeasurements {
     if (t instanceof HttpTimeoutException || t instanceof TimeoutException) {
       return "TIMEOUT";
     }
+    if (t instanceof java.io.IOException) return LatencyFailureDiagnostics.transportCategory(t);
     String msg = t.getMessage();
-    if (msg != null && (msg.startsWith("MCP_") || msg.startsWith("HTTP_") || msg.startsWith("TOOL_ERROR_")
-        || msg.startsWith("UNEXPECTED_") || msg.startsWith("JSON_") || msg.startsWith("MISSING_"))) {
-      return msg;
-    }
-    return "OPERATION_FAILED_" + t.getClass().getSimpleName();
+    if (msg != null && LatencyFailureDiagnostics.isFixedOperationCode(msg)) return msg;
+    if (t instanceof IllegalStateException) return "OPERATION_FAILED_IllegalStateException";
+    if (t instanceof IllegalArgumentException) return "OPERATION_FAILED_IllegalArgumentException";
+    return "OTHER_OPERATION_FAILURE";
   }
 
   static Map<String, String> getGitProvenance(Path root) {

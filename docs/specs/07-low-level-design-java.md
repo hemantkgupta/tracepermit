@@ -19,26 +19,72 @@ No database migration or real target is introduced. See
 
 ## Module ownership
 
-| Module                 | Responsibility                                                                                                                     |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `contracts`            | Canonical JSON, strict action and signed-claim validation, bounded opt-in projection redaction (ADR 0043)                          |
-| `identity`             | Development token, source proof, workload/delegation, OAuth/OIDC verification                                                      |
-| `policy`               | Deterministic classifier, sequence signals, strict policy schema validation, lifecycle staging/activation/rollback, and simulation |
-| `security`             | Request-bound permit issue, verification, and consumption                                                                          |
-| `execution`            | Attempts, idempotency, unknown outcomes, evidence chain                                                                            |
-| `application`          | Fail-closed orchestration and trusted reviewer workflow                                                                            |
-| `simulator`            | Bounded, stateful AWS/Jira fakes; no real target SDK                                                                               |
-| `adapters-http`        | Loopback MCP, read-only projections, and separate authenticated approval/browser adapter                                           |
-| `adapters-remote`      | Authenticated MCP edge and SSRF-safe JWKS HTTPS                                                                                    |
-| `endpoint-connector`   | MCP stdio origin observation and loopback forwarding                                                                               |
-| `persistence-postgres` | Durable claims, approvals, policy revisions/lifecycle, evidence, outbox, reconciliation                                            |
-| `observability-otel`   | Bounded telemetry projection                                                                                                       |
-| `conformance`          | Checked-in schema, vector, and invariant tests                                                                                     |
+| Module                   | Responsibility                                                                                                                      |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `contracts`              | Canonical JSON, strict action/business-operation/signed-claim validation, bounded opt-in projection redaction (ADR 0043/0068)       |
+| `identity`               | Development token, source proof, workload/delegation, OAuth/OIDC verification                                                       |
+| `policy`                 | Deterministic classifier, sequence signals, strict policy schema validation, lifecycle staging/activation/rollback, and simulation  |
+| `security`               | Request-bound permit issue, verification, and consumption                                                                           |
+| `execution`              | Attempts, idempotency, unknown outcomes, evidence chain                                                                             |
+| `application`            | Fail-closed orchestration and trusted reviewer workflow                                                                             |
+| `simulator`              | Bounded, stateful AWS/Jira fakes; no real target SDK                                                                                |
+| `adapters-http`          | Loopback MCP, read-only projections, and separate authenticated approval/browser adapter                                            |
+| `adapters-remote`        | Authenticated MCP edge, SSRF-safe JWKS HTTPS, and bounded AgentCore GitHub draft pull request adapter with read-only reconciliation |
+| `endpoint-connector`     | MCP stdio origin observation and loopback forwarding                                                                                |
+| `persistence-postgres`   | Durable claims, approvals, policy revisions/lifecycle, evidence, outbox, reconciliation                                             |
+| `persistence-operations` | Isolated MariaDB/PostgreSQL operation registration, scoped-key uniqueness and immutable initial facts (ADR 0070)                    |
+| `observability-otel`     | Bounded telemetry projection                                                                                                        |
+| `conformance`            | Checked-in schema, vector, and invariant tests                                                                                      |
 
 Transport code stays in adapters. All origins converge on the canonical
 action contract before classification or policy. Application and domain code
 receive trusted identity context from adapters; they do not infer it from tool
 arguments. The executor has no route to a real AWS or Jira service.
+
+## AgentCore GitHub draft pull request adapter and reconciliation
+
+`GitHubDraftPullRequestAdapter` in package `io.tracepermit.adapters.remote.github`
+handles the AgentCore pilot operation `github.pull_request.create`. It performs
+strict pre-execution canonical validation, repository allowlisting
+(`tracepermit/agentcore-pr-pilot`), base branch allowlisting (`main`), and mandatory
+`draft: true` enforcement before consuming execution permits. Transport configuration
+enforces `Proxy.NO_PROXY`, disabled redirects and retries, bounded timeouts (5s connect,
+10s call), and decoded response size limits (65,536 bytes, enforced while reading
+with one overflow byte for detection). Credential tokens are derived via
+`GitHubAppCredentialProvider`, masked in memory, and stripped from error messages and
+evidence records.
+
+To address the absence of client-specified idempotency in GitHub's REST API,
+`GitHubDraftPullRequestAdapter.computeOperationKey(...)` derives a deterministic
+SHA-256 operation key bound to installation ID, repository, head branch, and base branch.
+Ambiguous socket timeouts and network failures transition attempts to `unknown` without
+automatic retries. `GitHubPullRequestOutcomeResolver` implements `TargetOutcomeResolver`
+to query `GET /repos/{owner}/{repo}/pulls?head={owner}:{head}&base={base}&state=all`
+during scheduled reconciliation, transitioning to `succeeded` only upon observing a
+matching pull request, or `failed` under the existing successful-empty-lookup
+contract. Oversized HTTP 201 confirmation and unavailable/rejected/oversized GET
+lookup retain `unknown`, not a confirmed failure. State and registration are
+process-local; durable composition and general absence semantics remain separate.
+See [ADR 0069](../architecture/0069-github-app-draft-pr-adapter-and-reconciliation.md).
+
+## Uncommitted business-operation lifecycle proposals
+
+The application module's `BusinessOperationTransitionPlanner` additionally builds
+uncommitted v1 transition proposals against exact scope and a token covering the
+whole snapshot, recovery generation, sequence and all dimension versions. It
+revalidates one append and returns defensive copies, with no repository or target
+port. Tokens/proposals are not authentication, authority, atomic CAS or observed
+outcome evidence. The registration repository still refuses progressed candidates;
+future trusted durable lifecycle composition is separate. See
+[ADR 0071](../architecture/0071-uncommitted-operation-transition-proposals.md).
+
+`JdbcBusinessOperationLifecycleRepository` adds only a closed pending-owner
+withdrawal command and coherent current reads, using a separate head/journal.
+Locked READ COMMITTED mutation checks exact whole-state identity and database-time
+authority; REPEATABLE READ inspection validates one consistent history. Explicit
+V1→V2 migration preserves initial rows and adds column-scoped head update grants.
+It is not an arbitrary JSON transition port or a policy/approval/target executor.
+See [ADR 0072](../architecture/0072-durable-pending-operation-withdrawal.md).
 
 ## OIDC refresh and transport resource boundaries
 
@@ -167,6 +213,15 @@ commit may leave a consumed row without dispatch. No automatic retry occurs.
 This standalone claim must not precede the composed durable claim transaction.
 See [ADR 0041](../architecture/0041-postgres-durable-permit-consumption.md).
 
+The separate `persistence-mariadb` module implements only this standalone claim
+boundary. Its explicit empty-database initializer and validate-only runtime
+accept exact MariaDB 11.4.13 (primary) and 10.6.25 (transitional), require
+InnoDB, and reject unknown versions or schema objects. A plain tenant/permit
+primary-key insert is the serialization point; only duplicate-key error 1062
+means replay. Commit acknowledgement uncertainty fails closed. The module is
+not wired into a launcher and does not implement approval, evidence, policy or
+recovery state. See [ADR 0066](../architecture/0066-mariadb-permit-consumption-foundation.md).
+
 The default loopback demo uses process-local stores. Those stores are not
 safe for multi-replica or restart-persistent enforcement. The optional
 PostgreSQL composition uses short transactions to atomically claim a permit
@@ -223,8 +278,13 @@ See [ADR 0045](../architecture/0045-explicit-database-initialization.md).
 `upgradeFromV9` is a separate owner-only, cooperating-session-locked path:
 validate exact predecessor9, transactionally apply V10, strictly validate10,
 then report success. It is never invoked by runtime open. SQL cancellation
-provenance/terminal guards prepare storage only; no authenticated cancellation
-service exists yet. See [ADR 0059](../architecture/0059-explicit-v9-v10-simulator-upgrade.md).
+provenance/terminal guards support `DurableApprovalCancellationState`; the
+`HumanApprovalService.cancel` path accepts a distinct `TrustedRequesterContext`
+and never calls policy, signer, claim or target. PostgreSQL rechecks deadlines
+after recovery/request locks and atomically appends transition/evidence/outbox.
+Bearer/browser routes share this service; no MCP tool or React mutation is added.
+See [ADR 0059](../architecture/0059-explicit-v9-v10-simulator-upgrade.md) and
+[ADR 0060](../architecture/0060-authenticated-pending-request-withdrawal.md).
 The runtime validates before binding the
 loopback approval service with a fixed default-block/explicit-approval policy.
 Offline check mode performs no DB, DNS, IdP or listener operation. See
@@ -248,6 +308,20 @@ point is fixed. Checksums provide file
 integrity verification, not third-party code signing. All credentials and private keys
 remain operator-owned outside the bundle. See
 [ADR 0040](../architecture/0040-source-free-simulator-approval-distribution.md).
+
+`scripts/build-container-install-profile.sh` turns that exact archive into a
+source-free Java 21 OCI image through a minimal temporary build context. The
+image records source commit and archive hash labels, defaults to UID/GID 10001,
+declares no exposed port and contains neither build tools nor private input.
+`deploy/container/compose.yaml` uses Linux host networking so both Java and
+PostgreSQL can preserve their `127.0.0.1` constraints without a port mapping.
+The application runtime is read-only/capability-free; a limited one-shot root
+container stages only the fixed private-file allowlist and cannot replace
+different retained bytes. `/health` is listener liveness; `/ready` calls an
+injected fail-closed probe that validates existing PostgreSQL state and the
+non-quarantined recovery row. Existing test factories inject an explicit local
+ready probe and cannot select a public bind. See
+[ADR 0062](../architecture/0062-loopback-container-install-profile.md).
 
 Signed artifacts use named canonicalization and algorithm profiles with
 allowlisted keys. An endpoint source proof binds the exact MCP method/params

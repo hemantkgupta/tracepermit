@@ -33,7 +33,7 @@ public final class SimulatorApprovalMain {
 
   public static void main(String[] args) {
     int code = execute(args, System.getenv(), System.out, System.err, configuration -> {
-      try (var server = start(configuration, Clock.systemUTC())) {
+      try (var server = start(configuration, Clock.systemUTC(), System.err)) {
         Thread shutdown = new Thread(server::close, "approval-shutdown");
         Runtime.getRuntime().addShutdownHook(shutdown);
         System.out.println("TracePermit simulator approval API listening on http://127.0.0.1:" + server.port());
@@ -95,14 +95,29 @@ public final class SimulatorApprovalMain {
 
   static SimulatorApprovalServer start(SimulatorApprovalConfiguration configuration, Clock clock)
       throws Exception {
+    return start(configuration, clock, line -> {});
+  }
+
+  private static SimulatorApprovalServer start(SimulatorApprovalConfiguration configuration, Clock clock,
+      PrintStream diagnostics) throws Exception {
+    return start(configuration, clock, diagnostics::println);
+  }
+
+  private static SimulatorApprovalServer start(SimulatorApprovalConfiguration configuration, Clock clock,
+      java.util.function.Consumer<String> diagnostics) throws Exception {
     var source = new SsrfSafeHttpsJwkSetSource(Set.of(configuration.provider().jwksUri()),
         Duration.ofSeconds(3), Duration.ofSeconds(5));
-    return start(configuration, clock, new CachingOidcJwkResolver(source));
+    return start(configuration, clock, new CachingOidcJwkResolver(source), diagnostics);
   }
 
   // Package-private resolver injection for synthetic-signature integration tests, not operator configuration.
   static SimulatorApprovalServer start(SimulatorApprovalConfiguration configuration, Clock clock,
       OidcVerificationKeyResolver resolver) throws Exception {
+    return start(configuration, clock, resolver, line -> {});
+  }
+
+  private static SimulatorApprovalServer start(SimulatorApprovalConfiguration configuration, Clock clock,
+      OidcVerificationKeyResolver resolver, java.util.function.Consumer<String> diagnostics) throws Exception {
     var verifier = new OidcAccessTokenVerifier(
         new StaticOidcProviderRegistry(List.of(configuration.provider())), resolver, clock);
     // Configuration/key/enrollment validation and strict schema checks precede listener creation.
@@ -120,18 +135,19 @@ public final class SimulatorApprovalMain {
       var transport = new SsrfSafeHttpsJwkSetSource(Set.of(web.tokenUri),
           Duration.ofSeconds(3), Duration.ofSeconds(5));
       String clientId = configuration.provider().clientNames().keySet().iterator().next();
-      String credentials = java.net.URLEncoder.encode(clientId, java.nio.charset.StandardCharsets.UTF_8)
-          + ":" + java.net.URLEncoder.encode(web.clientSecret, java.nio.charset.StandardCharsets.UTF_8);
-      String basic = "Basic " + java.util.Base64.getEncoder()
-          .encodeToString(credentials.getBytes(java.nio.charset.StandardCharsets.UTF_8));
       browser = new ApprovalBrowserAdapter(web.authorizationUri, configuration.provider().issuer().toString(),
           configuration.provider().resourceAudience(), clientId, web.consoleDirectory,
-          form -> transport.postForm(web.tokenUri, form, basic), verifier,
-          new BrowserIdTokenVerifier(configuration.provider(), resolver, clock), configuration.memberships(), clock);
+          new BrowserCodeExchange(web.tokenUri, configuration.port(), clientId,
+              web.tokenEndpointAuthMethod, web.clientSecret, transport::postForm), verifier,
+          new BrowserIdTokenVerifier(configuration.provider(), resolver, clock, web.organization),
+          configuration.memberships(), clock, web.organization,
+          new BrowserLoginDiagnostics(diagnostics));
     }
     return SimulatorApprovalServer.start(
         new InetSocketAddress(InetAddress.getByName("127.0.0.1"), configuration.port()),
-        verifier, configuration.memberships(), state, policy(), permits, new StatefulTargetSimulator(), clock, browser);
+        verifier, configuration.memberships(), state, policy(), permits, new StatefulTargetSimulator(),
+        clock, browser, () -> "ready".equals(
+            PostgresRecoveryQuarantine.status(configuration.database()).mode()));
   }
 
   static JsonNode policy() {

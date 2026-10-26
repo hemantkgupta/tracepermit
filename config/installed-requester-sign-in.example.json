@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "1.0",
+  "profile": "installed-requester-public-sign-in",
+  "oidc": {
+    "issuer": "https://idp.example.invalid/",
+    "authorizationUri": "https://idp.example.invalid/authorize",
+    "tokenUri": "https://idp.example.invalid/oauth/token",
+    "jwksUri": "https://idp.example.invalid/.well-known/jwks.json",
+    "audience": "https://approval-api.example.invalid",
+    "clientId": "native-client.example.invalid",
+    "organization": "org_exampleinvalid",
+    "expectedSubject": "provider|requester.example.invalid"
+  },
+  "local": {
+    "callbackUri": "http://127.0.0.1:41837/requester/callback",
+    "qualificationUri": "http://127.0.0.1:8085/api/v1/requester-qualification",
+    "mcpUri": "http://127.0.0.1:8085/mcp",
+    "credentialFile": "/absolute/private/path/requester-credential.json",
+    "codexExecutable": "/absolute/path/to/codex"
+  }
+}

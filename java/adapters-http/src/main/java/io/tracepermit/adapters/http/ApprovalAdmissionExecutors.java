@@ -1,21 +1,28 @@
 package io.tracepermit.adapters.http;
 
-import java.util.concurrent.ArrayBlockingQueue;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Objects;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.TimeoutException;
 
 /**
  * Bounded admission plumbing for the loopback approval foundation. The dispatch
- * pool runs exactly {@code activeLanes} lanes over a queue bounded at
- * {@code pendingBound}, so at most {@code activeLanes + pendingBound} exchanges
- * are ever accepted: active work is the lane count, pending work is the queue.
- * A lane only starts a handler once it has been taken from the queue, so no
+ * pool reserves at most {@code activeLanes} lanes, then a pending FIFO bounded at
+ * {@code pendingBound}. At most {@code activeLanes + pendingBound} exchanges
+ * are outstanding: a reserved lane includes handoff before its worker wakes.
+ * A lane only starts a handler after reservation, so no
  * authentication, body parsing, or database work happens before admission, and
  * a queued exchange runs no handler code but retains its connection and any
  * buffered bytes. These are task-count bounds, not TCP or byte bounds. An offer
- * beyond the pending bound is rejected before any handler runs, which the JDK HTTP
+ * with neither a free lane nor a pending slot is rejected before any handler runs,
+ * which the JDK HTTP
  * implementation surfaces as a closed connection with no response (the
  * dispatcher catches the rejection and closes only that connection); callers
  * must not reframe that into a guaranteed JSON error contract. Threads are
@@ -31,16 +38,95 @@ final class ApprovalAdmissionExecutors {
   private ApprovalAdmissionExecutors() {}
 
   static ExecutorService newDispatchPool(int activeLanes, int pendingBound) {
+    return newDispatchPool(activeLanes, pendingBound, Thread::new);
+  }
+
+  static ExecutorService newDispatchPool(int activeLanes, int pendingBound, ThreadFactory threadFactory) {
     validate(activeLanes, pendingBound);
-    var lanes = new AtomicInteger();
-    return new ThreadPoolExecutor(activeLanes, activeLanes, 60, TimeUnit.SECONDS,
-        new ArrayBlockingQueue<>(pendingBound),
-        task -> {
-          Thread thread = new Thread(task, "approval-dispatch-" + lanes.incrementAndGet());
-          thread.setDaemon(true);
-          return thread;
-        },
-        new ThreadPoolExecutor.AbortPolicy());
+    return new BoundedDispatchExecutor(activeLanes, pendingBound, threadFactory);
+  }
+
+  /**
+   * Establishes a bounded test/qualification barrier behind every exchange already
+   * accepted by this fixed dispatch pool. Each lane must reach and hold one barrier
+   * task before the barrier is released, which proves that all earlier active and
+   * queued handler tasks have returned. Future completion precedes executor worker
+   * release, so also wait for idle workers under the same total deadline. The
+   * qualification caller must own submissions across this boundary: this is not
+   * global quiescence in the presence of concurrent unowned submitters. This does
+   * not retry an exchange, alter admission bounds, or expose a runtime endpoint.
+   */
+  static boolean awaitQuiescence(ExecutorService executor, int activeLanes, Duration timeout) {
+    Objects.requireNonNull(executor, "Executor must not be null.");
+    Objects.requireNonNull(timeout, "Timeout must not be null.");
+    if (activeLanes < 1 || activeLanes > MAX_ACTIVE_LANES) {
+      throw new IllegalArgumentException("Active lanes must stay within the configured bounds.");
+    }
+    if (timeout.isNegative() || timeout.isZero()) {
+      throw new IllegalArgumentException("Quiescence timeout must be positive.");
+    }
+
+    long timeoutNanos;
+    try {
+      timeoutNanos = timeout.toNanos();
+    } catch (ArithmeticException overflow) {
+      timeoutNanos = Long.MAX_VALUE;
+    }
+    long start = System.nanoTime();
+    long deadline = timeoutNanos == Long.MAX_VALUE || Long.MAX_VALUE - start < timeoutNanos
+        ? Long.MAX_VALUE
+        : start + timeoutNanos;
+
+    var entered = new java.util.concurrent.CountDownLatch(activeLanes);
+    var release = new java.util.concurrent.CountDownLatch(1);
+    var barriers = new ArrayList<Future<?>>(activeLanes);
+    try {
+      for (int i = 0; i < activeLanes; i++) {
+        barriers.add(executor.submit(() -> {
+          entered.countDown();
+          try {
+            release.await();
+          } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+          }
+        }));
+      }
+
+      if (!entered.await(remainingNanos(deadline), TimeUnit.NANOSECONDS)) {
+        return false;
+      }
+      release.countDown();
+      for (Future<?> barrier : barriers) {
+        barrier.get(remainingNanos(deadline), TimeUnit.NANOSECONDS);
+      }
+      while (!executor.isShutdown()) {
+        long remaining = remainingNanos(deadline);
+        if (remaining == 0) return false;
+        if (executor instanceof BoundedDispatchExecutor pool) {
+          var occupancy = pool.occupancy();
+          if (occupancy.reserved() == 0 && occupancy.pending() == 0) return true;
+        } else if (executor instanceof ThreadPoolExecutor pool) {
+          if (pool.getActiveCount() == 0 && pool.getQueue().isEmpty()) return true;
+        } else return false;
+        TimeUnit.NANOSECONDS.sleep(Math.min(remaining, TimeUnit.MILLISECONDS.toNanos(1)));
+      }
+      return false;
+    } catch (RejectedExecutionException | ExecutionException | TimeoutException failure) {
+      return false;
+    } catch (InterruptedException interrupted) {
+      Thread.currentThread().interrupt();
+      return false;
+    } finally {
+      release.countDown();
+      for (Future<?> barrier : barriers) {
+        if (!barrier.isDone()) barrier.cancel(true);
+      }
+    }
+  }
+
+  private static long remainingNanos(long deadline) {
+    if (deadline == Long.MAX_VALUE) return Long.MAX_VALUE;
+    return Math.max(0L, deadline - System.nanoTime());
   }
 
   static void validate(int activeLanes, int pendingBound) {

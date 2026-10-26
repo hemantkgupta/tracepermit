@@ -16,14 +16,56 @@
 
 ## 2. Current HTTP surfaces
 
+### GitHub target adapter (internal library, no listener)
+
+Production constructors pin `https://api.github.com` and platform TLS. A separate
+operator-owned `GitHubPilotTargetBinding` supplies immutable installation/repo/
+owner IDs and exact allowed head/base/SHA preconditions. It is not a public
+action field or authority artifact. Missing binding/permit authority refuses
+dispatch. Existing repository aliases and target identity must agree.
+The installation/repository/owner ID range is `1..9007199254740991`; larger
+integers fail closed before transport so frozen v1 numeric fingerprints cannot
+alias distinct trusted bindings. No global canonical profile is changed.
+GET installation-access, repository and ref observations precede POST; exact
+typed positive confirmation is required. Reconciliation is GET-only and confirms
+only an unambiguous exact open draft/content observation; empty, paginated,
+duplicate or inaccessible lists remain unknown. No lookup mutates a ledger or
+retries a write. Both confirmation paths require an exact JSON string body;
+explicit null is accepted only for an empty expected body. Missing, boolean,
+numeric and container bodies never match through coercion; invalid lookup
+observations remove previous cached confirmation. Numeric-loopback injection is explicitly package-private/test
+only; all public constructors reject it. This is not a business-operation API.
+See [ADR0073](../architecture/0073-github-pilot-target-preflight.md).
+
+The separate pure `GitHubBusinessOperationBinding.bind` accepts internal stored
+operation data, separately supplied trusted scope and an operator/service-owned
+expected profile. Its explicit `tracepermit-github-draft-pr-binding-v1` hash
+recipe joins exact installation/repository/owner and both ref/SHA preconditions
+with scope, adapter, generation, policy and artifacts. It refuses split aliases
+and trimming/case repair; the generic frozen vector is not silently adapted.
+Output is defensive data only, including original identities and hashes; it is
+not a permit, approval or execution claim. Errors expose only
+`GITHUB_OPERATION_BINDING_INVALID`, with no retained causes/suppression. No public
+deserializer/listener or execute overload is added. See
+[ADR0075](../architecture/0075-github-business-operation-binding.md).
+
 ### Authenticated simulator approval API foundation
 
-Pending-request cancellation remains proposed in
-[ADR 0058](../architecture/0058-pending-approval-cancellation-contract.md).
-[ADR 0059](../architecture/0059-explicit-v9-v10-simulator-upgrade.md) implements
-only V10 cancelled storage/consumer compatibility and explicit V9→V10 upgrade.
-There is no cancellation route, granted scope, tool or button. Normal startup
-strictly validates V1–V10 without migration.
+Pending-only requester withdrawal implements the Java API slice of
+[ADR 0058](../architecture/0058-pending-approval-cancellation-contract.md), after
+the [V10 upgrade prerequisite](../architecture/0059-explicit-v9-v10-simulator-upgrade.md).
+[ADR 0060](../architecture/0060-authenticated-pending-request-withdrawal.md)
+defines `POST /api/v1/approvals/{id}/cancel` and the browser equivalent.
+Exactly `requestHash` is accepted; current requester enrollment, explicit verified
+`approvals.cancel`, owner and tenant checks are required. Auth/session deadlines
+and pending/request/hash checks are repeated under the PostgreSQL request lock.
+Success commits cancelled/not_executed plus version3 requester-provenance lifecycle
+evidence/outbox, never reviewer/permit/attempt metadata. The optional React
+inbox now offers owner-only **Withdraw request** followed by **Confirm withdrawal**
+([ADR 0061](../architecture/0061-requester-withdrawal-inbox.md)); **Back** only
+dismisses the confirmation. No MCP cancellation tool exists. Normal startup
+still validates V1–V10 without migration. Installed withdrawal qualification is
+separate from the built-source browser flow.
 
 A separately composed `SimulatorApprovalServer` exposes pending/read/review/
 execute routes under `/api/v1/approvals`. It binds only to IPv4 loopback,
@@ -57,7 +99,11 @@ bounded `limit` and unsigned `cursor` parameters. Responses add `pageSize`,
 nullable `nextCursor` and per-item `createdAt`. Every page re-derives tenant/owner
 authority before a bounded read-only PostgreSQL query and existing redacted
 projection. All other approval routes and MCP envelopes retain query rejection.
-This is approval history, not full action search or snapshot export. See the
+This is approval history, not full action search or snapshot export. The separate
+`GET /api/v1/approvals/{id}/export` and browser-equivalent route reuse current
+read visibility to return bounded, unsigned metadata only; see the
+[export contract](../runbooks/approval-review-export.md). No new execution or
+approval authority is granted. See the
 [history contract](../runbooks/approval-history-api.md) and
 [ADR 0046](../architecture/0046-authenticated-approval-history-pagination.md).
 
@@ -92,13 +138,32 @@ their existing generic unavailable errors. Internal permit minting is unchanged.
 There is no resume command; only the explicit V9→V10 upgrade is supported.
 Other predecessors remain offline. See [ADR 0051](../architecture/0051-operator-declared-recovery-quarantine.md)
 and the [runbook](../runbooks/operator-recovery-quarantine.md).
-The `/health`, `/ready` and `/mcp` surfaces below belong to other compositions,
-not to this approval listener.
+
+The approval listener also exposes exact `GET /health` and `GET /ready` local
+projections. Both retain strict numeric-loopback/Host enforcement, require no
+authentication, reject query, Authorization, Cookie and Origin, and return only
+`{"schemaVersion":"1.0","service":"tracepermit-simulator-approval","status":...}`.
+Health returns `live` while the listener handles requests. Readiness returns
+`ready` only when the exact PostgreSQL schema validates and recovery state is
+`ready`; dependency failure returns HTTP 503 `not_ready` without a reason field.
+It does not probe the IdP or grant authority. The `/mcp` surface remains a
+separate authenticated route. See [ADR 0062](../architecture/0062-loopback-container-install-profile.md).
 
 ### Optional local browser approval boundary
 
-`SimulatorApprovalMain` accepts an optional strict `browser` object with
-`authorizationUri`, `tokenUri`, `clientSecretFile` and `consoleDirectory`.
+`SimulatorApprovalMain` schema1.0 accepts an optional strict `browser` object
+with `authorizationUri`, `tokenUri`, `clientSecretFile` and `consoleDirectory`.
+Schema1.1 requires a browser object and explicit `tokenEndpointAuthMethod`:
+`client_secret_basic` retains that private secret file; `none` forbids every
+secret field and sends configured `client_id` without an Authorization header.
+Both require code/S256 PKCE and the exact derived numeric-loopback callback.
+The public candidate requires an HTTPS-origin issuer ending `/`, same-issuer
+`/authorize`, `/oauth/token`, `/.well-known/jwks.json`, and one configured
+`org_id` with an `org_` identifier. Both signed tokens must bind to that
+organization. Login requires API scope `approvals.read`; `openid` is requested
+for OIDC but need not occur in the API-token scope. The signed ID token remains
+mandatory. Unknown methods, fields or combinations fail offline validation.
+See [ADR0063](../architecture/0063-explicit-public-browser-code-pkce.md).
 Java serves the built React inbox at `/approvals`. `GET /auth/login` starts
 code/S256 PKCE with state, nonce and a browser-binding cookie;
 `GET /auth/callback?code=...&state=...&iss=...` consumes the login state and
@@ -443,6 +508,54 @@ clientClaims
 Adapters construct trusted fields. Policy and executors consume the canonical
 contract and do not reinterpret raw transport input.
 
+### Business-operation contract foundation
+
+`contracts/json-schema/business-operation-v1.schema.json` defines a strict
+internal aggregate around one already-normalized canonical action. It requires
+server operation identity; trusted tenant, workspace and requester context;
+separate client-key, canonical-event, semantic-payload, resource-binding and
+target-idempotency digests; exact policy/artifact versions; recovery generation;
+explicit retention; and independent authorization, execution and evidence
+snapshots backed by append-only transitions.
+
+`BusinessOperationValidator` recomputes every derivable binding and rejects
+unknown fields/states, unnormalized actions, invalid state edges, discontinuous
+versions/sequences and inconsistent snapshot projections. Trusted context is
+never accepted as proof from a public request body. The frozen vector uses only
+synthetic simulator data.
+
+No operations HTTP API is implemented. Same-key/same-payload return and
+same-key/different-payload conflict are provided
+by the isolated `BusinessOperationRepository` port and JDBC registration library
+in [ADR 0070](../architecture/0070-durable-business-operation-registration.md).
+It atomically stores only the initial evaluating/not_started/pending snapshot
+and three facts. Registration returns the original snapshot without overwriting
+policy/artifact/retention proposals. Read visibility is scoped by trusted tenant,
+workspace and requester; authentication and authorization remain adapter duties.
+See [ADR 0068](../architecture/0068-versioned-business-operation-contract.md) for
+the underlying document contract.
+
+### Execution-disabled workload registration candidate
+
+`AgentCoreRegistrationIngress` is an unwired Java library, not an HTTP route.
+Its closed ingress schema1.0 accepts only `schemaVersion`, `clientRequestKey`,
+`title` and optional nonblank `body`. Maximum input is32KiB UTF-8; duplicate
+keys, trailing values, malformed Unicode, unsupported fields/schemas and bounded
+parser violations fail closed. The operator enrollment supplies all scope and
+exact target/profile fields after the unchanged verifier checks the workload
+access token. No authenticated context or current policy authority comes from
+the body. Any second authorization value is rejected with
+`AGENTCORE_DELEGATION_CONTRACT_REQUIRED`.
+
+Registration uses only `BusinessOperationRepository`, preserves its original
+same-key return/conflict semantics and returns creation status, stored operation
+ID and `executionEnabled=false`. Exact token fingerprints are single-use through
+the existing replay port; explicit same-key retries need fresh tokens. There is
+no implicit human delegation, approval, permit, authority transition or execution.
+Live provider token compatibility, a verified workload-to-human exchange/grant,
+transport proof and durable replay deployment remain unqualified. See
+[ADR0078](../architecture/0078-agentcore-execution-disabled-registration.md).
+
 ## 3A. Java development control-plane reads
 
 The Java development adapter exposes these loopback-only reads:
@@ -765,3 +878,38 @@ resumability, and server-initiated notifications are outside the POC.
 
 Connector compatibility tests must pin observed handshake behavior before a
 remote deployment is declared supported.
+
+## 11. Installed requester qualification and launcher
+
+`GET /api/v1/requester-qualification` accepts only one bearer Authorization
+header and no query, body, Origin, Cookie, transfer encoding or source
+attestation. It reuses the configured access-token verifier and membership
+resolver, requires a human role set exactly `{REQUESTER}`, exact
+`approvals.read approvals.request approvals.execute` API authority (plus optional
+`openid`) and at least 60 seconds of signed lifetime. Success is `204 No Content`
+with `Cache-Control: no-store`; failure returns a bounded code. It performs no
+database, policy, approval, evidence, permit, execution or target mutation.
+
+The installed `tracepermit-requester-auth` accepts exactly one of `--help`,
+`--check`, `--login`, `--codex`, or `--cleanup`. Private configuration comes only
+from `TRACEPERMIT_REQUESTER_CONFIG`. The credential value is never accepted in
+argv. `--codex` consumes the verified credential and configures only the exact
+loopback `/mcp` URL with bearer variable `TRACEPERMIT_REQUESTER_BEARER`.
+
+## Unwired GitHub installation credential-provider foundation
+
+FR-001/008/009/012; SEC-001/002/003/012/015/019; REL-001/003/005/009;
+OPS-002/004. `GitHubInstallationCredentialProvider` implements the existing
+`getInstallationCredentials(String repository)` port without changing the action,
+preflight, permit, adapter or resolver contract. Only immutable operator App,
+installation/owner/repository IDs, exact allowlisted repository/minimum permissions
+and an explicit private POSIX DER key source select credentials. Production has
+no caller-chosen origin, trust, clock, test flag or public credential endpoint.
+
+The authenticated installation GET must match before one restricted token POST.
+Required typed token assurance is stricter than GitHub's optional schema fields:
+missing permissions/repositories/selection fail closed. Binding of the opaque
+token still trusts GitHub's authenticated installation-specific minting contract;
+no independent token introspection is claimed. The response is time-bounded and
+redacted; no cache/refresh/retry or automatic target dispatch. See
+[ADR0076](../architecture/0076-github-installation-credential-provider.md).

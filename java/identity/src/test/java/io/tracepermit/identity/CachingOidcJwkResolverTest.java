@@ -847,15 +847,25 @@ final class CachingOidcJwkResolverTest {
           calls.incrementAndGet(); return "new";
         }))
             .isEqualTo("new");
+        var cooldownField = JwksRefreshCoordinator.class.getDeclaredField("failureCooldowns");
+        cooldownField.setAccessible(true);
+        var cooldowns = (Map<?, ?>) cooldownField.get(coordinator);
+        Object newerSuccess = cooldowns.get("same-provider");
+        assertThat(newerSuccess).as("the successful refresh must record its operation state").isNotNull();
+        var cooldownUntilField = newerSuccess.getClass().getDeclaredField("cooldownUntil");
+        cooldownUntilField.setAccessible(true);
+        assertThat(cooldownUntilField.get(newerSuccess)).as("newer success clears failure cooldown").isNull();
         release.countDown();
         assertThatThrownBy(() -> oldFuture.get(2, TimeUnit.SECONDS))
             .hasCauseInstanceOf(java.util.concurrent.TimeoutException.class);
-        // Completion of the older operation must not regress the newer successful operation state.
-        assertThat(coordinator.refresh("same-provider", provider, OidcTestSupport.NOW.plusSeconds(2), () -> {
-          calls.incrementAndGet(); return "healthy";
-        }))
-            .isEqualTo("healthy");
-        assertThat(calls).hasValue(3);
+        // Future completion is not a worker-return barrier. Both zero-queue workers may
+        // still be finishing callbacks, so a third immediate submit can correctly fail
+        // capacity admission. Inspect the actual invariant instead: the older failure
+        // must leave the newer successful operation (and its cleared cooldown) intact.
+        assertThat(cooldowns.get("same-provider"))
+            .as("late older failure cannot replace newer success with a failure cooldown")
+            .isEqualTo(newerSuccess);
+        assertThat(calls).hasValue(2);
       } finally {
         publicationAllowed.countDown();
         release.countDown();

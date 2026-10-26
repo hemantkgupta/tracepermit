@@ -1,0 +1,43 @@
+{
+  "schemaVersion": "1.0",
+  "port": 18085,
+  "postgres": {
+    "host": "127.0.0.1",
+    "port": 55432,
+    "database": "tracepermit_approvals",
+    "user": "tracepermit_approvals",
+    "passwordFile": "database.secret"
+  },
+  "oidc": {
+    "issuer": "https://idp.customer.example.invalid",
+    "audience": "https://approval.customer.example.invalid",
+    "jwksUri": "https://idp.customer.example.invalid/.well-known/jwks.json",
+    "clientId": "replace-with-registered-client",
+    "tenantClaim": "org_id",
+    "tenantValue": "replace-with-verified-tenant-claim",
+    "tenantId": "simulated-local"
+  },
+  "memberships": [
+    {
+      "subject": "replace-with-requester-sub",
+      "human": true,
+      "roles": ["REQUESTER"]
+    },
+    {
+      "subject": "replace-with-reviewer-sub",
+      "human": true,
+      "roles": ["REVIEWER"]
+    }
+  ],
+  "permit": {
+    "keyId": "local-simulator-1",
+    "privateKeyFile": "permit.pk8",
+    "publicKeyFile": "permit.spki"
+  },
+  "browser": {
+    "authorizationUri": "https://idp.customer.example.invalid/authorize",
+    "tokenUri": "https://idp.customer.example.invalid/oauth/token",
+    "clientSecretFile": "browser.secret",
+    "consoleDirectory": "/opt/tracepermit/console"
+  }
+}

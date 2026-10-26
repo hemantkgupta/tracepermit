@@ -2,6 +2,7 @@ package io.tracepermit.adapters.http;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.fail;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import io.tracepermit.adapters.remote.EnforcingMcpDispatcher;
@@ -9,6 +10,7 @@ import io.tracepermit.application.SecureExecutionService;
 import io.tracepermit.application.SecurityReadiness;
 import io.tracepermit.contracts.JsonSupport;
 import io.tracepermit.endpoint.EndpointConnector;
+import io.tracepermit.endpoint.EndpointConnectorMain;
 import io.tracepermit.endpoint.EndpointKeyProvider;
 import io.tracepermit.endpoint.LoopbackHttpGatewayTransport;
 import io.tracepermit.endpoint.ProcessObservation;
@@ -17,6 +19,7 @@ import io.tracepermit.endpoint.SourceAttestationFactory;
 import io.tracepermit.endpoint.StdioMcpServer;
 import io.tracepermit.execution.InMemoryEvidenceLedger;
 import io.tracepermit.execution.InMemoryExecutionLedger;
+import io.tracepermit.identity.DevelopmentProfile;
 import io.tracepermit.identity.DevelopmentTestTokenIssuer;
 import io.tracepermit.identity.DevelopmentTokenVerifier;
 import io.tracepermit.identity.EndpointKeyRegistry;
@@ -29,6 +32,8 @@ import io.tracepermit.security.InMemoryPermitConsumptionStore;
 import io.tracepermit.simulator.StatefulTargetSimulator;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.io.PrintStream;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -36,8 +41,11 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.security.GeneralSecurityException;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
@@ -48,11 +56,18 @@ import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
 final class JavaBackendEndpointConnectorE2eTest {
@@ -262,6 +277,1209 @@ final class JavaBackendEndpointConnectorE2eTest {
       assertThat(fixture.targetInvocations()).hasValue(1);
       assertThat(fixture.evidence().readAll()).hasSize(evidenceAfterRead);
     }
+  }
+
+  @Test
+  void realInvalidSignatureAndExpiredJwtAndNonInteractiveSourceFailClosed() throws Exception {
+    KeyPair keys = keyPair();
+    RuntimeFixture fixture = runtime(keys, () -> SecurityReadiness.allReady(NOW));
+    try (LoopbackDevelopmentMcpServer server = fixture.server()) {
+      URI endpoint = URI.create("http://127.0.0.1:" + server.port() + "/mcp");
+      String request = "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\",\"params\":{}}";
+      SourceAttestationFactory factory =
+          new SourceAttestationFactory(
+              keyProvider(keys),
+              CLOCK,
+              () -> UUID.randomUUID().toString(),
+              Duration.ofSeconds(30));
+
+      // 1. Real invalid-signature JWT (signed by an untrusted developmental key)
+      byte[] wrongKey = "w".repeat(32).getBytes(StandardCharsets.UTF_8);
+      DevelopmentTestTokenIssuer wrongIssuer =
+          new DevelopmentTestTokenIssuer(
+              wrongKey, CLOCK, () -> UUID.randomUUID().toString(), 300);
+      String badSigToken = wrongIssuer.issueToken(DevelopmentProfile.CLI_READONLY);
+      String badSigProof =
+          factory.create(JsonSupport.MAPPER.readTree(request), badSigToken, observation(true));
+      HttpResponse<String> badSigResponse = post(endpoint, badSigToken, badSigProof, request);
+      assertThat(badSigResponse.statusCode()).isEqualTo(401);
+      assertThat(badSigResponse.body()).contains("INVALID_ACCESS_TOKEN");
+      assertThat(fixture.targetInvocations()).hasValue(0);
+
+      // 2. Real expired JWT (issued at a past timestamp beyond 300s lifetime)
+      Clock expiredClock = Clock.fixed(NOW.minusSeconds(600), ZoneOffset.UTC);
+      DevelopmentTestTokenIssuer pastIssuer =
+          new DevelopmentTestTokenIssuer(
+              "d".repeat(32).getBytes(StandardCharsets.UTF_8),
+              expiredClock,
+              () -> UUID.randomUUID().toString(),
+              300);
+      String expiredToken = pastIssuer.issueToken(DevelopmentProfile.CLI_READONLY);
+      String expiredProof =
+          factory.create(JsonSupport.MAPPER.readTree(request), expiredToken, observation(true));
+      HttpResponse<String> expiredResponse = post(endpoint, expiredToken, expiredProof, request);
+      assertThat(expiredResponse.statusCode()).isEqualTo(401);
+      assertThat(expiredResponse.body()).contains("EXPIRED_ACCESS_TOKEN");
+      assertThat(fixture.targetInvocations()).hasValue(0);
+
+      // 3. Real non-interactive source trigger fails closed before dispatch
+      String validToken = issueToken(server.port(), "cli-readonly");
+      String nonInteractiveProof =
+          factory.create(JsonSupport.MAPPER.readTree(request), validToken, observation(false));
+      HttpResponse<String> nonInteractiveResponse =
+          post(endpoint, validToken, nonInteractiveProof, request);
+      assertThat(nonInteractiveResponse.statusCode()).isEqualTo(403);
+      assertThat(nonInteractiveResponse.body()).contains("SOURCE_TRIGGER_NOT_INTERACTIVE");
+      assertThat(fixture.targetInvocations()).hasValue(0);
+    }
+  }
+
+  @Test
+  void inProcessEntryPointSmokeAgainstRealBackendFailsClosedWhenNonInteractive() throws Exception {
+    KeyPair keys = keyPair();
+    RuntimeFixture fixture =
+        runtime(keys, Clock.systemUTC(), () -> SecurityReadiness.allReady(Instant.now()));
+    try (LoopbackDevelopmentMcpServer server = fixture.server()) {
+      Path privateDir = Files.createTempDirectory("tp-inprocess-smoke-test");
+      try {
+        Path keyPath = privateDir.resolve("endpoint.pk8");
+        Files.write(keyPath, keys.getPrivate().getEncoded());
+        Files.setPosixFilePermissions(keyPath, PosixFilePermissions.fromString("rw-------"));
+
+        String token = issueToken(server.port(), "cli-readonly");
+        Map<String, String> env =
+            Map.of(
+                "TRACEPERMIT_GATEWAY_URL",
+                "http://127.0.0.1:" + server.port() + "/mcp",
+                "TRACEPERMIT_ENDPOINT_ISSUER",
+                ISSUER,
+                "TRACEPERMIT_ENDPOINT_KEY_ID",
+                KEY_ID,
+                "TRACEPERMIT_ENDPOINT_DEVICE_ID",
+                DEVICE_ID,
+                "TRACEPERMIT_ENDPOINT_PRIVATE_KEY_PKCS8_PATH",
+                keyPath.toString(),
+                "TRACEPERMIT_CONNECTOR_BEARER_TOKEN",
+                token);
+
+        boolean isMac = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("mac");
+
+        // 1. Offline --check:
+        // macOS host passes with exit 0; non-macOS (Ubuntu CI) rejects with exit 2 and UNSUPPORTED_PLATFORM.
+        ByteArrayOutputStream checkOut = new ByteArrayOutputStream();
+        ByteArrayOutputStream checkErr = new ByteArrayOutputStream();
+        int checkExit =
+            EndpointConnectorMain.execute(
+                new String[] {"--check"},
+                env,
+                InputStream.nullInputStream(),
+                checkOut,
+                new PrintStream(checkErr, true, StandardCharsets.UTF_8));
+        if (isMac) {
+          assertThat(checkExit).isZero();
+          assertThat(checkOut.toString(StandardCharsets.UTF_8))
+              .contains(
+                  "ENDPOINT_CONFIGURATION_VALID: offline only; no gateway, IdP, observer or client checked.");
+        } else {
+          assertThat(checkExit).isEqualTo(2);
+          assertThat(checkErr.toString(StandardCharsets.UTF_8))
+              .contains("TracePermit endpoint connector: UNSUPPORTED_PLATFORM");
+        }
+
+        // 2. In-process --run against actual backend:
+        String frames =
+            """
+            {"jsonrpc":"2.0","id":"init","method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"installed-client","version":"1.0.0"}}}
+            {"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"aws.logs.filter_log_events","arguments":{"logGroupName":"/app/staging","filterPattern":"WARN","limit":2}}}
+            """;
+        ByteArrayOutputStream runOut = new ByteArrayOutputStream();
+        ByteArrayOutputStream runErr = new ByteArrayOutputStream();
+        int runExit =
+            EndpointConnectorMain.execute(
+                new String[] {"--run"},
+                env,
+                new ByteArrayInputStream(frames.getBytes(StandardCharsets.UTF_8)),
+                runOut,
+                new PrintStream(runErr, true, StandardCharsets.UTF_8));
+
+        if (isMac) {
+          // StdioMcpServer returns 0 on clean EOF
+          assertThat(runExit).isZero();
+          List<JsonNode> responses = responseLines(runOut);
+          assertThat(responses).isNotEmpty();
+
+          // In non-interactive automated test execution, the real MacOsDevelopmentProcessObserver
+          // measures terminalAttached = false. Real LoopbackDevelopmentMcpServer evaluates
+          // source attestation and rejects fail-closed with SOURCE_TRIGGER_NOT_INTERACTIVE
+          // before dispatch!
+          JsonNode initResp = find(responses, "init");
+          assertThat(initResp.path("error").path("data").path("tracepermitCode").asText())
+              .isEqualTo("SOURCE_TRIGGER_NOT_INTERACTIVE");
+
+          JsonNode callResp = find(responses, "1");
+          assertThat(callResp.path("error").path("data").path("tracepermitCode").asText())
+              .isEqualTo("SOURCE_TRIGGER_NOT_INTERACTIVE");
+        } else {
+          assertThat(runExit).isEqualTo(2);
+          assertThat(runErr.toString(StandardCharsets.UTF_8))
+              .contains("TracePermit endpoint connector: UNSUPPORTED_PLATFORM");
+        }
+
+        // Actual target executor was NEVER invoked
+        assertThat(fixture.targetInvocations()).hasValue(0);
+
+        // Secrets and proofs are kept private, assert redacted protocol output
+        String captured =
+            runOut.toString(StandardCharsets.UTF_8) + runErr.toString(StandardCharsets.UTF_8);
+        assertThat(captured)
+            .doesNotContain(token)
+            .doesNotContain(Base64.getEncoder().encodeToString(keys.getPrivate().getEncoded()));
+      } finally {
+        try (var stream = Files.walk(privateDir)) {
+          stream
+              .sorted(Comparator.reverseOrder())
+              .forEach(
+                  p -> {
+                    try {
+                      Files.deleteIfExists(p);
+                    } catch (Exception ignored) {
+                    }
+                  });
+        }
+      }
+    }
+  }
+
+  @Test
+  void installedArchiveConnectorAgainstRealBackendWithNativePty() throws Exception {
+    boolean isMac = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("mac");
+    KeyPair keys = keyPair();
+    Clock clock = Clock.systemUTC();
+    RuntimeFixture fixture =
+        runtime(keys, clock, () -> SecurityReadiness.allReady(Instant.now()));
+    try (LoopbackDevelopmentMcpServer server = fixture.server()) {
+      Path privateDir = Files.createTempDirectory("tp-installed-archive-test");
+      Process scriptProc = null;
+      try {
+        Path keyPath = privateDir.resolve("endpoint.pk8");
+        Files.write(keyPath, keys.getPrivate().getEncoded());
+        Files.setPosixFilePermissions(keyPath, PosixFilePermissions.fromString("rw-------"));
+
+        String token = issueToken(server.port(), "cli-readonly");
+
+        // Locate repository root and find the explicitly prepared distribution archive
+        Path repoRoot = Path.of("../..").toAbsolutePath().normalize();
+        Path archivePath =
+            repoRoot.resolve(
+                "java/endpoint-connector/build/distributions/tracepermit-endpoint-connector-0.1.0.tar.gz");
+
+        boolean requireInstalledArchive =
+            Boolean.getBoolean("tracepermit.endpointConnector.requireInstalledArchive")
+                || "true".equalsIgnoreCase(System.getenv("TRACEPERMIT_REQUIRE_INSTALLED_ARCHIVE"));
+
+        if (requireInstalledArchive) {
+          assertThat(Files.exists(archivePath))
+              .describedAs(
+                  "Installed E2E qualification requires an explicitly prepared distribution archive at %s. "
+                      + "Run 'pnpm build:endpoint-distribution' or ':endpoint-connector:packageEndpointConnectorDistribution' first.",
+                  archivePath)
+              .isTrue();
+        } else {
+          Assumptions.assumeTrue(
+              Files.exists(archivePath),
+              "Endpoint connector distribution archive is not prepared at "
+                  + archivePath
+                  + "; skipping installed archive E2E test for ordinary development check.");
+        }
+
+        // Extract archive with bounded tar execution and stream draining; no staged/source fallback!
+        Path extractDir = privateDir.resolve("extracted");
+        Files.createDirectories(extractDir);
+        Process tarProc =
+            new ProcessBuilder("tar", "-xzf", archivePath.toString(), "-C", extractDir.toString())
+                .redirectErrorStream(true)
+                .start();
+        BoundedByteArrayOutputStream tarOut = new BoundedByteArrayOutputStream(256 * 1024);
+        Thread tarThread =
+            Thread.ofVirtual()
+                .start(
+                    () -> {
+                      try {
+                        tarProc.getInputStream().transferTo(tarOut);
+                      } catch (Exception ignored) {
+                      }
+                    });
+        long tarStartNano = System.nanoTime();
+        long tarDeadlineNano = tarStartNano + TimeUnit.SECONDS.toNanos(10);
+        boolean tarFinished = tarProc.waitFor(10, TimeUnit.SECONDS);
+        if (!tarFinished) {
+          tarProc.destroyForcibly();
+          fail("Timeout waiting for tar extraction of " + archivePath);
+        }
+        long tarRemainingMillis = Math.max(100, (tarDeadlineNano - System.nanoTime()) / 1_000_000);
+        tarThread.join(Math.min(2000, tarRemainingMillis));
+        assertThat(tarProc.exitValue())
+            .describedAs("tar extraction failed: %s", tarOut.toString(StandardCharsets.UTF_8))
+            .isZero();
+
+        Path launcherPath =
+            extractDir.resolve(
+                "tracepermit-endpoint-connector-0.1.0/bin/tracepermit-endpoint-connector");
+        assertThat(Files.exists(launcherPath))
+            .describedAs("Launcher script must exist in extracted distribution at %s", launcherPath)
+            .isTrue();
+
+        Path manifestPath =
+            extractDir.resolve("tracepermit-endpoint-connector-0.1.0/manifest.json");
+        assertThat(Files.exists(manifestPath))
+            .describedAs("manifest.json must exist in distribution archive at %s", manifestPath)
+            .isTrue();
+        JsonNode manifest = JsonSupport.MAPPER.readTree(manifestPath.toFile());
+        String manifestCommit = manifest.path("sourceCommit").asText();
+
+        String expectedHead;
+        String configuredExpectedHead =
+            System.getProperty("tracepermit.endpointConnector.expectedHeadCommit");
+        if (configuredExpectedHead != null && !configuredExpectedHead.isBlank()) {
+          expectedHead = configuredExpectedHead.trim();
+          if (!expectedHead.matches("^[0-9a-f]{40}$|^[0-9a-f]{64}$")) {
+            fail("Configured expectedHeadCommit is malformed: " + configuredExpectedHead);
+          }
+        } else {
+          expectedHead =
+              resolveGitHeadCommit(repoRoot, List.of("git", "rev-parse", "HEAD"), Duration.ofSeconds(5));
+        }
+
+        if (requireInstalledArchive) {
+          assertThat(manifestCommit)
+              .describedAs(
+                  "Installed E2E qualification requires an exact-HEAD connector archive. "
+                      + "Archive manifest commit was %s, expected current git HEAD %s.",
+                  manifestCommit,
+                  expectedHead)
+              .isEqualTo(expectedHead);
+          assertThat(manifest.path("sourceTree").asText())
+              .describedAs("Installed E2E qualification requires clean sourceTree in manifest")
+              .isEqualTo("clean");
+        } else {
+          Assumptions.assumeTrue(
+              expectedHead.equals(manifestCommit)
+                  && "clean".equals(manifest.path("sourceTree").asText()),
+              "Archive manifest ("
+                  + manifestCommit
+                  + ") does not match HEAD ("
+                  + expectedHead
+                  + ") or sourceTree is not clean; skipping for ordinary development check.");
+        }
+
+        // On Linux / non-macOS: explicitly exercise platform refusal with bounded waits and stream drains,
+        // skipping the macOS PTY proof.
+        if (!isMac) {
+          ProcessBuilder pb = new ProcessBuilder(launcherPath.toString(), "--run");
+          pb.environment().put("TRACEPERMIT_GATEWAY_URL", "http://127.0.0.1:" + server.port() + "/mcp");
+          pb.environment().put("TRACEPERMIT_ENDPOINT_ISSUER", ISSUER);
+          pb.environment().put("TRACEPERMIT_ENDPOINT_KEY_ID", KEY_ID);
+          pb.environment().put("TRACEPERMIT_ENDPOINT_DEVICE_ID", DEVICE_ID);
+          pb.environment().put("TRACEPERMIT_ENDPOINT_PRIVATE_KEY_PKCS8_PATH", keyPath.toString());
+          pb.environment().put("TRACEPERMIT_CONNECTOR_BEARER_TOKEN", token);
+          Process linuxProc = pb.start();
+          BoundedByteArrayOutputStream linuxOut = new BoundedByteArrayOutputStream(256 * 1024);
+          BoundedByteArrayOutputStream linuxErrOut = new BoundedByteArrayOutputStream(256 * 1024);
+          Thread linuxOutThread =
+              Thread.ofVirtual()
+                  .start(
+                      () -> {
+                        try {
+                          linuxProc.getInputStream().transferTo(linuxOut);
+                        } catch (Exception ignored) {
+                        }
+                      });
+          Thread linuxErrThread =
+              Thread.ofVirtual()
+                  .start(
+                      () -> {
+                        try {
+                          linuxProc.getErrorStream().transferTo(linuxErrOut);
+                        } catch (Exception ignored) {
+                        }
+                      });
+          long linuxDeadlineNano = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+          boolean linuxFinished = linuxProc.waitFor(10, TimeUnit.SECONDS);
+          if (!linuxFinished) {
+            linuxProc.destroyForcibly();
+            fail("Timeout waiting for Linux platform refusal process to exit");
+          }
+          long linuxRemainingMillis = Math.max(100, (linuxDeadlineNano - System.nanoTime()) / 1_000_000);
+          linuxOutThread.join(Math.min(2000, linuxRemainingMillis));
+          linuxErrThread.join(Math.min(2000, linuxRemainingMillis));
+          String linuxErr = linuxErrOut.toString(StandardCharsets.UTF_8);
+          int linuxExit = linuxProc.exitValue();
+          assertThat(linuxExit).isEqualTo(2);
+          assertThat(linuxErr).contains("TracePermit endpoint connector: UNSUPPORTED_PLATFORM");
+          assertThat(fixture.targetInvocations()).hasValue(0);
+
+          // Platform-neutral checks executed on Linux:
+          runPlatformNeutralNegativeChecks(server, keys, fixture, token, clock);
+          return;
+        }
+
+        // On macOS: Run native client attached to a real PTY via /usr/bin/script
+        Path clientScript = privateDir.resolve("pty_client.py");
+        String pythonRunner =
+            """
+            import os, sys, subprocess, json
+
+            launcher = sys.argv[1]
+            gateway_url = sys.argv[2]
+            issuer = sys.argv[3]
+            key_id = sys.argv[4]
+            device_id = sys.argv[5]
+            key_path = sys.argv[6]
+            token = sys.argv[7]
+
+            env = os.environ.copy()
+            env["TRACEPERMIT_GATEWAY_URL"] = gateway_url
+            env["TRACEPERMIT_ENDPOINT_ISSUER"] = issuer
+            env["TRACEPERMIT_ENDPOINT_KEY_ID"] = key_id
+            env["TRACEPERMIT_ENDPOINT_DEVICE_ID"] = device_id
+            env["TRACEPERMIT_ENDPOINT_PRIVATE_KEY_PKCS8_PATH"] = key_path
+            env["TRACEPERMIT_CONNECTOR_BEARER_TOKEN"] = token
+
+            proc = subprocess.Popen(
+                [launcher, "--run"],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                env=env,
+            )
+
+            frames = [
+                {"jsonrpc": "2.0", "id": "init", "method": "initialize", "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "installed-client", "version": "1.0.0"}}},
+                {"jsonrpc": "2.0", "id": "2", "method": "tools/list", "params": {}},
+                {"jsonrpc": "2.0", "id": "3", "method": "tools/call", "params": {"name": "aws.logs.filter_log_events", "arguments": {"logGroupName": "/app/staging", "filterPattern": "WARN", "limit": 2}}},
+                {"jsonrpc": "2.0", "id": "4", "method": "tools/call", "params": {"name": "aws.ec2.terminate_instances", "arguments": {"instanceIds": ["i-simulated-java-e2e"], "region": "us-east-1"}}},
+                {"jsonrpc": "2.0", "id": "5", "method": "tools/call", "params": {"name": "aws.ec2.unknown_operation", "arguments": {}}},
+            ]
+
+            for f in frames:
+                proc.stdin.write(json.dumps(f) + "\\n")
+                proc.stdin.flush()
+                line = proc.stdout.readline()
+                if line:
+                    print(line.strip())
+                    sys.stdout.flush()
+
+            proc.stdin.close()
+            proc.wait(timeout=10)
+            """;
+        Files.writeString(clientScript, pythonRunner);
+
+        ProcessBuilder scriptPb =
+            new ProcessBuilder(
+                "/usr/bin/script",
+                "-q",
+                "/dev/null",
+                "/usr/bin/python3",
+                clientScript.toString(),
+                launcherPath.toString(),
+                "http://127.0.0.1:" + server.port() + "/mcp",
+                ISSUER,
+                KEY_ID,
+                DEVICE_ID,
+                keyPath.toString(),
+                token);
+        scriptPb.directory(privateDir.toFile());
+        Process runningScript = scriptPb.start();
+        ProcessTreeTracker scriptTracker = new ProcessTreeTracker(runningScript);
+
+        BoundedByteArrayOutputStream scriptOut = new BoundedByteArrayOutputStream(256 * 1024);
+        BoundedByteArrayOutputStream scriptErr = new BoundedByteArrayOutputStream(256 * 1024);
+        Thread outThread =
+            Thread.ofVirtual()
+                .start(
+                    () -> {
+                      try {
+                        runningScript.getInputStream().transferTo(scriptOut);
+                      } catch (Exception ignored) {
+                      }
+                    });
+        Thread errThread =
+            Thread.ofVirtual()
+                .start(
+                    () -> {
+                      try {
+                        runningScript.getErrorStream().transferTo(scriptErr);
+                      } catch (Exception ignored) {
+                      }
+                    });
+
+        long scriptStartNano = System.nanoTime();
+        long scriptDeadlineNano = scriptStartNano + TimeUnit.SECONDS.toNanos(25);
+        boolean finished = false;
+        while (System.nanoTime() < scriptDeadlineNano) {
+          scriptTracker.sampleDescendants();
+          if (runningScript.waitFor(100, TimeUnit.MILLISECONDS)) {
+            finished = true;
+            break;
+          }
+        }
+        if (!finished) {
+          scriptTracker.terminate(Duration.ofSeconds(5));
+          fail("Timeout waiting for installed connector execution in PTY");
+        }
+        long remainingJoinMillis = Math.max(100, (scriptDeadlineNano - System.nanoTime()) / 1_000_000);
+        outThread.join(Math.min(2000, remainingJoinMillis));
+        errThread.join(Math.min(2000, remainingJoinMillis));
+
+        assertThat(runningScript.exitValue()).isZero();
+        List<JsonNode> responses = new ArrayList<>();
+        for (String line : scriptOut.toString(StandardCharsets.UTF_8).lines().toList()) {
+          String trimmed = line.trim();
+          if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+            try {
+              responses.add(JsonSupport.MAPPER.readTree(trimmed));
+            } catch (Exception ignored) {
+            }
+          }
+        }
+        assertThat(responses).hasSize(5);
+
+        // 1. initialize succeeds
+        JsonNode initResp = find(responses, "init");
+        assertThat(initResp.path("result").path("serverInfo").path("name").asText())
+            .isEqualTo("TracePermit");
+
+        // 2. tools/list succeeds
+        JsonNode listResp = find(responses, "2");
+        assertThat(listResp.path("result").path("tools")).hasSize(2);
+
+        // 3. read allowed -> executed, target invoked!
+        JsonNode readResp = find(responses, "3");
+        JsonNode readContent = content(readResp);
+        assertThat(readContent.path("evaluation").path("decision").path("outcome").asText())
+            .isEqualTo("allow");
+        assertThat(readContent.path("execution").path("status").asText()).isEqualTo("executed");
+        assertThat(fixture.targetInvocations()).hasValue(1);
+
+        // 4. destructive block -> blocked, target NOT invoked!
+        JsonNode blockResp = find(responses, "4");
+        JsonNode blockContent = content(blockResp);
+        assertThat(blockContent.path("evaluation").path("decision").path("outcome").asText())
+            .isEqualTo("block");
+        assertThat(blockContent.path("execution").path("status").asText()).isEqualTo("denied");
+        assertThat(fixture.targetInvocations()).hasValue(1);
+
+        // 5. unknown tool -> rejected (-32602), target NOT invoked!
+        JsonNode unknownResp = find(responses, "5");
+        assertThat(unknownResp.path("error").path("code").asInt()).isEqualTo(-32602);
+        assertThat(fixture.targetInvocations()).hasValue(1);
+
+        // 6. Platform-neutral negative checks against real backend:
+        runPlatformNeutralNegativeChecks(server, keys, fixture, token, clock);
+
+        // Secrets verification
+        String captured =
+            scriptOut.toString(StandardCharsets.UTF_8) + scriptErr.toString(StandardCharsets.UTF_8);
+        assertThat(captured)
+            .doesNotContain(token)
+            .doesNotContain(Base64.getEncoder().encodeToString(keys.getPrivate().getEncoded()));
+
+        // Ensure clean shutdown of process tree
+        scriptTracker.terminate(Duration.ofSeconds(5));
+      } finally {
+        try (var stream = Files.walk(privateDir)) {
+          stream
+              .sorted(Comparator.reverseOrder())
+              .forEach(
+                  p -> {
+                    try {
+                      Files.deleteIfExists(p);
+                    } catch (Exception ignored) {
+                    }
+                  });
+        }
+      }
+    }
+  }
+
+  static final class BoundedByteArrayOutputStream extends OutputStream {
+    private final ByteArrayOutputStream underlying;
+    private final int maxBytes;
+    private int totalBytes = 0;
+    private boolean truncated = false;
+
+    BoundedByteArrayOutputStream(int maxBytes) {
+      this.maxBytes = maxBytes;
+      this.underlying = new ByteArrayOutputStream(Math.min(maxBytes, 4096));
+    }
+
+    @Override
+    public synchronized void write(int b) {
+      totalBytes++;
+      if (underlying.size() < maxBytes) {
+        underlying.write(b);
+      } else {
+        truncated = true;
+      }
+    }
+
+    @Override
+    public synchronized void write(byte[] b, int off, int len) {
+      totalBytes += len;
+      int available = maxBytes - underlying.size();
+      if (available > 0) {
+        int toWrite = Math.min(len, available);
+        underlying.write(b, off, toWrite);
+      }
+      if (len > available) {
+        truncated = true;
+      }
+    }
+
+    public synchronized byte[] toByteArray() {
+      return underlying.toByteArray();
+    }
+
+    public synchronized String toString(Charset charset) {
+      return underlying.toString(charset);
+    }
+
+    public int totalBytes() {
+      return totalBytes;
+    }
+
+    public boolean isTruncated() {
+      return truncated;
+    }
+  }
+
+  static String resolveGitHeadCommit(Path workingDir, List<String> command, Duration timeout) {
+    long deadlineNano = System.nanoTime() + timeout.toNanos();
+    Process gitProc;
+    try {
+      gitProc =
+          new ProcessBuilder(command)
+              .directory(workingDir.toFile())
+              .redirectErrorStream(true)
+              .start();
+    } catch (Exception e) {
+      fail("Failed to execute git command " + command + ": " + e.getMessage());
+      throw new AssertionError("unreachable");
+    }
+
+    BoundedByteArrayOutputStream gitOut = new BoundedByteArrayOutputStream(16 * 1024);
+    Thread gitThread =
+        Thread.ofVirtual()
+            .start(
+                () -> {
+                  try {
+                    gitProc.getInputStream().transferTo(gitOut);
+                  } catch (Exception ignored) {
+                  }
+                });
+
+    long remainingMillis = Math.max(1, (deadlineNano - System.nanoTime()) / 1_000_000);
+    boolean finished = false;
+    try {
+      finished = gitProc.waitFor(remainingMillis, TimeUnit.MILLISECONDS);
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+      gitProc.destroyForcibly();
+      fail("Interrupted while waiting for git command " + command);
+    }
+
+    if (!finished) {
+      gitProc.destroyForcibly();
+      fail("Timeout waiting for git command " + command + " within " + timeout.toMillis() + "ms");
+    }
+
+    try {
+      gitThread.join(Math.min(1000, Math.max(100, (deadlineNano - System.nanoTime()) / 1_000_000)));
+    } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
+    }
+
+    int exitCode = gitProc.exitValue();
+    if (exitCode != 0) {
+      fail("Git command " + command + " exited with non-zero code " + exitCode);
+    }
+
+    String headCommit = gitOut.toString(StandardCharsets.UTF_8).trim();
+    if (!headCommit.matches("^[0-9a-f]{40}$|^[0-9a-f]{64}$")) {
+      fail("Git command " + command + " produced malformed commit output: " + headCommit);
+    }
+
+    return headCommit;
+  }
+
+  static final class ProcessTreeTracker {
+    private final Process rootProcess;
+    private final ProcessHandle rootHandle;
+    private final Set<ProcessHandle> knownDescendants = ConcurrentHashMap.newKeySet();
+
+    ProcessTreeTracker(Process rootProcess) {
+      this.rootProcess = Objects.requireNonNull(rootProcess);
+      ProcessHandle handle = null;
+      try {
+        handle = rootProcess.toHandle();
+      } catch (UnsupportedOperationException ignored) {
+      }
+      this.rootHandle = handle;
+      sampleDescendants();
+    }
+
+    Set<ProcessHandle> sampleDescendants() {
+      try {
+        if (rootHandle != null && rootHandle.isAlive()) {
+          rootHandle.descendants().forEach(knownDescendants::add);
+        }
+      } catch (Exception ignored) {
+      }
+      return Set.copyOf(knownDescendants);
+    }
+
+    void trackHandle(ProcessHandle handle) {
+      if (handle != null) {
+        knownDescendants.add(handle);
+      }
+    }
+
+    Process rootProcess() {
+      return rootProcess;
+    }
+
+    ProcessHandle rootHandle() {
+      return rootHandle;
+    }
+
+    Set<ProcessHandle> knownDescendants() {
+      return Set.copyOf(knownDescendants);
+    }
+
+    void terminate(Duration timeout) {
+      long startNano = System.nanoTime();
+      long deadlineNano = startNano + timeout.toNanos();
+
+      sampleDescendants();
+
+      // 1. Graceful SIGTERM to known descendants and root
+      for (ProcessHandle d : knownDescendants) {
+        try {
+          if (d.isAlive()) {
+            d.destroy();
+          }
+        } catch (Exception ignored) {
+        }
+      }
+      try {
+        if (rootProcess.isAlive()) {
+          rootProcess.destroy();
+        }
+      } catch (Exception ignored) {
+      }
+
+      long gracefulDeadlineNano =
+          startNano + Math.min(timeout.toNanos() / 2, TimeUnit.SECONDS.toNanos(2));
+      boolean allExited = waitForTreeExit(gracefulDeadlineNano);
+
+      // 2. Escalation to SIGKILL (destroyForcibly)
+      if (!allExited) {
+        for (ProcessHandle d : knownDescendants) {
+          try {
+            if (d.isAlive()) {
+              d.destroyForcibly();
+            }
+          } catch (Exception ignored) {
+          }
+        }
+        try {
+          if (rootProcess.isAlive()) {
+            rootProcess.destroyForcibly();
+          }
+        } catch (Exception ignored) {
+        }
+        allExited = waitForTreeExit(deadlineNano);
+      }
+
+      // 3. Surface unconfirmed cleanup as explicit failure!
+      if (!allExited) {
+        List<Long> lingeringPids = new ArrayList<>();
+        if (rootHandle != null && rootHandle.isAlive()) {
+          lingeringPids.add(rootHandle.pid());
+        }
+        for (ProcessHandle d : knownDescendants) {
+          if (d.isAlive()) {
+            lingeringPids.add(d.pid());
+          }
+        }
+        throw new IllegalStateException(
+            "Process tree cleanup unconfirmed: living processes remain after force termination: "
+                + lingeringPids);
+      }
+    }
+
+    private boolean waitForTreeExit(long deadlineNano) {
+      while (System.nanoTime() < deadlineNano) {
+        boolean rootAlive = rootHandle != null ? rootHandle.isAlive() : rootProcess.isAlive();
+        boolean anyAlive =
+            rootAlive || knownDescendants.stream().anyMatch(ProcessHandle::isAlive);
+        if (!anyAlive) {
+          return true;
+        }
+        try {
+          Thread.sleep(50);
+        } catch (InterruptedException e) {
+          Thread.currentThread().interrupt();
+          break;
+        }
+      }
+      boolean rootAlive = rootHandle != null ? rootHandle.isAlive() : rootProcess.isAlive();
+      return !rootAlive && knownDescendants.stream().noneMatch(ProcessHandle::isAlive);
+    }
+  }
+
+  @Test
+  void strictProvenanceRejectsExit73Git() throws Exception {
+    Path tempDir = Files.createTempDirectory("tp-git-exit73-probe");
+    try {
+      assertThatThrownBy(
+              () ->
+                  resolveGitHeadCommit(
+                      tempDir, List.of("sh", "-c", "exit 73"), Duration.ofSeconds(2)))
+          .isInstanceOf(AssertionError.class)
+          .hasMessageContaining("exited with non-zero code 73");
+    } finally {
+      Files.deleteIfExists(tempDir);
+    }
+  }
+
+  @Test
+  void strictProvenanceRejectsMalformedExit0GitOutput() throws Exception {
+    Path tempDir = Files.createTempDirectory("tp-git-malformed-probe");
+    try {
+      assertThatThrownBy(
+              () ->
+                  resolveGitHeadCommit(
+                      tempDir,
+                      List.of("sh", "-c", "echo not-a-valid-sha; exit 0"),
+                      Duration.ofSeconds(2)))
+          .isInstanceOf(AssertionError.class)
+          .hasMessageContaining("produced malformed commit output");
+    } finally {
+      Files.deleteIfExists(tempDir);
+    }
+  }
+
+  @Test
+  void strictProvenanceRejectsMissingGit() throws Exception {
+    Path tempDir = Files.createTempDirectory("tp-git-missing-probe");
+    try {
+      assertThatThrownBy(
+              () ->
+                  resolveGitHeadCommit(
+                      tempDir,
+                      List.of("this-git-command-does-not-exist-probe"),
+                      Duration.ofSeconds(2)))
+          .isInstanceOf(AssertionError.class)
+          .hasMessageContaining("Failed to execute git command");
+    } finally {
+      Files.deleteIfExists(tempDir);
+    }
+  }
+
+  @Test
+  void strictProvenanceRejectsStalledGitWithinFiniteBounds() throws Exception {
+    Path tempDir = Files.createTempDirectory("tp-git-stalled-probe");
+    try {
+      long start = System.nanoTime();
+      assertThatThrownBy(
+              () ->
+                  resolveGitHeadCommit(
+                      tempDir, List.of("sh", "-c", "sleep 60"), Duration.ofMillis(300)))
+          .isInstanceOf(AssertionError.class)
+          .hasMessageContaining("Timeout waiting for git command");
+      long elapsedMillis = (System.nanoTime() - start) / 1_000_000;
+      assertThat(elapsedMillis)
+          .describedAs("Stalled git command must fail within finite bounds")
+          .isLessThan(2000);
+    } finally {
+      Files.deleteIfExists(tempDir);
+    }
+  }
+
+  @Test
+  void strictProvenanceRejectsStaleArchiveAgainstHead() {
+    String archiveCommit = "1111111111111111111111111111111111111111";
+    String actualHead = "2222222222222222222222222222222222222222";
+    assertThatThrownBy(
+            () -> {
+              assertThat(archiveCommit)
+                  .describedAs(
+                      "Installed E2E qualification requires an exact-HEAD connector archive. "
+                          + "Archive manifest commit was %s, expected current git HEAD %s.",
+                      archiveCommit,
+                      actualHead)
+                  .isEqualTo(actualHead);
+            })
+        .isInstanceOf(AssertionError.class)
+        .hasMessageContaining("expected current git HEAD " + actualHead);
+  }
+
+  @Test
+  void processTreeTrackerEscalatesToForceKillWhenTermIgnored() throws Exception {
+    ProcessBuilder pb =
+        new ProcessBuilder(
+            "sh", "-c", "trap '' TERM; echo READY; sleep 60");
+    Process proc = pb.start();
+    ProcessTreeTracker tracker = new ProcessTreeTracker(proc);
+
+    BoundedByteArrayOutputStream out = new BoundedByteArrayOutputStream(1024);
+    Thread t =
+        Thread.ofVirtual()
+            .start(
+                () -> {
+                  try {
+                    proc.getInputStream().transferTo(out);
+                  } catch (Exception ignored) {
+                  }
+                });
+
+    long start = System.nanoTime();
+    while (System.nanoTime() - start < TimeUnit.SECONDS.toNanos(3)) {
+      tracker.sampleDescendants();
+      if (out.toString(StandardCharsets.UTF_8).contains("READY")) {
+        break;
+      }
+      Thread.sleep(50);
+    }
+    assertThat(proc.isAlive()).isTrue();
+
+    long termStart = System.nanoTime();
+    tracker.terminate(Duration.ofSeconds(3));
+    long elapsedMillis = (System.nanoTime() - termStart) / 1_000_000;
+
+    assertThat(elapsedMillis).isLessThan(4000);
+    assertThat(proc.isAlive()).isFalse();
+    for (ProcessHandle d : tracker.knownDescendants()) {
+      assertThat(d.isAlive()).isFalse();
+    }
+  }
+
+  @Test
+  void processTreeTrackerHandlesRootEarlyExitWithoutProcessNameKills() throws Exception {
+    ProcessBuilder pb =
+        new ProcessBuilder("sh", "-c", "sleep 60 & echo GRANDCHILD_PID=$!; exit 0");
+    Process proc = pb.start();
+    ProcessTreeTracker tracker = new ProcessTreeTracker(proc);
+
+    BoundedByteArrayOutputStream out = new BoundedByteArrayOutputStream(1024);
+    Thread t =
+        Thread.ofVirtual()
+            .start(
+                () -> {
+                  try {
+                    proc.getInputStream().transferTo(out);
+                  } catch (Exception ignored) {
+                  }
+                });
+
+    long start = System.nanoTime();
+    Long grandchildPid = null;
+    while (System.nanoTime() - start < TimeUnit.SECONDS.toNanos(3)) {
+      tracker.sampleDescendants();
+      String output = out.toString(StandardCharsets.UTF_8);
+      if (output.contains("GRANDCHILD_PID=")) {
+        String[] lines = output.lines().toArray(String[]::new);
+        for (String l : lines) {
+          if (l.startsWith("GRANDCHILD_PID=")) {
+            grandchildPid = Long.parseLong(l.substring("GRANDCHILD_PID=".length()).trim());
+            break;
+          }
+        }
+        if (grandchildPid != null) {
+          break;
+        }
+      }
+      Thread.sleep(50);
+    }
+
+    assertThat(grandchildPid).isNotNull();
+    ProcessHandle.of(grandchildPid).ifPresent(tracker::trackHandle);
+
+    proc.waitFor(1, TimeUnit.SECONDS);
+    assertThat(proc.isAlive()).isFalse();
+
+    tracker.terminate(Duration.ofSeconds(2));
+    Optional<ProcessHandle> grandchildHandle = ProcessHandle.of(grandchildPid);
+    assertThat(grandchildHandle.map(ProcessHandle::isAlive).orElse(false)).isFalse();
+  }
+
+  @Test
+  void processTreeTrackerSurfacesUnconfirmedCleanupAsFailure() {
+    ProcessHandle current = ProcessHandle.current();
+    Process dummyProc =
+        new Process() {
+          @Override
+          public OutputStream getOutputStream() {
+            return OutputStream.nullOutputStream();
+          }
+
+          @Override
+          public InputStream getInputStream() {
+            return InputStream.nullInputStream();
+          }
+
+          @Override
+          public InputStream getErrorStream() {
+            return InputStream.nullInputStream();
+          }
+
+          @Override
+          public int waitFor() {
+            return 0;
+          }
+
+          @Override
+          public boolean waitFor(long timeout, TimeUnit unit) {
+            return true;
+          }
+
+          @Override
+          public int exitValue() {
+            return 0;
+          }
+
+          @Override
+          public void destroy() {}
+
+          @Override
+          public Process destroyForcibly() {
+            return this;
+          }
+
+          @Override
+          public boolean isAlive() {
+            return false;
+          }
+
+          @Override
+          public ProcessHandle toHandle() {
+            return current;
+          }
+        };
+    ProcessTreeTracker tracker = new ProcessTreeTracker(dummyProc);
+    tracker.trackHandle(current);
+
+    assertThatThrownBy(() -> tracker.terminate(Duration.ofMillis(200)))
+        .isInstanceOf(IllegalStateException.class)
+        .hasMessageContaining("Process tree cleanup unconfirmed");
+  }
+
+  @Test
+  void ptyProcessTreeCleanupTerminatesAllDescendantsWithNoLingeringProcesses() throws Exception {
+    boolean isMac = System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("mac");
+    if (!isMac) {
+      // On non-macOS, test process tree termination using standard ProcessBuilder with grandchild confirmation
+      ProcessBuilder pb =
+          new ProcessBuilder("sh", "-c", "sleep 60 & echo GRANDCHILD_PID=$!; sleep 60");
+      Process proc = pb.start();
+      ProcessTreeTracker tracker = new ProcessTreeTracker(proc);
+
+      BoundedByteArrayOutputStream out = new BoundedByteArrayOutputStream(1024);
+      Thread t =
+          Thread.ofVirtual()
+              .start(
+                  () -> {
+                    try {
+                      proc.getInputStream().transferTo(out);
+                    } catch (Exception ignored) {
+                    }
+                  });
+
+      long start = System.nanoTime();
+      Long grandchildPid = null;
+      while (System.nanoTime() - start < TimeUnit.SECONDS.toNanos(3)) {
+        tracker.sampleDescendants();
+        String output = out.toString(StandardCharsets.UTF_8);
+        if (output.contains("GRANDCHILD_PID=")) {
+          String[] lines = output.lines().toArray(String[]::new);
+          for (String l : lines) {
+            if (l.startsWith("GRANDCHILD_PID=")) {
+              grandchildPid = Long.parseLong(l.substring("GRANDCHILD_PID=".length()).trim());
+              break;
+            }
+          }
+          if (grandchildPid != null) {
+            break;
+          }
+        }
+        Thread.sleep(50);
+      }
+      assertThat(grandchildPid).isNotNull();
+      ProcessHandle.of(grandchildPid).ifPresent(tracker::trackHandle);
+      assertThat(ProcessHandle.of(grandchildPid).map(ProcessHandle::isAlive).orElse(false))
+          .isTrue();
+
+      tracker.terminate(Duration.ofSeconds(3));
+      assertThat(proc.isAlive()).isFalse();
+      for (ProcessHandle d : tracker.knownDescendants()) {
+        assertThat(d.isAlive()).isFalse();
+      }
+      return;
+    }
+
+    // On macOS: spawn real /usr/bin/script PTY tree with child processes, confirming grandchild started
+    Path tempDir = Files.createTempDirectory("tp-pty-cleanup-probe");
+    try {
+      Path scriptFile = tempDir.resolve("lingering_worker.py");
+      Files.writeString(
+          scriptFile,
+          """
+          import time, subprocess, sys
+          p = subprocess.Popen(["sleep", "60"])
+          sys.stdout.write(f"GRANDCHILD_PID={p.pid}\\n")
+          sys.stdout.flush()
+          time.sleep(60)
+          """);
+      ProcessBuilder pb =
+          new ProcessBuilder(
+              "/usr/bin/script",
+              "-q",
+              "/dev/null",
+              "/usr/bin/python3",
+              scriptFile.toString());
+      Process ptyProc = pb.start();
+      ProcessTreeTracker tracker = new ProcessTreeTracker(ptyProc);
+
+      BoundedByteArrayOutputStream ptyOut = new BoundedByteArrayOutputStream(4096);
+      Thread t =
+          Thread.ofVirtual()
+              .start(
+                  () -> {
+                    try {
+                      ptyProc.getInputStream().transferTo(ptyOut);
+                    } catch (Exception ignored) {
+                    }
+                  });
+
+      // Confirm intended grandchild actually started before cleanup
+      long deadline = System.currentTimeMillis() + 4000;
+      Long grandchildPid = null;
+      while (System.currentTimeMillis() < deadline) {
+        tracker.sampleDescendants();
+        String output = ptyOut.toString(StandardCharsets.UTF_8);
+        if (output.contains("GRANDCHILD_PID=")) {
+          String[] lines = output.lines().toArray(String[]::new);
+          for (String l : lines) {
+            if (l.startsWith("GRANDCHILD_PID=")) {
+              grandchildPid = Long.parseLong(l.substring("GRANDCHILD_PID=".length()).trim());
+              break;
+            }
+          }
+          if (grandchildPid != null) {
+            break;
+          }
+        }
+        Thread.sleep(50);
+      }
+      assertThat(grandchildPid).describedAs("Grandchild PID must be reported by worker").isNotNull();
+      ProcessHandle.of(grandchildPid).ifPresent(tracker::trackHandle);
+      assertThat(ProcessHandle.of(grandchildPid).map(ProcessHandle::isAlive).orElse(false))
+          .describedAs("Grandchild process must be alive before cleanup")
+          .isTrue();
+      assertThat(ptyProc.isAlive()).isTrue();
+
+      // Probe: execute tree termination
+      long termStart = System.currentTimeMillis();
+      tracker.terminate(Duration.ofSeconds(3));
+      long elapsed = System.currentTimeMillis() - termStart;
+
+      // Assert termination is bounded, root is dead, and NO owned descendants remain alive
+      assertThat(elapsed).isLessThan(4000);
+      assertThat(ptyProc.isAlive()).isFalse();
+      for (ProcessHandle descendant : tracker.knownDescendants()) {
+        assertThat(descendant.isAlive())
+            .describedAs(
+                "Descendant process PID %d must not remain alive after tree termination",
+                descendant.pid())
+            .isFalse();
+      }
+      assertThat(ptyProc.toHandle().descendants().filter(ProcessHandle::isAlive).count()).isZero();
+    } finally {
+      try (var stream = Files.walk(tempDir)) {
+        stream
+            .sorted(Comparator.reverseOrder())
+            .forEach(
+                p -> {
+                  try {
+                    Files.deleteIfExists(p);
+                  } catch (Exception ignored) {
+                  }
+                });
+      }
+    }
+  }
+
+  private void runPlatformNeutralNegativeChecks(
+      LoopbackDevelopmentMcpServer server,
+      KeyPair keys,
+      RuntimeFixture fixture,
+      String validToken,
+      Clock clock)
+      throws Exception {
+    int initialInvocations = fixture.targetInvocations().get();
+    URI endpoint = URI.create("http://127.0.0.1:" + server.port() + "/mcp");
+    String request = "{\"jsonrpc\":\"2.0\",\"id\":10,\"method\":\"tools/list\",\"params\":{}}";
+    SourceAttestationFactory factory =
+        new SourceAttestationFactory(
+            keyProvider(keys), clock, () -> UUID.randomUUID().toString(), Duration.ofSeconds(30));
+
+    // 1. Real invalid-signature JWT (401 INVALID_ACCESS_TOKEN)
+    byte[] wrongKey = "w".repeat(32).getBytes(StandardCharsets.UTF_8);
+    DevelopmentTestTokenIssuer wrongIssuer =
+        new DevelopmentTestTokenIssuer(wrongKey, clock, () -> UUID.randomUUID().toString(), 300);
+    String badSigToken = wrongIssuer.issueToken(DevelopmentProfile.CLI_READONLY);
+    String badSigProof =
+        factory.create(JsonSupport.MAPPER.readTree(request), badSigToken, observation(true));
+    HttpResponse<String> badSigResponse = post(endpoint, badSigToken, badSigProof, request);
+    assertThat(badSigResponse.statusCode()).isEqualTo(401);
+    assertThat(badSigResponse.body()).contains("INVALID_ACCESS_TOKEN");
+    assertThat(fixture.targetInvocations()).hasValue(initialInvocations);
+
+    // 2. Real expired JWT (401 EXPIRED_ACCESS_TOKEN)
+    Clock expiredClock = Clock.fixed(clock.instant().minusSeconds(600), ZoneOffset.UTC);
+    DevelopmentTestTokenIssuer pastIssuer =
+        new DevelopmentTestTokenIssuer(
+            "d".repeat(32).getBytes(StandardCharsets.UTF_8),
+            expiredClock,
+            () -> UUID.randomUUID().toString(),
+            300);
+    String expiredToken = pastIssuer.issueToken(DevelopmentProfile.CLI_READONLY);
+    String expiredProof =
+        factory.create(JsonSupport.MAPPER.readTree(request), expiredToken, observation(true));
+    HttpResponse<String> expiredResponse = post(endpoint, expiredToken, expiredProof, request);
+    assertThat(expiredResponse.statusCode()).isEqualTo(401);
+    assertThat(expiredResponse.body()).contains("EXPIRED_ACCESS_TOKEN");
+    assertThat(fixture.targetInvocations()).hasValue(initialInvocations);
+
+    // 3. Exact-parameters / credential mutation (403 INVALID_SOURCE_ATTESTATION)
+    String proof =
+        factory.create(JsonSupport.MAPPER.readTree(request), validToken, observation(true));
+    String mutatedRequest =
+        "{\"jsonrpc\":\"2.0\",\"id\":10,\"method\":\"tools/list\",\"params\":{\"unexpected\":true}}";
+    HttpResponse<String> mutationResponse = post(endpoint, validToken, proof, mutatedRequest);
+    assertThat(mutationResponse.statusCode()).isEqualTo(403);
+    assertThat(mutationResponse.body()).contains("INVALID_SOURCE_ATTESTATION");
+    assertThat(fixture.targetInvocations()).hasValue(initialInvocations);
+
+    // 4. Proof replay (409 SOURCE_ATTESTATION_REPLAYED)
+    HttpResponse<String> firstResponse = post(endpoint, validToken, proof, request);
+    assertThat(firstResponse.statusCode()).isEqualTo(200);
+    HttpResponse<String> replayResponse = post(endpoint, validToken, proof, request);
+    assertThat(replayResponse.statusCode()).isEqualTo(409);
+    assertThat(replayResponse.body()).contains("SOURCE_ATTESTATION_REPLAYED");
+    assertThat(fixture.targetInvocations()).hasValue(initialInvocations);
   }
 
   @Test
@@ -624,7 +1842,12 @@ final class JavaBackendEndpointConnectorE2eTest {
 
   private static RuntimeFixture runtime(
       KeyPair keys, java.util.function.Supplier<SecurityReadiness> readiness) throws Exception {
-    RuntimeFixture components = components(keys);
+    return runtime(keys, CLOCK, readiness);
+  }
+
+  private static RuntimeFixture runtime(
+      KeyPair keys, Clock clock, java.util.function.Supplier<SecurityReadiness> readiness) throws Exception {
+    RuntimeFixture components = components(keys, clock);
     LoopbackDevelopmentMcpServer server =
         LoopbackDevelopmentMcpServer.start(
             new InetSocketAddress(InetAddress.getByName("127.0.0.1"), 0),
@@ -637,11 +1860,15 @@ final class JavaBackendEndpointConnectorE2eTest {
   }
 
   private static RuntimeFixture components(KeyPair keys) {
+    return components(keys, CLOCK);
+  }
+
+  private static RuntimeFixture components(KeyPair keys, Clock clock) {
     byte[] developmentKey = "d".repeat(32).getBytes(StandardCharsets.UTF_8);
-    DevelopmentTokenVerifier tokenVerifier = new DevelopmentTokenVerifier(developmentKey, CLOCK);
+    DevelopmentTokenVerifier tokenVerifier = new DevelopmentTokenVerifier(developmentKey, clock);
     DevelopmentTestTokenIssuer tokenIssuer =
         new DevelopmentTestTokenIssuer(
-            developmentKey, CLOCK, () -> UUID.randomUUID().toString(), 300);
+            developmentKey, clock, () -> UUID.randomUUID().toString(), 300);
     SourceAttestationVerifier sourceVerifier =
         new SourceAttestationVerifier(
             new StaticEndpointKeyRegistry(
@@ -649,12 +1876,12 @@ final class JavaBackendEndpointConnectorE2eTest {
                     new EndpointKeyRegistry.EnrolledEndpointKey(
                         ISSUER, KEY_ID, DEVICE_ID, keys.getPublic()))),
             new InMemorySourceAttestationReplayStore(),
-            CLOCK);
+            clock);
     AtomicInteger ids = new AtomicInteger();
     AtomicInteger targets = new AtomicInteger();
     InMemoryEvidenceLedger evidence =
         new InMemoryEvidenceLedger(
-            "urn:test:java-backend-e2e", CLOCK, () -> "evidence-" + ids.incrementAndGet());
+            "urn:test:java-backend-e2e", clock, () -> "evidence-" + ids.incrementAndGet());
     StatefulTargetSimulator simulator = new StatefulTargetSimulator();
     SecureExecutionService service =
         new SecureExecutionService(
@@ -665,7 +1892,7 @@ final class JavaBackendEndpointConnectorE2eTest {
                 "java-e2e-key",
                 "p".repeat(32).getBytes(StandardCharsets.UTF_8),
                 30,
-                CLOCK,
+                clock,
                 () -> "permit-" + ids.incrementAndGet(),
                 new InMemoryPermitConsumptionStore()),
             new InMemoryExecutionLedger(() -> "attempt-" + ids.incrementAndGet()),
@@ -674,13 +1901,13 @@ final class JavaBackendEndpointConnectorE2eTest {
               targets.incrementAndGet();
               return simulator.invoke(action);
             },
-            () -> SecurityReadiness.allReady(NOW),
-            CLOCK,
+            () -> SecurityReadiness.allReady(clock.instant()),
+            clock,
             "urn:test:java-e2e-simulator");
     EnforcingMcpDispatcher dispatcher =
         new EnforcingMcpDispatcher(
             service,
-            CLOCK,
+            clock,
             () -> UUID.randomUUID().toString(),
             () -> "ab".repeat(16));
     return new RuntimeFixture(
