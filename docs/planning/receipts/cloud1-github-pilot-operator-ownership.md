@@ -16,3 +16,15 @@ This is no admission, approval, operation-permit issuer, dispatch, reconciliatio
 or target execution authority. All qualification uses generated synthetic keys
 and fixtures; no live provider/target calls. Final evidence and writer release
 will be published in the draft stacked PR handoff.
+
+## Installed-byte qualification repair
+
+Current-main qualification review found that the original installed archive DNS/
+provider probe launched with the build test runtime classpath. The runtime behavior
+was not bypassed, but that probe did not establish that its production classes came
+from the extracted archive. The test/build harness now packages only the probe and
+denying DNS SPI in a separate helper JAR, loads every production class/dependency
+from the distribution `lib` JARs, and verifies exact class origins plus both runtime
+and helper inventories. The old build classpath is an explicit failing control.
+No production, launcher, dependency, CI, authority, timeout or workload behavior
+changes in this repair; final exact-head evidence belongs to the PR handoff.

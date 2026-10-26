@@ -17,11 +17,24 @@ application {
   mainClass = "io.tracepermit.adapters.remote.github.PilotOperatorMain"
 }
 
+val pilotOfflineProbeJar = tasks.register<Jar>("pilotOfflineProbeJar") {
+  group = "verification"
+  description = "Packages only the DNS/provider tripwire helpers used beside installed pilot runtime JARs."
+  archiveClassifier.set("offline-probe")
+  duplicatesStrategy = DuplicatesStrategy.FAIL
+  from(sourceSets["test"].output) {
+    include("io/tracepermit/adapters/remote/github/PilotOfflineProbe.class")
+    include("io/tracepermit/adapters/remote/github/PilotNoDnsProvider*.class")
+    include("META-INF/services/java.net.spi.InetAddressResolverProvider")
+  }
+}
+
 tasks.test {
-  dependsOn(tasks.named("jar"))
+  dependsOn(tasks.named("jar"), pilotOfflineProbeJar)
   systemProperty("tracepermit.pilotJar", tasks.named<Jar>("jar").flatMap { it.archiveFile }.get().asFile.absolutePath)
   providers.gradleProperty("pilotArchiveRoot").orNull?.let { systemProperty("tracepermit.pilotArchiveRoot", it) }
-  systemProperty("tracepermit.pilotTestClasspath", sourceSets["test"].runtimeClasspath.asPath)
+  systemProperty("tracepermit.pilotProbeJar", pilotOfflineProbeJar.flatMap { it.archiveFile }.get().asFile.absolutePath)
+  systemProperty("tracepermit.pilotLegacyTestClasspath", sourceSets["test"].runtimeClasspath.asPath)
   systemProperty("tracepermit.pilotRuntimeClasspath", sourceSets["main"].runtimeClasspath.asPath)
 }
 
