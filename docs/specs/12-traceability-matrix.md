@@ -66,6 +66,20 @@ Store reconstruction is not database crash/restart or failover proof; synthetic
 faults do not qualify external diagnostic redaction. No whole-requirement status,
 approval/evidence parity, runtime/RDS wiring or production claim is promoted.
 
+## MariaDB composed authority — proposal only
+
+Requirements: FR-003/007/008/009/010/012/015; SEC-001/002/003/004/005/006/009/010/012/019;
+REL-001/002/004/005; DATA-001/004; OPS-002/004; PORT-001/002/003.
+The [authority transaction design](../design/mariadb-authority-transaction.md)
+and [future qualification plan](../runbooks/mariadb-authority-transaction-qualification-plan.md)
+describe a candidate single transaction owner, scoped canonical lock order,
+post-policy-lock database-time/authority rechecks, pending-only withdrawal,
+restricted recovery administration and explicit commit/dispatch uncertainty.
+Planned tests are not implemented evidence. Existing standalone replay and
+ADR0072 registration/withdrawal tests do not establish composed MariaDB authority,
+instant revocation, exactly-once target execution, older-backup fencing, RDS/EKS
+or production readiness. No requirement-wide status is promoted.
+
 ## GitHub target preflight and conservative lookup
 
 Requirements: FR-001/002/008/009/012/015; SEC-001/002/003/012/015/019;
