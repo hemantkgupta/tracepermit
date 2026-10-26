@@ -85,6 +85,12 @@ export function verify(needs) {
     coverage: mode === "full",
     qualification: mode === "full",
   };
+  const expectedJobs = ["changes", ...Object.keys(required)].sort();
+  if (
+    JSON.stringify(Object.keys(needs).sort()) !== JSON.stringify(expectedJobs)
+  ) {
+    throw new Error("Missing or unknown CI job evidence");
+  }
   for (const [job, selected] of Object.entries(required)) {
     const result = needs[job]?.result;
     if (

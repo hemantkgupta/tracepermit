@@ -130,3 +130,9 @@ test("missing, failed, or malformed selection never authorizes skipped checks", 
     assert.throws(() => verify({ ...results("docs"), changes }));
   }
 });
+
+test("new or unknown jobs cannot be silently ignored by the gate", () => {
+  assert.throws(() =>
+    verify({ ...results("full"), extra: { result: "failure" } }),
+  );
+});
