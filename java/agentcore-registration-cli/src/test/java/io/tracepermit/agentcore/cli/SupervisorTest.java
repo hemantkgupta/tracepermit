@@ -138,6 +138,18 @@ final class SupervisorTest {
     assertThat(Supervisor.send(swallowed, new byte[]{1}, Duration.ofSeconds(1))).isFalse();
   }
 
+  @Test
+  void sendPreservesInterruptFlagWhenInterrupted() {
+    Thread.currentThread().interrupt();
+    try {
+      java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+      assertThat(Supervisor.send(out, new byte[]{1}, Duration.ofSeconds(1))).isFalse();
+      assertThat(Thread.currentThread().isInterrupted()).isTrue();
+    } finally {
+      Thread.interrupted();
+    }
+  }
+
   private static long supervisorThreads() {
     return Thread.getAllStackTraces().keySet().stream().filter(t -> t.isAlive() && t.getName().startsWith("registration-")).count();
   }

@@ -268,4 +268,19 @@ final class ArchiveBoundaryTest {
       } finally { process.toHandle().destroyForcibly(); process.waitFor(2, TimeUnit.SECONDS); }
     }
   }
+
+  @Test
+  void isAnonymousPipeRejectsUnsupportedPlatformsAndInvalidPaths() throws Exception {
+    Path tmp = Files.createTempFile("pipe-test", ".tmp");
+    try {
+      assertThat(RegistrationCli.isAnonymousPipe("windows", tmp)).isFalse();
+      assertThat(RegistrationCli.isAnonymousPipe("solaris", tmp)).isFalse();
+      assertThat(RegistrationCli.isAnonymousPipe("linux", tmp)).isFalse();
+      assertThat(RegistrationCli.isAnonymousPipe("mac", tmp)).isFalse();
+      assertThat(RegistrationCli.isAnonymousPipe("linux", Path.of("/nonexistent/file/test"))).isFalse();
+      assertThat(RegistrationCli.isAnonymousPipe("mac", Path.of("/nonexistent/file/test"))).isFalse();
+    } finally {
+      Files.deleteIfExists(tmp);
+    }
+  }
 }

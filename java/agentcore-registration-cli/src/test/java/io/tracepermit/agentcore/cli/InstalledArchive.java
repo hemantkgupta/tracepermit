@@ -50,6 +50,7 @@ final class InstalledArchive implements AutoCloseable {
     void writeInput(byte[] input) {
       try {
         process.getOutputStream().write(input);
+        process.getOutputStream().flush();
         process.getOutputStream().close();
       } catch (Throwable failure) {
         ioError.set(failure);

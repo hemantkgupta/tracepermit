@@ -12,6 +12,7 @@ import java.util.concurrent.atomic.AtomicReference;
 final class Supervisor {
   static final Duration TOTAL = Duration.ofSeconds(60);
   static final Duration CLEANUP = Duration.ofSeconds(5);
+  private static final Duration GRACEFUL = Duration.ofMillis(100);
   private final AtomicReference<Process> owned = new AtomicReference<>();
 
   Process ownedProcess() { return owned.get(); }
@@ -100,63 +101,53 @@ final class Supervisor {
     long deadline = System.nanoTime() + reserve.toNanos();
     Thread closer = null;
     try {
-      // Never close a blocked child pipe before terminating the child.
-      // Process.destroy also closes pipes internally. Use the handle to signal before any close.
       process.toHandle().destroy();
-      long graceDeadline = Math.min(deadline, System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(100));
-      while (process.isAlive() && System.nanoTime() < graceDeadline) {
-        try {
-          if (process.waitFor(remainingMillis(graceDeadline), TimeUnit.MILLISECONDS)) break;
-        } catch (InterruptedException stop) {
-          interrupted = true;
-          break;
-        }
-      }
+      interrupted |= awaitExit(process, Math.min(deadline, System.nanoTime() + GRACEFUL.toNanos()));
       if (process.isAlive()) {
         process.toHandle().destroyForcibly();
-        while (process.isAlive() && System.nanoTime() < deadline) {
-          try {
-            if (process.waitFor(remainingMillis(deadline), TimeUnit.MILLISECONDS)) break;
-          } catch (InterruptedException stop) {
-            interrupted = true;
-          }
-        }
+        interrupted |= awaitExit(process, deadline);
       }
     } finally {
-      // Closing is also bounded; platform pipe-close bugs cannot hold the supervisor thread.
       closer = daemon("registration-pipe-cleanup", () -> {
         try { process.getOutputStream().close(); } catch (Exception ignored) { }
         try { process.getInputStream().close(); } catch (Exception ignored) { }
         try { process.getErrorStream().close(); } catch (Exception ignored) { }
       });
-      while (closer.isAlive() && System.nanoTime() < deadline) {
-        try {
-          closer.join(remainingMillis(deadline));
-        } catch (InterruptedException stop) {
-          interrupted = true;
-        }
-      }
-      if (out != null) {
-        while (out.isAlive() && System.nanoTime() < deadline) {
-          try {
-            out.join(remainingMillis(deadline));
-          } catch (InterruptedException stop) {
-            interrupted = true;
-          }
-        }
-      }
-      if (err != null) {
-        while (err.isAlive() && System.nanoTime() < deadline) {
-          try {
-            err.join(remainingMillis(deadline));
-          } catch (InterruptedException stop) {
-            interrupted = true;
-          }
-        }
-      }
+      interrupted |= join(closer, deadline);
+      interrupted |= join(out, deadline);
+      interrupted |= join(err, deadline);
       if (interrupted) Thread.currentThread().interrupt();
     }
-    return !process.isAlive() && (closer == null || !closer.isAlive()) && (out == null || !out.isAlive()) && (err == null || !err.isAlive());
+    return !process.isAlive() && isDone(closer) && isDone(out) && isDone(err);
+  }
+
+  private static boolean isDone(Thread thread) {
+    return thread == null || !thread.isAlive();
+  }
+
+  private static boolean awaitExit(Process process, long deadline) {
+    boolean interrupted = false;
+    while (process.isAlive() && System.nanoTime() < deadline) {
+      try {
+        if (process.waitFor(remainingMillis(deadline), TimeUnit.MILLISECONDS)) break;
+      } catch (InterruptedException stop) {
+        interrupted = true;
+      }
+    }
+    return interrupted;
+  }
+
+  private static boolean join(Thread thread, long deadline) {
+    if (thread == null) return false;
+    boolean interrupted = false;
+    while (thread.isAlive() && System.nanoTime() < deadline) {
+      try {
+        thread.join(remainingMillis(deadline));
+      } catch (InterruptedException stop) {
+        interrupted = true;
+      }
+    }
+    return interrupted;
   }
 
   private static final class Capture implements Runnable {

@@ -39,22 +39,23 @@ public final class RegistrationCli {
 
   static boolean anonymousInput() {
     String os = System.getProperty("os.name", "").toLowerCase();
+    Path p = os.contains("linux") ? Path.of("/proc/self/fd/0") : Path.of("/dev/fd/0");
+    return isAnonymousPipe(os, p);
+  }
+
+  static boolean isAnonymousPipe(String os, Path p) {
     try {
       if (os.contains("linux")) {
-        Path p = Path.of("/proc/self/fd/0");
         if (!Files.isSymbolicLink(p)) return false;
         Path target = Files.readSymbolicLink(p);
         if (!target.toString().matches("^pipe:\\[\\d+\\]$")) return false;
         int mode = (Integer) Files.getAttribute(p, "unix:mode");
         return (mode & 0170000) == 0010000;
       } else if (os.contains("mac") || os.contains("darwin")) {
-        Path p = Path.of("/dev/fd/0");
         int mode = (Integer) Files.getAttribute(p, "unix:mode");
         if ((mode & 0170000) != 0010000) return false;
         int nlink = (Integer) Files.getAttribute(p, "unix:nlink");
-        if (nlink != 0) return false;
-        Path real = p.toRealPath();
-        if (!real.equals(p)) return false;
+        if (nlink != 0 || !p.toRealPath().equals(p)) return false;
         FileTime creationTime = (FileTime) Files.getAttribute(p, "unix:creationTime");
         if (creationTime == null || !creationTime.toInstant().equals(Instant.EPOCH)) return false;
         FileStore store = Files.getFileStore(p);

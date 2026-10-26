@@ -143,6 +143,19 @@ final class BoundaryTest {
     var failure = new CliFailure("UNKNOWN"); failure.initCause(new Exception("canary")); failure.addSuppressed(new Exception("canary"));
     assertThat(failure.getCause()).isNull(); assertThat(failure.getSuppressed()).isEmpty();
     assertThat(Worker.execute(new ByteArrayInputStream(new byte[0]), "execute").outcome()).isEqualTo("USAGE");
+
+    var validCheckInput = frames(bytes(config()));
+    assertThat(Worker.execute(new ByteArrayInputStream(validCheckInput), "check-config").outcome()).isEqualTo("CONFIG_VALID");
+
+    var badConfig = config().deepCopy();
+    ((ObjectNode) badConfig.get("replay")).put("port", 1);
+    var badPortInput = input(badConfig, token(), request());
+    assertThat(Worker.execute(new ByteArrayInputStream(badPortInput), "register-once").outcome()).isEqualTo("NOT_READY");
+
+    java.io.InputStream throwingStream = new java.io.InputStream() {
+      @Override public int read() { throw new RuntimeException("boom"); }
+    };
+    assertThat(Worker.execute(throwingStream, "check-config").outcome()).isEqualTo("INPUT_INVALID");
   }
 
   @Test void receiptStringTypesClosedAgainstNumericAndTypeCoercion() {
