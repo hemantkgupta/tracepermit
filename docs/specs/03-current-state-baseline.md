@@ -1,6 +1,6 @@
 # Current-state capability matrix
 
-**As of:** 2026-10-24
+**As of:** 2026-10-25
 **Scope:** public Java-backend/React-console proof of concept
 
 This is the authoritative boundary between running POC behavior and product
@@ -22,6 +22,38 @@ effects. This is local synthetic behavior; the [qualification runbook](../runboo
 records actual pass/failure status. It adds no human/OBO, approval, admission,
 permit, listener, target transport or live AgentCore/Okta support. See
 [ADR0088](../architecture/0088-source-free-synthetic-registration-cli.md).
+
+## Opt-in closed durable operation review
+
+[ADR0085](../architecture/0085-closed-durable-operation-review.md) adds an opt-in
+V4 Java/JDBC transaction for policy evaluation, independent-human approve/deny
+and pending withdrawal. Current profile/generation control is locked before the
+actual operation head, then fresh writer time and exact state/identity/group/
+deadline/strict target pins are checked. Immutable evaluation bindings, closed
+facts and head changes share one commit; coherent readers replay at fact time.
+Default V2 installation and V1-V3 migration bytes remain unchanged. See the
+[candidate qualification record](../runbooks/durable-operation-review.md).
+
+This library is not wired into an authenticated endpoint or simulator. It does
+not itself provide permit/admission, attempt/outbox, target dispatch, live IdP/AWS/RDS
+qualification, complete operator metadata visibility or restore/sender fencing.
+Existing simulator flows below remain separately qualified compositions.
+
+The human-approved next [permit/admission contract](../architecture/0087-fully-bound-operation-permit-and-admission.md)
+requires fresh owner execute permission and separately versioned, explicitly
+configured Ed25519 authority capped at 60 seconds and all original approval/
+identity deadlines. The separate opt-in `JdbcGitHubOperationPermitIssuer` now
+loads actual approved V4 history under current control/head locks, captures
+the exact approved state/settings/review/target bindings, then rolls back and
+closes before signing. Profile v3 pins explicit settings before evaluation;
+legacy v1/v2 recipes and V4 SQL stay unchanged. See [issuance scope and tests](../runbooks/closed-operation-permit-issuance.md).
+This is not wired to a route or service. Signature validity is not consumption.
+The separate opt-in V6 [admission library](../runbooks/closed-operation-admission.md)
+adds atomic single-use consumption/initial-attempt metadata, claimed fact/head
+and immutable outbox, with a compatible closed reader. It rechecks writer time
+after implicit write waits and has scoped three-engine local qualification;
+earlier issuer results are separate. Default V2/V1–V4 bytes remain unchanged.
+There is still no sender, authenticated endpoint, target call or execution lease.
 
 ## Approval review export and browser download
 

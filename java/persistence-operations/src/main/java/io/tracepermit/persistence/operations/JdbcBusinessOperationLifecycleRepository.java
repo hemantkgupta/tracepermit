@@ -29,7 +29,7 @@ import javax.sql.DataSource;
  */
 public final class JdbcBusinessOperationLifecycleRepository implements BusinessOperationLifecycleRepository {
   private final DataSource source;
-  private final BusinessOperationTransitionPlanner planner = new BusinessOperationTransitionPlanner();
+  private static final BusinessOperationTransitionPlanner planner = new BusinessOperationTransitionPlanner();
 
   public JdbcBusinessOperationLifecycleRepository(DataSource source) {
     this.source = Objects.requireNonNull(source);
@@ -71,6 +71,9 @@ public final class JdbcBusinessOperationLifecycleRepository implements BusinessO
       connection.setTransactionIsolation(Connection.TRANSACTION_READ_COMMITTED);
       connection.setAutoCommit(false);
       try {
+        // Checked per call, including instances retained across an explicit stopped-writer upgrade.
+        // V4 withdrawal belongs to the control-first composed review transaction owner.
+        if (OperationDatabase.hasReviewBindings(connection)) throw error(OPERATION_SCHEMA_NOT_READY);
         BusinessOperationScope scope = command.scope();
         String id = command.operationId();
         // Scope is checked before locking, against immutable registration, never from a body.
@@ -133,7 +136,7 @@ public final class JdbcBusinessOperationLifecycleRepository implements BusinessO
     return result.deepCopy();
   }
 
-  private JsonNode current(Connection connection, BusinessOperationScope scope,
+  static JsonNode current(Connection connection, BusinessOperationScope scope,
       String id, JsonNode initial, boolean lock) throws SQLException {
     JsonNode head;
     String hash;
@@ -153,6 +156,10 @@ public final class JdbcBusinessOperationLifecycleRepository implements BusinessO
       head = BusinessOperationValidator.validate(head);
       if (!hash.equals(CanonicalJson.sha256(head))) throw error(OPERATION_STORAGE_CORRUPT);
       JsonNode replay = initial;
+      var binding = OperationReviewJournal.read(connection, id);
+      var admission = OperationAdmissionJournal.read(connection, id);
+      boolean evaluationSeen = false;
+      boolean admissionSeen = false;
       try (var statement = prepare(connection, """
           SELECT sequence_number, previous_snapshot_hash, result_snapshot_hash,
                  fact_json, actor_hash, actor_json FROM tp_operation_lifecycle_facts
@@ -165,18 +172,33 @@ public final class JdbcBusinessOperationLifecycleRepository implements BusinessO
             JsonNode actor = StoredOperationJson.read(rows.getString(6), 4096);
             if (rows.getInt(1) != replay.path("transitions").size() + 1
                 || !CanonicalJson.sha256(replay).equals(rows.getString(2))
-                || !CanonicalJson.sha256(actor).equals(rows.getString(5))
-                || !"authorization".equals(fact.path("dimension").asText())
-                || !"cancelled".equals(fact.path("to").asText())
-                || !BusinessOperationWithdrawal.REASON.equals(fact.path("reasonCode").asText())) {
+                || !CanonicalJson.sha256(actor).equals(rows.getString(5))) {
               throw error(OPERATION_STORAGE_CORRUPT);
             }
-            requirePending(replay);
-            Instant at = Instant.parse(fact.path("at").asText());
-            requireActor(actor, scope, at);
-            replay = planner.propose(scope, replay, planner.observe(scope, replay),
-                BusinessOperationTransitionPlanner.Dimension.AUTHORIZATION, "cancelled",
-                BusinessOperationWithdrawal.REASON, at).snapshot();
+            if (OperationAdmissionJournal.FORMAT.equals(actor.path("journalFormat").asText())) {
+              if (admissionSeen) throw error(OPERATION_STORAGE_CORRUPT);
+              admissionSeen = true;
+              replay = OperationAdmissionJournal.replay(connection, scope, replay, fact, actor,
+                  admission.orElse(null), binding.orElse(null));
+            } else if (actor.has("journalFormat")) {
+              if ("evaluation".equals(actor.path("kind").asText())) {
+                if (evaluationSeen) throw error(OPERATION_STORAGE_CORRUPT);
+                evaluationSeen = true;
+              }
+              replay = OperationReviewJournal.replay(scope, replay, fact, actor, binding.orElse(null));
+            } else {
+              if (!"authorization".equals(fact.path("dimension").asText())
+                  || !"cancelled".equals(fact.path("to").asText())
+                  || !BusinessOperationWithdrawal.REASON.equals(fact.path("reasonCode").asText())) {
+                throw error(OPERATION_STORAGE_CORRUPT);
+              }
+              requirePending(replay);
+              Instant at = OperationReviewJournal.time(fact.path("at"));
+              requireActor(actor, scope, at);
+              replay = planner.propose(scope, replay, planner.observe(scope, replay),
+                  BusinessOperationTransitionPlanner.Dimension.AUTHORIZATION, "cancelled",
+                  BusinessOperationWithdrawal.REASON, at).snapshot();
+            }
             if (!CanonicalJson.canonicalize(fact).equals(CanonicalJson.canonicalize(
                 replay.path("transitions").get(replay.path("transitions").size() - 1)))
                 || !CanonicalJson.sha256(replay).equals(rows.getString(3))) {
@@ -185,6 +207,9 @@ public final class JdbcBusinessOperationLifecycleRepository implements BusinessO
           }
         }
       }
+      if (binding.isPresent() != evaluationSeen) throw error(OPERATION_STORAGE_CORRUPT);
+      if (admission.isPresent() != admissionSeen) throw error(OPERATION_STORAGE_CORRUPT);
+      if (!admissionSeen) OperationAdmissionJournal.requireNoOutbox(connection, id);
       // JSON integer node width changes across JDBC serialization; compare the frozen canonical
       // representation, not Jackson IntNode-vs-LongNode object identity.
       if (!CanonicalJson.canonicalize(replay).equals(CanonicalJson.canonicalize(head))) {
@@ -218,7 +243,7 @@ public final class JdbcBusinessOperationLifecycleRepository implements BusinessO
     }
   }
 
-  private static Instant storeTime(Connection connection, OperationDatabase.Engine engine) throws SQLException {
+  static Instant storeTime(Connection connection, OperationDatabase.Engine engine) throws SQLException {
     try (var statement = prepare(connection, engine == OperationDatabase.Engine.POSTGRESQL
         ? "SELECT clock_timestamp()" : "SELECT UTC_TIMESTAMP(6)")) {
       try (ResultSet rows = statement.executeQuery()) {

@@ -1,0 +1,44 @@
+#!/bin/bash
+set -eu
+# No ambient JVM options, banners, secret arguments or default service.
+unset JAVA_TOOL_OPTIONS _JAVA_OPTIONS JDK_JAVA_OPTIONS CLASSPATH
+case "${1:-}" in
+  --check|--preflight|--help) [ "$#" -eq 1 ] || { echo USAGE_REJECTED_NON_AUTHORITATIVE; exit 64; } ;;
+  *) echo USAGE_REJECTED_NON_AUTHORITATIVE; exit 64 ;;
+esac
+SCRIPT_DIR="$(cd -- "${0%/*}" 2>/dev/null && pwd -P)" || { echo RUNTIME_UNAVAILABLE_NON_AUTHORITATIVE; exit 70; }
+DIST_DIR="$(cd -- "$SCRIPT_DIR/.." 2>/dev/null && pwd -P)" || { echo RUNTIME_UNAVAILABLE_NON_AUTHORITATIVE; exit 70; }
+if [ -n "${JAVA_HOME:-}" ]; then
+  JAVA_BIN="$JAVA_HOME/bin/java"
+else
+  JAVA_BIN="$(command -v java 2>/dev/null || true)"
+fi
+if [ ! -x "$JAVA_BIN" ] || [ ! -d "$DIST_DIR/lib" ]; then
+  echo CONFIGURATION_REJECTED_NON_AUTHORITATIVE
+  exit 2
+fi
+# Bash3-compatible host deadline includes JVM startup; no PATH tools are required.
+# /bin/sleep is a standard macOS/Linux host utility, never a downloaded runtime.
+"$JAVA_BIN" -XX:+DisableAttachMechanism -cp "$DIST_DIR/lib/*" \
+  io.tracepermit.adapters.remote.github.PilotOperatorMain "$1" 2>/dev/null &
+pilot_child=$!
+pilot_started=$SECONDS
+trap 'kill -KILL "$pilot_child" 2>/dev/null || true; wait "$pilot_child" 2>/dev/null || true; echo CANCELLED_NON_AUTHORITATIVE; exit 5' INT TERM HUP
+while kill -0 "$pilot_child" 2>/dev/null; do
+  if [ "$((SECONDS - pilot_started))" -ge 35 ]; then
+    kill -TERM "$pilot_child" 2>/dev/null || true
+    /bin/sleep 1
+    kill -KILL "$pilot_child" 2>/dev/null || true
+    wait "$pilot_child" 2>/dev/null || true
+    echo DEADLINE_EXCEEDED_NON_AUTHORITATIVE
+    exit 4
+  fi
+  /bin/sleep 0.1
+done
+status=0
+wait "$pilot_child" 2>/dev/null || status=$?
+trap - INT TERM HUP
+case "$status" in
+  0|2|3|4|5|64) exit "$status" ;;
+  *) echo RUNTIME_UNAVAILABLE_NON_AUTHORITATIVE; exit 70 ;;
+esac
