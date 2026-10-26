@@ -25,6 +25,45 @@ the traceability matrix, and add positive and negative tests. The
 [simulator scenarios](../demo-scenarios/README.md) show qualified POC paths.
 No demo path may contact a real destructive target.
 
+[ADR0085](../architecture/0085-closed-durable-operation-review.md) adds the opt-in
+V4 closed JDBC evaluation/review/pending-withdrawal transaction and a versioned
+binding/journal reader. Its [qualification](../runbooks/durable-operation-review.md)
+is separate from earlier green checkpoints. No endpoint, permit, admission,
+attempt/outbox, provider or target is enabled.
+
+[ADR0087](../architecture/0087-fully-bound-operation-permit-and-admission.md)
+records the approved strict identity/signature/lifetime choices and opt-in
+closed JDBC permit-issuance slice. Its [issuance qualification](../runbooks/closed-operation-permit-issuance.md)
+is separate from V4 review: actual approved state is loaded and the read
+connection closes before signing. The separate opt-in V6
+[closed admission library](../runbooks/closed-operation-admission.md) adds one
+atomic consumption/initial-attempt/fact/head/outbox transaction and its closed
+reader, with scoped three-engine local qualification. Default V2/V1–V4 SQL
+are unchanged. No sender, endpoint or target is enabled.
+
+[ADR0084](../architecture/0084-durable-review-membership-and-lifetime.md)
+records the approved next design: exact independent reviewer-group enrollment,
+explicit approval lifetime capped at five minutes with no default, and separate
+fresh evaluation authority, all requiring current profile/generation pins.
+Those input checks alone are not a durable reviewer transaction or live IdP integration.
+
+[ADR0083](../architecture/0083-writer-locked-operation-authority-control.md)
+adds opt-in V3 current profile/recovery controls, explicit inactive staging and
+new-generation replacement, restricted operator/runtime grants and a guard that
+retains a caller-owned writer lock. Default installation remains V2; V1/V2 bytes
+are unchanged. Required physical-structure checks supplement migration history;
+filtered MariaDB runtime metadata is not an absence certificate or a reason to
+expand grants. Full operator deployment visibility remains a future gate.
+This is not the complete approval/admission transaction or an
+installed service; see [qualification and limits](../runbooks/operation-authority-control.md).
+
+[ADR0077](../architecture/0077-closed-operation-authority-contracts.md) adds only
+closed, unwired operation-review inputs and a copied/pinned static operator
+policy profile. It does not implement durable approval, admission or execution;
+the [learning note](../learning/closed-review-is-not-admission.md) separates these
+remaining authority boundaries. Its first contract checkpoint retains V2 storage;
+the later opt-in V3 control prerequisite does not complete those boundaries.
+
 [ADR0075](../architecture/0075-github-business-operation-binding.md) adds a pure
 operation/target hash join with an explicit strict GitHub profile and independent
 golden recipe. Separately supplied scope/policy/generation/target expectations
@@ -125,3 +164,23 @@ describe the execution-disabled composition of the concrete verifier/ingress,
 shared replay and durable registration stores. Replay commits separately before
 registration; neither successful registration nor idempotent recovery grants
 human delegation, admission or execution authority.
+
+[ADR0076](../architecture/0076-github-installation-credential-provider.md) adds an
+unwired Java GitHub App installation credential-provider foundation behind the
+existing port. Explicit operator identity/private-key inputs, restricted exchange,
+strict response assurance, expiry, transport and redaction controls are qualified
+only synthetically. The [runbook](../runbooks/github-app-installation-credentials.md)
+and [learning note](../learning/github-installation-credential-boundary.md) record
+trust gaps and stop conditions. No live installation or target/runtime wiring.
+
+Wave 2 review adds strict assurance/cleanup/transport regressions and a test-only
+concrete-provider/adapter composition fixture under ADR0076. Existing permit,
+allowlist, target preflight and unknown-outcome semantics are exercised without
+composing a shipped launcher or durable operation executor.
+
+[ADR0081](../architecture/0081-github-pilot-operator-diagnostics.md) adds a separate
+Java21 operator diagnostic bundle: strict private offline input validation and
+explicit existing read-only target preflight. The
+[setup runbook](../runbooks/pilot-operator-distribution.md) records source-free
+packaging and synthetic/POSIX qualification limits. No admission, approval,
+operation permit, execution or reconciliation authority is introduced.

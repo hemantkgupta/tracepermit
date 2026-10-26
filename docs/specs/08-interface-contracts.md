@@ -954,3 +954,21 @@ The installed `tracepermit-requester-auth` accepts exactly one of `--help`,
 from `TRACEPERMIT_REQUESTER_CONFIG`. The credential value is never accepted in
 argv. `--codex` consumes the verified credential and configures only the exact
 loopback `/mcp` URL with bearer variable `TRACEPERMIT_REQUESTER_BEARER`.
+
+## Unwired GitHub installation credential-provider foundation
+
+FR-001/008/009/012; SEC-001/002/003/012/015/019; REL-001/003/005/009;
+OPS-002/004. `GitHubInstallationCredentialProvider` implements the existing
+`getInstallationCredentials(String repository)` port without changing the action,
+preflight, permit, adapter or resolver contract. Only immutable operator App,
+installation/owner/repository IDs, exact allowlisted repository/minimum permissions
+and an explicit private POSIX DER key source select credentials. Production has
+no caller-chosen origin, trust, clock, test flag or public credential endpoint.
+
+The authenticated installation GET must match before one restricted token POST.
+Required typed token assurance is stricter than GitHub's optional schema fields:
+missing permissions/repositories/selection fail closed. Binding of the opaque
+token still trusts GitHub's authenticated installation-specific minting contract;
+no independent token introspection is claimed. The response is time-bounded and
+redacted; no cache/refresh/retry or automatic target dispatch. See
+[ADR0076](../architecture/0076-github-installation-credential-provider.md).
