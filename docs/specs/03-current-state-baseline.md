@@ -8,6 +8,21 @@ design. A passing test proves the named composition, not deployment to an
 enterprise network or control over arbitrary agent tools. The detailed
 requirement-to-test mapping is in the [traceability matrix](12-traceability-matrix.md).
 
+## Source-free local synthetic registration command
+
+The independent `agentcore-registration-cli` Java21 distribution implements
+`check-config` and execution-disabled `register-once` against existing dedicated
+numeric-loopback stores. Trusted offline public-key/enrollment/profile settings
+and the untrusted request arrive in separate closed anonymous pipe frames.
+The command reuses the concrete verifier and durable factory, validates existing
+schemas only, and supervises one worker with bounded I/O, exit and cleanup.
+Unknown acknowledgements remain nonzero without automatic retry or readback
+reconstruction. Configuration validation is offline and has zero JDBC/network
+effects. This is local synthetic behavior; the [qualification runbook](../runbooks/source-free-synthetic-registration-cli.md)
+records actual pass/failure status. It adds no human/OBO, approval, admission,
+permit, listener, target transport or live AgentCore/Okta support. See
+[ADR0088](../architecture/0088-source-free-synthetic-registration-cli.md).
+
 ## Approval review export and browser download
 
 The local authenticated simulator approval API provides a bounded per-request
