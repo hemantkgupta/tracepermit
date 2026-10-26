@@ -142,12 +142,28 @@ pre-handler refusal and bounded close; see the
 [qualification record](../runbooks/latency-qualification-transport-diagnostics.md).
 This does not qualify production load or a public abuse-control boundary.
 
+[ADR0080](../architecture/0080-durable-workload-identity-replay.md) adds the
+standalone durable `WorkloadIdentityReplayStore` library across PostgreSQL 16.4
+and MariaDB 11.4.13/10.6.25. Length-delimited domain-separated compound hashes,
+bounded fingerprint-only persistence, single-winner unique insertion, fail-closed
+saturation and commit/cleanup acknowledgement are qualified. The module is not
+wired into ingress or application authority; see the
+[runbook](../runbooks/workload-identity-replay-store.md) and
+[learning note](../learning/workload-replay-is-not-admission.md).
+
 [ADR0078](../architecture/0078-agentcore-execution-disabled-registration.md) adds
 an unwired, execution-disabled enrolled-workload registration adapter. Its strict
 body derives no authority from client flags and rejects human/OBO token pairs.
 Synthetic token/recording-port tests do not qualify live AgentCore/Okta token
 compatibility, a provider delegation relationship or composed durable ingress;
 see the [ingress runbook](../runbooks/agentcore-trusted-ingress.md).
+
+[ADR0086](../architecture/0086-durable-agentcore-registration-composition.md) and
+the [durable registration runbook](../runbooks/agentcore-durable-registration-qualification.md)
+describe the execution-disabled composition of the concrete verifier/ingress,
+shared replay and durable registration stores. Replay commits separately before
+registration; neither successful registration nor idempotent recovery grants
+human delegation, admission or execution authority.
 
 [ADR0076](../architecture/0076-github-installation-credential-provider.md) adds an
 unwired Java GitHub App installation credential-provider foundation behind the

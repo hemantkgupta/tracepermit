@@ -3,6 +3,37 @@
 GitHub is authoritative. Credentials, private customer/provider planning and local
 operator values remain outside Git. Historical receipts are not fresh results.
 
+## Current PR113 refresh and historical receipt scope
+
+Refresh inputs: PR113 `54b8778109393b68822606394357a312cd744e7e` and current main
+`c3bd77080681ff3eb33314e27d39e7b6d015333d`. Main already contains merged PR108,
+PR109 and PR123. PR113 retains PR111 JDBC qualification, the incorporated PR118
+replay-repair evidence, and the incorporated PR120 durable-registration composition.
+These branch integrations are not claims that PR113 or PR120 is merged into main.
+
+At preparation, PR113 was open, non-draft and unmerged. The publication writer
+claim is recorded in [PR113's discussion](https://github.com/hemantkgupta/tracepermit/pull/113#issuecomment-6424257920).
+The unchanged replay runtime and V2 migrations retain their default capacity of
+10,000. The human authorized proceeding toward normal merge with the known
+verification failures deferred to [issue #124](https://github.com/hemantkgupta/tracepermit/issues/124).
+The full check failed in `SimulatorApprovalPublicClientTest` with a Flyway closed
+connection (`08003`); the earlier process-cleanup failures and both stopped-run
+receipts remain recorded there. Aggregate coverage and complete composition
+qualification are unestablished. This deferral is not a passing qualification;
+the preserved PR111/113/118/120 receipts do not qualify this new composition.
+
+All checkpoint sections below are historical snapshots, including their
+"current" headings, writer claims and draft/unmerged status statements. They
+preserve evidence and limits without assigning current ownership or overriding
+the merged-main status above.
+
+## Wave 3 Gemini durable workload-identity replay store checkpoint
+
+Gemini claims sole-writer ownership of `codex/durable-workload-identity-replay` starting from frozen main `0bc6b618aa9eac7df3bacf7a6d4bcafe2a824c4f`.
+Goal packet: `docs/planning/packets/wave3-gemini-durable-workload-replay.md`.
+Scope: Standalone `java/persistence-identity/` module implementing `WorkloadIdentityReplayStore`, dedicated migrations, ADR0080, and qualification across PostgreSQL 16.4 and MariaDB 11.4.13/10.6.25.
+No edits to Mac PR108, Cloud PR105/PR109/PR111/PR112, existing persistence, contracts, or verifiers.
+
 ## Closed V6 atomic admission — current Mac checkpoint
 
 Mac retains the sole PR108 writer. The preceding issuer head

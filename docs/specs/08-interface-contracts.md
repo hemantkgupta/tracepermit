@@ -3,6 +3,26 @@
 **Status:** Current interfaces plus target extensions  
 **Applies to:** MCP, internal HTTP, control plane, and signed artifacts
 
+## Durable execution-disabled AgentCore registration composition
+
+`DurableAgentCoreRegistration.create` in `agentcore-durable-registration` takes
+the concrete trusted verifier, enrollment, clock, two dedicated initialized JDBC
+datasources, explicit agreed replay capacity and finite DML budget. It constructs
+the unchanged JDBC replay/repository and ingress internally, validates only, and
+has no in-memory fallback or injectable repository/replay supplier. Datasource
+ownership remains with the caller. Initialization failures become fixed
+`DURABLE_REGISTRATION_NOT_READY` with no retained causes/suppressed diagnostics.
+
+`register` exposes the existing closed body and minimal execution-disabled
+receipt. Verified-token replay consumption commits before a separate operation
+registration transaction; a failed registration can leave the token spent.
+Replay uncertainty cannot reach registration. Operation commit uncertainty is
+`AGENTCORE_REGISTRATION_UNKNOWN`, even if independently observed committed.
+No automatic retry follows either. Explicit fresh verified identity may recover
+the original scoped-key registration metadata, never authority or target dispatch.
+Human token pairing remains refused. See [ADR0086](../architecture/0086-durable-agentcore-registration-composition.md)
+and the [qualification matrix](../runbooks/agentcore-durable-registration-qualification.md).
+
 ## 1. Contract rules
 
 - External data is untrusted until validated by its adapter.
@@ -724,6 +744,45 @@ across legacy overloads. These per-instance ports trust the supplied time and
 do not provide byte quotas, bounded lock waits, restart/durable recovery,
 distributed replay state, revocation or public saturation metrics. See
 [ADR 0054](../architecture/0054-bounded-local-replay-stores.md).
+
+### Durable workload-identity replay store
+
+`io.tracepermit.persistence.identity.JdbcWorkloadIdentityReplayStore` implements
+the `WorkloadIdentityReplayStore` port across PostgreSQL 16.4 and MariaDB 11.4.13/10.6.25
+(InnoDB). Compound identities (`tenantId`, `issuer`, `tokenId`) are hashed using a
+versioned, domain-separated, length-delimited SHA-256 recipe
+(`tracepermit:workload-identity-replay:v1\0`) with 4-byte big-endian integer byte-length
+delimiters over UTF-8 bytes. Maximum identifier lengths are enforced (`tenantId` <= 128,
+`issuer` <= 256, `tokenId` <= 256) and invalid Unicode surrogate pairs are rejected.
+
+The persistent schema (`tp_workload_replay_claims`) stores only bounded cryptographic
+digests (`claim_hash`, `tenant_hash`, `token_fingerprint`) and microsecond wall-clock
+timestamps (`expires_at`, `claimed_at`). Plain unique insertion serves as the concurrency
+arbiter: exactly one caller among racing store instances succeeds, and only expected
+duplicate-key errors (PostgreSQL 23505, MariaDB 1062/23000) represent replay. Submissions
+where `expiresAt <= now` fail closed and write nothing; replays never refresh expiry or
+overwrite existing timestamps.
+
+Finite capacity is enforced via an agreed operator-configured capacity column in
+schema V2 (`tp_workload_replay_state.capacity`, default `10,000`) and an atomic counter update on the
+state singleton (`total_claims = total_claims + 1 WHERE singleton = 1 AND capacity = ? AND total_claims < capacity`).
+Store initialization validates local capacity against persisted capacity and fails closed
+with `REPLAY_CAPACITY_MISMATCH` on disagreement. An explicit `upgradeFromV1` path upgrades
+schema V1 while preserving published V1 migration bytes unmodified. Physical schema validation
+directly checks table columns, types, nullability, collations (`"C"` on PostgreSQL, `ascii_bin`
+on MariaDB), and primary keys, rejecting drift or unmigrated structures.
+
+Finite statement query timeouts are enforced across all operations. The store evaluates
+post-wait validity using caller-trusted monotonic elapsed time against `expiresAt` after
+connection lease, after INSERT, after counter UPDATE, and after cleanup. If lock contention
+or query execution causes elapsed time to reach or exceed expiry before commit, the transaction
+rolls back and returns `false`. If commit acknowledges after expiry or cleanup delays past
+expiry, consumption fails closed with `REPLAY_COMMIT_UNKNOWN`. All thrown `WorkloadIdentityReplayException`
+instances disarm causes (`initCause = this`), disable exception suppression (`enableSuppression = false`),
+and omit arbitrary message constructors to prevent database credentials, canary tokens, and
+internal diagnostics from escaping. See
+[ADR 0080](../architecture/0080-durable-workload-identity-replay.md) and the
+[workload-identity replay runbook](../runbooks/workload-identity-replay-store.md).
 
 ## 6. Audit evidence contract
 

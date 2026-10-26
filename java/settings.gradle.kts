@@ -16,6 +16,8 @@ include(
   "persistence-postgres",
   "persistence-mariadb",
   "persistence-operations",
+  "persistence-identity",
+  "agentcore-durable-registration",
   "observability-otel",
   "conformance",
 )
