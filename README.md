@@ -83,7 +83,7 @@ CI selects checks from the complete PR diff using the base branch's policy:
 | Change scope                                                                                                 | Required checks                                                                          |
 | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
 | Only documentation Markdown, root README/contribution/security Markdown, or `site/`                          | Documentation, script invariants, site build/audit and site browser tests                |
-| Console changes mixed only with those documentation/site paths                                               | The above plus console build/types/tests, installed packaging and approval browser tests |
+| Console `src/`, `public/` or `index.html` changes mixed only with those documentation/site paths             | The above plus console build/types/tests, installed packaging and approval browser tests |
 | Java, contracts, dependencies, scripts, CI, deployment, unknown paths, uncertain diff, or any push to `main` | Every check, including all Java/database shards, combined coverage and Gate C            |
 
 The final `verify` check requires successful change detection and every selected

@@ -13,7 +13,8 @@ Push/manual runs always select the full plan. No labels, PR prose, model call,
 network classifier or user-supplied skip switch can exempt a check.
 
 Explicit root README/CONTRIBUTING/SECURITY Markdown, `docs/**/*.md` and `site/`
-are the docs allowlist. Console paths mixed only with that allowlist select the
+are the docs allowlist. Console `src/`, `public/` and `index.html` paths mixed
+only with that allowlist select the
 frontend plan: console checks, packaging and real approval browser tests also
 run. Every other path, including scripts, CI, Java, frozen contracts, build files,
 root dependencies, deployment and new modules, selects full CI. Documentation,

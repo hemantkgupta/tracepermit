@@ -29,7 +29,11 @@ export function classify(paths) {
       path.startsWith("site/")
     )
       continue;
-    if (path.startsWith("apps/console/")) {
+    if (
+      path.startsWith("apps/console/src/") ||
+      path.startsWith("apps/console/public/") ||
+      path === "apps/console/index.html"
+    ) {
       consoleChanged = true;
       continue;
     }
