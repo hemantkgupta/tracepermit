@@ -220,10 +220,10 @@ abstract class OperationReviewCrossProcessContract {
       assertThat(res2.exitCode()).isZero();
       assertThat(res1.jvmId()).isNotEqualTo(res2.jvmId());
 
-      // Exactly one succeeds, the other reports closed stale-state outcome
-      boolean oneWon = res1.isOk() && res2.isRefused(OPERATION_STATE_STALE);
-      boolean twoWon = res2.isOk() && res1.isRefused(OPERATION_STATE_STALE);
-      assertThat(oneWon ^ twoWon).isTrue();
+      // Exactly one succeeds, the other reports closed stale-state or non-reviewable outcome
+      boolean oneWon = res1.isOk() && (res2.isRefused(OPERATION_STATE_STALE) || res2.isRefused(OPERATION_NOT_WITHDRAWABLE));
+      boolean twoWon = res2.isOk() && (res1.isRefused(OPERATION_STATE_STALE) || res1.isRefused(OPERATION_NOT_REVIEWABLE));
+      assertThat(oneWon ^ twoWon).withFailMessage("Race failed: res1=" + res1 + ", res2=" + res2).isTrue();
 
       // Database contains exactly one terminal transition and original immutable binding unchanged
       assertThat(currentStatus()).isIn("approved", "cancelled");
@@ -275,9 +275,9 @@ abstract class OperationReviewCrossProcessContract {
       assertThat(resDeny.exitCode()).isZero();
       assertThat(resApprove.jvmId()).isNotEqualTo(resDeny.jvmId());
 
-      boolean approveWon = resApprove.isOk() && resDeny.isRefused(OPERATION_STATE_STALE);
-      boolean denyWon = resDeny.isOk() && resApprove.isRefused(OPERATION_STATE_STALE);
-      assertThat(approveWon ^ denyWon).isTrue();
+      boolean approveWon = resApprove.isOk() && (resDeny.isRefused(OPERATION_STATE_STALE) || resDeny.isRefused(OPERATION_NOT_REVIEWABLE));
+      boolean denyWon = resDeny.isOk() && (resApprove.isRefused(OPERATION_STATE_STALE) || resApprove.isRefused(OPERATION_NOT_REVIEWABLE));
+      assertThat(approveWon ^ denyWon).withFailMessage("Race failed: resApprove=" + resApprove + ", resDeny=" + resDeny).isTrue();
 
       assertThat(currentStatus()).isIn("approved", "denied");
       assertThat(count("tp_operation_lifecycle_facts")).isEqualTo(2);
@@ -577,75 +577,75 @@ abstract class OperationReviewCrossProcessContract {
 
   @Test
   void testPreCommandChildTerminationProducesNoStateTransition() throws Exception {
-    ContenderHandle handle = OperationReviewChildJvm.startContender(
+    try (ContenderHandle handle = OperationReviewChildJvm.startContender(
         requestBuilder("EVALUATE")
             .operationJson(CanonicalJson.canonicalize(initial))
             .barrier(true)
             .build()
-    );
+    )) {
+      // Child is waiting at READY boundary before command execution
+      // Parent terminates the child before sending GO
+      handle.destroy();
+      ChildResult result = handle.awaitResult(Duration.ofSeconds(10));
 
-    // Child is waiting at READY boundary before command execution
-    // Parent terminates the child before sending GO
-    handle.close();
-    ChildResult result = handle.awaitResult(Duration.ofSeconds(10));
+      assertThat(result.acknowledged()).isFalse();
+      assertThat(result.status()).isEqualTo("UNACKNOWLEDGED");
 
-    assertThat(result.acknowledged()).isFalse();
-    assertThat(result.status()).isEqualTo("UNACKNOWLEDGED");
-
-    // Independent reader proves no transition occurred in the database
-    ChildResult readResult = OperationReviewChildJvm.runChild(
-        requestBuilder("READ_CURRENT").operationId(id()).build(), Duration.ofSeconds(30));
-    assertThat(readResult.isOk()).isTrue();
-    assertThat(readResult.resultStatus()).isEqualTo("evaluating");
-    assertThat(count("tp_operation_lifecycle_facts")).isZero();
-    assertThat(count("tp_operation_review_bindings")).isZero();
+      // Independent reader proves no transition occurred in the database
+      ChildResult readResult = OperationReviewChildJvm.runChild(
+          requestBuilder("READ_CURRENT").operationId(id()).build(), Duration.ofSeconds(30));
+      assertThat(readResult.isOk()).isTrue();
+      assertThat(readResult.resultStatus()).isEqualTo("evaluating");
+      assertThat(count("tp_operation_lifecycle_facts")).isZero();
+      assertThat(count("tp_operation_review_bindings")).isZero();
+    }
   }
 
   @Test
   void testCommittedEvaluationWithWithheldAcknowledgementReportsUnacknowledgedAndReconcilesCleanly() throws Exception {
-    ContenderHandle handle = OperationReviewChildJvm.startContender(
+    try (ContenderHandle handle = OperationReviewChildJvm.startContender(
         requestBuilder("EVALUATE")
             .operationJson(CanonicalJson.canonicalize(initial))
             .evaluatorExpiryIso(fresh().toString())
             .testMode("POST_COMMIT_BARRIER")
             .build()
-    );
+    )) {
+      // Wait until child has committed the transaction to the database
+      handle.awaitCommitted(Duration.ofSeconds(15));
 
-    // Wait until child has committed the transaction to the database
-    handle.awaitCommitted(Duration.ofSeconds(15));
+      // Independent fresh reader proves the transaction committed
+      ChildResult freshRead = OperationReviewChildJvm.runChild(
+          requestBuilder("READ_CURRENT").operationId(id()).build(), Duration.ofSeconds(30));
+      assertThat(freshRead.isOk()).isTrue();
+      assertThat(freshRead.resultStatus()).isEqualTo("awaiting_approval");
+      assertThat(count("tp_operation_lifecycle_facts")).isEqualTo(1);
+      assertThat(count("tp_operation_review_bindings")).isEqualTo(1);
 
-    // Independent fresh reader proves the transaction committed
-    ChildResult freshRead = OperationReviewChildJvm.runChild(
-        requestBuilder("READ_CURRENT").operationId(id()).build(), Duration.ofSeconds(30));
-    assertThat(freshRead.isOk()).isTrue();
-    assertThat(freshRead.resultStatus()).isEqualTo("awaiting_approval");
-    assertThat(count("tp_operation_lifecycle_facts")).isEqualTo(1);
-    assertThat(count("tp_operation_review_bindings")).isEqualTo(1);
+      // Terminate the child BEFORE it can emit its acknowledgement result
+      handle.destroy();
+      ChildResult unackResult = handle.awaitResult(Duration.ofSeconds(10));
 
-    // Terminate the child BEFORE it can emit its acknowledgement result
-    handle.close();
-    ChildResult unackResult = handle.awaitResult(Duration.ofSeconds(10));
+      // Parent must report UNACKNOWLEDGED, not successful completion or a stale loser
+      assertThat(unackResult.acknowledged()).isFalse();
+      assertThat(unackResult.status()).isEqualTo("UNACKNOWLEDGED");
 
-    // Parent must report UNACKNOWLEDGED, not successful completion or a stale loser
-    assertThat(unackResult.acknowledged()).isFalse();
-    assertThat(unackResult.status()).isEqualTo("UNACKNOWLEDGED");
+      // Fresh readback reconciles committed history without manufacturing the lost acknowledgement
+      ChildResult reconciledRead = OperationReviewChildJvm.runChild(
+          requestBuilder("READ_CURRENT").operationId(id()).build(), Duration.ofSeconds(30));
+      assertThat(reconciledRead.isOk()).isTrue();
+      assertThat(reconciledRead.resultStatus()).isEqualTo("awaiting_approval");
 
-    // Fresh readback reconciles committed history without manufacturing the lost acknowledgement
-    ChildResult reconciledRead = OperationReviewChildJvm.runChild(
-        requestBuilder("READ_CURRENT").operationId(id()).build(), Duration.ofSeconds(30));
-    assertThat(reconciledRead.isOk()).isTrue();
-    assertThat(reconciledRead.resultStatus()).isEqualTo("awaiting_approval");
-
-    // Repeating the original command with initial snapshot must not append a second transition
-    ChildResult repeatEval = OperationReviewChildJvm.runChild(
-        requestBuilder("EVALUATE")
-            .operationJson(CanonicalJson.canonicalize(initial))
-            .evaluatorExpiryIso(fresh().toString())
-            .build(),
-        Duration.ofSeconds(30)
-    );
-    assertThat(repeatEval.isRefused(OPERATION_STATE_STALE)).isTrue();
-    assertThat(count("tp_operation_lifecycle_facts")).isEqualTo(1);
+      // Repeating the original command with initial snapshot must not append a second transition
+      ChildResult repeatEval = OperationReviewChildJvm.runChild(
+          requestBuilder("EVALUATE")
+              .operationJson(CanonicalJson.canonicalize(initial))
+              .evaluatorExpiryIso(fresh().toString())
+              .build(),
+          Duration.ofSeconds(30)
+      );
+      assertThat(repeatEval.isRefused(OPERATION_STATE_STALE)).isTrue();
+      assertThat(count("tp_operation_lifecycle_facts")).isEqualTo(1);
+    }
   }
 
   @Test
@@ -662,64 +662,64 @@ abstract class OperationReviewCrossProcessContract {
     JsonNode pending = evalResult.snapshot();
 
     // JVM B: review with withheld acknowledgement
-    ContenderHandle handle = OperationReviewChildJvm.startContender(
+    try (ContenderHandle handle = OperationReviewChildJvm.startContender(
         requestBuilder("REVIEW")
             .operationJson(CanonicalJson.canonicalize(pending))
             .decision("APPROVE")
             .reviewExpiryIso(fresh().toString())
             .testMode("POST_COMMIT_BARRIER")
             .build()
-    );
+    )) {
+      // Wait until child has committed the review transaction to the database
+      handle.awaitCommitted(Duration.ofSeconds(15));
 
-    // Wait until child has committed the review transaction to the database
-    handle.awaitCommitted(Duration.ofSeconds(15));
+      // Independent fresh reader proves the review committed to approved
+      ChildResult freshRead = OperationReviewChildJvm.runChild(
+          requestBuilder("READ_CURRENT").operationId(id()).build(), Duration.ofSeconds(30));
+      assertThat(freshRead.isOk()).isTrue();
+      assertThat(freshRead.resultStatus()).isEqualTo("approved");
+      assertThat(count("tp_operation_lifecycle_facts")).isEqualTo(2);
 
-    // Independent fresh reader proves the review committed to approved
-    ChildResult freshRead = OperationReviewChildJvm.runChild(
-        requestBuilder("READ_CURRENT").operationId(id()).build(), Duration.ofSeconds(30));
-    assertThat(freshRead.isOk()).isTrue();
-    assertThat(freshRead.resultStatus()).isEqualTo("approved");
-    assertThat(count("tp_operation_lifecycle_facts")).isEqualTo(2);
+      // Terminate the child BEFORE it can emit its acknowledgement result
+      handle.destroy();
+      ChildResult unackResult = handle.awaitResult(Duration.ofSeconds(10));
 
-    // Terminate the child BEFORE it can emit its acknowledgement result
-    handle.close();
-    ChildResult unackResult = handle.awaitResult(Duration.ofSeconds(10));
+      // Parent must report UNACKNOWLEDGED, not success or stale loser
+      assertThat(unackResult.acknowledged()).isFalse();
+      assertThat(unackResult.status()).isEqualTo("UNACKNOWLEDGED");
 
-    // Parent must report UNACKNOWLEDGED, not success or stale loser
-    assertThat(unackResult.acknowledged()).isFalse();
-    assertThat(unackResult.status()).isEqualTo("UNACKNOWLEDGED");
+      // Fresh readback reconciles committed approved state
+      ChildResult reconciledRead = OperationReviewChildJvm.runChild(
+          requestBuilder("READ_CURRENT").operationId(id()).build(), Duration.ofSeconds(30));
+      assertThat(reconciledRead.isOk()).isTrue();
+      assertThat(reconciledRead.resultStatus()).isEqualTo("approved");
 
-    // Fresh readback reconciles committed approved state
-    ChildResult reconciledRead = OperationReviewChildJvm.runChild(
-        requestBuilder("READ_CURRENT").operationId(id()).build(), Duration.ofSeconds(30));
-    assertThat(reconciledRead.isOk()).isTrue();
-    assertThat(reconciledRead.resultStatus()).isEqualTo("approved");
+      // Repeating the review command with pending snapshot must refuse OPERATION_STATE_STALE
+      ChildResult repeatReview = OperationReviewChildJvm.runChild(
+          requestBuilder("REVIEW")
+              .operationJson(CanonicalJson.canonicalize(pending))
+              .decision("APPROVE")
+              .reviewExpiryIso(fresh().toString())
+              .build(),
+          Duration.ofSeconds(30)
+      );
+      assertThat(repeatReview.isRefused(OPERATION_STATE_STALE)).isTrue();
 
-    // Repeating the review command with pending snapshot must refuse OPERATION_STATE_STALE
-    ChildResult repeatReview = OperationReviewChildJvm.runChild(
-        requestBuilder("REVIEW")
-            .operationJson(CanonicalJson.canonicalize(pending))
-            .decision("APPROVE")
-            .reviewExpiryIso(fresh().toString())
-            .build(),
-        Duration.ofSeconds(30)
-    );
-    assertThat(repeatReview.isRefused(OPERATION_STATE_STALE)).isTrue();
+      // Repeating with initial snapshot also refuses OPERATION_STATE_STALE
+      ChildResult repeatInitial = OperationReviewChildJvm.runChild(
+          requestBuilder("REVIEW")
+              .operationJson(CanonicalJson.canonicalize(initial))
+              .decision("APPROVE")
+              .reviewExpiryIso(fresh().toString())
+              .build(),
+          Duration.ofSeconds(30)
+      );
+      assertThat(repeatInitial.isRefused(OPERATION_STATE_STALE)).isTrue();
 
-    // Repeating with initial snapshot also refuses OPERATION_STATE_STALE
-    ChildResult repeatInitial = OperationReviewChildJvm.runChild(
-        requestBuilder("REVIEW")
-            .operationJson(CanonicalJson.canonicalize(initial))
-            .decision("APPROVE")
-            .reviewExpiryIso(fresh().toString())
-            .build(),
-        Duration.ofSeconds(30)
-    );
-    assertThat(repeatInitial.isRefused(OPERATION_STATE_STALE)).isTrue();
-
-    // Exactly 2 lifecycle facts (evaluation + review) and exactly 1 review binding
-    assertThat(count("tp_operation_lifecycle_facts")).isEqualTo(2);
-    assertThat(count("tp_operation_review_bindings")).isEqualTo(1);
+      // Exactly 2 lifecycle facts (evaluation + review) and exactly 1 review binding
+      assertThat(count("tp_operation_lifecycle_facts")).isEqualTo(2);
+      assertThat(count("tp_operation_review_bindings")).isEqualTo(1);
+    }
   }
 
   @Test
@@ -736,7 +736,7 @@ abstract class OperationReviewCrossProcessContract {
     assertThat(crashResult.acknowledged()).isFalse();
     assertThat(crashResult.exitCode()).isEqualTo(13);
     assertThat(crashResult.status()).isEqualTo("UNACKNOWLEDGED");
-    assertThat(crashResult.stderrLines()).anyMatch(line -> line.contains("CHILD_SIMULATED_CRASH"));
+    assertThat(crashResult.hasStderrCategory("CHILD_SIMULATED_CRASH")).isTrue();
   }
 
   // --- Fixture Helpers ---

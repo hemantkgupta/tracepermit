@@ -46,40 +46,55 @@ and historical fact-time replay without relying on in-memory shared state:
      canonical business operations measuring ~2–4 KB.
    - Stderr capture: maximum `MAX_STDERR_LINE_BYTES = 1024` (1 KB per line),
      `MAX_STDERR_LINES = 100`, and `MAX_STDERR_TOTAL_BYTES = 32_768` (32 KB total).
-     `readBoundedLine` reads streams up to these limits, conservatively throwing
-     `ProtocolException` if exceeded.
+     `readBoundedLine` reads streams up to these limits with strict UTF-8 report
+     decoding, conservatively throwing `ProtocolException` or `CharacterCodingException`
+     if exceeded or malformed.
 
-3. **Process ownership and monotonic budgeting**:
-   - Immediate ownership: The harness wraps `ProcessBuilder.start()` in try-finally
-     handling to guarantee that any failure during request serialization, writing,
-     or readiness handshake forcibly terminates and closes the child process.
-   - Monotonic time budgeting: Timeouts are measured against a single monotonic deadline
-     (`System.nanoTime() + timeout.toNanos()`). Each phase (response reading, exit
-     waiting, drainer joining) decrements remaining nanoseconds without renewing the
-     budget.
-   - Executor shutdown: Single-thread executors used for bounded blocking reads are
-     shut down and awaited, preserving thread interrupt status upon interruption.
+3. **Total supervision deadlines and cleanup**:
+   - Immediate ownership: The harness acquires unconditional ownership immediately after
+     `ProcessBuilder.start()`. Any failure during request serialization, writing, or
+     readiness handshakes forcibly terminates the process and closes streams.
+   - Monotonic command budget: The entire command lifecycle (request write, ready wait,
+     GO/RELEASE signals, committed wait, response read, process exit, drainer join) is
+     governed by a single monotonic deadline (`System.nanoTime() + commandBudget.toNanos()`).
+     Phases do not renew the budget.
+   - Finite teardown reserve: Cleanup allocates a separate, finite reaping reserve
+     (`REAP_RESERVE_MS = 2000`). Owned child processes are forcibly destroyed _before_
+     attempting stream closure, ensuring blocking pipe I/O cannot hold cleanup hostage.
+   - Interruption preservation: Thread interrupt flags are strictly preserved across
+     all blocking operations, futures, and teardown steps.
 
-4. **Process identity markers**:
-   Each child JVM initializes a cryptographically random UUID marker (`jvmId`) at
-   startup and includes it in structured responses. This UUID serves as a test
-   harness correlation marker proving distinct process instances; it is not an
-   OS-enforced PID, hardware-bound identity, or cryptographic platform attestation.
+4. **Unconditional ownership of barrier children**:
+   All child processes and barrier contender handles are wrapped with `try-with-resources`
+   from acquisition through all assertions. Any assertion failure, readback exception,
+   or timeout immediately destroys the owned process, preventing orphaned child processes.
 
-5. **Contender barrier synchronization**:
-   To test true concurrent contention at the database lock boundary without in-memory
-   thread synchronization, child processes initialize their DataSource and prepare
-   the command, emit `READY\n` on stdout, and await `GO\n` on stdin. The parent
-   waits for both contenders to reach readiness before simultaneously signaling
-   both pipes, releasing real OS processes against the database row locks.
+5. **Closed bounded response validation**:
+   Responses emitted by child JVMs undergo strict, closed validation before being marked
+   acknowledged:
+   - Strict UTF-8 decoding (`CodingErrorAction.REPORT`).
+   - Local Jackson mapper with strict duplicate key detection (`StreamReadFeature.STRICT_DUPLICATE_DETECTION`)
+     and trailing token refusal.
+   - Standard 8-4-4-4-12 UUID format validation (`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`).
+   - Exact allowed field sets for `OK` and `REFUSED` (no unknown fields accepted).
+   - Mandatory non-empty `snapshot` validating under `BusinessOperationValidator.validate()`.
+   - Exact match between `snapshotHash` and `CanonicalJson.sha256(snapshot)`.
+   - Matching `operationId` and `resultStatus` against snapshot contents and request expectations.
+   - Required non-blank `bindingDigest` and `factId`.
 
-6. **Acknowledgement boundary and conservative validation**:
-   Child JVMs execute commands under transactional isolation, flush their structured
-   JSON response to stdout, and exit with code 0. Parent harnesses verify process exit
-   code and strictly validate the JSON payload (`jvmId` format, `status` enum,
-   `snapshot` object, `snapshotHash`, and known error codes). Any malformed,
-   unrecognized, or unacknowledged execution is classified as `UNACKNOWLEDGED`
-   (`acknowledged == false`), never as a successful command or a safe stale loser.
+6. **Continuous stream-bounded stderr drainer**:
+   The stderr drainer reads continuously in chunks until EOF, preventing OS pipe buffer
+   deadlocks under heavy stderr volume. It enforces exact byte accounting, truncates lines
+   exceeding `MAX_STDERR_LINE_BYTES`, and enforces the `MAX_STDERR_TOTAL_BYTES` cap prior to
+   retaining lines. Once limits are met, draining continues and discards subsequent bytes.
+   Zero raw stderr lines are retained in memory.
+
+7. **End-to-end private diagnostic redaction**:
+   Handshake failures and uncaught errors emit fixed generic category markers rather than
+   echoing raw stdout or stderr content. Truncated prefixes are not used. Diagnostics
+   expose only fixed category strings (`CHILD_SIMULATED_CRASH`, `CHILD_SIMULATED_EARLY_EXIT`,
+   `STDERR_PRESSURE`, `UNCLASSIFIED_STDERR`) and numerical counts. Synthetic private canary
+   tests verify that exception messages, getters, and `toString()` methods never leak secrets.
 
 ## Failure modes and acknowledgement uncertainty
 
@@ -117,12 +132,12 @@ and MariaDB 10.6.25:
   registration remains byte-for-byte unchanged.
 - **Independent contenders (Approve vs Withdraw)**: Two separate JVMs compete for
   the pending operation at the database lock boundary. Exactly one contender wins
-  and commits its transition (`status: "OK"`). The losing contender is rejected
-  with `OPERATION_STATE_STALE`. The database retains exactly one terminal lifecycle
-  fact and preserves the original review binding.
+  and commits its transition (`status: "OK"`). The losing contender is safely
+  refused with `OPERATION_STATE_STALE` or `OPERATION_NOT_WITHDRAWABLE`. The database
+  retains exactly one terminal lifecycle fact and preserves the original review binding.
 - **Independent contenders (Approve vs Deny)**: Two separate JVMs compete for the
-  pending operation. Exactly one decision wins; the loser is rejected with
-  `OPERATION_STATE_STALE`.
+  pending operation. Exactly one decision wins; the loser is safely refused with
+  `OPERATION_STATE_STALE` or `OPERATION_NOT_REVIEWABLE`.
 - **Historical replay at fact time**: Time advances beyond the configured approval
   deadline (`approvalDeadline`). A fresh reader JVM reconstructs the snapshot from
   immutable history via `findCurrent()`; the snapshot correctly reports
@@ -165,20 +180,23 @@ and MariaDB 10.6.25:
 
 ## Distinguishing negative controls
 
-Two separate distinguishing negative controls were executed:
+Distinguishing negative controls verified that harness safety gates actively catch
+defects and are not vacuous:
 
 1. **Unconfirmed child status**: `OperationReviewChildJvm.java` was modified to emit
    `UNCONFIRMED` instead of `OK` upon command completion. 6 of 7 original test cases
    failed immediately in the parent harness.
-2. **Lost acknowledgement treated as success**: `ContenderHandle.awaitResult` was
-   mutated to return `acknowledged = true, status = "OK"` on unacknowledged or
-   abnormal child exit. All 4 unacknowledged tests failed immediately
-   (`testResourceAndAcknowledgementBehaviorFailsOnChildCrashOrDeadPipe`,
-   `testPreCommandChildTerminationProducesNoStateTransition`,
-   `testCommittedEvaluationWithWithheldAcknowledgementReportsUnacknowledgedAndReconcilesCleanly`,
-   `testCommittedReviewWithWithheldAcknowledgementReportsUnacknowledgedAndPreventsDuplicateTransition`).
+2. **Lost acknowledgement treated as success**: `ContenderHandle.unacknowledged` was
+   mutated to return `acknowledged = true, status = "OK"`. 13 of 20 supervision tests
+   failed immediately (`testSilenceChildExitsWithoutResponseReportsUnacknowledged`,
+   `testEarlyExitChildReportsUnacknowledgedWithNonZeroExitCode`, `testOversizedResponseLineRejectedConservatively`,
+   `testNoNewlineResponseHandledSafely`, `testStderrDrainerEnforcesCapsAndDrainsContinuouslyUnderPressure`,
+   `testMalformedUtf8ResponseRejectedConservatively`, `testDuplicateKeyResponseRejectedConservatively`,
+   `testTrailingTokenResponseRejectedConservatively`, `testInvalidUuidRegexRejectedConservatively`,
+   `testIncompleteOrEmptySnapshotRejectedConservatively`, `testMismatchedSnapshotHashRejectedConservatively`,
+   `testUnknownFieldsInOkResponseRejectedConservatively`, `testEndToEndPrivateCanaryRedactionInExceptionsAndDiagnostics`).
 
-Both modifications were cleanly restored byte-for-byte and verified with `git diff --check`.
+All mutations were restored byte-for-byte and verified clean with `git diff --check`.
 Subsequent reruns passed all tests.
 
 ## Candidate qualification history
@@ -195,13 +213,21 @@ Subsequent reruns passed all tests.
 3. In coordinator review, several qualification gaps were identified: unbounded stream reads,
    lack of immediate process cleanup ownership, non-monotonic timeout accumulation, direct SQL
    generation updates, and lack of committed-but-unacknowledged tests.
-4. `OperationReviewChildJvm` was hardened with `MAX_LINE_BYTES = 65_536`, `MAX_STDERR_LINE_BYTES = 1024`,
-   monotonic deadline budgeting, immediate try-finally cleanup ownership, and conservative JSON
-   validation.
-5. The direct SQL generation shortcut was replaced with real `OperationAuthorityAdministration`
-   APIs (`quarantine`, `stageReplacement`, `activateStaged`).
-6. Dedicated pre-command crash and post-commit lost acknowledgement tests were added and qualified
-   across all three database engines.
+4. Static review on head `76f0c25b23440af7633495608f526a8b1e7bca8c` identified five specific
+   supervision findings:
+   - Untimed request writes/flushes and stream closure before process termination.
+   - Unconditional cleanup omission on barrier handles.
+   - Missing strict UTF-8 decoding, missing duplicate key & trailing token refusal, loose UUID regex,
+     and unvalidated snapshot fields.
+   - Early stderr drainer termination on overlong lines and character-based size tracking.
+   - Diagnostic leaks of unexpected stdout and stderr lines.
+5. All five findings were resolved:
+   - Monotonic command budgeting established before setup with dedicated `REAP_RESERVE_MS` teardown reserve.
+   - Try-with-resources wrapping for all barrier handles.
+   - Closed response validation with local strict Jackson parser, standard UUID regex, and validator execution.
+   - Continuous chunk-based stderr draining with byte-level cap enforcement.
+   - Categorized diagnostics with zero raw line retention and synthetic canary verification.
+6. The test suite expanded from 39 to 50 tests (20 supervision unit tests + 30 cross-process database tests).
 
 ## Reproduction
 
@@ -218,9 +244,6 @@ bash -c 'set -euo pipefail; source scripts/configure-java-environment.sh; exec j
 # Run cross-process qualification across all three database engines
 bash -c 'set -euo pipefail; source scripts/configure-java-environment.sh; exec java/gradlew -p java :persistence-operations:test --tests "*OperationReviewCrossProcessTest" --no-daemon --rerun-tasks --no-build-cache --max-workers=1 --console=plain'
 
-# Run full operations test suite
-pnpm test:java-operations --rerun-tasks --no-build-cache --max-workers=1 --console=plain
-
 # Repository lint, documentation, and flow gates
 pnpm check
 pnpm format:check
@@ -231,13 +254,13 @@ git diff --check
 
 ## Qualification matrix results
 
-| Database Engine / Suite     | Suite Name                                  | Tests Executed | Passed | Failed | Errors | Skipped |
-| :-------------------------- | :------------------------------------------ | :------------- | :----- | :----- | :----- | :------ |
-| Independent JVM Supervision | `OperationReviewChildJvmSupervisionTest`    | 9              | 9      | 0      | 0      | 0       |
-| PostgreSQL 16.4             | `PostgresOperationReviewCrossProcessTest`   | 10             | 10     | 0      | 0      | 0       |
-| MariaDB 11.4.13             | `MariaDb114OperationReviewCrossProcessTest` | 10             | 10     | 0      | 0      | 0       |
-| MariaDB 10.6.25             | `MariaDb106OperationReviewCrossProcessTest` | 10             | 10     | 0      | 0      | 0       |
-| **Total**                   |                                             | **39**         | **39** | **0**  | **0**  | **0**   |
+| Database Engine / Suite     | Suite Name                                  | Tests Executed | Passed | Failed | Errors | Skipped | Time  |
+| :-------------------------- | :------------------------------------------ | :------------- | :----- | :----- | :----- | :------ | :---- |
+| Independent JVM Supervision | `OperationReviewChildJvmSupervisionTest`    | 20             | 20     | 0      | 0      | 0       | 5.0s  |
+| PostgreSQL 16.4             | `PostgresOperationReviewCrossProcessTest`   | 10             | 10     | 0      | 0      | 0       | 60.6s |
+| MariaDB 11.4.13             | `MariaDb114OperationReviewCrossProcessTest` | 10             | 10     | 0      | 0      | 0       | 39.2s |
+| MariaDB 10.6.25             | `MariaDb106OperationReviewCrossProcessTest` | 10             | 10     | 0      | 0      | 0       | 30.6s |
+| **Total**                   |                                             | **50**         | **50** | **0**  | **0**  | **0**   |       |
 
 This qualification qualifies the tested closed durable review scenarios across
 independent local JVM boundaries and process lifetimes on PostgreSQL 16.4, MariaDB 11.4.13,

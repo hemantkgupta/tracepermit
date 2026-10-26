@@ -1,6 +1,10 @@
 package io.tracepermit.persistence.operations;
 
+import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.core.StreamReadFeature;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.tracepermit.adapters.remote.github.GitHubBusinessOperationBinding;
@@ -12,6 +16,11 @@ import io.tracepermit.contracts.JsonSupport;
 import io.tracepermit.execution.TenantPartition;
 import java.io.*;
 import java.net.ProtocolException;
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CharsetDecoder;
+import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.sql.Connection;
@@ -22,7 +31,10 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Logger;
+import java.util.regex.Pattern;
 import javax.sql.DataSource;
 
 /**
@@ -33,7 +45,7 @@ import javax.sql.DataSource;
  * approved hashes to stdout. Drains stdout and stderr concurrently to prevent pipe deadlocks.
  *
  * <p>Enforces explicit byte bounds on request/response/stderr lines, monotonic budget accounting across
- * all execution phases, immediate process ownership upon fork, and conservative response validation.
+ * all execution phases, immediate process ownership upon fork, and closed, conservative response validation.
  */
 public final class OperationReviewChildJvm {
   private static final String JVM_ID = UUID.randomUUID().toString();
@@ -60,6 +72,27 @@ public final class OperationReviewChildJvm {
   /** Maximum aggregate stderr retention bytes across all lines. */
   public static final int MAX_STDERR_TOTAL_BYTES = 32_768;
 
+  /** Separate finite reserve for process destroying and reaping on teardown. */
+  public static final long REAP_RESERVE_MS = 2000L;
+
+  private static final Pattern STRICT_UUID_PATTERN = Pattern.compile(
+      "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+  );
+
+  private static final Set<String> ALLOWED_OK_FIELDS = Set.of(
+      "jvmId", "status", "operationId", "resultStatus", "snapshotHash",
+      "bindingDigest", "factId", "snapshot"
+  );
+
+  private static final Set<String> ALLOWED_REFUSED_FIELDS = Set.of(
+      "jvmId", "status", "code"
+  );
+
+  private static final JsonFactory STRICT_JSON_FACTORY = JsonFactory.builder()
+      .enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION)
+      .build();
+  private static final ObjectMapper LOCAL_STRICT_MAPPER = new ObjectMapper(STRICT_JSON_FACTORY);
+
   public record ChildRequest(
       String command,
       String jdbcUrl,
@@ -76,7 +109,9 @@ public final class OperationReviewChildJvm {
       String membershipExpiryIso,
       boolean barrier,
       boolean simulateCrash,
-      String testMode
+      String testMode,
+      boolean stallBeforeStdin,
+      String canary
   ) {
     public static Builder builder(String command, String jdbcUrl, String username, String password) {
       return new Builder(command, jdbcUrl, username, password);
@@ -92,6 +127,7 @@ public final class OperationReviewChildJvm {
           + ", barrier=" + barrier
           + ", simulateCrash=" + simulateCrash
           + ", testMode=" + testMode
+          + ", stallBeforeStdin=" + stallBeforeStdin
           + ", credentials=[REDACTED]]";
     }
 
@@ -112,6 +148,8 @@ public final class OperationReviewChildJvm {
       private boolean barrier = false;
       private boolean simulateCrash = false;
       private String testMode = "NORMAL";
+      private boolean stallBeforeStdin = false;
+      private String canary;
 
       Builder(String command, String jdbcUrl, String username, String password) {
         this.command = command;
@@ -132,12 +170,15 @@ public final class OperationReviewChildJvm {
       public Builder barrier(boolean b) { this.barrier = b; return this; }
       public Builder simulateCrash(boolean crash) { this.simulateCrash = crash; return this; }
       public Builder testMode(String mode) { this.testMode = mode; return this; }
+      public Builder stallBeforeStdin(boolean stall) { this.stallBeforeStdin = stall; return this; }
+      public Builder canary(String canary) { this.canary = canary; return this; }
 
       public ChildRequest build() {
         return new ChildRequest(
             command, jdbcUrl, username, password, operationId, operationJson,
             policyOutcome, lifetimeMillis, recoveryGeneration, decision,
-            evaluatorExpiryIso, reviewExpiryIso, membershipExpiryIso, barrier, simulateCrash, testMode
+            evaluatorExpiryIso, reviewExpiryIso, membershipExpiryIso, barrier, simulateCrash,
+            testMode, stallBeforeStdin, canary
         );
       }
     }
@@ -152,11 +193,20 @@ public final class OperationReviewChildJvm {
       String resultStatus,
       String snapshotHash,
       JsonNode snapshot,
-      List<String> stderrLines
+      List<String> diagnosticCategories,
+      int stderrLineCount,
+      int stderrByteCount,
+      boolean stderrTruncated
   ) {
     public boolean isOk() { return acknowledged && "OK".equals(status); }
     public boolean isRefused(BusinessOperationStorageException.Code expectedCode) {
       return acknowledged && "REFUSED".equals(status) && expectedCode.name().equals(code);
+    }
+    public boolean hasStderrCategory(String category) {
+      return diagnosticCategories != null && diagnosticCategories.contains(category);
+    }
+    public int stderrLines() {
+      return stderrLineCount;
     }
 
     @Override
@@ -168,13 +218,16 @@ public final class OperationReviewChildJvm {
           + ", code=" + code
           + ", resultStatus=" + resultStatus
           + ", snapshotHash=" + (snapshotHash != null ? (snapshotHash.length() > 16 ? snapshotHash.substring(0, 16) + "..." : snapshotHash) : "null")
-          + ", stderrCount=" + (stderrLines != null ? stderrLines.size() : 0) + "]";
+          + ", stderrCategories=" + (diagnosticCategories != null ? diagnosticCategories : "[]")
+          + ", stderrLines=" + stderrLineCount
+          + ", stderrBytes=" + stderrByteCount + "]";
     }
   }
 
   /**
    * Reads a single line from an InputStream up to a strict maximum byte limit.
-   * Strips trailing CRLF or LF. Throws ProtocolException if maxBytes is exceeded before a newline.
+   * Strips trailing CRLF or LF. Throws ProtocolException if maxBytes is exceeded before a newline,
+   * or if malformed UTF-8 sequences are encountered.
    * Returns null on EOF before any bytes are read.
    */
   public static String readBoundedLine(InputStream in, int maxBytes) throws IOException {
@@ -187,7 +240,7 @@ public final class OperationReviewChildJvm {
         if (len > 0 && bytes[len - 1] == '\r') {
           len--;
         }
-        return new String(bytes, 0, len, StandardCharsets.UTF_8);
+        return decodeStrictUtf8(bytes, len);
       }
       buffer.write(b);
       if (buffer.size() > maxBytes) {
@@ -202,10 +255,26 @@ public final class OperationReviewChildJvm {
     if (len > 0 && bytes[len - 1] == '\r') {
       len--;
     }
-    return new String(bytes, 0, len, StandardCharsets.UTF_8);
+    return decodeStrictUtf8(bytes, len);
+  }
+
+  public static String decodeStrictUtf8(byte[] bytes, int len) throws CharacterCodingException {
+    CharsetDecoder decoder = StandardCharsets.UTF_8.newDecoder()
+        .onMalformedInput(CodingErrorAction.REPORT)
+        .onUnmappableCharacter(CodingErrorAction.REPORT);
+    CharBuffer chars = decoder.decode(ByteBuffer.wrap(bytes, 0, len));
+    return chars.toString();
   }
 
   public static void main(String[] args) {
+    if (args.length > 0 && "--stall-before-stdin".equals(args[0])) {
+      try {
+        Thread.sleep(60_000);
+      } catch (InterruptedException ignored) {}
+      System.exit(0);
+      return;
+    }
+
     try {
       String requestLine = readBoundedLine(System.in, MAX_LINE_BYTES);
       if (requestLine == null || requestLine.isBlank()) {
@@ -233,7 +302,7 @@ public final class OperationReviewChildJvm {
       }
       if ("STDERR_PRESSURE".equals(testMode)) {
         for (int i = 0; i < 500; i++) {
-          System.err.println("STDERR_PRESSURE_LINE_" + i);
+          System.err.println("STDERR_PRESSURE_LINE_" + i + " " + "x".repeat(300));
         }
       }
       if ("OVERSIZED_RESPONSE".equals(testMode)) {
@@ -247,6 +316,56 @@ public final class OperationReviewChildJvm {
         System.out.print("{\"status\":\"OK\"}");
         System.out.flush();
         System.exit(0);
+        return;
+      }
+      if ("MALFORMED_UTF8".equals(testMode)) {
+        System.out.write(new byte[]{(byte) 0xC3, (byte) 0x28, (byte) '\n'});
+        System.out.flush();
+        System.exit(0);
+        return;
+      }
+      if ("DUPLICATE_KEY_RESPONSE".equals(testMode)) {
+        System.out.print("{\"jvmId\":\"" + JVM_ID + "\",\"status\":\"OK\",\"status\":\"OK\"}\n");
+        System.out.flush();
+        System.exit(0);
+        return;
+      }
+      if ("TRAILING_TOKEN_RESPONSE".equals(testMode)) {
+        System.out.print("{\"jvmId\":\"" + JVM_ID + "\",\"status\":\"UNACKNOWLEDGED\"} extra_trailing_garbage\n");
+        System.out.flush();
+        System.exit(0);
+        return;
+      }
+      if ("INVALID_UUID".equals(testMode)) {
+        System.out.print("{\"jvmId\":\"invalid-uuid-format\",\"status\":\"UNACKNOWLEDGED\"}\n");
+        System.out.flush();
+        System.exit(0);
+        return;
+      }
+      if ("INCOMPLETE_SNAPSHOT".equals(testMode)) {
+        System.out.print("{\"jvmId\":\"" + JVM_ID + "\",\"status\":\"OK\",\"operationId\":\"op-1\",\"resultStatus\":\"approved\",\"bindingDigest\":\"d\",\"factId\":\"f\",\"snapshotHash\":\"h\",\"snapshot\":{}}\n");
+        System.out.flush();
+        System.exit(0);
+        return;
+      }
+      if ("MISMATCHED_HASH".equals(testMode)) {
+        System.out.print("{\"jvmId\":\"" + JVM_ID + "\",\"status\":\"OK\",\"operationId\":\"op-1\",\"resultStatus\":\"approved\",\"bindingDigest\":\"d\",\"factId\":\"f\",\"snapshotHash\":\"sha256:wrong\",\"snapshot\":{\"some\":\"val\"}}\n");
+        System.out.flush();
+        System.exit(0);
+        return;
+      }
+      if ("UNKNOWN_FIELDS_OK".equals(testMode)) {
+        System.out.print("{\"jvmId\":\"" + JVM_ID + "\",\"status\":\"OK\",\"unknownField\":true}\n");
+        System.out.flush();
+        System.exit(0);
+        return;
+      }
+      if ("CANARY_DIAGNOSTIC".equals(testMode)) {
+        String canary = req.path("canary").asText("synthetic-canary-secret");
+        System.out.println("NOT_READY_SIGNAL_" + canary);
+        System.out.flush();
+        System.err.println("CHILD_ERROR: with secret " + canary);
+        System.exit(1);
         return;
       }
 
@@ -347,7 +466,7 @@ public final class OperationReviewChildJvm {
               return;
             }
           }
-          emitOk(response, result);
+          emitOk(response, result, SCOPE, target);
         }
         case "REVIEW" -> {
           JsonNode before = JsonSupport.MAPPER.readTree(req.path("operationJson").asText());
@@ -389,7 +508,7 @@ public final class OperationReviewChildJvm {
               return;
             }
           }
-          emitOk(response, result);
+          emitOk(response, result, SCOPE, target);
         }
         case "WITHDRAW" -> {
           JsonNode before = JsonSupport.MAPPER.readTree(req.path("operationJson").asText());
@@ -408,14 +527,14 @@ public final class OperationReviewChildJvm {
               SCOPE, before.path("operationId").asText(), PLANNER.observe(SCOPE, before), requester);
           var repo = new JdbcGitHubOperationReviewRepository(dataSource, profile, target);
           JsonNode result = repo.withdraw(withdrawal);
-          emitOk(response, result);
+          emitOk(response, result, SCOPE, target);
         }
         case "READ_CURRENT" -> {
           String operationId = req.path("operationId").asText();
           var lifecycleRepo = new JdbcBusinessOperationLifecycleRepository(dataSource);
           Optional<JsonNode> current = lifecycleRepo.findCurrent(SCOPE, operationId);
           if (current.isPresent()) {
-            emitOk(response, current.get());
+            emitOk(response, current.get(), SCOPE, target);
           } else {
             response.put("status", "NOT_FOUND");
             System.out.println(CanonicalJson.canonicalize(response));
@@ -427,7 +546,7 @@ public final class OperationReviewChildJvm {
           var opRepo = new JdbcBusinessOperationRepository(dataSource);
           Optional<JsonNode> original = opRepo.find(SCOPE, operationId);
           if (original.isPresent()) {
-            emitOk(response, original.get());
+            emitOk(response, original.get(), SCOPE, target);
           } else {
             response.put("status", "NOT_FOUND");
             System.out.println(CanonicalJson.canonicalize(response));
@@ -444,64 +563,207 @@ public final class OperationReviewChildJvm {
     }
   }
 
-  private static void emitOk(ObjectNode response, JsonNode result) {
+  private static void emitOk(
+      ObjectNode response,
+      JsonNode result,
+      BusinessOperationScope scope,
+      GitHubBusinessOperationBinding.ExpectedProfile target
+  ) {
     response.put("status", "OK");
+    String opId = result.path("operationId").asText();
+    response.put("operationId", opId);
     response.put("resultStatus", result.path("authorization").path("status").asText());
-    response.put("operationId", result.path("operationId").asText());
     response.put("snapshotHash", CanonicalJson.sha256(result));
+
+    String bindingDigest = null;
+    if (target != null && scope != null) {
+      try {
+        var bound = GitHubBusinessOperationBinding.bind(scope, result, target);
+        bindingDigest = bound.bindingDigest();
+      } catch (Exception ignored) {}
+    }
+    if (bindingDigest == null || bindingDigest.isBlank()) {
+      bindingDigest = result.path("resourceBindingHash").asText();
+    }
+    response.put("bindingDigest", bindingDigest);
+
+    JsonNode transitions = result.path("transitions");
+    String factId;
+    if (transitions.isArray() && transitions.size() > 0) {
+      JsonNode lastFact = transitions.get(transitions.size() - 1);
+      factId = opId + "#" + lastFact.path("sequence").asInt();
+    } else {
+      factId = opId + "#0";
+    }
+    response.put("factId", factId);
+
     response.set("snapshot", result);
     System.out.println(CanonicalJson.canonicalize(response));
     System.out.flush();
   }
 
+  // --- Stderr Drainer Class with Exact Byte and Line Tracking ---
+
+  public static final class StderrDrainer implements Runnable {
+    private final InputStream stream;
+    private final List<String> categories = new CopyOnWriteArrayList<>();
+    private final AtomicInteger lineCount = new AtomicInteger(0);
+    private final AtomicInteger byteCount = new AtomicInteger(0);
+    private final AtomicBoolean truncated = new AtomicBoolean(false);
+
+    private static final List<String> KNOWN_CATEGORIES = List.of(
+        "CHILD_SIMULATED_CRASH",
+        "CHILD_SIMULATED_EARLY_EXIT",
+        "STDERR_PRESSURE",
+        "CHILD_BARRIER_ABORTED",
+        "CHILD_ERROR",
+        "CHILD_UNCAUGHT_EXCEPTION"
+    );
+
+    public StderrDrainer(InputStream stream) {
+      this.stream = stream;
+    }
+
+    @Override
+    public void run() {
+      byte[] buf = new byte[1024];
+      ByteArrayOutputStream lineBuffer = new ByteArrayOutputStream();
+      boolean currentLineTruncated = false;
+      int retainedBytes = 0;
+
+      try {
+        int read;
+        while ((read = stream.read(buf)) != -1) {
+          byteCount.addAndGet(read);
+          for (int i = 0; i < read; i++) {
+            byte b = buf[i];
+            if (b == '\n') {
+              lineCount.incrementAndGet();
+              byte[] lineBytes = lineBuffer.toByteArray();
+              lineBuffer.reset();
+              retainedBytes = processLine(lineBytes, currentLineTruncated, retainedBytes);
+              currentLineTruncated = false;
+            } else {
+              if (lineBuffer.size() < MAX_STDERR_LINE_BYTES) {
+                lineBuffer.write(b);
+              } else {
+                currentLineTruncated = true;
+                truncated.set(true);
+              }
+            }
+          }
+        }
+        if (lineBuffer.size() > 0) {
+          lineCount.incrementAndGet();
+          byte[] lineBytes = lineBuffer.toByteArray();
+          processLine(lineBytes, currentLineTruncated, retainedBytes);
+        }
+      } catch (IOException ignored) {
+        // Stream closed or process terminated
+      }
+    }
+
+    private int processLine(byte[] lineBytes, boolean wasTruncated, int retainedBytes) {
+      int len = lineBytes.length;
+      if (len > 0 && lineBytes[len - 1] == '\r') {
+        len--;
+      }
+      String lineText;
+      try {
+        lineText = decodeStrictUtf8(lineBytes, len);
+      } catch (CharacterCodingException e) {
+        lineText = "";
+      }
+
+      String category = "UNCLASSIFIED_STDERR";
+      for (String known : KNOWN_CATEGORIES) {
+        if (lineText.contains(known)) {
+          category = known;
+          break;
+        }
+      }
+
+      if (categories.size() < MAX_STDERR_LINES && (retainedBytes + len) <= MAX_STDERR_TOTAL_BYTES) {
+        categories.add(category);
+        return retainedBytes + len;
+      } else {
+        truncated.set(true);
+        return retainedBytes;
+      }
+    }
+
+    public List<String> categories() { return Collections.unmodifiableList(categories); }
+    public int lineCount() { return lineCount.get(); }
+    public int byteCount() { return byteCount.get(); }
+    public boolean isTruncated() { return truncated.get(); }
+  }
+
   // --- Supervision Methods executed in the Parent Test ---
 
   public static ChildResult runChild(ChildRequest request, Duration timeout) throws Exception {
-    try (ContenderHandle handle = startContender(request)) {
+    try (ContenderHandle handle = startContender(request, timeout)) {
       return handle.awaitResult(timeout);
     }
   }
 
   public static ContenderHandle startContender(ChildRequest request) throws Exception {
+    return startContender(request, Duration.ofSeconds(60));
+  }
+
+  public static ContenderHandle startContender(ChildRequest request, Duration commandBudget) throws Exception {
+    long startNanos = System.nanoTime();
+    long budgetNanos = commandBudget.toNanos();
+
     String javaBinary = Path.of(System.getProperty("java.home"), "bin", "java").toString();
     String classpath = System.getProperty("tracepermit.operationsTestClasspath");
     if (classpath == null || classpath.isBlank()) {
       classpath = System.getProperty("java.class.path");
     }
 
-    ProcessBuilder pb = new ProcessBuilder(
-        javaBinary,
-        "-cp", classpath,
-        OperationReviewChildJvm.class.getName()
-    );
+    List<String> commandList = new ArrayList<>();
+    commandList.add(javaBinary);
+    commandList.add("-cp");
+    commandList.add(classpath);
+    commandList.add(OperationReviewChildJvm.class.getName());
+    if (request.stallBeforeStdin()) {
+      commandList.add("--stall-before-stdin");
+    }
+
+    ProcessBuilder pb = new ProcessBuilder(commandList);
     // Explicitly do NOT put credentials or request into env or args!
     Process process = pb.start();
     ContenderHandle handle = null;
 
     try {
-      // Spawn concurrent bounded stderr drainer
-      List<String> stderrLines = new CopyOnWriteArrayList<>();
-      Thread stderrThread = new Thread(() -> {
-        try {
-          InputStream err = process.getErrorStream();
-          int totalBytes = 0;
-          String line;
-          while ((line = readBoundedLine(err, MAX_STDERR_LINE_BYTES)) != null) {
-            if (stderrLines.size() < MAX_STDERR_LINES && totalBytes < MAX_STDERR_TOTAL_BYTES) {
-              stderrLines.add(line);
-              totalBytes += line.length();
-            }
-          }
-        } catch (IOException ignored) {}
-      }, "child-stderr-drainer");
-      stderrThread.setDaemon(true);
-      stderrThread.start();
+      // 1. Concurrent bounded stderr drainer
+      StderrDrainer drainer = new StderrDrainer(process.getErrorStream());
+      Thread drainerThread = new Thread(drainer, "child-stderr-drainer");
+      drainerThread.setDaemon(true);
+      drainerThread.start();
 
-      // Open stdin writer and stdout stream
+      // 2. IO worker executor
+      ExecutorService executor = Executors.newFixedThreadPool(2, r -> {
+        Thread t = new Thread(r, "contender-io-worker");
+        t.setDaemon(true);
+        return t;
+      });
+
+      // 3. Stdin writer and stdout stream
       BufferedWriter stdinWriter = new BufferedWriter(new OutputStreamWriter(process.getOutputStream(), StandardCharsets.UTF_8));
       InputStream stdoutStream = process.getInputStream();
 
-      // Send request payload as a single bounded line
+      // Extract expected operation ID if known
+      String expectedOpId = request.operationId();
+      if (expectedOpId == null && request.operationJson() != null) {
+        try {
+          JsonNode op = JsonSupport.MAPPER.readTree(request.operationJson());
+          if (op.hasNonNull("operationId")) {
+            expectedOpId = op.path("operationId").asText();
+          }
+        } catch (Exception ignored) {}
+      }
+
+      // Serialize request payload
       ObjectNode reqNode = JsonSupport.MAPPER.createObjectNode();
       reqNode.put("command", request.command());
       reqNode.put("jdbcUrl", request.jdbcUrl());
@@ -519,30 +781,56 @@ public final class OperationReviewChildJvm {
       reqNode.put("barrier", request.barrier());
       reqNode.put("simulateCrash", request.simulateCrash());
       reqNode.put("testMode", request.testMode());
+      if (request.canary() != null) reqNode.put("canary", request.canary());
 
       String serializedReq = CanonicalJson.canonicalize(reqNode);
       if (serializedReq.getBytes(StandardCharsets.UTF_8).length > MAX_LINE_BYTES) {
         throw new ProtocolException("Serialized ChildRequest exceeds MAX_LINE_BYTES bound");
       }
-      stdinWriter.write(serializedReq);
-      stdinWriter.newLine();
-      stdinWriter.flush();
 
-      handle = new ContenderHandle(process, stdinWriter, stdoutStream, stderrLines, stderrThread);
+      // Send request payload bounded by monotonic command budget
+      long writeRemNanos = Math.max(0, budgetNanos - (System.nanoTime() - startNanos));
+      if (writeRemNanos <= 0) {
+        throw new TimeoutException("Monotonic command budget expired before request write");
+      }
+      Future<?> writeFuture = executor.submit(() -> {
+        stdinWriter.write(serializedReq);
+        stdinWriter.newLine();
+        stdinWriter.flush();
+        return null;
+      });
+      try {
+        writeFuture.get(writeRemNanos, TimeUnit.NANOSECONDS);
+      } catch (TimeoutException te) {
+        throw new TimeoutException("Child request write timed out within monotonic command budget");
+      } catch (ExecutionException ee) {
+        throw new IOException("Failed to write request to child stdin", ee.getCause());
+      }
+
+      handle = new ContenderHandle(
+          process, stdinWriter, stdoutStream, drainer, drainerThread, executor,
+          startNanos, budgetNanos, expectedOpId
+      );
+
       if (request.barrier()) {
-        handle.awaitReady(Duration.ofSeconds(15));
+        handle.awaitReady();
       }
       return handle;
     } catch (Throwable t) {
       if (handle != null) {
         handle.close();
       } else {
-        process.destroyForcibly();
-        try {
-          process.waitFor(2, TimeUnit.SECONDS);
-        } catch (InterruptedException ie) {
-          Thread.currentThread().interrupt();
+        if (process.isAlive()) {
+          process.destroyForcibly();
+          try {
+            process.waitFor(REAP_RESERVE_MS, TimeUnit.MILLISECONDS);
+          } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+          }
         }
+        try { process.getInputStream().close(); } catch (Throwable ignored) {}
+        try { process.getOutputStream().close(); } catch (Throwable ignored) {}
+        try { process.getErrorStream().close(); } catch (Throwable ignored) {}
       }
       throw t;
     }
@@ -552,180 +840,351 @@ public final class OperationReviewChildJvm {
     private final Process process;
     private final BufferedWriter stdinWriter;
     private final InputStream stdoutStream;
-    private final List<String> stderrLines;
-    private final Thread stderrThread;
+    private final StderrDrainer drainer;
+    private final Thread drainerThread;
+    private final ExecutorService executor;
+    private final long startNanos;
+    private final long budgetNanos;
+    private final String expectedOperationId;
+    private final AtomicBoolean closed = new AtomicBoolean(false);
 
-    ContenderHandle(Process process, BufferedWriter stdinWriter, InputStream stdoutStream,
-                    List<String> stderrLines, Thread stderrThread) {
+    ContenderHandle(
+        Process process,
+        BufferedWriter stdinWriter,
+        InputStream stdoutStream,
+        StderrDrainer drainer,
+        Thread drainerThread,
+        ExecutorService executor,
+        long startNanos,
+        long budgetNanos,
+        String expectedOperationId
+    ) {
       this.process = process;
       this.stdinWriter = stdinWriter;
       this.stdoutStream = stdoutStream;
-      this.stderrLines = stderrLines;
-      this.stderrThread = stderrThread;
+      this.drainer = drainer;
+      this.drainerThread = drainerThread;
+      this.executor = executor;
+      this.startNanos = startNanos;
+      this.budgetNanos = budgetNanos;
+      this.expectedOperationId = expectedOperationId;
+    }
+
+    public boolean isAlive() {
+      return process.isAlive();
+    }
+
+    public int exitValue() {
+      return process.exitValue();
+    }
+
+    public void destroy() {
+      close();
+    }
+
+    private long remainingNanos() {
+      return Math.max(0, budgetNanos - (System.nanoTime() - startNanos));
+    }
+
+    public void awaitReady() throws Exception {
+      awaitReady(Duration.ofNanos(remainingNanos()));
     }
 
     public void awaitReady(Duration timeout) throws Exception {
-      long startNanos = System.nanoTime();
-      long budgetNanos = timeout.toNanos();
-      ExecutorService executor = Executors.newSingleThreadExecutor();
+      long remNanos = Math.min(remainingNanos(), timeout.toNanos());
+      if (remNanos <= 0) {
+        close();
+        throw new TimeoutException("Child timed out waiting for READY signal: monotonic budget expired");
+      }
+
       try {
         Future<String> future = executor.submit(() -> readBoundedLine(stdoutStream, MAX_LINE_BYTES));
-        String line = future.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
+        String line = future.get(remNanos, TimeUnit.NANOSECONDS);
         if (!"READY".equals(line)) {
-          throw new IllegalStateException("Child failed readiness handshake, got: "
-              + (line != null ? (line.length() > 32 ? line.substring(0, 32) + "..." : line) : "null"));
+          throw new IllegalStateException("Child failed readiness handshake: unexpected stdout signal");
         }
       } catch (TimeoutException te) {
         close();
         throw new TimeoutException("Child timed out waiting for READY signal within monotonic budget");
+      } catch (InterruptedException ie) {
+        Thread.currentThread().interrupt();
+        close();
+        throw ie;
+      } catch (ExecutionException ee) {
+        close();
+        if (ee.getCause() instanceof Exception ex) throw ex;
+        throw new IOException("Readiness read failed", ee.getCause());
       } catch (Throwable t) {
         close();
         throw t;
-      } finally {
-        executor.shutdownNow();
-        try {
-          executor.awaitTermination(200, TimeUnit.MILLISECONDS);
-        } catch (InterruptedException ie) {
-          Thread.currentThread().interrupt();
-        }
       }
     }
 
     public void signalGo() throws Exception {
-      stdinWriter.write("GO\n");
-      stdinWriter.flush();
+      long remNanos = Math.min(remainingNanos(), TimeUnit.SECONDS.toNanos(5));
+      if (remNanos <= 0) {
+        close();
+        throw new TimeoutException("Monotonic command budget expired before signalGo");
+      }
+      Future<?> f = executor.submit(() -> {
+        stdinWriter.write("GO\n");
+        stdinWriter.flush();
+        return null;
+      });
+      try {
+        f.get(remNanos, TimeUnit.NANOSECONDS);
+      } catch (InterruptedException ie) {
+        Thread.currentThread().interrupt();
+        close();
+        throw ie;
+      }
     }
 
     public void awaitCommitted(Duration timeout) throws Exception {
-      ExecutorService executor = Executors.newSingleThreadExecutor();
+      long remNanos = Math.min(remainingNanos(), timeout.toNanos());
+      if (remNanos <= 0) {
+        close();
+        throw new TimeoutException("Child timed out waiting for COMMITTED signal: monotonic budget expired");
+      }
+
       try {
         Future<String> future = executor.submit(() -> readBoundedLine(stdoutStream, MAX_LINE_BYTES));
-        String line = future.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
+        String line = future.get(remNanos, TimeUnit.NANOSECONDS);
         if (!"COMMITTED".equals(line)) {
-          throw new IllegalStateException("Child failed post-commit handshake, got: "
-              + (line != null ? (line.length() > 32 ? line.substring(0, 32) + "..." : line) : "null"));
+          throw new IllegalStateException("Child failed post-commit handshake: unexpected stdout signal");
         }
       } catch (TimeoutException te) {
         close();
         throw new TimeoutException("Child timed out waiting for COMMITTED signal within monotonic budget");
+      } catch (InterruptedException ie) {
+        Thread.currentThread().interrupt();
+        close();
+        throw ie;
+      } catch (ExecutionException ee) {
+        close();
+        if (ee.getCause() instanceof Exception ex) throw ex;
+        throw new IOException("Committed read failed", ee.getCause());
       } catch (Throwable t) {
         close();
         throw t;
-      } finally {
-        executor.shutdownNow();
-        try {
-          executor.awaitTermination(200, TimeUnit.MILLISECONDS);
-        } catch (InterruptedException ie) {
-          Thread.currentThread().interrupt();
-        }
       }
     }
 
     public void signalRelease() throws Exception {
-      stdinWriter.write("RELEASE\n");
-      stdinWriter.flush();
+      long remNanos = Math.min(remainingNanos(), TimeUnit.SECONDS.toNanos(5));
+      if (remNanos <= 0) {
+        close();
+        throw new TimeoutException("Monotonic command budget expired before signalRelease");
+      }
+      Future<?> f = executor.submit(() -> {
+        stdinWriter.write("RELEASE\n");
+        stdinWriter.flush();
+        return null;
+      });
+      try {
+        f.get(remNanos, TimeUnit.NANOSECONDS);
+      } catch (InterruptedException ie) {
+        Thread.currentThread().interrupt();
+        close();
+        throw ie;
+      }
     }
 
     public ChildResult awaitResult(Duration timeout) throws Exception {
-      long startNanos = System.nanoTime();
-      long totalBudgetNanos = timeout.toNanos();
-      ExecutorService executor = Executors.newSingleThreadExecutor();
+      long remNanos = Math.min(remainingNanos(), timeout.toNanos());
 
       try {
-        Future<String> lineFuture = executor.submit(() -> readBoundedLine(stdoutStream, MAX_LINE_BYTES));
         String responseLine = null;
-        try {
-          long remainingNanos = totalBudgetNanos - (System.nanoTime() - startNanos);
-          if (remainingNanos <= 0) {
+        if (remNanos > 0 && !closed.get()) {
+          try {
+            Future<String> lineFuture = executor.submit(() -> readBoundedLine(stdoutStream, MAX_LINE_BYTES));
+            responseLine = lineFuture.get(remNanos, TimeUnit.NANOSECONDS);
+          } catch (TimeoutException te) {
             close();
-            throw new TimeoutException("Child timed out before reading response line");
+            throw new TimeoutException("Child timed out waiting for response line within monotonic budget");
+          } catch (ExecutionException ee) {
+            // Stream closed or IO error
           }
-          responseLine = lineFuture.get(remainingNanos, TimeUnit.NANOSECONDS);
-        } catch (TimeoutException te) {
-          close();
-          throw new TimeoutException("Child timed out waiting for response line within monotonic budget");
-        } catch (ExecutionException ee) {
-          // Stream closed or IO error
         }
 
-        long remainingNanos = totalBudgetNanos - (System.nanoTime() - startNanos);
-        long waitMillis = Math.max(1, TimeUnit.NANOSECONDS.toMillis(remainingNanos));
+        remNanos = remainingNanos();
+        long waitMillis = Math.max(1, TimeUnit.NANOSECONDS.toMillis(remNanos));
         boolean exited = process.waitFor(waitMillis, TimeUnit.MILLISECONDS);
         if (!exited) {
           process.destroyForcibly();
-          process.waitFor(2, TimeUnit.SECONDS);
+          process.waitFor(REAP_RESERVE_MS, TimeUnit.MILLISECONDS);
         }
         int exitCode = process.exitValue();
 
-        remainingNanos = totalBudgetNanos - (System.nanoTime() - startNanos);
-        long stderrWait = Math.min(500, Math.max(10, TimeUnit.NANOSECONDS.toMillis(remainingNanos)));
-        stderrThread.join(stderrWait);
+        drainerThread.join(500);
 
         if (responseLine == null || responseLine.isBlank() || exitCode != 0) {
-          return new ChildResult(false, exitCode, null, "UNACKNOWLEDGED", null, null, null, null, stderrLines);
+          return unacknowledged(exitCode, drainer);
         }
 
         JsonNode resNode;
-        try {
-          resNode = JsonSupport.MAPPER.readTree(responseLine);
+        try (JsonParser parser = STRICT_JSON_FACTORY.createParser(responseLine)) {
+          resNode = LOCAL_STRICT_MAPPER.readTree(parser);
+          if (parser.nextToken() != null) {
+            // Refuse trailing tokens
+            return unacknowledged(exitCode, drainer);
+          }
         } catch (Exception parseError) {
-          return new ChildResult(false, exitCode, null, "UNACKNOWLEDGED", null, null, null, null, stderrLines);
+          return unacknowledged(exitCode, drainer);
         }
 
         if (!resNode.isObject()) {
-          return new ChildResult(false, exitCode, null, "UNACKNOWLEDGED", null, null, null, null, stderrLines);
+          return unacknowledged(exitCode, drainer);
         }
 
-        String jvmId = resNode.path("jvmId").asText(null);
-        if (jvmId == null || !jvmId.matches("^[0-9a-fA-F\\-]{36}$")) {
-          return new ChildResult(false, exitCode, null, "UNACKNOWLEDGED", null, null, null, null, stderrLines);
+        JsonNode jvmIdNode = resNode.get("jvmId");
+        if (jvmIdNode == null || !jvmIdNode.isTextual()) {
+          return unacknowledged(exitCode, drainer);
+        }
+        String jvmId = jvmIdNode.textValue();
+        if (!STRICT_UUID_PATTERN.matcher(jvmId).matches()) {
+          return unacknowledged(exitCode, drainer);
         }
 
-        String status = resNode.path("status").asText(null);
+        JsonNode statusNode = resNode.get("status");
+        if (statusNode == null || !statusNode.isTextual()) {
+          return unacknowledged(exitCode, drainer);
+        }
+        String status = statusNode.textValue();
+
         if ("OK".equals(status)) {
-          if (!resNode.hasNonNull("snapshot") || !resNode.path("snapshot").isObject()
-              || !resNode.hasNonNull("resultStatus")
-              || !resNode.hasNonNull("snapshotHash")) {
-            return new ChildResult(false, exitCode, jvmId, "UNACKNOWLEDGED", null, null, null, null, stderrLines);
+          for (Iterator<String> it = resNode.fieldNames(); it.hasNext(); ) {
+            String field = it.next();
+            if (!ALLOWED_OK_FIELDS.contains(field)) {
+              return unacknowledged(exitCode, drainer);
+            }
           }
-          String resultStatus = resNode.path("resultStatus").asText();
-          String snapshotHash = resNode.path("snapshotHash").asText();
-          JsonNode snapshot = resNode.path("snapshot");
-          return new ChildResult(true, exitCode, jvmId, "OK", null, resultStatus, snapshotHash, snapshot, stderrLines);
+
+          JsonNode opIdNode = resNode.get("operationId");
+          if (opIdNode == null || !opIdNode.isTextual() || opIdNode.textValue().isBlank()) {
+            return unacknowledged(exitCode, drainer);
+          }
+          String operationId = opIdNode.textValue();
+          if (expectedOperationId != null && !expectedOperationId.equals(operationId)) {
+            return unacknowledged(exitCode, drainer);
+          }
+
+          JsonNode resultStatusNode = resNode.get("resultStatus");
+          if (resultStatusNode == null || !resultStatusNode.isTextual() || resultStatusNode.textValue().isBlank()) {
+            return unacknowledged(exitCode, drainer);
+          }
+          String resultStatus = resultStatusNode.textValue();
+
+          JsonNode bindingDigestNode = resNode.get("bindingDigest");
+          if (bindingDigestNode == null || !bindingDigestNode.isTextual() || bindingDigestNode.textValue().isBlank()) {
+            return unacknowledged(exitCode, drainer);
+          }
+
+          JsonNode factIdNode = resNode.get("factId");
+          if (factIdNode == null || !factIdNode.isTextual() || factIdNode.textValue().isBlank()) {
+            return unacknowledged(exitCode, drainer);
+          }
+
+          JsonNode hashNode = resNode.get("snapshotHash");
+          if (hashNode == null || !hashNode.isTextual() || hashNode.textValue().isBlank()) {
+            return unacknowledged(exitCode, drainer);
+          }
+          String snapshotHash = hashNode.textValue();
+
+          JsonNode snapshot = resNode.get("snapshot");
+          if (snapshot == null || !snapshot.isObject() || snapshot.isEmpty()) {
+            return unacknowledged(exitCode, drainer);
+          }
+
+          try {
+            BusinessOperationValidator.validate(snapshot);
+          } catch (Exception validationFailed) {
+            return unacknowledged(exitCode, drainer);
+          }
+
+          String expectedHash = CanonicalJson.sha256(snapshot);
+          if (!expectedHash.equals(snapshotHash)) {
+            return unacknowledged(exitCode, drainer);
+          }
+
+          if (!operationId.equals(snapshot.path("operationId").asText())) {
+            return unacknowledged(exitCode, drainer);
+          }
+
+          if (!resultStatus.equals(snapshot.path("authorization").path("status").asText())) {
+            return unacknowledged(exitCode, drainer);
+          }
+
+          return new ChildResult(
+              true, exitCode, jvmId, "OK", null, resultStatus, snapshotHash, snapshot,
+              drainer.categories(), drainer.lineCount(), drainer.byteCount(), drainer.isTruncated()
+          );
         } else if ("REFUSED".equals(status)) {
-          String code = resNode.path("code").asText(null);
-          if (code == null || Arrays.stream(BusinessOperationStorageException.Code.values()).noneMatch(c -> c.name().equals(code))) {
-            return new ChildResult(false, exitCode, jvmId, "UNACKNOWLEDGED", null, null, null, null, stderrLines);
+          for (Iterator<String> it = resNode.fieldNames(); it.hasNext(); ) {
+            String field = it.next();
+            if (!ALLOWED_REFUSED_FIELDS.contains(field)) {
+              return unacknowledged(exitCode, drainer);
+            }
           }
-          return new ChildResult(true, exitCode, jvmId, "REFUSED", code, null, null, null, stderrLines);
+          JsonNode codeNode = resNode.get("code");
+          if (codeNode == null || !codeNode.isTextual()) {
+            return unacknowledged(exitCode, drainer);
+          }
+          String code = codeNode.textValue();
+          if (Arrays.stream(BusinessOperationStorageException.Code.values()).noneMatch(c -> c.name().equals(code))) {
+            return unacknowledged(exitCode, drainer);
+          }
+          return new ChildResult(
+              true, exitCode, jvmId, "REFUSED", code, null, null, null,
+              drainer.categories(), drainer.lineCount(), drainer.byteCount(), drainer.isTruncated()
+          );
         } else {
-          return new ChildResult(false, exitCode, jvmId, "UNACKNOWLEDGED", null, null, null, null, stderrLines);
+          return unacknowledged(exitCode, drainer);
         }
       } catch (InterruptedException ie) {
         Thread.currentThread().interrupt();
         throw ie;
       } finally {
-        executor.shutdownNow();
-        try {
-          executor.awaitTermination(200, TimeUnit.MILLISECONDS);
-        } catch (InterruptedException ie) {
-          Thread.currentThread().interrupt();
-        }
         close();
       }
     }
 
+    private static ChildResult unacknowledged(int exitCode, StderrDrainer drainer) {
+      return new ChildResult(
+          false, exitCode, null, "UNACKNOWLEDGED", null, null, null, null,
+          drainer.categories(), drainer.lineCount(), drainer.byteCount(), drainer.isTruncated()
+      );
+    }
+
     @Override
     public void close() {
-      try { stdinWriter.close(); } catch (Throwable ignored) {}
-      try { stdoutStream.close(); } catch (Throwable ignored) {}
+      if (!closed.compareAndSet(false, true)) {
+        return;
+      }
+      // 1. Destroy owned process FIRST to unblock any pending stream I/O
       if (process.isAlive()) {
         process.destroyForcibly();
         try {
-          process.waitFor(2, TimeUnit.SECONDS);
+          process.waitFor(REAP_RESERVE_MS, TimeUnit.MILLISECONDS);
         } catch (InterruptedException ie) {
           Thread.currentThread().interrupt();
         }
+      }
+      // 2. Shut down IO executor with finite wait
+      executor.shutdownNow();
+      try {
+        executor.awaitTermination(500, TimeUnit.MILLISECONDS);
+      } catch (InterruptedException ie) {
+        Thread.currentThread().interrupt();
+      }
+      // 3. Close streams
+      try { stdinWriter.close(); } catch (Throwable ignored) {}
+      try { stdoutStream.close(); } catch (Throwable ignored) {}
+      // 4. Join drainer thread with finite wait
+      try {
+        drainerThread.join(500);
+      } catch (InterruptedException ie) {
+        Thread.currentThread().interrupt();
       }
     }
   }
