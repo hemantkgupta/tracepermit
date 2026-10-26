@@ -1,5 +1,26 @@
 # Requirements traceability matrix
 
+## Durable execution-disabled AgentCore registration composition
+
+Requirements: FR-003/008/011/012; SEC-001/003/006/009/012; REL-001/002/004;
+OPS-002/004. Partial evidence only, with no whole-ID status promotion.
+
+`DurableAgentCoreRegistration` internally joins the concrete verifier/ingress,
+`JdbcWorkloadIdentityReplayStore` and `JdbcBusinessOperationRepository`, validating
+separate initialized stores without migration or in-memory fallback. Replay and
+registration commit separately; uncertainty never authorizes automatic retry.
+The minimal original-return receipt is always execution-disabled, not human
+delegation, approval, admission or a permit. `DurableRegistrationContract` runs
+35 equivalent cases on each exact PostgreSQL16.4/MariaDB11.4.13/MariaDB10.6.25
+profile: real signature/enrollment/body rejection, 32-way shared replay and
+request-key contention, genuine two-JVM restart and non-durable control,
+capacity/schema/permission refusal, partial-write rollback, committed-but-unknown
+acknowledgements, real lock/expiry waits, fixed diagnostics and resource cleanup.
+Datasource/network bounds, partial schema validation, live provider compatibility,
+revocation, restoration/failover fencing and all target authority remain separate.
+See [ADR0086](../architecture/0086-durable-agentcore-registration-composition.md)
+and the [commands/evidence/limits runbook](../runbooks/agentcore-durable-registration-qualification.md).
+
 ## Durable workload-identity replay store
 
 Requirements: FR-008/011; SEC-006; REL-001/004; OPS-004. No whole-ID status promotion.
@@ -32,6 +53,49 @@ See [ADR 0080](../architecture/0080-durable-workload-identity-replay.md),
 
 This is a standalone persistence library: it does not verify credentials, evaluate policies,
 grant execution authority, execute target operations, or wire into AgentCore ingress.
+
+## Ingress-to-JDBC registration qualification
+
+Requirements: FR-002/003/010/012; SEC-001/002/003/004/009/012;
+REL-001/002/003/005/009; DATA-001; OPS-002/004; PORT-004. Test-only follow-up,
+with no runtime or whole-requirement status change. The new
+`agentcore.jdbc.AgentCoreJdbcRegistrationContract` runs the real verifier,
+ingress and JDBC repository against required PostgreSQL16.4 and
+MariaDB11.4.13/10.6.25 fixtures under restricted runtime grants. Direct reads
+check the original, three initial facts, exact head and no lifecycle journal;
+scoped golden/retry/reconstruction, actual permission failure, forwarded-JDBC
+write/commit/close faults and16-way contention qualify metadata registration.
+Rejected identities/body scope/second-token composition stop before JDBC.
+
+Policy/artifact-only profile changes intentionally retain original-return
+semantics; workspace derives from operator enrollment, not a provider workspace
+claim. Metadata recovery conveys no authority or dispatch. Live interoperability,
+shared durable replay, revocation and executor composition remain separate gates.
+See the [qualification record](../runbooks/agentcore-jdbc-registration-qualification.md).
+
+## Execution-disabled AgentCore registration ingress
+
+Requirements: FR-002/003/010/012; SEC-001/002/003/004/009/012;
+REL-001/002/003/005/009; DATA-001; OPS-002/004; PORT-004.
+`AgentCoreRegistrationIngress` verifies the unchanged access-token profile and
+exact operator workload enrollment, derives scope/target/canonical metadata,
+rejects closed-schema violations and all human/OBO token composition, consumes
+an exact credential fingerprint through the existing replay port and registers
+through `BusinessOperationRepository`. It returns no execution authority.
+`AgentCoreRegistrationIngressTest` uses local RSA tokens and a recording port
+for positive controls, wrong trust/scope/time/enrollment, unrelated valid token
+pairs, substitutions, malformed/bounded JSON, concurrent replay, original-return
+retry and fixed conflict/uncertainty/dependency errors. There is no execution,
+target credential or transport dependency. See
+[ADR0078](../architecture/0078-agentcore-execution-disabled-registration.md) and
+[runbook](../runbooks/agentcore-trusted-ingress.md).
+
+This is an unwired synthetic slice. Live provider claim compatibility, a verified
+workload-to-human grant/exchange artifact, transport sender proof, shared durable
+replay and composed ingress/JDBC qualification remain separate gates. Existing
+repository durability is independently tested on its unchanged fixtures; local
+token/repository fixtures are not provider interoperability or durable ingress
+proof. No whole-requirement status is promoted.
 
 ## Pure GitHub business-operation binding
 

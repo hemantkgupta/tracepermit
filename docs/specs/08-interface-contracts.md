@@ -3,6 +3,26 @@
 **Status:** Current interfaces plus target extensions  
 **Applies to:** MCP, internal HTTP, control plane, and signed artifacts
 
+## Durable execution-disabled AgentCore registration composition
+
+`DurableAgentCoreRegistration.create` in `agentcore-durable-registration` takes
+the concrete trusted verifier, enrollment, clock, two dedicated initialized JDBC
+datasources, explicit agreed replay capacity and finite DML budget. It constructs
+the unchanged JDBC replay/repository and ingress internally, validates only, and
+has no in-memory fallback or injectable repository/replay supplier. Datasource
+ownership remains with the caller. Initialization failures become fixed
+`DURABLE_REGISTRATION_NOT_READY` with no retained causes/suppressed diagnostics.
+
+`register` exposes the existing closed body and minimal execution-disabled
+receipt. Verified-token replay consumption commits before a separate operation
+registration transaction; a failed registration can leave the token spent.
+Replay uncertainty cannot reach registration. Operation commit uncertainty is
+`AGENTCORE_REGISTRATION_UNKNOWN`, even if independently observed committed.
+No automatic retry follows either. Explicit fresh verified identity may recover
+the original scoped-key registration metadata, never authority or target dispatch.
+Human token pairing remains refused. See [ADR0086](../architecture/0086-durable-agentcore-registration-composition.md)
+and the [qualification matrix](../runbooks/agentcore-durable-registration-qualification.md).
+
 ## 1. Contract rules
 
 - External data is untrusted until validated by its adapter.
@@ -534,6 +554,27 @@ policy/artifact/retention proposals. Read visibility is scoped by trusted tenant
 workspace and requester; authentication and authorization remain adapter duties.
 See [ADR 0068](../architecture/0068-versioned-business-operation-contract.md) for
 the underlying document contract.
+
+### Execution-disabled workload registration candidate
+
+`AgentCoreRegistrationIngress` is an unwired Java library, not an HTTP route.
+Its closed ingress schema1.0 accepts only `schemaVersion`, `clientRequestKey`,
+`title` and optional nonblank `body`. Maximum input is32KiB UTF-8; duplicate
+keys, trailing values, malformed Unicode, unsupported fields/schemas and bounded
+parser violations fail closed. The operator enrollment supplies all scope and
+exact target/profile fields after the unchanged verifier checks the workload
+access token. No authenticated context or current policy authority comes from
+the body. Any second authorization value is rejected with
+`AGENTCORE_DELEGATION_CONTRACT_REQUIRED`.
+
+Registration uses only `BusinessOperationRepository`, preserves its original
+same-key return/conflict semantics and returns creation status, stored operation
+ID and `executionEnabled=false`. Exact token fingerprints are single-use through
+the existing replay port; explicit same-key retries need fresh tokens. There is
+no implicit human delegation, approval, permit, authority transition or execution.
+Live provider token compatibility, a verified workload-to-human exchange/grant,
+transport proof and durable replay deployment remain unqualified. See
+[ADR0078](../architecture/0078-agentcore-execution-disabled-registration.md).
 
 ## 3A. Java development control-plane reads
 
