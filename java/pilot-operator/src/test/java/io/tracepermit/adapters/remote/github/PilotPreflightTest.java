@@ -140,15 +140,43 @@ class PilotPreflightTest {
   @Test void interruptedCallerGetsCancellationAndPreservesInterrupt() throws Exception {
     var result = new java.util.concurrent.atomic.AtomicReference<PilotOperatorMain.Result>();
     var retained = new java.util.concurrent.atomic.AtomicBoolean();
+    var opened = new AtomicInteger();
     var caller = new Thread(() -> {
       Thread.currentThread().interrupt();
       result.set(PilotOperatorMain.bounded(new String[]{"--preflight"}, files.config.toString(), ignored -> {
+        opened.incrementAndGet();
         throw sensitiveFailure();
       }, Duration.ofSeconds(5)));
       retained.set(Thread.currentThread().isInterrupted());
     });
     caller.start(); caller.join(3000); assertThat(caller.isAlive()).isFalse();
     assertThat(result.get()).isEqualTo(PilotOperatorMain.Result.CANCELLED); assertThat(retained).isTrue();
+    assertThat(opened).hasValue(0);
+  }
+
+  @Test void interruptionDuringPreflightCancelsWorkerAndPreservesCallerInterrupt() throws Exception {
+    var entered = new CountDownLatch(1);
+    var stopped = new CountDownLatch(1);
+    var result = new java.util.concurrent.atomic.AtomicReference<PilotOperatorMain.Result>();
+    var retained = new java.util.concurrent.atomic.AtomicBoolean();
+    var caller = new Thread(() -> {
+      result.set(PilotOperatorMain.bounded(new String[]{"--preflight"}, files.config.toString(), ignored -> {
+        entered.countDown();
+        try { new CountDownLatch(1).await(); }
+        catch (InterruptedException expected) { stopped.countDown(); Thread.currentThread().interrupt(); }
+        throw sensitiveFailure();
+      }, Duration.ofSeconds(5)));
+      retained.set(Thread.currentThread().isInterrupted());
+    });
+    caller.start();
+    try {
+      assertThat(entered.await(3, TimeUnit.SECONDS)).isTrue();
+      caller.interrupt(); caller.join(3000);
+      assertThat(caller.isAlive()).isFalse();
+      assertThat(result.get()).isEqualTo(PilotOperatorMain.Result.CANCELLED);
+      assertThat(retained).isTrue();
+      assertThat(stopped.await(3, TimeUnit.SECONDS)).isTrue();
+    } finally { caller.interrupt(); caller.join(3000); }
   }
 
   private PilotOperatorMain.Result run(MockWebServer server) {

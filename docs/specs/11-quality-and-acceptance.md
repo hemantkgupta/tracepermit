@@ -26,18 +26,31 @@ pnpm demo:verify
 
 `pnpm check` builds, typechecks, and tests the React console, verifies the
 Node/Java environment, and runs the Java aggregate test and coverage gates.
-CI runs six independent jobs: core tests (including the unchanged forced
-PostgreSQL second pass and forced MariaDB qualification), packaging/install
-checks, simulator qualification, documentation, browser approvals, and the
-operation repository contract. The
-existing `verify` check waits for all six and explicitly fails if any result is
-failed, cancelled, skipped, or missing. Its inline gate is exercised by
-`node --test scripts/ci-workflow.test.mjs` in the documentation job. Its current
-command inventory includes the forced MariaDB gate; unknown results also fail.
-Workflow
-concurrency cancels only superseded runs for the same PR; pushes to `main` are
-not cancelled by newer runs. This changes scheduling, not acceptance criteria,
-coverage thresholds, simulator isolation, or production qualification.
+CI uses the conservative base-branch change policy in
+[ADR0088](../architecture/0088-selective-ci-and-complete-coverage.md). Only explicit
+prose/site-only and console-only PR plans may omit unrelated backend jobs. Unknown
+paths, malformed/unavailable diffs and all pushes to `main` select every check.
+Documentation/script/site/browser checks remain required in every plan. The
+existing `verify` check always evaluates the plan and fails on failed, cancelled,
+missing, unknown or unexpectedly skipped dependencies.
+
+Full CI partitions Java into core/common operation tests, PostgreSQL state,
+MariaDB standalone consumption (both qualified versions), and three operation
+engine lanes. Database test tasks disable cached/up-to-date success. Each test
+executes in one lane, replacing duplicate aggregate/forced execution. A separate
+coverage gate requires all six manifests and every expected module's nonempty,
+hash-matched execution data for the same source SHA/workflow run before enforcing
+the existing 94% line and 75% branch thresholds. Missing shards cannot reduce the
+coverage denominator or produce a green gate. Reports retain the complete set
+of compiled production classes. No tests run in the coverage-only job.
+
+Per-job/commit Gradle caching replaces the shared immutable dependency snapshot;
+fork runs are read-only cache consumers. Newer PR updates cancel only that PR's
+older run; each `main` push keeps its own concurrency group. Selector, actual Git
+rename/deletion, planned skip, matrix, cache and coverage-integrity regressions
+run in the documentation job. Run them locally with
+`node --test scripts/ci-*.test.mjs`. No timing threshold, simulator boundary or
+production qualification changes.
 
 PostgreSQL and the unwired MariaDB permit-consumption integration tests use
 disposable Testcontainers; Docker is needed for those checks. The MariaDB gate

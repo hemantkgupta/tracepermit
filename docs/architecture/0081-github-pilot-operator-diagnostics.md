@@ -45,6 +45,11 @@ result without dependency messages, causes, suppressed failures or secrets.
 No command retries. A lost response/cancellation can leave an unused minted
 installation token until expiry; it does not prove any authoritative absence.
 
+An already-interrupted caller returns `CANCELLED` before worker/provider
+construction and retains its interrupt flag. This avoids a completed-Future
+race; exact cancellation assertions remain and also require zero provider
+construction. See [ADR0088](0088-selective-ci-and-complete-coverage.md).
+
 ## Distribution and boundaries
 
 The new package follows [ADR0055](0055-source-free-endpoint-connector-distribution.md):

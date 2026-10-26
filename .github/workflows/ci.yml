@@ -1,175 +1,329 @@
 name: CI
-
 on:
   pull_request:
   push:
     branches:
       - main
-
+  workflow_dispatch:
 permissions:
   contents: read
-
-# Each PR has its own group; pushes to main are never cancelled by newer runs.
+defaults:
+  run:
+    shell: bash
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - name: Select checks using the trusted base policy
+        id: plan
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [[ "$EVENT_NAME" != pull_request ]]; then
+            echo 'mode=full' >> "$GITHUB_OUTPUT"
+          elif [[ "$BASE_SHA" =~ ^[a-f0-9]{40,64}$ ]] && git show "$BASE_SHA:scripts/ci-policy.mjs" > "$RUNNER_TEMP/tracepermit-ci-policy.mjs" 2>/dev/null; then
+            node "$RUNNER_TEMP/tracepermit-ci-policy.mjs" plan "$BASE_SHA" "$HEAD_SHA"
+          else
+            echo 'Base policy unavailable; selecting every check.'
+            echo 'mode=full' >> "$GITHUB_OUTPUT"
+          fi
+    outputs:
+      mode: ${{ steps.plan.outputs.mode }}
   core:
+    needs:
+      - changes
+    if: ${{ needs.changes.outputs.mode == 'full' || needs.changes.outputs.mode == 'frontend' }}
     runs-on: ubuntu-latest
-    # Retain the aggregate suite and both forced database qualifications.
     timeout-minutes: 22
-
     steps:
       - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Enable Corepack
         run: corepack enable
-
       - name: Use Node.js 22
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: 22
           cache: pnpm
-
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-
       - name: Align repository Gradle home with the CI cache
         run: echo "TRACEPERMIT_GRADLE_USER_HOME=$HOME/.gradle" >> "$GITHUB_ENV"
-
       - name: Use Java 21
-        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad
         with:
           distribution: temurin
           java-version: 21
-          cache: gradle
-
-      - name: Verify React console and Java backend
-        run: pnpm check
-
-      - name: Verify durable PostgreSQL enforcement state
-        run: pnpm test:java-postgres --rerun-tasks
-
-      - name: Verify MariaDB standalone permit consumption
-        run: pnpm test:java-mariadb --rerun-tasks
-
+      - name: Restore and refresh job-scoped Gradle state
+        uses: gradle/actions/setup-gradle@4c125117fe7c5aed11272ec4213f602f012f89f2
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+      - name: Verify the React console
+        run: pnpm build && pnpm typecheck && pnpm test
+      - name: Verify non-database Java tests and common operation tests
+        if: ${{ needs.changes.outputs.mode == 'full' }}
+        run: |
+          pnpm java:env-check
+          bash scripts/run-java-ci.sh core
+          node scripts/ci-coverage.mjs export core
+      - name: Upload coverage for this exact source and run
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: ci-coverage-core
+          path: java/build/ci-coverage/
+          if-no-files-found: error
+          retention-days: 1
+        if: ${{ needs.changes.outputs.mode == 'full' }}
+  databases:
+    needs:
+      - changes
+    if: ${{ needs.changes.outputs.mode == 'full' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 22
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Enable Corepack
+        run: corepack enable
+      - name: Use Node.js 22
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Align repository Gradle home with the CI cache
+        run: echo "TRACEPERMIT_GRADLE_USER_HOME=$HOME/.gradle" >> "$GITHUB_ENV"
+      - name: Use Java 21
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Restore and refresh job-scoped Gradle state
+        uses: gradle/actions/setup-gradle@4c125117fe7c5aed11272ec4213f602f012f89f2
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+      - name: Qualify fresh database state
+        run: |
+          bash scripts/run-java-ci.sh "$CI_LANE"
+          node scripts/ci-coverage.mjs export "$CI_LANE"
+      - name: Upload coverage for this exact source and run
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: ci-coverage-${{ matrix.lane }}
+          path: java/build/ci-coverage/
+          if-no-files-found: error
+          retention-days: 1
+    strategy:
+      fail-fast: false
+      matrix:
+        lane:
+          - postgres
+          - mariadb
+    env:
+      CI_LANE: ${{ matrix.lane }}
+  operation-repository:
+    needs:
+      - changes
+    if: ${{ needs.changes.outputs.mode == 'full' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 22
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Enable Corepack
+        run: corepack enable
+      - name: Use Node.js 22
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Align repository Gradle home with the CI cache
+        run: echo "TRACEPERMIT_GRADLE_USER_HOME=$HOME/.gradle" >> "$GITHUB_ENV"
+      - name: Use Java 21
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Restore and refresh job-scoped Gradle state
+        uses: gradle/actions/setup-gradle@4c125117fe7c5aed11272ec4213f602f012f89f2
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+      - name: Qualify operation transactions on the selected engine
+        run: |
+          bash scripts/run-java-ci.sh "$CI_LANE"
+          node scripts/ci-coverage.mjs export "$CI_LANE"
+      - name: Upload coverage for this exact source and run
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: ci-coverage-${{ matrix.lane }}
+          path: java/build/ci-coverage/
+          if-no-files-found: error
+          retention-days: 1
+    strategy:
+      fail-fast: false
+      matrix:
+        lane:
+          - operations-postgres
+          - operations-mariadb106
+          - operations-mariadb114
+    env:
+      CI_LANE: ${{ matrix.lane }}
+  coverage:
+    needs:
+      - changes
+      - core
+      - databases
+      - operation-repository
+    if: ${{ needs.changes.outputs.mode == 'full' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 22
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Enable Corepack
+        run: corepack enable
+      - name: Use Node.js 22
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Align repository Gradle home with the CI cache
+        run: echo "TRACEPERMIT_GRADLE_USER_HOME=$HOME/.gradle" >> "$GITHUB_ENV"
+      - name: Use Java 21
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Restore and refresh job-scoped Gradle state
+        uses: gradle/actions/setup-gradle@4c125117fe7c5aed11272ec4213f602f012f89f2
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+      - name: Download coverage from this workflow run
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          pattern: ci-coverage-*
+          path: java/build/ci-coverage
+          merge-multiple: true
+      - name: Require complete matching coverage and enforce unchanged thresholds
+        run: |
+          bash scripts/run-java-ci.sh coverage
   packaging:
+    needs:
+      - changes
+    if: ${{ needs.changes.outputs.mode == 'full' || needs.changes.outputs.mode == 'frontend' }}
     runs-on: ubuntu-latest
     timeout-minutes: 22
-
     steps:
       - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Enable Corepack
         run: corepack enable
-
       - name: Use Node.js 22
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: 22
           cache: pnpm
-
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-
       - name: Align repository Gradle home with the CI cache
         run: echo "TRACEPERMIT_GRADLE_USER_HOME=$HOME/.gradle" >> "$GITHUB_ENV"
-
       - name: Use Java 21
-        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad
         with:
           distribution: temurin
           java-version: 21
-          cache: gradle
-
+      - name: Restore and refresh job-scoped Gradle state
+        uses: gradle/actions/setup-gradle@4c125117fe7c5aed11272ec4213f602f012f89f2
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
       - name: Verify source-free simulator approval distribution
         run: |
           pnpm build:distribution
           pnpm test:distribution
-
       - name: Verify simulator-only container install profile
         run: |
           pnpm build:container-profile
           pnpm test:container-profile
-
       - name: Verify source-free endpoint connector distribution
         run: |
           pnpm build:endpoint-distribution
           pnpm test:endpoint-distribution
-
       - name: Verify source-free GitHub pilot operator diagnostics
         run: |
           bash scripts/build-pilot-operator-distribution.sh --max-workers=2
           bash scripts/test-pilot-operator-distribution.sh
-
   qualification:
+    needs:
+      - changes
+    if: ${{ needs.changes.outputs.mode == 'full' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
-
     steps:
       - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Enable Corepack
         run: corepack enable
-
       - name: Use Node.js 22
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: 22
           cache: pnpm
-
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-
       - name: Align repository Gradle home with the CI cache
         run: echo "TRACEPERMIT_GRADLE_USER_HOME=$HOME/.gradle" >> "$GITHUB_ENV"
-
       - name: Use Java 21
-        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad
         with:
           distribution: temurin
           java-version: 21
-          cache: gradle
-
-      - name: Verify simulator-only native client launcher
-        run: pnpm test:endpoint-launcher
-
+      - name: Restore and refresh job-scoped Gradle state
+        uses: gradle/actions/setup-gradle@4c125117fe7c5aed11272ec4213f602f012f89f2
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
       - name: Verify deterministic presenter qualification (Gate C)
-        run: |
-          pnpm test:gate-c
-          pnpm demo:gate-c
-          pnpm demo:verify
-
+        run: pnpm demo:gate-c
   docs:
+    needs:
+      - changes
     runs-on: ubuntu-latest
     timeout-minutes: 10
-
     steps:
       - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Enable Corepack
         run: corepack enable
-
       - name: Use Node.js 22
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: 22
           cache: pnpm
-
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-
+      - name: Verify launcher and demo script invariants
+        run: |
+          pnpm test:endpoint-launcher
+          pnpm test:gate-c
+          pnpm demo:verify
       - name: Verify CI completion gate regressions
-        run: node --test scripts/ci-workflow.test.mjs
-
+        run: node --test scripts/ci-workflow.test.mjs scripts/ci-policy.test.mjs scripts/ci-coverage.test.mjs
       - name: Check formatting
         run: pnpm format:check
-
       - name: Install and build static documentation site
         run: |
           npm --prefix site ci
@@ -179,99 +333,89 @@ jobs:
           node --test scripts/site-verification.test.mjs
           node --test scripts/intro-visuals.test.mjs
           node --test scripts/security-domain-guide.test.mjs
-
       - name: Check documentation links
         run: pnpm docs:links
-
       - name: Check generated flow diagrams and guide synchronization
         run: pnpm docs:flows:check
-
-  operation-repository:
-    runs-on: ubuntu-latest
-    timeout-minutes: 12
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Use Java 21
-        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
-        with:
-          distribution: temurin
-          java-version: 21
-          cache: gradle
-
-      - name: Verify the shared operation repository contract on both engines
-        run: TRACEPERMIT_GRADLE_USER_HOME="$HOME/.gradle" bash scripts/run-java-operation-tests.sh --rerun-tasks
-
   browser-approvals:
+    needs:
+      - changes
+    if: ${{ needs.changes.outputs.mode == 'full' || needs.changes.outputs.mode == 'frontend' }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - name: Check out repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - name: Enable Corepack
         run: corepack enable
-
       - name: Use Node.js 22
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
         with:
           node-version: 22
           cache: pnpm
-
-      - name: Install frozen test dependencies
+      - name: Install dependencies
         run: pnpm install --frozen-lockfile
-
       - name: Align repository Gradle home with the CI cache
         run: echo "TRACEPERMIT_GRADLE_USER_HOME=$HOME/.gradle" >> "$GITHUB_ENV"
-
       - name: Use Java 21
-        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad
         with:
           distribution: temurin
           java-version: 21
-          cache: gradle
-
+      - name: Restore and refresh job-scoped Gradle state
+        uses: gradle/actions/setup-gradle@4c125117fe7c5aed11272ec4213f602f012f89f2
+        with:
+          cache-read-only: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
       - name: Explicitly prepare the pinned Playwright Chromium
         run: pnpm exec playwright install --with-deps chromium
-
       - name: Verify the rendered simulator approval inbox
         run: pnpm test:approvals:browser
-
       - name: Verify browser approval review download against Java export route
         run: pnpm test:approval-export:browser
-
+  site-browser:
+    needs:
+      - changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Enable Corepack
+        run: corepack enable
+      - name: Use Node.js 22
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Explicitly prepare the pinned Playwright Chromium
+        run: pnpm exec playwright install --with-deps chromium
       - name: Verify built documentation onboarding and responsive navigation
         run: |
           npm --prefix site ci
           pnpm site:build
           node --test scripts/site-onboarding-browser.test.mjs
           node --test scripts/site-verification-browser.test.mjs
-
-  # Preserve the existing required check name and reject every incomplete lane.
   verify:
-    if: ${{ always() }}
     needs:
+      - changes
       - core
+      - databases
+      - operation-repository
+      - coverage
       - packaging
       - qualification
       - docs
-      - operation-repository
       - browser-approvals
+      - site-browser
+    if: ${{ always() }}
     runs-on: ubuntu-latest
-    timeout-minutes: 2
+    timeout-minutes: 3
     steps:
-      - name: Require every CI job to succeed
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Require exactly the checks selected by the trusted plan
         env:
           NEEDS_JSON: ${{ toJSON(needs) }}
-        run: |
-          node --input-type=module <<'NODE'
-          const required = ["core", "packaging", "qualification", "docs", "operation-repository", "browser-approvals"];
-          const results = JSON.parse(process.env.NEEDS_JSON);
-          const incomplete = required.filter((job) => results[job]?.result !== "success");
-          if (incomplete.length > 0) {
-            console.error(`Required CI jobs did not succeed: ${incomplete.join(", ")}`);
-            process.exit(1);
-          }
-          console.log("Every required CI job succeeded.");
-          NODE
+        run: node scripts/ci-policy.mjs verify
