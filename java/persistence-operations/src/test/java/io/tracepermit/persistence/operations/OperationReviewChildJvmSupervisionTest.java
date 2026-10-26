@@ -13,6 +13,9 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -210,7 +213,8 @@ class OperationReviewChildJvmSupervisionTest {
           .hasMessageContaining("Child request write timed out");
       long elapsedMs = Duration.ofNanos(System.nanoTime() - start).toMillis();
 
-      assertThat(elapsedMs).isLessThan(4000);
+      assertThat(elapsedMs)
+          .isLessThan(OperationReviewChildJvm.ContenderHandle.CLEANUP_ENVELOPE_MS + 1000);
       assertThat(writeEntered.await(5, TimeUnit.SECONDS)).isTrue();
 
       mockProc.waitFor(2, TimeUnit.SECONDS);
@@ -326,8 +330,13 @@ class OperationReviewChildJvmSupervisionTest {
           } catch (InterruptedException ignored) {}
         });
         try {
-          taskRunning.await(2, TimeUnit.SECONDS);
-        } catch (InterruptedException ignored) {}
+          if (!taskRunning.await(2, TimeUnit.SECONDS)) {
+            throw new IllegalStateException("simulated worker did not start");
+          }
+        } catch (InterruptedException interrupted) {
+          Thread.currentThread().interrupt();
+          throw new IllegalStateException("interrupted before simulated worker started", interrupted);
+        }
         throw new RuntimeException("simulated failure before handle creation");
       };
       var req = OperationReviewChildJvm.ChildRequest.builder("TEST", "dummy", "u", "p").build();
@@ -347,6 +356,10 @@ class OperationReviewChildJvmSupervisionTest {
       assertThat(obs.executorTerminated).isTrue();
       assertThat(obs.drainerJoined).isTrue();
       assertThat(obs.streamsClosed).isTrue();
+      assertThat(obs.stdinWriterCloseFuture).isNotNull().isDone();
+      assertThat(obs.outputCloseFuture).isNotNull().isDone();
+      assertThat(obs.inputCloseFuture).isNotNull().isDone();
+      assertThat(obs.errorCloseFuture).isNotNull().isDone();
     } finally {
       OperationReviewChildJvm.testHookBeforeHandleCreation = null;
       OperationReviewChildJvm.testPartialCleanupObserver = null;
@@ -382,6 +395,8 @@ class OperationReviewChildJvmSupervisionTest {
 
     var req = OperationReviewChildJvm.ChildRequest.builder("TEST", "dummy", "u", "p").build();
     OperationReviewChildJvm.ContenderHandle handle = null;
+    ExecutorService closeExecutor = Executors.newSingleThreadExecutor();
+    Future<?> closeCall = null;
     try {
       handle = OperationReviewChildJvm.startContender(
           req, Duration.ofSeconds(5), mockProc,
@@ -389,14 +404,19 @@ class OperationReviewChildJvmSupervisionTest {
       );
 
       long closeStart = System.nanoTime();
-      handle.close();
+      OperationReviewChildJvm.ContenderHandle ownedHandle = handle;
+      closeCall = closeExecutor.submit(ownedHandle::close);
+
+      // Prove the close worker reached the controlled hostile stream before the owner returns.
+      assertThat(closeEntered.await(2, TimeUnit.SECONDS)).isTrue();
+      assertThat(closeCall.isDone()).isFalse();
+
+      closeCall.get(OperationReviewChildJvm.ContenderHandle.CLEANUP_ENVELOPE_MS + 1000, TimeUnit.MILLISECONDS);
       long closeElapsedMs = Duration.ofNanos(System.nanoTime() - closeStart).toMillis();
 
-      // Assert intended blocked phase was entered
-      assertThat(closeEntered.await(2, TimeUnit.SECONDS)).isTrue();
-
       // Assert caller returns within finite bound (does not hang)
-      assertThat(closeElapsedMs).isLessThan(4000);
+      assertThat(closeElapsedMs)
+          .isLessThan(OperationReviewChildJvm.ContenderHandle.CLEANUP_ENVELOPE_MS + 1000);
 
       // Residual unclosed status reported honestly
       assertThat(handle.streamsClosed()).isFalse();
@@ -413,6 +433,8 @@ class OperationReviewChildJvmSupervisionTest {
         handle.stdinCloseFuture().get(2, TimeUnit.SECONDS);
         assertThat(handle.stdinCloseFuture().isDone()).isTrue();
       }
+      closeExecutor.shutdownNow();
+      assertThat(closeExecutor.awaitTermination(2, TimeUnit.SECONDS)).isTrue();
       if (mockProc.isAlive()) {
         mockProc.destroyForcibly();
         mockProc.waitFor(2, TimeUnit.SECONDS);
@@ -812,7 +834,10 @@ class OperationReviewChildJvmSupervisionTest {
       long elapsedMs = Duration.ofNanos(System.nanoTime() - start).toMillis();
 
       // Total close elapsed time must remain bounded by single cleanup envelope (not 2x budget)
-      assertThat(elapsedMs).isLessThan(4000);
+      assertThat(outCloseEntered.await(1, TimeUnit.SECONDS)).isTrue();
+      assertThat(inCloseEntered.await(1, TimeUnit.SECONDS)).isTrue();
+      assertThat(elapsedMs)
+          .isLessThan(OperationReviewChildJvm.ContenderHandle.CLEANUP_ENVELOPE_MS + 1000);
       assertThat(handle.streamsClosed()).isFalse();
       assertThat(handle.cleanlyReaped()).isTrue();
       assertThat(handle.executorTerminated()).isTrue();

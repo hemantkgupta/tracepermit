@@ -78,16 +78,29 @@ and model-driven rehearsal are separate from protocol tests.
 ## Continuous integration
 
 Pull-request updates and pushes to `main` run the [CI workflow](.github/workflows/ci.yml).
-Core console/Java tests (including forced PostgreSQL and MariaDB qualification),
-packaging and installation checks, simulator qualification, documentation,
-browser approvals, and the operation repository contract run in six independent
-jobs. The final
-`verify` check passes only when all six succeed; a failed, cancelled, or skipped
-job cannot produce a passing gate. Each job uses its own checkout and runner.
+CI selects checks from the complete PR diff using the base branch's policy:
+
+| Change scope                                                                                                 | Required checks                                                                          |
+| ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
+| Only documentation Markdown, root README/contribution/security Markdown, or `site/`                          | Documentation, script invariants, site build/audit and site browser tests                |
+| Console `src/`, `public/` or `index.html` changes mixed only with those documentation/site paths             | The above plus console build/types/tests, installed packaging and approval browser tests |
+| Java, contracts, dependencies, scripts, CI, deployment, unknown paths, uncertain diff, or any push to `main` | Every check, including all Java/database shards, combined coverage and Gate C            |
+
+The final `verify` check requires successful change detection and every selected
+job. It accepts a skipped job only when that known plan makes it optional;
+failed, cancelled, missing or unknown results cannot pass. CI uses separate
+runners for core/common tests, PostgreSQL, MariaDB and three operation-engine
+shards. Their complete coverage is bound to the same commit and workflow run,
+then checked against the unchanged 94% line / 75% branch floors. Database tests
+always execute fresh, once per lane; the former repeated qualification passes
+are consolidated into these mandatory shards. Local `pnpm check` remains the
+complete suite.
 
 A newer update to the same PR cancels its older CI run. Different PRs and pushes
-to `main` keep their own runs. Parallel jobs reduce waiting time while retaining
-every check; they can use more runner minutes because setup and builds are repeated.
+to `main` keep their own runs. Per-job Gradle caches refresh after successful
+runs; fork PRs can restore caches but cannot write them. Parallel builds can
+increase runner minutes. See the [CI decision](docs/architecture/0088-selective-ci-and-complete-coverage.md)
+for selection, coverage and qualification limits.
 
 ## What is qualified
 

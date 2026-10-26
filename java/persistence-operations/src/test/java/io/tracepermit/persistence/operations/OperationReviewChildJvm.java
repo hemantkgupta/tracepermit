@@ -812,6 +812,7 @@ public final class OperationReviewChildJvm {
   // --- Narrow package-private test-helper observation and injection seams ---
   static volatile java.util.function.Consumer<ContenderHandle> testHandleObserver = null;
   static volatile java.util.function.Consumer<ExecutorService> testHookBeforeHandleCreation = null;
+  static volatile Runnable testBeforeAwaitResultReadWait = null;
 
   static final class PartialConstructionObservation {
     volatile Process process;
@@ -821,6 +822,10 @@ public final class OperationReviewChildJvm {
     volatile OutputStream out;
     volatile InputStream in;
     volatile InputStream err;
+    volatile Future<?> stdinWriterCloseFuture;
+    volatile Future<?> outputCloseFuture;
+    volatile Future<?> inputCloseFuture;
+    volatile Future<?> errorCloseFuture;
     volatile boolean cleanupCompleted;
     volatile boolean drainerJoined;
     volatile boolean executorTerminated;
@@ -985,6 +990,10 @@ public final class OperationReviewChildJvm {
       }
 
       if (obs != null) {
+        obs.stdinWriterCloseFuture = wOut.closeFuture;
+        obs.outputCloseFuture = oOut.closeFuture;
+        obs.inputCloseFuture = iOut.closeFuture;
+        obs.errorCloseFuture = eOut.closeFuture;
         obs.processReaped = pReaped;
         obs.executorTerminated = eTerm;
         obs.drainerJoined = dJoined;
@@ -1048,13 +1057,17 @@ public final class OperationReviewChildJvm {
     // Explicitly do NOT put credentials or request into env or args!
     Process process = pb.start();
 
+    boolean cleanupDelegated = false;
     try {
       OutputStream out = process.getOutputStream();
       InputStream in = process.getInputStream();
       InputStream err = process.getErrorStream();
+      cleanupDelegated = true;
       return startContender(request, commandBudget, explicitProfile, process, out, in, err);
     } catch (Throwable t) {
-      cleanupProcessDirect(process);
+      if (!cleanupDelegated) {
+        cleanupProcessDirect(process);
+      }
       if (t instanceof InterruptedException) {
         Thread.currentThread().interrupt();
       }
@@ -1423,6 +1436,9 @@ public final class OperationReviewChildJvm {
         if (readBudgetNanos > 0 && !closed.get()) {
           try {
             Future<String> lineFuture = executor.submit(() -> readBoundedLine(stdoutStream, MAX_LINE_BYTES));
+            if (testBeforeAwaitResultReadWait != null) {
+              testBeforeAwaitResultReadWait.run();
+            }
             responseLine = lineFuture.get(readBudgetNanos, TimeUnit.NANOSECONDS);
           } catch (TimeoutException te) {
             close();

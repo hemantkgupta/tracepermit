@@ -1,5 +1,102 @@
 # Requirements traceability matrix
 
+## Durable execution-disabled AgentCore registration composition
+
+Requirements: FR-003/008/011/012; SEC-001/003/006/009/012; REL-001/002/004;
+OPS-002/004. Partial evidence only, with no whole-ID status promotion.
+
+`DurableAgentCoreRegistration` internally joins the concrete verifier/ingress,
+`JdbcWorkloadIdentityReplayStore` and `JdbcBusinessOperationRepository`, validating
+separate initialized stores without migration or in-memory fallback. Replay and
+registration commit separately; uncertainty never authorizes automatic retry.
+The minimal original-return receipt is always execution-disabled, not human
+delegation, approval, admission or a permit. `DurableRegistrationContract` runs
+35 equivalent cases on each exact PostgreSQL16.4/MariaDB11.4.13/MariaDB10.6.25
+profile: real signature/enrollment/body rejection, 32-way shared replay and
+request-key contention, genuine two-JVM restart and non-durable control,
+capacity/schema/permission refusal, partial-write rollback, committed-but-unknown
+acknowledgements, real lock/expiry waits, fixed diagnostics and resource cleanup.
+Datasource/network bounds, partial schema validation, live provider compatibility,
+revocation, restoration/failover fencing and all target authority remain separate.
+See [ADR0086](../architecture/0086-durable-agentcore-registration-composition.md)
+and the [commands/evidence/limits runbook](../runbooks/agentcore-durable-registration-qualification.md).
+
+## Durable workload-identity replay store
+
+Requirements: FR-008/011; SEC-006; REL-001/004; OPS-004. No whole-ID status promotion.
+
+`io.tracepermit.persistence.identity.JdbcWorkloadIdentityReplayStore` implements
+the `WorkloadIdentityReplayStore` port across PostgreSQL 16.4 and MariaDB 11.4.13/10.6.25.
+Compound keys (`tenantId`, `issuer`, `tokenId`) are hashed using a versioned length-delimited
+domain-separated recipe (`tracepermit:workload-identity-replay:v1\0`) with big-endian length
+prefixes, strict field length limits and surrogate validation without echoing values.
+Persistence stores only bounded SHA-256 fingerprints (`claim_hash`, `tenant_hash`,
+`token_fingerprint`) and microsecond timestamps (`expires_at`, `claimed_at`). Plain unique
+insertion ensures exactly one winner under contention; duplicate-key errors represent replay;
+expired/equal deadlines fail closed with zero writes; replays never refresh expiry.
+Finite capacity enforces fail-closed saturation via agreed operator capacity in schema V2
+(`tp_workload_replay_state.capacity`, default `10,000`) and atomic counter updates without evicting live unexpired claims.
+Initial verification checks physical column definitions, nullability, collations (`"C"` / `ascii_bin`),
+and primary keys directly against database metadata, rejecting drift or unmigrated structures.
+Store startup enforces capacity agreement and fails closed with `REPLAY_CAPACITY_MISMATCH` on conflict.
+Preserved V1 migration bytes support explicit `upgradeFromV1`.
+Finite statement query timeouts are applied throughout. Post-wait validity checks verify caller-trusted
+monotonic elapsed time against unchanged `expiresAt`; contention crossing expiry rolls back and returns
+`false`, while late commit or cleanup delays past expiry fail closed as `REPLAY_COMMIT_UNKNOWN`.
+`WorkloadIdentityReplayException` disables cause retention (`initCause = this`) and exception suppression
+(`enableSuppression = false`) with message-less constructors, guaranteeing zero leakage of database
+credentials or canary diagnostics. Real-engine test suite `WorkloadIdentityReplayStoreContract` (25 tests each,
+75 total) plus `WorkloadIdentityReplayHashTest` (10 tests) qualify PostgreSQL 16.4 and MariaDB 11.4.13/10.6.25 (85 total).
+See [ADR 0080](../architecture/0080-durable-workload-identity-replay.md),
+[runbook](../runbooks/workload-identity-replay-store.md) and
+[learning note](../learning/workload-replay-is-not-admission.md).
+
+This is a standalone persistence library: it does not verify credentials, evaluate policies,
+grant execution authority, execute target operations, or wire into AgentCore ingress.
+
+## Ingress-to-JDBC registration qualification
+
+Requirements: FR-002/003/010/012; SEC-001/002/003/004/009/012;
+REL-001/002/003/005/009; DATA-001; OPS-002/004; PORT-004. Test-only follow-up,
+with no runtime or whole-requirement status change. The new
+`agentcore.jdbc.AgentCoreJdbcRegistrationContract` runs the real verifier,
+ingress and JDBC repository against required PostgreSQL16.4 and
+MariaDB11.4.13/10.6.25 fixtures under restricted runtime grants. Direct reads
+check the original, three initial facts, exact head and no lifecycle journal;
+scoped golden/retry/reconstruction, actual permission failure, forwarded-JDBC
+write/commit/close faults and16-way contention qualify metadata registration.
+Rejected identities/body scope/second-token composition stop before JDBC.
+
+Policy/artifact-only profile changes intentionally retain original-return
+semantics; workspace derives from operator enrollment, not a provider workspace
+claim. Metadata recovery conveys no authority or dispatch. Live interoperability,
+shared durable replay, revocation and executor composition remain separate gates.
+See the [qualification record](../runbooks/agentcore-jdbc-registration-qualification.md).
+
+## Execution-disabled AgentCore registration ingress
+
+Requirements: FR-002/003/010/012; SEC-001/002/003/004/009/012;
+REL-001/002/003/005/009; DATA-001; OPS-002/004; PORT-004.
+`AgentCoreRegistrationIngress` verifies the unchanged access-token profile and
+exact operator workload enrollment, derives scope/target/canonical metadata,
+rejects closed-schema violations and all human/OBO token composition, consumes
+an exact credential fingerprint through the existing replay port and registers
+through `BusinessOperationRepository`. It returns no execution authority.
+`AgentCoreRegistrationIngressTest` uses local RSA tokens and a recording port
+for positive controls, wrong trust/scope/time/enrollment, unrelated valid token
+pairs, substitutions, malformed/bounded JSON, concurrent replay, original-return
+retry and fixed conflict/uncertainty/dependency errors. There is no execution,
+target credential or transport dependency. See
+[ADR0078](../architecture/0078-agentcore-execution-disabled-registration.md) and
+[runbook](../runbooks/agentcore-trusted-ingress.md).
+
+This is an unwired synthetic slice. Live provider claim compatibility, a verified
+workload-to-human grant/exchange artifact, transport sender proof, shared durable
+replay and composed ingress/JDBC qualification remain separate gates. Existing
+repository durability is independently tested on its unchanged fixtures; local
+token/repository fixtures are not provider interoperability or durable ingress
+proof. No whole-requirement status is promoted.
+
 ## Closed durable operation review — opt-in V4 library
 
 [ADR0085](../architecture/0085-closed-durable-operation-review.md) adds the closed
@@ -24,6 +121,42 @@ qualification. Partial FR-003/007/008/012, SEC-001/002/003/005/009/012,
 REL-001/002/004/005 and OPS-002/004 evidence only. No authenticated endpoint,
 live IdP, permit, admission, attempt/outbox, target, restore fence or whole-ID
 completion is claimed.
+
+The timestamp follow-up preserves valid operation-v1 fractional spellings through
+evaluation, review, pre-evaluation withdrawal and populated V3 upgrade without
+rewriting immutable originals or weakening clock-regression refusal. Its
+three-engine cases are in the same contract; new journal metadata remains strict.
+
+[ADR0087](../architecture/0087-fully-bound-operation-permit-and-admission.md)
+records the human-approved admission trust contract and separate closed
+`JdbcGitHubOperationPermitIssuer` slice. Profile v3 pins exact Ed25519 key
+material/issuer/key ID/audience/positive lifetime before evaluation; legacy
+v1/v2 recipes remain exact. Fresh exact-owner operations.execute permission,
+actual loaded approved state and all original deadline minima are required.
+The read transaction/cleanup finish before signing; no DML or consumption occurs.
+`BusinessOperationAuthorityProfileTest`, `OperationPermitCodecTest` and new
+three-engine `OperationReviewContract` cases cover settings/format/key/type
+substitutions, closed actual-history anchors, original evaluator expiry,
+real wait expiry, private-key use after cleanup, operator changes and read
+uncertainty. See the [qualified boundary and retained failures](../runbooks/closed-operation-permit-issuance.md).
+This is partial FR-007/008/009/012, SEC-001/002/003/004/005/006/009/010/012,
+REL-001/002/004/005, DATA-001/004 and OPS-002/004 evidence only. Fully bound
+single-use admission is a separately qualified boundary, not supplied by the
+issuer itself. No whole-ID completion is claimed.
+
+The opt-in V6 `JdbcGitHubOperationAdmissionRepository` library now owns
+consumption/initial attempt, execution-claimed fact, conditional head and immutable
+outbox in one transaction. `OperationAdmissionJournal` extends coherent closed
+historical replay/cardinality without persisting a raw token/signature. New
+`OperationAdmissionContract` cases and exact three-engine wrappers exercise
+one attempt across32 contenders/four permits, genuine implicit UNIQUE-wait expiry
+after holder rollback, binding/time substitutions, rollback/commit/cleanup
+uncertainty, valid-admin-positive privilege denials, populated pre-DDL validation
+and protocol refusal. See [scoped evidence/retained failures](../runbooks/closed-operation-admission.md).
+Local complete matrix/aggregate gates passed; independent/hosted checks remain
+separate. No public endpoint, sender,
+external evidence sink, restore fence or target is claimed. The requirement IDs
+above receive scoped evidence only, not whole-ID status promotion.
 
 ## Explicit durable-review rules — input/settings prerequisite
 
@@ -866,25 +999,25 @@ future real-target release separate.
 
 ## Functional requirements
 
-| ID     | Design/source evidence                                                                                                                                                                                                                                                                                                                        | Test evidence                                                                                                                                                                                                                                                | Status                                                                                                                          |
-| ------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------- |
-| FR-001 | HLD complete mediation; Java-only development/remote enforcement                                                                                                                                                                                                                                                                              | Java MCP allow/block/no-executor, live projection, and connector E2E tests                                                                                                                                                                                   | Partial: configured POC paths only                                                                                              |
-| FR-002 | Canonical contracts; MCP/source/scheduled/remote Java adapters; separate `SimulatorApprovalServer` normalization                                                                                                                                                                                                                              | Contract, injection, strict normalization, framing and `SimulatorApprovalServerTest` body/identity rejection                                                                                                                                                 | Partial: current development/simulator adapters                                                                                 |
-| FR-003 | Java MCP/OAuth/tunnel boundaries, hardened mTLS and separate loopback approval API with verified access tokens plus operator-owned membership; `SimulatorApprovalConfiguration` explicit OIDC/enrollment bootstrap                                                                                                                            | Existing hosted/TLS/source qualification plus `SimulatorApprovalServerTest` signature/scope/membership-before-dispatch checks                                                                                                                                | Partial: local API foundation and one hosted composition qualified; production deployment pending                               |
-| FR-004 | Java MCP handlers, static OAuth-declared hosted discovery/catalog, and frozen trusted tool registry with per-tool scopes                                                                                                                                                                                                                      | Public discovery grants no invocation; discovery-only credentials cannot execute; custom scope, duplicate-name, and snapshot tests                                                                                                                           | Implemented POC boundary; production tool onboarding pending                                                                    |
-| FR-005 | Java action/argument classifier and gateway-owned sequence context                                                                                                                                                                                                                                                                            | Policy, exfiltration, injection, and tenant-isolation tests                                                                                                                                                                                                  | Implemented POC vocabulary; learned slow path pending                                                                           |
-| FR-006 | Policy schema `requiredSignals`, four outcomes, resolved derived-action sanitization, Scenario 7 deny, Scenario 8 approval, Scenario 9 exfil deny, and Scenario 10 IAM deny                                                                                                                                                                   | Allow/block/approval/sanitize, stop no-dispatch, deletion approval, exfil zero-send, injected IAM zero-dispatch, sanitizer and behavior-drift tests                                                                                                          | Implemented for current Java policy path                                                                                        |
-| FR-007 | ADRs 0013/0034/0042, approval service, PostgreSQL V2/V6/V8, immutable action snapshot, durable policy-generation binding, separate authenticated loopback API and Scenarios 3/8; `SimulatorApprovalBootstrapTest` operator-file restart/replay composition                                                                                    | Reviewer/owner/tenant, hash mutation, expiry, stale policy/generation, v1->v2->v1 rollback invalidation, replay, concurrency, rollback, restart, migration V9 guard, and nanosecond precision tests                                                          | Implemented local simulator API/browser foundation; external IdP qualification pending                                          |
-| FR-008 | Direct/v2 permits, optional Ed25519 issuer/verifier-only separation, remote Java path, approval, and derived-action permit after sanitize; pre-issuance active policy generation validation in `HumanApprovalService`; local bootstrap loads matching persistent Ed25519 file keys; standalone MariaDB permit replay-store foundation         | HMAC/vector compatibility, Ed25519 issue/verify, algorithm-confusion, verifier-only, approval, stale policy generation permit suppression, PostgreSQL claim, one-effect and replay tests; exact MariaDB 10.6.25/11.4.13 single-use/restart/concurrency tests | Partial: MariaDB is unwired standalone replay state only; production key custody and deployment isolation pending               |
-| FR-009 | Trusted executor verifies and claims permit before invoking simulator behind Java development/remote paths                                                                                                                                                                                                                                    | Permit mutation/audience/replay and remote allow/block tests                                                                                                                                                                                                 | Implemented for simulator                                                                                                       |
-| FR-010 | Durable evidence/outbox, signed receipts, bounded edge telemetry, approval lifecycle, and live POC projection                                                                                                                                                                                                                                 | Chain, receipt, approval-scenario integrity, redaction, timezone/latency, observer-isolation, OTel, and no-dispatch tests                                                                                                                                    | Partial: real anchor/exporter pending                                                                                           |
-| FR-011 | ADR 0014, signed grant schemas, Java complete-chain verifier, signed-origin Scenario 8, and Scenario 11 sub-agent presenter                                                                                                                                                                                                                   | Signature, parent, narrowing, topology, revocation/replay tests; one narrow read and four signed amplification rejections before policy                                                                                                                      | Implemented Java foundation; production pending                                                                                 |
-| FR-012 | Stateful Java AWS/Jira simulator plus fixed customer/outbox and runbook/IAM simulators, including one in-memory security-group deletion; operator approval main has one fixed simulator mutation and default-block policy; dedicated source-free host distributions and the Linux loopback container profile package the approval composition | Java MCP, simulator state, fixed target/argument bounds, denial, zero-outbox, zero-IAM-mutation tests, distribution archive qualification, and `scripts/container-install-profile.test.mjs` with no target invocation                                        | Implemented for current simulated adapters                                                                                      |
-| FR-013 | In-memory and PostgreSQL durable version staging, isolated dry-run, atomic activation, optimistic concurrency, and previous-activation rollback; optional dynamic execution constructor; active policy generation snapshot and approval binding                                                                                               | `PolicySnapshotIsolationTest`, `PolicyNumericRangeTest`, lifecycle tests, policy store/boundary tests (28 tests), application zero-dispatch mutation regression, and `PostgresPolicyBoundApprovalTest` (7 tests)                                             | Partial: tested Java/PostgreSQL foundation and simulator approval binding; authenticated durable control-plane workflow pending |
-| FR-014 | Java MCP/CLI/scheduled, ChatGPT tunnel profiles, hosted-client OAuth, OAuth TLS adapters, and signed-workload Scenarios 4/7/8/9/10/11                                                                                                                                                                                                         | MCP, stdio, tunnel, OAuth, live Auth0/ChatGPT evidence, scheduled/semantic/cross-target/injection/delegation tests                                                                                                                                           | Partial: tested hosted profile qualified; broader connectors pending                                                            |
-| FR-015 | Durable unknown queue plus leased lookup-only Java reconciliation worker                                                                                                                                                                                                                                                                      | PostgreSQL contention, deferral, restart, and append-only tests                                                                                                                                                                                              | Partial: production target lookup adapters pending                                                                              |
-| FR-016 | Verified source projection, Java observer, and endpoint-key boundary                                                                                                                                                                                                                                                                          | Projection, observer/stability, framing, and subprocess tests                                                                                                                                                                                                | Partial: managed observer/enrollment pending                                                                                    |
-| FR-017 | Request- and credential-bound Ed25519 source attestation                                                                                                                                                                                                                                                                                      | Mutation, time, key, replay, and pre-dispatch tests                                                                                                                                                                                                          | Implemented for development CLI profile                                                                                         |
+| ID     | Design/source evidence                                                                                                                                                                                                                                                                                                                                                                                                                               | Test evidence                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Status                                                                                                                                          |
+| ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| FR-001 | HLD complete mediation; Java-only development/remote enforcement                                                                                                                                                                                                                                                                                                                                                                                     | Java MCP allow/block/no-executor, live projection, and connector E2E tests                                                                                                                                                                                                                                                                                                                                                                                       | Partial: configured POC paths only                                                                                                              |
+| FR-002 | Canonical contracts; MCP/source/scheduled/remote Java adapters; separate `SimulatorApprovalServer` normalization                                                                                                                                                                                                                                                                                                                                     | Contract, injection, strict normalization, framing and `SimulatorApprovalServerTest` body/identity rejection                                                                                                                                                                                                                                                                                                                                                     | Partial: current development/simulator adapters                                                                                                 |
+| FR-003 | Java MCP/OAuth/tunnel boundaries, hardened mTLS and separate loopback approval API with verified access tokens plus operator-owned membership; `SimulatorApprovalConfiguration` explicit OIDC/enrollment bootstrap                                                                                                                                                                                                                                   | Existing hosted/TLS/source qualification plus `SimulatorApprovalServerTest` signature/scope/membership-before-dispatch checks                                                                                                                                                                                                                                                                                                                                    | Partial: local API foundation and one hosted composition qualified; production deployment pending                                               |
+| FR-004 | Java MCP handlers, static OAuth-declared hosted discovery/catalog, and frozen trusted tool registry with per-tool scopes                                                                                                                                                                                                                                                                                                                             | Public discovery grants no invocation; discovery-only credentials cannot execute; custom scope, duplicate-name, and snapshot tests                                                                                                                                                                                                                                                                                                                               | Implemented POC boundary; production tool onboarding pending                                                                                    |
+| FR-005 | Java action/argument classifier and gateway-owned sequence context                                                                                                                                                                                                                                                                                                                                                                                   | Policy, exfiltration, injection, and tenant-isolation tests                                                                                                                                                                                                                                                                                                                                                                                                      | Implemented POC vocabulary; learned slow path pending                                                                                           |
+| FR-006 | Policy schema `requiredSignals`, four outcomes, resolved derived-action sanitization, Scenario 7 deny, Scenario 8 approval, Scenario 9 exfil deny, and Scenario 10 IAM deny                                                                                                                                                                                                                                                                          | Allow/block/approval/sanitize, stop no-dispatch, deletion approval, exfil zero-send, injected IAM zero-dispatch, sanitizer and behavior-drift tests                                                                                                                                                                                                                                                                                                              | Implemented for current Java policy path                                                                                                        |
+| FR-007 | ADRs 0013/0034/0042, approval service, PostgreSQL V2/V6/V8, immutable action snapshot, durable policy-generation binding, separate authenticated loopback API and Scenarios 3/8; `SimulatorApprovalBootstrapTest` operator-file restart/replay composition                                                                                                                                                                                           | Reviewer/owner/tenant, hash mutation, expiry, stale policy/generation, v1->v2->v1 rollback invalidation, replay, concurrency, rollback, restart, migration V9 guard, and nanosecond precision tests                                                                                                                                                                                                                                                              | Implemented local simulator API/browser foundation; external IdP qualification pending                                                          |
+| FR-008 | Direct/v2 permits, optional Ed25519 issuer/verifier-only separation, remote Java path, approval, and derived-action permit after sanitize; pre-issuance active policy generation validation in `HumanApprovalService`; local bootstrap loads matching persistent Ed25519 file keys; standalone MariaDB permit replay-store foundation; ADR 0080 standalone durable workload-identity replay store across PostgreSQL 16.4 and MariaDB 11.4.13/10.6.25 | HMAC/vector compatibility, Ed25519 issue/verify, algorithm-confusion, verifier-only, approval, stale policy generation permit suppression, PostgreSQL claim, one-effect and replay tests; exact MariaDB 10.6.25/11.4.13 single-use/restart/concurrency tests; `WorkloadIdentityReplayStoreContract` real-engine suite across PostgreSQL 16.4, MariaDB 11.4.13, and MariaDB 10.6.25 (85 tests total including unit tests)                                         | Partial: MariaDB and workload-identity replay stores are unwired standalone state only; production key custody and deployment isolation pending |
+| FR-009 | Trusted executor verifies and claims permit before invoking simulator behind Java development/remote paths                                                                                                                                                                                                                                                                                                                                           | Permit mutation/audience/replay and remote allow/block tests                                                                                                                                                                                                                                                                                                                                                                                                     | Implemented for simulator                                                                                                                       |
+| FR-010 | Durable evidence/outbox, signed receipts, bounded edge telemetry, approval lifecycle, and live POC projection                                                                                                                                                                                                                                                                                                                                        | Chain, receipt, approval-scenario integrity, redaction, timezone/latency, observer-isolation, OTel, and no-dispatch tests                                                                                                                                                                                                                                                                                                                                        | Partial: real anchor/exporter pending                                                                                                           |
+| FR-011 | ADRs 0014/0080, signed grant schemas, Java complete-chain verifier, signed-origin Scenario 8, Scenario 11 sub-agent presenter, and standalone durable workload-identity replay store across PostgreSQL 16.4 and MariaDB 11.4.13/10.6.25                                                                                                                                                                                                              | Signature, parent, narrowing, topology, revocation/replay tests; one narrow read and four signed amplification rejections before policy; `WorkloadIdentityReplayStoreContract` single-use, namespace-isolation, surrogate-rejection, agreed-capacity saturation, physical-schema validation, wait-induced expiry rollback, post-commit uncertainty, and exception diagnostic redaction tests across PostgreSQL 16.4 and MariaDB 11.4.13/10.6.25 (85 tests total) | Implemented Java foundation; durable workload-identity replay store is unwired standalone library; production pending                           |
+| FR-012 | Stateful Java AWS/Jira simulator plus fixed customer/outbox and runbook/IAM simulators, including one in-memory security-group deletion; operator approval main has one fixed simulator mutation and default-block policy; dedicated source-free host distributions and the Linux loopback container profile package the approval composition                                                                                                        | Java MCP, simulator state, fixed target/argument bounds, denial, zero-outbox, zero-IAM-mutation tests, distribution archive qualification, and `scripts/container-install-profile.test.mjs` with no target invocation                                                                                                                                                                                                                                            | Implemented for current simulated adapters                                                                                                      |
+| FR-013 | In-memory and PostgreSQL durable version staging, isolated dry-run, atomic activation, optimistic concurrency, and previous-activation rollback; optional dynamic execution constructor; active policy generation snapshot and approval binding                                                                                                                                                                                                      | `PolicySnapshotIsolationTest`, `PolicyNumericRangeTest`, lifecycle tests, policy store/boundary tests (28 tests), application zero-dispatch mutation regression, and `PostgresPolicyBoundApprovalTest` (7 tests)                                                                                                                                                                                                                                                 | Partial: tested Java/PostgreSQL foundation and simulator approval binding; authenticated durable control-plane workflow pending                 |
+| FR-014 | Java MCP/CLI/scheduled, ChatGPT tunnel profiles, hosted-client OAuth, OAuth TLS adapters, and signed-workload Scenarios 4/7/8/9/10/11                                                                                                                                                                                                                                                                                                                | MCP, stdio, tunnel, OAuth, live Auth0/ChatGPT evidence, scheduled/semantic/cross-target/injection/delegation tests                                                                                                                                                                                                                                                                                                                                               | Partial: tested hosted profile qualified; broader connectors pending                                                                            |
+| FR-015 | Durable unknown queue plus leased lookup-only Java reconciliation worker                                                                                                                                                                                                                                                                                                                                                                             | PostgreSQL contention, deferral, restart, and append-only tests                                                                                                                                                                                                                                                                                                                                                                                                  | Partial: production target lookup adapters pending                                                                                              |
+| FR-016 | Verified source projection, Java observer, and endpoint-key boundary                                                                                                                                                                                                                                                                                                                                                                                 | Projection, observer/stability, framing, and subprocess tests                                                                                                                                                                                                                                                                                                                                                                                                    | Partial: managed observer/enrollment pending                                                                                                    |
+| FR-017 | Request- and credential-bound Ed25519 source attestation                                                                                                                                                                                                                                                                                                                                                                                             | Mutation, time, key, replay, and pre-dispatch tests                                                                                                                                                                                                                                                                                                                                                                                                              | Implemented for development CLI profile                                                                                                         |
 
 ## Security requirements
 
@@ -1060,3 +1193,60 @@ is promoted by this foundation.
 See [ADR 0065](../architecture/0065-installed-requester-public-sign-in.md), the
 [design contract](../design/installed-requester-public-sign-in.md), and the
 [installed runbook](../runbooks/installed-requester-public-sign-in.md).
+
+## Unwired GitHub App installation credential-provider foundation
+
+Requirements: FR-001/008/009/012; SEC-001/002/003/012/015/019;
+REL-001/003/005/009; OPS-002/004. No whole-requirement status promotion.
+
+`github.credentials.GitHubInstallationConfiguration`, `PrivateAppKeyFile`,
+`GitHubInstallationCredentialProvider`, `GitHubCredentialTransport` and the fixed
+`GitHubCredentialException` implement operator-only immutable scope, private
+bounded RSA source, RS256 JWT, restricted App-authenticated GET/POST, explicit
+provider assurance, expiry-after-cleanup, public pinned DNS/platform TLS and
+closed diagnostics. Existing ports/target action/permit/preflight code is unchanged.
+
+`GitHubInstallationCredentialProviderTest` and `CredentialBoundaryTest` cover
+positive and adversarial identity/scope/clock/JSON/byte/status, private-source,
+crypto/redaction/cleanup, no follow-up/unrelated request and concurrent isolation.
+Missing optional response assurance fails closed; opaque installation provenance
+remains dependent on GitHub's authenticated minting contract. Exact results and
+limits belong in the [runbook](../runbooks/github-app-installation-credentials.md),
+[ADR0076](../architecture/0076-github-installation-credential-provider.md) and
+final handoff. This library is unwired; no live App/target or production claim.
+
+Wave 2 evidence for the same IDs: `CredentialReviewRegressionTest` adds 105
+typed/omitted assurance, identity, clock/cleanup, owned-buffer and production
+client-policy cases; `CredentialTransportBudgetTest` adds eight decoded-byte,
+compression, total-deadline and one-exchange cases. `GitHubCredentialCompositionTest`
+adds 15 concrete-provider/adapter cases through the test-source
+`SyntheticInstallationCredentialFixture`: permit/request/allowlist failures
+stop before credential acquisition, provider/expiry failures stop before target
+access, successful minting retains exact target preflight, and ambiguous writes
+remain unknown without another dispatch. The fixture uses only fake exchanges
+and a numeric-loopback fake target. The process-local ledger is test state;
+durable business-operation authority and shipped-runtime integration remain
+unimplemented by this lane. No other requirement status or lane claim changes.
+
+## GitHub pilot operator diagnostics (ADR0081)
+
+| Requirements                 | Evidence                                                                                                        | Boundary                                                                                                     |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| SEC-001/002/003/012          | `pilot-operator` private bounded strict JSON/key validation; `PilotConfigurationTest`; `PilotArchiveTest`       | Operator pins only; no identity/authority claims or secret rendering                                         |
+| SEC-007/015; REL-001/005/009 | Concrete existing credential provider + exact existing target GET preflight; `PilotPreflightTest`               | Synthetic only; no dispatch, reconciliation, live compatibility or absence proof                             |
+| OPS-002/004                  | Clean-source manifest, dependency hashes, source-free launcher/archive and operator runbook; distribution tests | Integrity metadata is not current policy, a signature or production authority; macOS host validation pending |
+
+## Selective CI and cancellation determinism (ADR0088)
+
+- REL-001/009: `PilotOperatorMain.bounded` rejects an already-interrupted caller
+  before worker/provider construction; `PilotPreflightTest` retains exact
+  cancellation/interrupt assertions and additionally proves zero provider calls.
+  Synthetic diagnostics only; no new target or authority.
+- OPS-002: base-branch change selection, explicit planned skips, fresh database
+  shards, exact-source/run coverage manifests and unchanged 94%/75% coverage gates
+  are covered by `scripts/ci-*.test.mjs`, local Java checks and exact-head PR CI.
+  A selective pass is not full backend or production qualification.
+
+See [ADR0088](../architecture/0088-selective-ci-and-complete-coverage.md) and the
+[learning note](../learning/ci-selection-is-not-qualification.md). No existing
+requirement status or simulator-only boundary is promoted.

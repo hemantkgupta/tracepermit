@@ -43,6 +43,30 @@ appends closed facts atomically; its
 with the earlier [input-only cases](../runbooks/operation-review-settings.md).
 An approved snapshot still conveys no single-use admission or target capability.
 
+The next [admission contract](../architecture/0087-fully-bound-operation-permit-and-admission.md)
+also requires separate fresh owner execute permission and an independently
+versioned Ed25519 permit with explicit operator issuer/key/audience and lifetime.
+It cannot reuse the legacy permit as though it contained the full operation,
+review, target and current-generation binding. Signing does not atomically
+consume single use; admission must commit that consumption, attempt, lifecycle
+fact and outbox together, without signing or networking under database locks.
+The separate [closed JDBC issuer](../runbooks/closed-operation-permit-issuance.md)
+now loads actual approved state and exact original review anchors, with every
+approved identity deadline capped, before ending its read transaction and
+connection and then signing. Its profile v3 pins the actual public key and all
+explicit settings before evaluation, without promoting old approvals. Even this
+real signature is not atomic consumption. Multiple issuances create no durable
+attempt, and a delayed signature can already be expired when returned. Admission
+must still independently recheck fresh authority and consume one use with the
+attempt/fact/head/outbox transaction. The separate opt-in
+[V6 admission library](../runbooks/closed-operation-admission.md) implements
+that transaction, not a sender or public service, with scoped three-engine
+local qualification. A UNIQUE/FK wait can occur after explicit locks: it rechecks time
+after the provisional admission INSERT and again after all remaining writes.
+The real holder-rollback-after-expiry test distinguishes these checks from an
+early clock sample. Even acknowledged admission/outbox presence is only committed
+history, not a target call, evidence delivery, response lease or resend permission.
+
 V4 also illustrates why migration detection cannot trust an empty metadata view:
 an old MariaDB runtime may not see a new table it cannot SELECT. Its old writer
 must still detect the installed protocol from readable migration history and

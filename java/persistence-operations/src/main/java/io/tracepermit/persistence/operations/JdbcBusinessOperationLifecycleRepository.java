@@ -157,7 +157,9 @@ public final class JdbcBusinessOperationLifecycleRepository implements BusinessO
       if (!hash.equals(CanonicalJson.sha256(head))) throw error(OPERATION_STORAGE_CORRUPT);
       JsonNode replay = initial;
       var binding = OperationReviewJournal.read(connection, id);
+      var admission = OperationAdmissionJournal.read(connection, id);
       boolean evaluationSeen = false;
+      boolean admissionSeen = false;
       try (var statement = prepare(connection, """
           SELECT sequence_number, previous_snapshot_hash, result_snapshot_hash,
                  fact_json, actor_hash, actor_json FROM tp_operation_lifecycle_facts
@@ -173,7 +175,12 @@ public final class JdbcBusinessOperationLifecycleRepository implements BusinessO
                 || !CanonicalJson.sha256(actor).equals(rows.getString(5))) {
               throw error(OPERATION_STORAGE_CORRUPT);
             }
-            if (actor.has("journalFormat")) {
+            if (OperationAdmissionJournal.FORMAT.equals(actor.path("journalFormat").asText())) {
+              if (admissionSeen) throw error(OPERATION_STORAGE_CORRUPT);
+              admissionSeen = true;
+              replay = OperationAdmissionJournal.replay(connection, scope, replay, fact, actor,
+                  admission.orElse(null), binding.orElse(null));
+            } else if (actor.has("journalFormat")) {
               if ("evaluation".equals(actor.path("kind").asText())) {
                 if (evaluationSeen) throw error(OPERATION_STORAGE_CORRUPT);
                 evaluationSeen = true;
@@ -201,6 +208,8 @@ public final class JdbcBusinessOperationLifecycleRepository implements BusinessO
         }
       }
       if (binding.isPresent() != evaluationSeen) throw error(OPERATION_STORAGE_CORRUPT);
+      if (admission.isPresent() != admissionSeen) throw error(OPERATION_STORAGE_CORRUPT);
+      if (!admissionSeen) OperationAdmissionJournal.requireNoOutbox(connection, id);
       // JSON integer node width changes across JDBC serialization; compare the frozen canonical
       // representation, not Jackson IntNode-vs-LongNode object identity.
       if (!CanonicalJson.canonicalize(replay).equals(CanonicalJson.canonicalize(head))) {

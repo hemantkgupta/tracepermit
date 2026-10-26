@@ -4,6 +4,39 @@ Scope: [ADR0085](../architecture/0085-closed-durable-operation-review.md), an
 opt-in Java/JDBC library only. No listener, public body model, IdP/provider call,
 signing, credential minting, permit, admission or target action is enabled.
 
+## PR121 current-main supervision reconciliation
+
+PR121 head `3d0a1e379301d0072ea578aa4b473be304d55699` merged cleanly with
+current main `b4fb60286c24857ca0fb56291b8bd70fcdb2e67f`. The reconciliation
+changes only this runbook and the existing cross-process review test helper/tests.
+It does not change production Java, schema, grants, trust policy, concurrency,
+deadlines, assertions or coverage gates.
+
+The supervision evidence now retains the actual partial-construction close
+futures, proves the controlled hostile close phase was entered before teardown
+returned, and verifies sequential close stalls share one cleanup deadline. Once
+the fully constructed helper has accepted resource ownership, its caller no
+longer grants a second process-reap reserve after delegated cleanup. The
+post-commit interruption case now witnesses an interrupt arriving after the
+response read wait begins, preserves the interrupt flag, verifies teardown, and
+uses a fresh child reader to confirm the durable `awaiting_approval` state.
+
+The complete supervision class passed 37 fresh cases with all 18 Gradle tasks
+executed. The three real-engine cross-process suites then passed 36 fresh cases
+(12 each on PostgreSQL 16.4, MariaDB 11.4.13 and MariaDB 10.6.25), zero
+failures/errors/skips, again with all 18 tasks executed. The unchanged full
+`pnpm check` passed 124 React tests and recorded 2,959 Java tests across 184 XML
+suites, zero failures/errors and one inherited native-PTY opt-in skip. Gradle
+completed in 13m18 with 63 tasks executed and 17 up-to-date. Aggregate coverage
+passed at 94.567478% line and 78.051707% branch. Formatting, 1,266 Markdown
+links/three link helpers, 13 flow/drift cases and diff checks passed.
+
+The fresh sparse checkout caused `pnpm check` to materialize 102 packages from
+the existing content-addressable store with zero package downloads. Its wrapper
+then downloaded Gradle 8.14.3 because the prepared cache selector was not used;
+that environment-boundary deviation is retained rather than relabelled as an
+offline run. Exact pushed-head CI and publication remain separate gates.
+
 ## Operator lifecycle
 
 Use PostgreSQL 16.4, MariaDB 11.4.13 or MariaDB 10.6.25 in a dedicated writer
@@ -152,3 +185,61 @@ During the longer run, one bounded worker stack read showed active PostgreSQL
 authentication/control-test work; no hang/clock-skew cause was asserted and no
 process, Docker, timeout or workload was restarted or weakened. Final formatting,
 documentation and exact pushed-head hosted gates are recorded in the handoff.
+
+## Timestamp compatibility follow-up
+
+Cloud2R's [static review](https://github.com/hemantkgupta/tracepermit/pull/108#issuecomment-6397157388)
+identified a compatibility defect at aab5c03: the clock-regression comparison
+applied the new journal's strict Instant.toString encoding to an already
+validated operation-v1 updatedAt. Valid .000Z and .000000000Z spellings could
+therefore register and upgrade successfully but fail evaluation or pending
+withdrawal with OPERATION_STORAGE_CORRUPT. This was an availability defect, not
+an authority bypass; all reviewer execution was NOT RUN.
+
+The first nine new engine cases had six fixture assertions because the selected
+millisecond value already matched Instant.toString, plus three genuine storage
+refusals. After making the fixture's final transition and dimension coherently
+whole-second, all nine cases reproduced the actual OPERATION_STORAGE_CORRUPT
+failure across PostgreSQL16.4 and both MariaDB versions. No production fix had
+been applied for that corrected reproduction.
+
+The repair parses only the already validated operation timestamp for comparison;
+it preserves original strings, hashes and the frozen timestamp grammar. The
+journal's own strict metadata parser remains unchanged. The same nine cases
+then passed freshly in1m9/18 executed tasks, including populated V3-to-V4 upgrade,
+evaluation/review, pre-evaluation withdrawal and exact immutable-registration
+retention. With the additional clock-regression case, all12 selected cases passed
+freshly in1m11/18 executed tasks.
+
+The first complete follow-up matrix ran373 cases/11 suites:372 passed, one
+failed, zero errors/skips,18 tasks in13m4. All57 review cases passed. The unchanged
+MariaDB10.6 sixteen-contender withdrawal case's second repetition expected
+OPERATION_STATE_STALE but received OPERATION_STORAGE_UNAVAILABLE. Its raw SQL
+cause was not retained; XML/source/one bounded worker observation do not prove a
+specific server error, clock skew or a transient environment cause. The original
+11 XML receipts remain local and must not be replaced by later outputs.
+
+The existing assertion now includes only fixed SQLState/vendor categories and
+clears pre-race categories; its expected outcome,16 contenders,10 repetitions
+per engine and all deadlines remain unchanged. A fresh selected run of all30
+repetitions passed in52s/18 executed tasks. This is diagnostic evidence, not a
+repair or explanation of the earlier failure; an empty category set would not
+exclude a connection failure outside the recording proxy. The required aggregate
+was a second broad attempt without a diagnosed repair of that failure; no third
+automatic broad retry was permitted. Its final result follows.
+
+The required second broad attempt, `pnpm check`, passed124 React and1979 recorded
+Java cases/155 suites, zero failures/errors and one existing absent-archive
+native-PTY skip. All373 operation cases/11 suites ran freshly and passed in this
+aggregate; other valid outputs were reused. Gradle18m15:5 executed/60 up-to-date,
+not an all-fresh repository claim. Coverage94.6493% line/78.5804% branch passed
+unchanged94/75 gates. No third broad attempt was run, no failing expectation or
+deadline was relaxed, and the earlier372/373 failure remains explicitly retained.
+
+Cloud1 separately passed the unchanged30 selected contention repetitions at the
+published aab5c03 baseline in48s/18 fresh tasks with no tracked edits. Its
+[receipt](https://github.com/hemantkgupta/tracepermit/pull/108#issuecomment-6397891809)
+neither qualifies this repair nor establishes the original cause. Read-only
+cwd/Git metadata confirmed a concurrent heavy build in Gemini's separate task
+checkout on this same Mac. Resource overlap is observed; it is not proof of
+the failed SQL outcome's cause. No other worker or Docker was interrupted.

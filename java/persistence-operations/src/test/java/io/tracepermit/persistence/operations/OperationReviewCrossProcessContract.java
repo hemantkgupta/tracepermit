@@ -22,7 +22,9 @@ import java.sql.SQLFeatureNotSupportedException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Logger;
 import javax.sql.DataSource;
@@ -781,7 +783,20 @@ abstract class OperationReviewCrossProcessContract {
   void testCommittedEvaluationBarrierInterruptedCleansUpResourcesWithUnchangedDurableCounts() throws Exception {
     AtomicReference<ContenderHandle> retained = new AtomicReference<>();
     Thread caller = Thread.currentThread();
+    CountDownLatch awaitResultReadWaitStarted = new CountDownLatch(1);
+    AtomicBoolean interruptIssued = new AtomicBoolean(false);
     boolean wasInterrupted = false;
+    Thread interrupter = new Thread(() -> {
+      try {
+        if (awaitResultReadWaitStarted.await(5, TimeUnit.SECONDS)) {
+          Thread.sleep(50);
+          interruptIssued.set(true);
+          caller.interrupt();
+        }
+      } catch (InterruptedException ignored) {
+        Thread.currentThread().interrupt();
+      }
+    }, "committed-evaluation-await-interrupter");
 
     try {
       try (ContenderHandle handle = OperationReviewChildJvm.startContender(
@@ -798,15 +813,19 @@ abstract class OperationReviewCrossProcessContract {
         assertThat(count("tp_operation_lifecycle_facts")).isEqualTo(1);
         assertThat(count("tp_operation_review_bindings")).isEqualTo(1);
 
-        // Interrupt caller thread while at committed barrier
-        caller.interrupt();
+        OperationReviewChildJvm.testBeforeAwaitResultReadWait = awaitResultReadWaitStarted::countDown;
+        interrupter.start();
 
-        // Mandatory interruption witness: calling awaitResult while interrupted must throw InterruptedException
+        // Mandatory arrival witness: interrupt is delivered after the response read wait has begun.
         assertThatThrownBy(() -> handle.awaitResult(Duration.ofSeconds(10)))
             .isInstanceOf(InterruptedException.class);
+        assertThat(awaitResultReadWaitStarted.getCount()).isZero();
+        assertThat(interruptIssued.get()).isTrue();
       }
     } finally {
       wasInterrupted = Thread.interrupted(); // check and clear interrupt flag
+      OperationReviewChildJvm.testBeforeAwaitResultReadWait = null;
+      interrupter.join(1000);
     }
 
     // Caller interrupt flag must be preserved/restored across cleanup
@@ -822,6 +841,11 @@ abstract class OperationReviewCrossProcessContract {
     // Verify durable counts remain unchanged and consistent
     assertThat(count("tp_operation_lifecycle_facts")).isEqualTo(1);
     assertThat(count("tp_operation_review_bindings")).isEqualTo(1);
+
+    ChildResult freshRead = OperationReviewChildJvm.runChild(
+        requestBuilder("READ_CURRENT").operationId(id()).build(), Duration.ofSeconds(30));
+    assertThat(freshRead.isOk()).isTrue();
+    assertThat(freshRead.resultStatus()).isEqualTo("awaiting_approval");
   }
 
   @Test

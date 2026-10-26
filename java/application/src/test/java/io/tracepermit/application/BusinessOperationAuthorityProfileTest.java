@@ -9,7 +9,11 @@ import io.tracepermit.contracts.BusinessOperationValidator;
 import io.tracepermit.contracts.CanonicalJson;
 import io.tracepermit.contracts.JsonSupport;
 import java.nio.file.Path;
+import java.security.KeyPairGenerator;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
+import java.util.Set;
 import java.util.function.Consumer;
 import org.junit.jupiter.api.Test;
 
@@ -17,6 +21,84 @@ final class BusinessOperationAuthorityProfileTest {
   private static final BusinessOperationScope SCOPE = new BusinessOperationScope(
       "synthetic-tenant", "synthetic-github-sandbox", "principal:synthetic-requester");
   private static final String HASH = "sha256:" + "a".repeat(64);
+
+  @Test
+  void admissionSettingsPinExactPublicKeyMaterialAndEveryExplicitValueWithoutDefaults() throws Exception {
+    var key = KeyPairGenerator.getInstance("Ed25519").generateKeyPair().getPublic();
+    var other = KeyPairGenerator.getInstance("Ed25519").generateKeyPair().getPublic();
+    var settings = new BusinessOperationAdmissionSettings("https://issuer.invalid", "key-1", "sandbox", key, Duration.ofSeconds(60));
+    String expected = CanonicalJson.sha256(settings.pins());
+    settings.pins().put("audience", "caller-mutation");
+    assertThat(CanonicalJson.sha256(settings.pins())).isEqualTo(expected);
+    for (var changed : List.of(
+        new BusinessOperationAdmissionSettings("https://other.invalid", "key-1", "sandbox", key, Duration.ofSeconds(60)),
+        new BusinessOperationAdmissionSettings("https://issuer.invalid", "key-2", "sandbox", key, Duration.ofSeconds(60)),
+        new BusinessOperationAdmissionSettings("https://issuer.invalid", "key-1", "other", key, Duration.ofSeconds(60)),
+        new BusinessOperationAdmissionSettings("https://issuer.invalid", "key-1", "sandbox", other, Duration.ofSeconds(60)),
+        new BusinessOperationAdmissionSettings("https://issuer.invalid", "key-1", "sandbox", key, Duration.ofSeconds(59, 999_999_999)))) {
+      assertThat(CanonicalJson.sha256(changed.pins())).isNotEqualTo(expected);
+    }
+    for (Duration invalid : java.util.Arrays.asList(null, Duration.ZERO, Duration.ofNanos(-1), Duration.ofSeconds(60, 1))) {
+      assertCode(() -> new BusinessOperationAdmissionSettings("issuer", "key", "audience", key, invalid), OPERATION_PROFILE_INVALID);
+    }
+    for (String invalid : java.util.Arrays.asList(null, "", "private value", "x".repeat(513), "x" + (char) 0xd800)) {
+      assertCode(() -> new BusinessOperationAdmissionSettings(invalid, "key", "audience", key, Duration.ofSeconds(1)), OPERATION_PROFILE_INVALID);
+    }
+    assertCode(() -> new BusinessOperationAdmissionSettings("issuer", "key", "audience", null, Duration.ofSeconds(1)), OPERATION_PROFILE_INVALID);
+    var ed448 = KeyPairGenerator.getInstance("Ed448").generateKeyPair().getPublic();
+    assertCode(() -> new BusinessOperationAdmissionSettings("issuer", "key", "audience", ed448, Duration.ofSeconds(1)), OPERATION_PROFILE_INVALID);
+    assertThat(settings.toString()).doesNotContain("issuer.invalid", "sandbox", "sha256:");
+  }
+
+  @Test
+  void authorityV3AddsAdmissionPinsWithoutChangingLegacyV1V2HashRecipes() throws Exception {
+    ObjectNode policy = policy("require_approval");
+    ObjectNode operation = operation(policy);
+    var review = new BusinessOperationReviewSettings("synthetic-reviewers", HASH, Duration.ofMinutes(1));
+    String artifacts = CanonicalJson.sha256(operation.path("artifactDigests"));
+    String resources = operation.path("resourceBindingHash").asText();
+    var legacy = JsonSupport.MAPPER.createObjectNode().put("profile", "tracepermit-operation-review-v1")
+        .put("scopeHash", SCOPE.fingerprint()).put("adapterId", "github-draft-pr-v1").put("recoveryGeneration", 1)
+        .put("policyHash", CanonicalJson.sha256(policy)).put("artifactDigestsHash", artifacts).put("resourceBindingHash", resources);
+    assertThat(new BusinessOperationAuthorityProfile(SCOPE, "github-draft-pr-v1", 1, policy, artifacts, resources).fingerprint())
+        .isEqualTo(CanonicalJson.sha256(legacy));
+    legacy.put("profile", "tracepermit-operation-review-v2").set("reviewSettings", review.pins());
+    var v2 = new BusinessOperationAuthorityProfile(SCOPE, "github-draft-pr-v1", 1, policy, artifacts, resources, review);
+    assertThat(v2.fingerprint()).isEqualTo(CanonicalJson.sha256(legacy));
+    assertCode(v2::admissionSettings, OPERATION_ADMISSION_SETTINGS_REQUIRED);
+    var key = KeyPairGenerator.getInstance("Ed25519").generateKeyPair().getPublic();
+    var admission = new BusinessOperationAdmissionSettings("issuer", "key", "audience", key, Duration.ofSeconds(1, 1));
+    var v3 = new BusinessOperationAuthorityProfile(SCOPE, "github-draft-pr-v1", 1, policy, artifacts, resources, review, admission);
+    legacy.put("profile", "tracepermit-operation-authority-v3").set("admissionSettings", admission.pins());
+    assertThat(v3.fingerprint()).isEqualTo(CanonicalJson.sha256(legacy)).isNotEqualTo(v2.fingerprint());
+    assertCode(() -> new BusinessOperationAuthorityProfile(SCOPE, "adapter", 1, policy, artifacts, resources, review, null), OPERATION_PROFILE_INVALID);
+  }
+
+  @Test
+  void executeRequiresFreshExactOwnerWorkspaceRoleAndSeparateExecutePermission() throws Exception {
+    var before = operation(policy("require_approval"));
+    var expected = new BusinessOperationTransitionPlanner().observe(SCOPE, before);
+    var at = Instant.parse("2030-01-01T00:00:00Z");
+    var valid = new TrustedRequesterContext(new io.tracepermit.execution.TenantPartition(SCOPE.tenantId()), SCOPE.requesterPrincipalId(), true,
+        Set.of("operation_requester"), Set.of("operations.execute"), "synthetic", HASH, at.plusSeconds(1));
+    var command = new BusinessOperationExecution(SCOPE, expected.operationId(), expected, valid, SCOPE.workspaceId());
+    var p = policy("require_approval");
+    var settings = new BusinessOperationAdmissionSettings("issuer", "key", "audience", KeyPairGenerator.getInstance("Ed25519").generateKeyPair().getPublic(), Duration.ofSeconds(1));
+    var profile = new BusinessOperationAuthorityProfile(SCOPE, "github-draft-pr-v1", expected.recoveryGeneration(), p, HASH, HASH,
+        new BusinessOperationReviewSettings("synthetic-reviewers", HASH, Duration.ofMinutes(1)), settings);
+    command.requireAuthorizedAt(profile, at);
+    assertCode(() -> command.requireAuthorizedAt(profile, at.plusSeconds(1)), OPERATION_AUTHENTICATION_EXPIRED);
+    assertCode(() -> new BusinessOperationExecution(SCOPE, expected.operationId(), expected, valid, "other"), OPERATION_EXECUTOR_NOT_AUTHORIZED);
+    for (var identity : List.of(
+        new TrustedRequesterContext(valid.tenant(), valid.requesterSubjectId(), false, valid.roles(), valid.scopes(), "synthetic", HASH, valid.authorityExpiresAt()),
+        new TrustedRequesterContext(valid.tenant(), "other-owner", true, valid.roles(), valid.scopes(), "synthetic", HASH, valid.authorityExpiresAt()),
+        new TrustedRequesterContext(valid.tenant(), valid.requesterSubjectId(), true, Set.of("operation_reviewer"), valid.scopes(), "synthetic", HASH, valid.authorityExpiresAt()),
+        new TrustedRequesterContext(valid.tenant(), valid.requesterSubjectId(), true, valid.roles(), Set.of("operations.evaluate", "operations.cancel"), "synthetic", HASH, valid.authorityExpiresAt()))) {
+      assertCode(() -> new BusinessOperationExecution(SCOPE, expected.operationId(), expected, identity, SCOPE.workspaceId()), OPERATION_EXECUTOR_NOT_AUTHORIZED);
+    }
+    assertThat(command.actor().path("credentialFingerprint").asText()).isEqualTo(HASH);
+    assertThat(command.toString()).doesNotContain("principal:", "sha256:", "synthetic-tenant");
+  }
 
   @Test
   void pinnedOperatorPolicyActuallyEvaluatesCanonicalActionAndNeverMutatesInputs() {

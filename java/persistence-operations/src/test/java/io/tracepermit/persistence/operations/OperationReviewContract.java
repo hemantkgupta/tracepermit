@@ -20,6 +20,10 @@ import java.io.PrintWriter;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Proxy;
 import java.nio.file.Path;
+import java.security.KeyPair;
+import java.security.KeyPairGenerator;
+import java.security.PrivateKey;
+import java.security.interfaces.EdECPrivateKey;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
@@ -57,6 +61,7 @@ abstract class OperationReviewContract {
   private BusinessOperationAuthorityProfile profile;
   private GitHubBusinessOperationBinding.ExpectedProfile target;
   private ObjectNode initial;
+  private ObjectNode operatorPolicy;
 
   abstract JdbcDatabaseContainer<?> container();
 
@@ -125,6 +130,252 @@ abstract class OperationReviewContract {
   }
 
   @Test
+  void closedPermitIssuerLoadsActualApprovedStateLocksFirstAndSignsOnlyAfterReadCleanup() throws Exception {
+    var keys = configurePermit(Duration.ofSeconds(120), Duration.ofSeconds(60));
+    JsonNode approved = approveForPermit(fresh(), fresh(), fresh().minusSeconds(20));
+    var keyCalls = new AtomicInteger();
+    PrivateKey guarded = guardedKey(keys.getPrivate(), () -> {
+      assertThat(runtime.live.get()).isZero(); keyCalls.incrementAndGet();
+    });
+    var issuer = new JdbcGitHubOperationPermitIssuer(runtime, profile, target, guarded);
+    int beforeSigning = keyCalls.get();
+    runtime.opens.set(0); runtime.lockOrder.clear();
+    var issued = issuer.issue(execution(approved, fresh()));
+    assertThat(keyCalls.get()).isGreaterThan(beforeSigning);
+    assertThat(runtime.opens.get()).isEqualTo(1);
+    assertThat(runtime.live.get()).isZero();
+    assertThat(runtime.lockOrder).containsExactly("control", "head");
+    var claims = new OperationPermitCodec(profile.admissionSettings(), null).verify(issued.serialized()).claims();
+    assertThat(claims.path("state").path("snapshotHash").asText()).isEqualTo(CanonicalJson.sha256(approved));
+    assertThat(claims.path("targetBindingDigest").asText())
+        .isEqualTo(GitHubBusinessOperationBinding.bind(SCOPE, approved, target).bindingDigest())
+        .isNotEqualTo(binding().path("bindingDigest").asText());
+    assertThat(claims.path("reviewBindingHash").asText()).isEqualTo(CanonicalJson.sha256(binding()));
+    assertThat(claims.path("approvalFactHash").asText())
+        .isEqualTo(CanonicalJson.sha256(approved.path("transitions").get(4)));
+    assertThat(claims.path("canonicalActionHash").asText()).isEqualTo(approved.path("canonicalActionHash").asText());
+    assertThat(claims.path("profileHash").asText()).isEqualTo(profile.fingerprint());
+    assertThat(issued.fingerprint()).matches("sha256:[a-f0-9]{64}");
+    assertThat(issued.toString()).doesNotContain("eyJ", "synthetic", "sha256:");
+    assertCurrent(approved);
+    assertThat(count("tp_operation_lifecycle_facts")).isEqualTo(2);
+    assertThat(count("tp_operation_review_bindings")).isEqualTo(1);
+  }
+
+  @Test
+  void issuanceCannotPromoteInitialPendingDeniedOrCancelledStateOrAcceptStaleExpectedState() throws Exception {
+    var keys = configurePermit(Duration.ofMinutes(1), Duration.ofSeconds(60));
+    var issuer = new JdbcGitHubOperationPermitIssuer(runtime, profile, target, keys.getPrivate());
+    assertCode(() -> issuer.issue(execution(initial, fresh())), OPERATION_NOT_APPROVED);
+    JsonNode pending = writer(runtime).evaluate(evaluation(initial, fresh()));
+    assertCode(() -> issuer.issue(execution(pending, fresh())), OPERATION_NOT_APPROVED);
+    JsonNode denied = writer(runtime).review(review(pending, BusinessOperationReview.Decision.DENY, fresh()), member(fresh()));
+    assertCode(() -> issuer.issue(execution(denied, fresh())), OPERATION_NOT_APPROVED);
+    assertCode(() -> issuer.issue(execution(pending, fresh())), OPERATION_STATE_STALE);
+    keys = configurePermit(Duration.ofMinutes(1), Duration.ofSeconds(60));
+    var second = new JdbcGitHubOperationPermitIssuer(runtime, profile, target, keys.getPrivate());
+    JsonNode cancelled = writer(runtime).withdraw(withdrawal(initial));
+    assertCode(() -> second.issue(execution(cancelled, fresh())), OPERATION_NOT_APPROVED);
+    assertCurrent(cancelled);
+  }
+
+  @Test
+  void everyApprovedIdentityDeadlineAndExplicitNanosecondLifetimeCapsPermitWithoutRenewal() throws Exception {
+    for (String limiting : List.of("evaluator", "reviewer", "membership", "owner", "approval", "ttl")) {
+      var keys = configurePermit(limiting.equals("approval") ? Duration.ofSeconds(20) : Duration.ofSeconds(120),
+          limiting.equals("ttl") ? Duration.ofSeconds(10, 123_456_789) : Duration.ofSeconds(60));
+      Instant soon = fresh().minusSeconds(100);
+      Instant evaluatorExpiry = limiting.equals("evaluator") ? soon : fresh();
+      Instant reviewerExpiry = limiting.equals("reviewer") ? soon : fresh();
+      Instant membershipExpiry = limiting.equals("reviewer") || limiting.equals("membership") ? soon : fresh().minusSeconds(20);
+      JsonNode approved = approveForPermit(evaluatorExpiry, reviewerExpiry, membershipExpiry);
+      Instant ownerExpiry = limiting.equals("owner") ? soon : fresh();
+      var issued = new JdbcGitHubOperationPermitIssuer(runtime, profile, target, keys.getPrivate()).issue(execution(approved, ownerExpiry));
+      var claims = new OperationPermitCodec(profile.admissionSettings(), null).verify(issued.serialized()).claims();
+      Instant issue = Instant.parse(claims.path("issuedAt").asText());
+      Instant expected = issue.plus(profile.admissionSettings().lifetime());
+      for (Instant bound : List.of(evaluatorExpiry, reviewerExpiry, membershipExpiry, ownerExpiry,
+          Instant.parse(binding().path("approvalDeadline").asText()))) if (bound.isBefore(expected)) expected = bound;
+      assertThat(Instant.parse(claims.path("expiresAt").asText())).isEqualTo(expected);
+      if (limiting.equals("evaluator")) assertThat(expected).isEqualTo(evaluatorExpiry);
+      if (limiting.equals("reviewer")) assertThat(expected).isEqualTo(reviewerExpiry); // membership must be <= reviewer auth
+      if (limiting.equals("membership")) assertThat(expected).isEqualTo(membershipExpiry);
+      if (limiting.equals("owner")) assertThat(expected).isEqualTo(ownerExpiry);
+      assertCurrent(approved);
+      assertThat(count("tp_operation_lifecycle_facts")).isEqualTo(2);
+    }
+  }
+
+  @Test
+  void oldReviewProfileCannotIssueOrBeSilentlyPromotedAfterApproval() throws Exception {
+    JsonNode pending = writer(runtime).evaluate(evaluation(initial, fresh()));
+    JsonNode approved = writer(runtime).review(review(pending, BusinessOperationReview.Decision.APPROVE, fresh()), member(fresh()));
+    var keys = KeyPairGenerator.getInstance("Ed25519").generateKeyPair();
+    assertCode(() -> new JdbcGitHubOperationPermitIssuer(runtime, profile, target, keys.getPrivate()), OPERATION_ADMISSION_SETTINGS_REQUIRED);
+    var settings = new BusinessOperationAdmissionSettings("https://synthetic-issuer.invalid", "synthetic-key", "synthetic-admission", keys.getPublic(), Duration.ofSeconds(60));
+    var v3 = new BusinessOperationAuthorityProfile(SCOPE, target.adapterId(), 1, operatorPolicy,
+        CanonicalJson.sha256(initial.path("artifactDigests")), initial.path("resourceBindingHash").asText(), profile.reviewSettings(), settings);
+    var issuer = new JdbcGitHubOperationPermitIssuer(runtime, v3, target, keys.getPrivate());
+    assertCode(() -> issuer.issue(execution(approved, fresh())), OPERATION_PROFILE_MISMATCH);
+    // Replacement is a separate operator API and must increase generation. A duplicate
+    // stageNew INSERT is not that API and would only qualify duplicate-key handling.
+    assertCode(() -> OperationAuthorityAdministration.stageReplacement(source, profile, v3), OPERATION_COMMAND_INVALID);
+    assertCurrent(approved);
+  }
+
+  @Test
+  void expiredOriginalEvaluatorBlocksNewIssuanceEvenWhenApprovalAndFreshOwnerRemainValid() throws Exception {
+    var keys = configurePermit(Duration.ofMinutes(1), Duration.ofSeconds(60));
+    var writer = writer(runtime);
+    var issuer = new JdbcGitHubOperationPermitIssuer(runtime, profile, target, keys.getPrivate());
+    Instant evaluatorExpiry = storeNow().plusSeconds(3);
+    JsonNode pending = writer.evaluate(evaluation(initial, evaluatorExpiry));
+    JsonNode approved = writer.review(review(pending, BusinessOperationReview.Decision.APPROVE, fresh()), member(fresh()));
+    awaitExpiry(evaluatorExpiry);
+    assertCode(() -> issuer.issue(execution(approved, fresh())), OPERATION_PERMIT_EXPIRED);
+    assertCurrent(approved);
+    assertThat(count("tp_operation_lifecycle_facts")).isEqualTo(2);
+  }
+
+  @Test
+  void issuerRechecksFreshExecuteIdentityAfterActualHeadLockWait() throws Exception {
+    var keys = configurePermit(Duration.ofMinutes(1), Duration.ofSeconds(60));
+    JsonNode approved = approveForPermit(fresh(), fresh(), fresh().minusSeconds(20));
+    var issuer = new JdbcGitHubOperationPermitIssuer(runtime, profile, target, keys.getPrivate());
+    try (var holder = source.getConnection()) {
+      holder.setAutoCommit(false);
+      lock(holder, "tp_operation_lifecycle_heads", "operation_id", id());
+      Instant deadline = storeNow().plusMillis(800);
+      var command = execution(approved, deadline);
+      runtime.lockAttempt = new CountDownLatch(1); runtime.signalHeadOnly = true;
+      var pool = Executors.newSingleThreadExecutor();
+      try {
+        var result = pool.submit(() -> issuer.issue(command));
+        assertThat(runtime.lockAttempt.await(3, TimeUnit.SECONDS)).isTrue();
+        assertThat(storeNow()).isBefore(deadline.minusMillis(150));
+        assertThat(result.isDone()).isFalse();
+        awaitExpiry(deadline);
+        assertThat(result.isDone()).isFalse();
+        holder.rollback();
+        assertFutureCode(result, OPERATION_AUTHENTICATION_EXPIRED);
+      } finally {
+        holder.rollback(); runtime.signalHeadOnly = false;
+        pool.shutdownNow(); assertThat(pool.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
+      }
+    }
+    assertCurrent(approved);
+  }
+
+  @Test
+  void failedReadRollbackOrCloseNeverReachesSigningAndRetainsOnlyFixedDiagnostics() throws Exception {
+    var keys = configurePermit(Duration.ofMinutes(1), Duration.ofSeconds(60));
+    JsonNode approved = approveForPermit(fresh(), fresh(), fresh().minusSeconds(20));
+    var calls = new AtomicInteger();
+    var issuer = new JdbcGitHubOperationPermitIssuer(runtime, profile, target, guardedKey(keys.getPrivate(), calls::incrementAndGet));
+    for (String fault : List.of("read-rollback", "read-close")) {
+      int before = calls.get(); runtime.fault = fault;
+      try { assertCode(() -> issuer.issue(execution(approved, fresh())), OPERATION_STORAGE_UNAVAILABLE); }
+      finally { runtime.fault = "none"; }
+      assertThat(calls.get()).isEqualTo(before);
+      assertThat(runtime.live.get()).isZero();
+      assertCurrent(approved);
+    }
+  }
+
+  @Test
+  void retainedIssuerRechecksQuarantineAndRealNewGenerationActivationWithoutPromotingOldApproval() throws Exception {
+    var keys = configurePermit(Duration.ofMinutes(1), Duration.ofSeconds(60));
+    JsonNode approved = approveForPermit(fresh(), fresh(), fresh().minusSeconds(20));
+    var issuer = new JdbcGitHubOperationPermitIssuer(runtime, profile, target, keys.getPrivate());
+    OperationAuthorityAdministration.quarantine(source, profile);
+    assertCode(() -> issuer.issue(execution(approved, fresh())), OPERATION_AUTHORITY_NOT_READY);
+    var next = new BusinessOperationAuthorityProfile(SCOPE, target.adapterId(), 2, operatorPolicy,
+        CanonicalJson.sha256(initial.path("artifactDigests")), initial.path("resourceBindingHash").asText(),
+        profile.reviewSettings(), profile.admissionSettings());
+    OperationAuthorityAdministration.stageReplacement(source, profile, next);
+    assertCode(() -> issuer.issue(execution(approved, fresh())), OPERATION_PROFILE_MISMATCH);
+    OperationAuthorityAdministration.activateStaged(source, next);
+    assertCode(() -> issuer.issue(execution(approved, fresh())), OPERATION_PROFILE_MISMATCH);
+    assertCurrent(approved);
+    assertThat(count("tp_operation_lifecycle_facts")).isEqualTo(2);
+  }
+
+  @Test
+  void separateIssuancesHaveDistinctIdsAcceptFreshSameOwnerCredentialAndConsumeNothing() throws Exception {
+    var keys = configurePermit(Duration.ofMinutes(1), Duration.ofSeconds(60));
+    JsonNode approved = approveForPermit(fresh(), fresh(), fresh().minusSeconds(20));
+    var issuer = new JdbcGitHubOperationPermitIssuer(runtime, profile, target, keys.getPrivate());
+    var codec = new OperationPermitCodec(profile.admissionSettings(), null);
+    var first = codec.verify(issuer.issue(execution(approved, fresh())).serialized()).claims();
+    var refreshed = new TrustedRequesterContext(new TenantPartition(SCOPE.tenantId()), SCOPE.requesterPrincipalId(), true,
+        Set.of("operation_requester"), Set.of("operations.execute"), "synthetic-other", "sha256:" + "b".repeat(64), fresh());
+    var command = new BusinessOperationExecution(SCOPE, id(), PLANNER.observe(SCOPE, approved), refreshed, SCOPE.workspaceId());
+    var second = codec.verify(issuer.issue(command).serialized()).claims();
+    assertThat(first.path("permitId").asText().equals(second.path("permitId").asText())).isFalse();
+    assertThat(first.path("attemptId").asText().equals(second.path("attemptId").asText())).isFalse();
+    assertThat(second.path("executeIdentity").path("credentialFingerprint").asText()).isEqualTo("sha256:" + "b".repeat(64));
+    assertCurrent(approved);
+    assertThat(count("tp_operation_lifecycle_facts")).isEqualTo(2);
+  }
+
+  @Test
+  void privateKeyDelayAfterCleanupDoesNotRenewTheCapturedExpiryOrClaimAdmission() throws Exception {
+    var keys = configurePermit(Duration.ofMinutes(1), Duration.ofSeconds(60));
+    JsonNode approved = approveForPermit(fresh(), fresh(), fresh().minusSeconds(20));
+    var expiry = new java.util.concurrent.atomic.AtomicReference<Instant>();
+    PrivateKey delayed = guardedKey(keys.getPrivate(), () -> {
+      assertThat(runtime.live.get()).isZero();
+      if (expiry.get() != null) {
+        try { awaitExpiry(expiry.get()); }
+        catch (Exception failure) { throw new AssertionError("synthetic bounded delay failed"); }
+      }
+    });
+    var issuer = new JdbcGitHubOperationPermitIssuer(runtime, profile, target, delayed);
+    expiry.set(storeNow().plusMillis(800));
+    var issued = issuer.issue(execution(approved, expiry.get()));
+    var claims = new OperationPermitCodec(profile.admissionSettings(), null).verify(issued.serialized()).claims();
+    assertThat(Instant.parse(claims.path("expiresAt").asText())).isEqualTo(expiry.get());
+    assertThat(storeNow()).isAfter(expiry.get());
+    assertCurrent(approved);
+    assertThat(count("tp_operation_lifecycle_facts")).isEqualTo(2);
+  }
+
+  private KeyPair configurePermit(Duration reviewLifetime, Duration permitLifetime) throws Exception {
+    var keys = KeyPairGenerator.getInstance("Ed25519").generateKeyPair();
+    for (String table : List.of("tp_operation_review_bindings", "tp_operation_lifecycle_facts", "tp_operation_lifecycle_heads",
+        "tp_business_operation_facts", "tp_business_operations", "tp_operation_authority_controls")) execute("DELETE FROM " + table);
+    configure("require_approval", reviewLifetime, new BusinessOperationAdmissionSettings("https://synthetic-issuer.invalid", "synthetic-key",
+        "synthetic-admission", keys.getPublic(), permitLifetime));
+    register(); return keys;
+  }
+
+  private JsonNode approveForPermit(Instant evaluatorExpiry, Instant reviewerExpiry, Instant membershipExpiry) {
+    var writer = writer(runtime);
+    JsonNode pending = writer.evaluate(evaluation(initial, evaluatorExpiry));
+    var membership = new TrustedOperationGroupMembership(SCOPE.tenantId(), SCOPE.workspaceId(), "principal:reviewer", GROUP,
+        HASH, Instant.now().minusSeconds(1), membershipExpiry);
+    return writer.review(review(pending, BusinessOperationReview.Decision.APPROVE, reviewerExpiry), membership);
+  }
+
+  private static BusinessOperationExecution execution(JsonNode before, Instant expiry) {
+    var identity = new TrustedRequesterContext(new TenantPartition(SCOPE.tenantId()), SCOPE.requesterPrincipalId(), true,
+        Set.of("operation_requester"), Set.of("operations.execute"), "synthetic-test", HASH, expiry);
+    return new BusinessOperationExecution(SCOPE, before.path("operationId").asText(), PLANNER.observe(SCOPE, before), identity, SCOPE.workspaceId());
+  }
+
+  private static PrivateKey guardedKey(PrivateKey key, Runnable check) {
+    var original = (EdECPrivateKey) key;
+    return new EdECPrivateKey() {
+      private static final long serialVersionUID = 1L;
+      @Override public java.security.spec.NamedParameterSpec getParams() { check.run(); return original.getParams(); }
+      @Override public java.util.Optional<byte[]> getBytes() { check.run(); return original.getBytes(); }
+      @Override public String getAlgorithm() { check.run(); return original.getAlgorithm(); }
+      @Override public String getFormat() { check.run(); return original.getFormat(); }
+      @Override public byte[] getEncoded() { check.run(); return original.getEncoded(); }
+    };
+  }
+
+  @Test
   void exactEvaluationAndIndependentReviewCommitOneClosedJournalAndRetainOriginalRegistration() throws Exception {
     var writer = writer(runtime);
     runtime.opens.set(0);
@@ -171,6 +422,71 @@ abstract class OperationReviewContract {
     assertCurrent(blocked);
     assertCode(() -> writer(runtime).review(review(blocked, BusinessOperationReview.Decision.APPROVE, fresh()), member(fresh())), OPERATION_NOT_REVIEWABLE);
     assertThat(count("tp_operation_lifecycle_facts")).isEqualTo(1);
+  }
+
+  @Test
+  void equivalentOperationTimestampSpellingsSurviveEvaluationWithoutRewritingOriginal() throws Exception {
+    for (int digits : List.of(3, 9)) {
+      reset();
+      registerEquivalentTimestamp(digits);
+      String original = CanonicalJson.canonicalize(initial);
+      JsonNode pending = writer(runtime).evaluate(evaluation(initial, fresh()));
+      JsonNode approved = writer(runtime).review(review(pending, BusinessOperationReview.Decision.APPROVE, fresh()), member(fresh()));
+      assertCurrent(approved);
+      assertThat(CanonicalJson.canonicalize(new JdbcBusinessOperationRepository(source).find(SCOPE, id()).orElseThrow()))
+          .isEqualTo(original);
+      assertThat(binding().path("evaluatedSnapshotHash").asText()).isEqualTo(CanonicalJson.sha256(initial));
+    }
+  }
+
+  @Test
+  void equivalentOperationTimestampSpellingsSurvivePreEvaluationWithdrawal() throws Exception {
+    for (int digits : List.of(3, 9)) {
+      reset();
+      registerEquivalentTimestamp(digits);
+      String original = CanonicalJson.canonicalize(initial);
+      JsonNode cancelled = writer(runtime).withdraw(withdrawal(initial));
+      assertCurrent(cancelled);
+      assertThat(count("tp_operation_review_bindings")).isZero();
+      assertThat(CanonicalJson.canonicalize(new JdbcBusinessOperationRepository(source).find(SCOPE, id()).orElseThrow()))
+          .isEqualTo(original);
+    }
+  }
+
+  @Test
+  void populatedV3WithEquivalentTimestampSpellingUpgradesAndCanEvaluate() throws Exception {
+    try (var extra = isolatedContainer()) {
+      extra.start();
+      assertLoopback(extra);
+      var owner = new TestSource(extra, extra.getUsername(), extra.getPassword());
+      OperationDatabase.initializeAuthorityEmpty(owner);
+      ObjectNode original = equivalentTimestamp(operation(target), 9);
+      new JdbcBusinessOperationRepository(owner).createOrGet(SCOPE, original);
+      OperationAuthorityAdministration.stageNew(owner, profile);
+      OperationAuthorityAdministration.activateStaged(owner, profile);
+      OperationDatabase.upgradeReviewFromV3(owner);
+      JsonNode pending = writer(owner).evaluate(evaluation(original, fresh()));
+      String operationId = original.path("operationId").asText();
+      assertThat(CanonicalJson.canonicalize(new JdbcBusinessOperationLifecycleRepository(owner)
+          .findCurrent(SCOPE, operationId).orElseThrow())).isEqualTo(CanonicalJson.canonicalize(pending));
+      assertThat(CanonicalJson.canonicalize(new JdbcBusinessOperationRepository(owner).find(SCOPE, operationId).orElseThrow()))
+          .isEqualTo(CanonicalJson.canonicalize(original));
+    }
+  }
+
+  @Test
+  void equivalentOperationTimestampStillRejectsWriterClockRegression() throws Exception {
+    for (String table : List.of("tp_operation_lifecycle_heads", "tp_business_operation_facts", "tp_business_operations")) {
+      execute("DELETE FROM " + table);
+    }
+    initial = equivalentTimestamp(initial, 9, storeNow().plusSeconds(60)
+        .truncatedTo(java.time.temporal.ChronoUnit.SECONDS));
+    register();
+    assertCode(() -> writer(runtime).evaluate(evaluation(initial, fresh())), OPERATION_CLOCK_REGRESSION);
+    assertCode(() -> writer(runtime).withdraw(withdrawal(initial)), OPERATION_CLOCK_REGRESSION);
+    assertThat(count("tp_operation_lifecycle_facts")).isZero();
+    assertThat(count("tp_operation_review_bindings")).isZero();
+    assertCurrent(initial);
   }
 
   @Test
@@ -584,6 +900,10 @@ abstract class OperationReviewContract {
   }
 
   private void configure(String outcome, Duration lifetime) throws Exception {
+    configure(outcome, lifetime, null);
+  }
+
+  private void configure(String outcome, Duration lifetime, BusinessOperationAdmissionSettings admission) throws Exception {
     ObjectNode policy = (ObjectNode) JsonSupport.MAPPER.readTree("""
         {"schemaVersion":"1.0","id":"synthetic-github-draft-pr","version":1,"name":"Synthetic",
          "description":"No target authority","enabled":true,"defaultDecision":{"outcome":"block","reasonCode":"SYNTHETIC_DENY"},
@@ -592,19 +912,49 @@ abstract class OperationReviewContract {
          "decision":{"outcome":"require_approval","reasonCode":"SYNTHETIC_REVIEW","approvalGroup":"synthetic-reviewers"}}]}
         """);
     ((ObjectNode) policy.path("rules").get(0).path("decision")).put("outcome", outcome);
+    operatorPolicy = policy.deepCopy();
     target = new GitHubBusinessOperationBinding.ExpectedProfile("github-draft-pr-v1", "test", 1,
         new GitHubBusinessOperationBinding.PolicyRelease("synthetic-github-draft-pr", 1, CanonicalJson.sha256(policy)),
         Map.of("policy_bundle", HASH, "adapter_release", HASH),
         new GitHubPilotTargetBinding(71, 101, 201, "tracepermit/agentcore-pr-pilot", "synthetic-change", "main", "a".repeat(40), "b".repeat(40)));
     initial = operation(target);
-    profile = new BusinessOperationAuthorityProfile(SCOPE, target.adapterId(), 1, policy,
+    profile = admission == null ? new BusinessOperationAuthorityProfile(SCOPE, target.adapterId(), 1, policy,
         CanonicalJson.sha256(initial.path("artifactDigests")), initial.path("resourceBindingHash").asText(),
-        new BusinessOperationReviewSettings(GROUP, HASH, lifetime));
+        new BusinessOperationReviewSettings(GROUP, HASH, lifetime))
+        : new BusinessOperationAuthorityProfile(SCOPE, target.adapterId(), 1, policy,
+            CanonicalJson.sha256(initial.path("artifactDigests")), initial.path("resourceBindingHash").asText(),
+            new BusinessOperationReviewSettings(GROUP, HASH, lifetime), admission);
     OperationAuthorityAdministration.stageNew(source, profile);
     OperationAuthorityAdministration.activateStaged(source, profile);
   }
 
   private void register() { new JdbcBusinessOperationRepository(source).createOrGet(SCOPE, initial); }
+  private void registerEquivalentTimestamp(int digits) throws Exception {
+    for (String table : List.of("tp_operation_lifecycle_heads", "tp_business_operation_facts", "tp_business_operations")) {
+      execute("DELETE FROM " + table);
+    }
+    initial = equivalentTimestamp(initial, digits);
+    register();
+  }
+
+  private static ObjectNode equivalentTimestamp(ObjectNode snapshot, int digits) {
+    // Use a whole-second last transition so both .000Z and .000000000Z are valid
+    // non-Instant.toString spellings. Keep the dimension/history instants coherent.
+    return equivalentTimestamp(snapshot, digits, Instant.parse(snapshot.path("updatedAt").asText()).plusSeconds(1)
+        .truncatedTo(java.time.temporal.ChronoUnit.SECONDS));
+  }
+
+  private static ObjectNode equivalentTimestamp(ObjectNode snapshot, int digits, Instant at) {
+    var copy = snapshot.deepCopy();
+    ObjectNode last = (ObjectNode) copy.path("transitions").get(copy.path("transitions").size() - 1);
+    last.put("at", at.toString());
+    ((ObjectNode) copy.path(last.path("dimension").asText())).put("updatedAt", at.toString());
+    String spelling = new java.time.format.DateTimeFormatterBuilder().appendInstant(digits).toFormatter()
+        .format(at);
+    assertThat(spelling).isNotEqualTo(Instant.parse(spelling).toString());
+    copy.put("updatedAt", spelling);
+    return (ObjectNode) BusinessOperationValidator.validate(copy);
+  }
   private JdbcGitHubOperationReviewRepository writer(DataSource ds) { return new JdbcGitHubOperationReviewRepository(ds, profile, target); }
   private JsonNode current() { return new JdbcBusinessOperationLifecycleRepository(source).findCurrent(SCOPE, id()).orElseThrow(); }
   private void assertCurrent(JsonNode expected) {
@@ -732,6 +1082,7 @@ abstract class OperationReviewContract {
     private volatile CountDownLatch lockAttempt;
     private volatile boolean signalHeadOnly;
     private final AtomicInteger opens = new AtomicInteger();
+    private final AtomicInteger live = new AtomicInteger();
     private final List<String> lockOrder = java.util.Collections.synchronizedList(new ArrayList<>());
     TestSource(JdbcDatabaseContainer<?> database, String user, String password) {
       this.database = database; this.user = user; this.password = password;
@@ -739,7 +1090,9 @@ abstract class OperationReviewContract {
     @Override public Connection getConnection() throws SQLException {
       Connection delegate = DriverManager.getConnection(database.getJdbcUrl(), user, password);
       opens.incrementAndGet();
+      live.incrementAndGet();
       var committed = new AtomicBoolean();
+      var closed = new AtomicBoolean();
       return (Connection) Proxy.newProxyInstance(getClass().getClassLoader(), new Class<?>[] {Connection.class}, (proxy, method, args) -> {
         if (method.getName().equals("commit")) {
           if (fault.equals("before-commit")) throw synthetic();
@@ -748,7 +1101,15 @@ abstract class OperationReviewContract {
           return null;
         }
         if (method.getName().equals("close") && committed.get() && fault.equals("close-after-commit")) {
-          delegate.close(); throw synthetic();
+          delegate.close(); if (closed.compareAndSet(false, true)) live.decrementAndGet(); throw synthetic();
+        }
+        if (method.getName().equals("close")) {
+          delegate.close(); if (closed.compareAndSet(false, true)) live.decrementAndGet();
+          if (fault.equals("read-close")) throw synthetic();
+          return null;
+        }
+        if (method.getName().equals("rollback") && fault.equals("read-rollback")) {
+          delegate.rollback(); throw synthetic();
         }
         Object result = invoke(method, delegate, args);
         if (method.getName().equals("prepareStatement") && args[0] instanceof String sql) {

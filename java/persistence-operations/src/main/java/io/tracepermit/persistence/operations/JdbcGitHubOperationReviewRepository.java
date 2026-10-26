@@ -80,7 +80,9 @@ public final class JdbcGitHubOperationReviewRepository {
         // No authority is captured at entry or before a blocking control/head lock.
         Instant now = JdbcBusinessOperationLifecycleRepository.storeTime(connection, engine);
         if (!PLANNER.observe(scope, before).equals(expected)) throw error(OPERATION_STATE_STALE);
-        if (now.isBefore(OperationReviewJournal.time(before.path("updatedAt")))) throw error(OPERATION_CLOCK_REGRESSION);
+        // current() has validated the frozen operation-v1 timestamp grammar. Equivalent
+        // fractional spellings are valid stored bytes, unlike our new journal's own encoding.
+        if (now.isBefore(Instant.parse(before.path("updatedAt").asText()))) throw error(OPERATION_CLOCK_REGRESSION);
         var actualTarget = bind(scope, before);
         var policy = profile.evaluate(before);
         if (binding.isPresent()) {
