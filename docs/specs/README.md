@@ -102,3 +102,16 @@ pre-handler refusal and bounded close; see the
 [handoff explanation](../learning/bounded-dispatch-handoff.md) and
 [qualification record](../runbooks/latency-qualification-transport-diagnostics.md).
 This does not qualify production load or a public abuse-control boundary.
+
+[ADR0076](../architecture/0076-github-installation-credential-provider.md) adds an
+unwired Java GitHub App installation credential-provider foundation behind the
+existing port. Explicit operator identity/private-key inputs, restricted exchange,
+strict response assurance, expiry, transport and redaction controls are qualified
+only synthetically. The [runbook](../runbooks/github-app-installation-credentials.md)
+and [learning note](../learning/github-installation-credential-boundary.md) record
+trust gaps and stop conditions. No live installation or target/runtime wiring.
+
+Wave 2 review adds strict assurance/cleanup/transport regressions and a test-only
+concrete-provider/adapter composition fixture under ADR0076. Existing permit,
+allowlist, target preflight and unknown-outcome semantics are exercised without
+composing a shipped launcher or durable operation executor.

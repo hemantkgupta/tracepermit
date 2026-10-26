@@ -937,3 +937,37 @@ is promoted by this foundation.
 See [ADR 0065](../architecture/0065-installed-requester-public-sign-in.md), the
 [design contract](../design/installed-requester-public-sign-in.md), and the
 [installed runbook](../runbooks/installed-requester-public-sign-in.md).
+
+## Unwired GitHub App installation credential-provider foundation
+
+Requirements: FR-001/008/009/012; SEC-001/002/003/012/015/019;
+REL-001/003/005/009; OPS-002/004. No whole-requirement status promotion.
+
+`github.credentials.GitHubInstallationConfiguration`, `PrivateAppKeyFile`,
+`GitHubInstallationCredentialProvider`, `GitHubCredentialTransport` and the fixed
+`GitHubCredentialException` implement operator-only immutable scope, private
+bounded RSA source, RS256 JWT, restricted App-authenticated GET/POST, explicit
+provider assurance, expiry-after-cleanup, public pinned DNS/platform TLS and
+closed diagnostics. Existing ports/target action/permit/preflight code is unchanged.
+
+`GitHubInstallationCredentialProviderTest` and `CredentialBoundaryTest` cover
+positive and adversarial identity/scope/clock/JSON/byte/status, private-source,
+crypto/redaction/cleanup, no follow-up/unrelated request and concurrent isolation.
+Missing optional response assurance fails closed; opaque installation provenance
+remains dependent on GitHub's authenticated minting contract. Exact results and
+limits belong in the [runbook](../runbooks/github-app-installation-credentials.md),
+[ADR0076](../architecture/0076-github-installation-credential-provider.md) and
+final handoff. This library is unwired; no live App/target or production claim.
+
+Wave 2 evidence for the same IDs: `CredentialReviewRegressionTest` adds 105
+typed/omitted assurance, identity, clock/cleanup, owned-buffer and production
+client-policy cases; `CredentialTransportBudgetTest` adds eight decoded-byte,
+compression, total-deadline and one-exchange cases. `GitHubCredentialCompositionTest`
+adds 15 concrete-provider/adapter cases through the test-source
+`SyntheticInstallationCredentialFixture`: permit/request/allowlist failures
+stop before credential acquisition, provider/expiry failures stop before target
+access, successful minting retains exact target preflight, and ambiguous writes
+remain unknown without another dispatch. The fixture uses only fake exchanges
+and a numeric-loopback fake target. The process-local ledger is test state;
+durable business-operation authority and shipped-runtime integration remain
+unimplemented by this lane. No other requirement status or lane claim changes.
