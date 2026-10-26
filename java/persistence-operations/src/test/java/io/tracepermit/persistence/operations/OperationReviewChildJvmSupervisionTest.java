@@ -4,12 +4,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.ProtocolException;
 import java.nio.charset.CharacterCodingException;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -174,22 +180,113 @@ class OperationReviewChildJvmSupervisionTest {
   }
 
   @Test
-  void testInducedAssertionFailureDuringPostCommitBarrierReapsChildProcessCleanly() {
+  void testSetupWriteStallTimesOutAndCleansUpAllResources() throws Exception {
+    Process mockProc = new ProcessBuilder("sleep", "60").start();
+    CountDownLatch writeEntered = new CountDownLatch(1);
+    OutputStream blockingOut = new OutputStream() {
+      @Override
+      public void write(int b) throws IOException {
+        writeEntered.countDown();
+        try {
+          Thread.sleep(60_000);
+        } catch (InterruptedException e) {
+          throw new IOException("Interrupted write", e);
+        }
+      }
+    };
+    InputStream dummyIn = new ByteArrayInputStream(new byte[0]);
+    InputStream dummyErr = new ByteArrayInputStream(new byte[0]);
+
+    var req = OperationReviewChildJvm.ChildRequest.builder("TEST", "dummy", "u", "p").build();
+
+    long start = System.nanoTime();
+    assertThatThrownBy(() -> OperationReviewChildJvm.startContender(
+        req, Duration.ofMillis(300), mockProc, blockingOut, dummyIn, dummyErr))
+        .isInstanceOf(TimeoutException.class)
+        .hasMessageContaining("Child request write timed out");
+    long elapsedMs = Duration.ofNanos(System.nanoTime() - start).toMillis();
+
+    assertThat(elapsedMs).isLessThan(4000);
+    mockProc.waitFor(2, TimeUnit.SECONDS);
+    assertThat(mockProc.isAlive()).isFalse();
+  }
+
+  @Test
+  void testSetupWriteInterruptedPreservesInterruptFlagAndCleansUp() throws Exception {
+    Process mockProc = new ProcessBuilder("sleep", "60").start();
+    CountDownLatch writeEntered = new CountDownLatch(1);
+    OutputStream blockingOut = new OutputStream() {
+      @Override
+      public void write(int b) throws IOException {
+        writeEntered.countDown();
+        try {
+          Thread.sleep(60_000);
+        } catch (InterruptedException e) {
+          throw new IOException("Interrupted write", e);
+        }
+      }
+    };
+    InputStream dummyIn = new ByteArrayInputStream(new byte[0]);
+    InputStream dummyErr = new ByteArrayInputStream(new byte[0]);
+
+    var req = OperationReviewChildJvm.ChildRequest.builder("TEST", "dummy", "u", "p").build();
+
+    Thread caller = Thread.currentThread();
+    Thread interrupter = new Thread(() -> {
+      try {
+        writeEntered.await(5, TimeUnit.SECONDS);
+        Thread.sleep(50);
+        caller.interrupt();
+      } catch (InterruptedException ignored) {}
+    });
+    interrupter.start();
+
+    try {
+      assertThatThrownBy(() -> OperationReviewChildJvm.startContender(
+          req, Duration.ofSeconds(10), mockProc, blockingOut, dummyIn, dummyErr))
+          .isInstanceOf(InterruptedException.class);
+      assertThat(Thread.currentThread().isInterrupted()).isTrue();
+    } finally {
+      Thread.interrupted(); // clear interrupted flag
+      interrupter.join(1000);
+    }
+
+    mockProc.waitFor(2, TimeUnit.SECONDS);
+    assertThat(mockProc.isAlive()).isFalse();
+  }
+
+  static class DeliberateAssertionFailure extends RuntimeException {
+    private static final long serialVersionUID = 1L;
+    DeliberateAssertionFailure(String msg) { super(msg); }
+  }
+
+  @Test
+  void testInducedAssertionFailureDuringBarrierReapsChildProcessCleanly() throws Exception {
     var req = OperationReviewChildJvm.ChildRequest.builder("TEST", "dummy", "u", "p")
-        .testMode("MALFORMED_READY")
+        .testMode("HOLD_READY")
         .barrier(true)
         .build();
 
+    AtomicReference<OperationReviewChildJvm.ContenderHandle> retained = new AtomicReference<>();
+    boolean bodyReached = false;
     try {
       try (var handle = OperationReviewChildJvm.startContender(req)) {
+        retained.set(handle);
+        bodyReached = true;
         assertThat(handle.isAlive()).isTrue();
-        throw new RuntimeException("Simulated assertion failure");
+        throw new DeliberateAssertionFailure("simulated deliberate assertion failure");
       }
-    } catch (Throwable expected) {
-      // Setup or simulated failure immediately cleans up the child
+    } catch (DeliberateAssertionFailure expected) {
+      assertThat(expected.getMessage()).isEqualTo("simulated deliberate assertion failure");
     }
 
-    // Process is reaped without leaked handles
+    assertThat(bodyReached).isTrue();
+    var handle = retained.get();
+    assertThat(handle).isNotNull();
+    assertThat(handle.isAlive()).isFalse();
+    assertThat(handle.cleanlyReaped()).isTrue();
+    assertThat(handle.executorTerminated()).isTrue();
+    assertThat(handle.drainerTerminated()).isTrue();
   }
 
   @Test
@@ -201,6 +298,18 @@ class OperationReviewChildJvmSupervisionTest {
     OperationReviewChildJvm.ChildResult result = OperationReviewChildJvm.runChild(req, Duration.ofSeconds(10));
     assertThat(result.acknowledged()).isFalse();
     assertThat(result.status()).isEqualTo("UNACKNOWLEDGED");
+  }
+
+  @Test
+  void testBaselineOkResponseAcceptedCleanly() throws Exception {
+    var req = OperationReviewChildJvm.ChildRequest.builder("TEST", "dummy", "u", "p")
+        .testMode("BASELINE_OK")
+        .build();
+
+    OperationReviewChildJvm.ChildResult result = OperationReviewChildJvm.runChild(req, Duration.ofSeconds(10));
+    assertThat(result.acknowledged()).isTrue();
+    assertThat(result.status()).isEqualTo("OK");
+    assertThat(result.resultStatus()).isEqualTo("evaluating");
   }
 
   @Test
@@ -259,6 +368,50 @@ class OperationReviewChildJvmSupervisionTest {
   }
 
   @Test
+  void testMismatchedOperationIdRejectedConservatively() throws Exception {
+    var req = OperationReviewChildJvm.ChildRequest.builder("TEST", "dummy", "u", "p")
+        .testMode("MISMATCHED_OP_ID")
+        .build();
+
+    OperationReviewChildJvm.ChildResult result = OperationReviewChildJvm.runChild(req, Duration.ofSeconds(10));
+    assertThat(result.acknowledged()).isFalse();
+    assertThat(result.status()).isEqualTo("UNACKNOWLEDGED");
+  }
+
+  @Test
+  void testMismatchedResultStatusRejectedConservatively() throws Exception {
+    var req = OperationReviewChildJvm.ChildRequest.builder("TEST", "dummy", "u", "p")
+        .testMode("MISMATCHED_RESULT_STATUS")
+        .build();
+
+    OperationReviewChildJvm.ChildResult result = OperationReviewChildJvm.runChild(req, Duration.ofSeconds(10));
+    assertThat(result.acknowledged()).isFalse();
+    assertThat(result.status()).isEqualTo("UNACKNOWLEDGED");
+  }
+
+  @Test
+  void testMismatchedFactIdRejectedConservatively() throws Exception {
+    var req = OperationReviewChildJvm.ChildRequest.builder("TEST", "dummy", "u", "p")
+        .testMode("MISMATCHED_FACT_ID")
+        .build();
+
+    OperationReviewChildJvm.ChildResult result = OperationReviewChildJvm.runChild(req, Duration.ofSeconds(10));
+    assertThat(result.acknowledged()).isFalse();
+    assertThat(result.status()).isEqualTo("UNACKNOWLEDGED");
+  }
+
+  @Test
+  void testMismatchedBindingDigestRejectedConservatively() throws Exception {
+    var req = OperationReviewChildJvm.ChildRequest.builder("TEST", "dummy", "u", "p")
+        .testMode("MISMATCHED_BINDING_DIGEST")
+        .build();
+
+    OperationReviewChildJvm.ChildResult result = OperationReviewChildJvm.runChild(req, Duration.ofSeconds(10));
+    assertThat(result.acknowledged()).isFalse();
+    assertThat(result.status()).isEqualTo("UNACKNOWLEDGED");
+  }
+
+  @Test
   void testUnknownFieldsInOkResponseRejectedConservatively() throws Exception {
     var req = OperationReviewChildJvm.ChildRequest.builder("TEST", "dummy", "u", "p")
         .testMode("UNKNOWN_FIELDS_OK")
@@ -267,6 +420,33 @@ class OperationReviewChildJvmSupervisionTest {
     OperationReviewChildJvm.ChildResult result = OperationReviewChildJvm.runChild(req, Duration.ofSeconds(10));
     assertThat(result.acknowledged()).isFalse();
     assertThat(result.status()).isEqualTo("UNACKNOWLEDGED");
+  }
+
+  @Test
+  void testStderrOverlongLineEnforcesLineByteCap() throws Exception {
+    var req = OperationReviewChildJvm.ChildRequest.builder("TEST", "dummy", "u", "p")
+        .testMode("STDERR_OVERLONG_LINE")
+        .build();
+
+    OperationReviewChildJvm.ChildResult result = OperationReviewChildJvm.runChild(req, Duration.ofSeconds(10));
+    assertThat(result.acknowledged()).isFalse();
+    assertThat(result.stderrByteCount()).isGreaterThanOrEqualTo(5000);
+    assertThat(result.stderrTruncated()).isTrue();
+    assertThat(result.hasStderrCategory("CHILD_ERROR")).isTrue();
+  }
+
+  @Test
+  void testStderrMultibytePressureDrainsContinuouslyAndEnforcesByteCap() throws Exception {
+    var req = OperationReviewChildJvm.ChildRequest.builder("TEST", "dummy", "u", "p")
+        .testMode("STDERR_MULTIBYTE_PRESSURE")
+        .build();
+
+    OperationReviewChildJvm.ChildResult result = OperationReviewChildJvm.runChild(req, Duration.ofSeconds(15));
+    assertThat(result.acknowledged()).isFalse();
+    assertThat(result.stderrByteCount()).isGreaterThan(OperationReviewChildJvm.MAX_STDERR_TOTAL_BYTES);
+    assertThat(result.stderrTruncated()).isTrue();
+    assertThat(result.hasStderrCategory("CHILD_ERROR")).isTrue();
+    assertThat(result.diagnosticCategories().size()).isLessThanOrEqualTo(OperationReviewChildJvm.MAX_STDERR_LINES);
   }
 
   @Test

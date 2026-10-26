@@ -220,9 +220,9 @@ abstract class OperationReviewCrossProcessContract {
       assertThat(res2.exitCode()).isZero();
       assertThat(res1.jvmId()).isNotEqualTo(res2.jvmId());
 
-      // Exactly one succeeds, the other reports closed stale-state or non-reviewable outcome
-      boolean oneWon = res1.isOk() && (res2.isRefused(OPERATION_STATE_STALE) || res2.isRefused(OPERATION_NOT_WITHDRAWABLE));
-      boolean twoWon = res2.isOk() && (res1.isRefused(OPERATION_STATE_STALE) || res1.isRefused(OPERATION_NOT_REVIEWABLE));
+      // Exactly one succeeds, the other reports closed stale-state outcome
+      boolean oneWon = res1.isOk() && res2.isRefused(OPERATION_STATE_STALE);
+      boolean twoWon = res2.isOk() && res1.isRefused(OPERATION_STATE_STALE);
       assertThat(oneWon ^ twoWon).withFailMessage("Race failed: res1=" + res1 + ", res2=" + res2).isTrue();
 
       // Database contains exactly one terminal transition and original immutable binding unchanged
@@ -275,8 +275,8 @@ abstract class OperationReviewCrossProcessContract {
       assertThat(resDeny.exitCode()).isZero();
       assertThat(resApprove.jvmId()).isNotEqualTo(resDeny.jvmId());
 
-      boolean approveWon = resApprove.isOk() && (resDeny.isRefused(OPERATION_STATE_STALE) || resDeny.isRefused(OPERATION_NOT_REVIEWABLE));
-      boolean denyWon = resDeny.isOk() && (resApprove.isRefused(OPERATION_STATE_STALE) || resApprove.isRefused(OPERATION_NOT_REVIEWABLE));
+      boolean approveWon = resApprove.isOk() && resDeny.isRefused(OPERATION_STATE_STALE);
+      boolean denyWon = resDeny.isOk() && resApprove.isRefused(OPERATION_STATE_STALE);
       assertThat(approveWon ^ denyWon).withFailMessage("Race failed: resApprove=" + resApprove + ", resDeny=" + resDeny).isTrue();
 
       assertThat(currentStatus()).isIn("approved", "denied");
@@ -473,7 +473,12 @@ abstract class OperationReviewCrossProcessContract {
     JsonNode blocked = blockEval.snapshot();
 
     ChildResult blockRead = OperationReviewChildJvm.runChild(
-        requestBuilder("READ_CURRENT").operationId(id()).build(), Duration.ofSeconds(30));
+        requestBuilder("READ_CURRENT")
+            .operationId(id())
+            .policyOutcome("block")
+            .build(),
+        Duration.ofSeconds(30)
+    );
     assertThat(blockRead.isOk()).isTrue();
     assertThat(blockRead.resultStatus()).isEqualTo("denied");
     assertThat(blockRead.snapshot().path("execution")).isEqualTo(initial.path("execution"));

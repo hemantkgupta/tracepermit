@@ -51,9 +51,10 @@ and historical fact-time replay without relying on in-memory shared state:
      if exceeded or malformed.
 
 3. **Total supervision deadlines and cleanup**:
-   - Immediate ownership: The harness acquires unconditional ownership immediately after
-     `ProcessBuilder.start()`. Any failure during request serialization, writing, or
-     readiness handshakes forcibly terminates the process and closes streams.
+   - Immediate ownership: The harness acquires unconditional ownership by creating `ContenderHandle`
+     immediately after `ProcessBuilder.start()`, before any request pipe writes or blocking calls. Any failure
+     or timeout during request serialization, writing, or readiness handshakes forcibly terminates the owned process,
+     shuts down worker executors, joins stderr drainers, and closes all streams.
    - Monotonic command budget: The entire command lifecycle (request write, ready wait,
      GO/RELEASE signals, committed wait, response read, process exit, drainer join) is
      governed by a single monotonic deadline (`System.nanoTime() + commandBudget.toNanos()`).
@@ -61,15 +62,16 @@ and historical fact-time replay without relying on in-memory shared state:
    - Finite teardown reserve: Cleanup allocates a separate, finite reaping reserve
      (`REAP_RESERVE_MS = 2000`). Owned child processes are forcibly destroyed _before_
      attempting stream closure, ensuring blocking pipe I/O cannot hold cleanup hostage.
+     Unsuccessful OS reaping is exposed honestly via `cleanlyReaped()` rather than reported as proved clean exit.
    - Interruption preservation: Thread interrupt flags are strictly preserved across
-     all blocking operations, futures, and teardown steps.
+     all blocking operations, futures, setup write phases, and teardown steps.
 
 4. **Unconditional ownership of barrier children**:
    All child processes and barrier contender handles are wrapped with `try-with-resources`
    from acquisition through all assertions. Any assertion failure, readback exception,
    or timeout immediately destroys the owned process, preventing orphaned child processes.
 
-5. **Closed bounded response validation**:
+5. **Closed bounded response validation and strict joins**:
    Responses emitted by child JVMs undergo strict, closed validation before being marked
    acknowledged:
    - Strict UTF-8 decoding (`CodingErrorAction.REPORT`).
@@ -80,7 +82,8 @@ and historical fact-time replay without relying on in-memory shared state:
    - Mandatory non-empty `snapshot` validating under `BusinessOperationValidator.validate()`.
    - Exact match between `snapshotHash` and `CanonicalJson.sha256(snapshot)`.
    - Matching `operationId` and `resultStatus` against snapshot contents and request expectations.
-   - Required non-blank `bindingDigest` and `factId`.
+   - Strict `factId` join comparing against the validated snapshot's actual operation ID and last transition sequence (`operationId + "#" + lastFact.sequence`).
+   - Strict `bindingDigest` join comparing against the cryptographic binding digest derived via `GitHubBusinessOperationBinding.bind(SCOPE, snapshot, expectedProfile).bindingDigest()`, with zero fallback to unrelated hashes.
 
 6. **Continuous stream-bounded stderr drainer**:
    The stderr drainer reads continuously in chunks until EOF, preventing OS pipe buffer
@@ -133,11 +136,11 @@ and MariaDB 10.6.25:
 - **Independent contenders (Approve vs Withdraw)**: Two separate JVMs compete for
   the pending operation at the database lock boundary. Exactly one contender wins
   and commits its transition (`status: "OK"`). The losing contender is safely
-  refused with `OPERATION_STATE_STALE` or `OPERATION_NOT_WITHDRAWABLE`. The database
-  retains exactly one terminal lifecycle fact and preserves the original review binding.
+  refused with `OPERATION_STATE_STALE`. The database retains exactly one terminal
+  lifecycle fact and preserves the original review binding.
 - **Independent contenders (Approve vs Deny)**: Two separate JVMs compete for the
   pending operation. Exactly one decision wins; the loser is safely refused with
-  `OPERATION_STATE_STALE` or `OPERATION_NOT_REVIEWABLE`.
+  `OPERATION_STATE_STALE`.
 - **Historical replay at fact time**: Time advances beyond the configured approval
   deadline (`approvalDeadline`). A fresh reader JVM reconstructs the snapshot from
   immutable history via `findCurrent()`; the snapshot correctly reports
@@ -188,13 +191,39 @@ defects and are not vacuous:
    failed immediately in the parent harness.
 2. **Lost acknowledgement treated as success**: `ContenderHandle.unacknowledged` was
    mutated to return `acknowledged = true, status = "OK"`. 13 of 20 supervision tests
-   failed immediately (`testSilenceChildExitsWithoutResponseReportsUnacknowledged`,
-   `testEarlyExitChildReportsUnacknowledgedWithNonZeroExitCode`, `testOversizedResponseLineRejectedConservatively`,
-   `testNoNewlineResponseHandledSafely`, `testStderrDrainerEnforcesCapsAndDrainsContinuouslyUnderPressure`,
-   `testMalformedUtf8ResponseRejectedConservatively`, `testDuplicateKeyResponseRejectedConservatively`,
-   `testTrailingTokenResponseRejectedConservatively`, `testInvalidUuidRegexRejectedConservatively`,
-   `testIncompleteOrEmptySnapshotRejectedConservatively`, `testMismatchedSnapshotHashRejectedConservatively`,
-   `testUnknownFieldsInOkResponseRejectedConservatively`, `testEndToEndPrivateCanaryRedactionInExceptionsAndDiagnostics`).
+   failed immediately.
+3. **Restored exact stale-race loser expectation**: In `OperationReviewCrossProcessContract`,
+   mutating the expected loser error in `testIndependentContendersApproveVersusWithdrawHaveExactlyOneWinnerAndOneStaleLoser`
+   from `OPERATION_STATE_STALE` to `OPERATION_NOT_WITHDRAWABLE` immediately failed the race assertion:
+   `AssertionFailedError: Race failed: res1=ChildResult[acknowledged=true, status=OK, resultStatus=approved], res2=ChildResult[acknowledged=true, status=REFUSED, code=OPERATION_STATE_STALE]`.
+   Restoring the exact expected code restored the passing gate byte-for-byte.
+4. **One-property valid negative vectors**: The suite tests 10 isolated mutations of a 100% valid,
+   accepted baseline OK response (`createBaselineOkResponse`), each altering exactly one property:
+   - `DUPLICATE_KEY_RESPONSE`: duplicates the `status` JSON key (rejected by strict local parser).
+   - `TRAILING_TOKEN_RESPONSE`: appends trailing garbage tokens (rejected by parser token check).
+   - `INVALID_UUID`: non-standard UUID format for `jvmId` (rejected by UUID regex).
+   - `MISMATCHED_HASH`: altered `snapshotHash` (rejected by SHA-256 comparison).
+   - `MISMATCHED_OP_ID`: mismatched `operationId` (rejected by operation join).
+   - `MISMATCHED_RESULT_STATUS`: mismatched `resultStatus` (rejected by authorization join).
+   - `MISMATCHED_FACT_ID`: mismatched `factId` (rejected by last lifecycle transition sequence join).
+   - `MISMATCHED_BINDING_DIGEST`: mismatched `bindingDigest` (rejected by cryptographic binding join).
+   - `UNKNOWN_FIELDS_OK`: extra disallowed field in OK payload (rejected by closed field set).
+   - `INCOMPLETE_SNAPSHOT`: empty snapshot object (rejected by `BusinessOperationValidator`).
+5. **Deterministic setup write and interruption controls**:
+   - `testSetupWriteStallTimesOutAndCleansUpAllResources`: uses a controlled stream fixture where writes stall,
+     proving that monotonic budget expiration destroys the process and terminates worker threads within 4 seconds.
+   - `testSetupWriteInterruptedPreservesInterruptFlagAndCleansUp`: proves that interrupting a setup write destroys
+     the owned child process, terminates worker threads, and preserves `Thread.currentThread().isInterrupted()`.
+6. **Non-vacuous barrier cleanup**:
+   - `testInducedAssertionFailureDuringBarrierReapsChildProcessCleanly`: enters the handle scope while the child
+     is held at the `READY` barrier, throws a deliberate exception, catches only that deliberate exception, and proves
+     `handle.isAlive() == false`, `handle.cleanlyReaped() == true`, `handle.executorTerminated() == true`, and
+     `handle.drainerTerminated() == true`. Generic setup errors fail the regression.
+7. **Overlong and multibyte stderr bounds**:
+   - `testStderrOverlongLineEnforcesLineByteCap`: child emits a single stderr line of 5,000 bytes (> 1,024 byte cap),
+     proving line truncation and category preservation without buffer overflow.
+   - `testStderrMultibytePressureDrainsContinuouslyAndEnforcesByteCap`: child emits > 40 KB of 3-byte and 4-byte UTF-8
+     sequences, proving continuous draining past `MAX_STDERR_TOTAL_BYTES` (32 KB) without decoder crashes or hung pipes.
 
 All mutations were restored byte-for-byte and verified clean with `git diff --check`.
 Subsequent reruns passed all tests.
@@ -221,13 +250,27 @@ Subsequent reruns passed all tests.
      and unvalidated snapshot fields.
    - Early stderr drainer termination on overlong lines and character-based size tracking.
    - Diagnostic leaks of unexpected stdout and stderr lines.
-5. All five findings were resolved:
+5. All five findings were resolved on head `ff74aefaa3a2279a9925ac6b7a5c016ccdaeba1f`:
    - Monotonic command budgeting established before setup with dedicated `REAP_RESERVE_MS` teardown reserve.
    - Try-with-resources wrapping for all barrier handles.
    - Closed response validation with local strict Jackson parser, standard UUID regex, and validator execution.
    - Continuous chunk-based stderr draining with byte-level cap enforcement.
    - Categorized diagnostics with zero raw line retention and synthetic canary verification.
 6. The test suite expanded from 39 to 50 tests (20 supervision unit tests + 30 cross-process database tests).
+7. Follow-up review on `ff74aefaa3a2279a9925ac6b7a5c016ccdaeba1f` identified:
+   - Setup ownership gaps prior to `writeFuture.get()`, and unpreserved setup interruption.
+   - Softened race-loser assertions (accepting terminal-state errors via `OR` conditions).
+   - Incomplete response joins for `factId` and `bindingDigest`, with silent fallback to `resourceBindingHash`.
+   - Vacuous cleanup test in `OperationReviewChildJvmSupervisionTest`.
+   - Multi-reason negative vectors not isolating individual guards.
+8. Follow-up repair resolved all findings:
+   - `ContenderHandle` instantiated immediately before submitted writes, wrapping setup write in cleanup and restoring interrupt flags.
+   - Exact `OPERATION_STATE_STALE` loser assertions restored in approve-vs-withdraw and approve-vs-deny races.
+   - Strict `factId` and `bindingDigest` joins added, with zero fallback to unrelated hashes.
+   - Vacuous cleanup test replaced with non-vacuous barrier reach, deliberate exception injection, and handle dead-state verification.
+   - One-property valid negative vectors implemented against a complete accepted baseline OK response.
+   - Dedicated overlong stderr line and multibyte stderr pressure tests added.
+   - The test suite expanded from 50 to 59 tests (29 supervision unit tests + 30 cross-process database tests).
 
 ## Reproduction
 
@@ -256,11 +299,11 @@ git diff --check
 
 | Database Engine / Suite     | Suite Name                                  | Tests Executed | Passed | Failed | Errors | Skipped | Time  |
 | :-------------------------- | :------------------------------------------ | :------------- | :----- | :----- | :----- | :------ | :---- |
-| Independent JVM Supervision | `OperationReviewChildJvmSupervisionTest`    | 20             | 20     | 0      | 0      | 0       | 5.0s  |
-| PostgreSQL 16.4             | `PostgresOperationReviewCrossProcessTest`   | 10             | 10     | 0      | 0      | 0       | 60.6s |
-| MariaDB 11.4.13             | `MariaDb114OperationReviewCrossProcessTest` | 10             | 10     | 0      | 0      | 0       | 39.2s |
-| MariaDB 10.6.25             | `MariaDb106OperationReviewCrossProcessTest` | 10             | 10     | 0      | 0      | 0       | 30.6s |
-| **Total**                   |                                             | **50**         | **50** | **0**  | **0**  | **0**   |       |
+| Independent JVM Supervision | `OperationReviewChildJvmSupervisionTest`    | 29             | 29     | 0      | 0      | 0       | 7.4s  |
+| PostgreSQL 16.4             | `PostgresOperationReviewCrossProcessTest`   | 10             | 10     | 0      | 0      | 0       | 51.8s |
+| MariaDB 11.4.13             | `MariaDb114OperationReviewCrossProcessTest` | 10             | 10     | 0      | 0      | 0       | 39.3s |
+| MariaDB 10.6.25             | `MariaDb106OperationReviewCrossProcessTest` | 10             | 10     | 0      | 0      | 0       | 37.5s |
+| **Total**                   |                                             | **59**         | **59** | **0**  | **0**  | **0**   |       |
 
 This qualification qualifies the tested closed durable review scenarios across
 independent local JVM boundaries and process lifetimes on PostgreSQL 16.4, MariaDB 11.4.13,

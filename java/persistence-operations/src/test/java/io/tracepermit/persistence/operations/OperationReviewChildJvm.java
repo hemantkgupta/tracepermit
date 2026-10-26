@@ -22,6 +22,7 @@ import java.nio.charset.CharacterCodingException;
 import java.nio.charset.CharsetDecoder;
 import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -324,39 +325,124 @@ public final class OperationReviewChildJvm {
         System.exit(0);
         return;
       }
+      if ("HOLD_READY".equals(testMode)) {
+        System.out.println("READY");
+        System.out.flush();
+        readBoundedLine(System.in, 1024);
+        System.exit(0);
+        return;
+      }
+      if ("BASELINE_OK".equals(testMode)) {
+        Path root = findRepoRoot();
+        ObjectNode okRes = createBaselineOkResponse(root);
+        System.out.println(CanonicalJson.canonicalize(okRes));
+        System.out.flush();
+        System.exit(0);
+        return;
+      }
       if ("DUPLICATE_KEY_RESPONSE".equals(testMode)) {
-        System.out.print("{\"jvmId\":\"" + JVM_ID + "\",\"status\":\"OK\",\"status\":\"OK\"}\n");
+        Path root = findRepoRoot();
+        ObjectNode okRes = createBaselineOkResponse(root);
+        String json = CanonicalJson.canonicalize(okRes);
+        String mutated = json.replace("\"status\":\"OK\"", "\"status\":\"OK\",\"status\":\"OK\"");
+        System.out.println(mutated);
         System.out.flush();
         System.exit(0);
         return;
       }
       if ("TRAILING_TOKEN_RESPONSE".equals(testMode)) {
-        System.out.print("{\"jvmId\":\"" + JVM_ID + "\",\"status\":\"UNACKNOWLEDGED\"} extra_trailing_garbage\n");
+        Path root = findRepoRoot();
+        ObjectNode okRes = createBaselineOkResponse(root);
+        String json = CanonicalJson.canonicalize(okRes);
+        System.out.println(json + " trailing_token_garbage");
         System.out.flush();
         System.exit(0);
         return;
       }
       if ("INVALID_UUID".equals(testMode)) {
-        System.out.print("{\"jvmId\":\"invalid-uuid-format\",\"status\":\"UNACKNOWLEDGED\"}\n");
-        System.out.flush();
-        System.exit(0);
-        return;
-      }
-      if ("INCOMPLETE_SNAPSHOT".equals(testMode)) {
-        System.out.print("{\"jvmId\":\"" + JVM_ID + "\",\"status\":\"OK\",\"operationId\":\"op-1\",\"resultStatus\":\"approved\",\"bindingDigest\":\"d\",\"factId\":\"f\",\"snapshotHash\":\"h\",\"snapshot\":{}}\n");
+        Path root = findRepoRoot();
+        ObjectNode okRes = createBaselineOkResponse(root);
+        okRes.put("jvmId", "invalid-uuid-format");
+        System.out.println(CanonicalJson.canonicalize(okRes));
         System.out.flush();
         System.exit(0);
         return;
       }
       if ("MISMATCHED_HASH".equals(testMode)) {
-        System.out.print("{\"jvmId\":\"" + JVM_ID + "\",\"status\":\"OK\",\"operationId\":\"op-1\",\"resultStatus\":\"approved\",\"bindingDigest\":\"d\",\"factId\":\"f\",\"snapshotHash\":\"sha256:wrong\",\"snapshot\":{\"some\":\"val\"}}\n");
+        Path root = findRepoRoot();
+        ObjectNode okRes = createBaselineOkResponse(root);
+        okRes.put("snapshotHash", "sha256:0000000000000000000000000000000000000000000000000000000000000000");
+        System.out.println(CanonicalJson.canonicalize(okRes));
+        System.out.flush();
+        System.exit(0);
+        return;
+      }
+      if ("MISMATCHED_OP_ID".equals(testMode)) {
+        Path root = findRepoRoot();
+        ObjectNode okRes = createBaselineOkResponse(root);
+        okRes.put("operationId", "00000000-0000-4000-8000-000000000000");
+        System.out.println(CanonicalJson.canonicalize(okRes));
+        System.out.flush();
+        System.exit(0);
+        return;
+      }
+      if ("MISMATCHED_RESULT_STATUS".equals(testMode)) {
+        Path root = findRepoRoot();
+        ObjectNode okRes = createBaselineOkResponse(root);
+        okRes.put("resultStatus", "denied");
+        System.out.println(CanonicalJson.canonicalize(okRes));
+        System.out.flush();
+        System.exit(0);
+        return;
+      }
+      if ("MISMATCHED_FACT_ID".equals(testMode)) {
+        Path root = findRepoRoot();
+        ObjectNode okRes = createBaselineOkResponse(root);
+        okRes.put("factId", "different-operation-id#999");
+        System.out.println(CanonicalJson.canonicalize(okRes));
+        System.out.flush();
+        System.exit(0);
+        return;
+      }
+      if ("MISMATCHED_BINDING_DIGEST".equals(testMode)) {
+        Path root = findRepoRoot();
+        ObjectNode okRes = createBaselineOkResponse(root);
+        okRes.put("bindingDigest", "sha256:0000000000000000000000000000000000000000000000000000000000000000");
+        System.out.println(CanonicalJson.canonicalize(okRes));
         System.out.flush();
         System.exit(0);
         return;
       }
       if ("UNKNOWN_FIELDS_OK".equals(testMode)) {
-        System.out.print("{\"jvmId\":\"" + JVM_ID + "\",\"status\":\"OK\",\"unknownField\":true}\n");
+        Path root = findRepoRoot();
+        ObjectNode okRes = createBaselineOkResponse(root);
+        okRes.put("unexpectedDisallowedField", true);
+        System.out.println(CanonicalJson.canonicalize(okRes));
         System.out.flush();
+        System.exit(0);
+        return;
+      }
+      if ("INCOMPLETE_SNAPSHOT".equals(testMode)) {
+        Path root = findRepoRoot();
+        ObjectNode okRes = createBaselineOkResponse(root);
+        okRes.set("snapshot", JsonSupport.MAPPER.createObjectNode());
+        System.out.println(CanonicalJson.canonicalize(okRes));
+        System.out.flush();
+        System.exit(0);
+        return;
+      }
+      if ("STDERR_OVERLONG_LINE".equals(testMode)) {
+        System.err.print("CHILD_ERROR: ");
+        System.err.println("x".repeat(5000));
+        System.err.flush();
+        System.exit(0);
+        return;
+      }
+      if ("STDERR_MULTIBYTE_PRESSURE".equals(testMode)) {
+        for (int i = 0; i < 100; i++) {
+          System.err.println("CHILD_ERROR: \u20AC\uD83D\uDE00 " + "\u20AC".repeat(150));
+        }
+        System.err.flush();
         System.exit(0);
         return;
       }
@@ -563,7 +649,7 @@ public final class OperationReviewChildJvm {
     }
   }
 
-  private static void emitOk(
+  public static ObjectNode populateOk(
       ObjectNode response,
       JsonNode result,
       BusinessOperationScope scope,
@@ -575,29 +661,28 @@ public final class OperationReviewChildJvm {
     response.put("resultStatus", result.path("authorization").path("status").asText());
     response.put("snapshotHash", CanonicalJson.sha256(result));
 
-    String bindingDigest = null;
-    if (target != null && scope != null) {
-      try {
-        var bound = GitHubBusinessOperationBinding.bind(scope, result, target);
-        bindingDigest = bound.bindingDigest();
-      } catch (Exception ignored) {}
-    }
-    if (bindingDigest == null || bindingDigest.isBlank()) {
-      bindingDigest = result.path("resourceBindingHash").asText();
-    }
-    response.put("bindingDigest", bindingDigest);
+    var bound = GitHubBusinessOperationBinding.bind(scope, result, target);
+    response.put("bindingDigest", bound.bindingDigest());
 
     JsonNode transitions = result.path("transitions");
-    String factId;
-    if (transitions.isArray() && transitions.size() > 0) {
-      JsonNode lastFact = transitions.get(transitions.size() - 1);
-      factId = opId + "#" + lastFact.path("sequence").asInt();
-    } else {
-      factId = opId + "#0";
+    if (!transitions.isArray() || transitions.isEmpty()) {
+      throw new IllegalStateException("Snapshot missing transitions array");
     }
+    JsonNode lastFact = transitions.get(transitions.size() - 1);
+    String factId = opId + "#" + lastFact.path("sequence").asInt();
     response.put("factId", factId);
 
     response.set("snapshot", result);
+    return response;
+  }
+
+  private static void emitOk(
+      ObjectNode response,
+      JsonNode result,
+      BusinessOperationScope scope,
+      GitHubBusinessOperationBinding.ExpectedProfile target
+  ) {
+    populateOk(response, result, scope, target);
     System.out.println(CanonicalJson.canonicalize(response));
     System.out.flush();
   }
@@ -711,9 +796,6 @@ public final class OperationReviewChildJvm {
   }
 
   public static ContenderHandle startContender(ChildRequest request, Duration commandBudget) throws Exception {
-    long startNanos = System.nanoTime();
-    long budgetNanos = commandBudget.toNanos();
-
     String javaBinary = Path.of(System.getProperty("java.home"), "bin", "java").toString();
     String classpath = System.getProperty("tracepermit.operationsTestClasspath");
     if (classpath == null || classpath.isBlank()) {
@@ -732,11 +814,32 @@ public final class OperationReviewChildJvm {
     ProcessBuilder pb = new ProcessBuilder(commandList);
     // Explicitly do NOT put credentials or request into env or args!
     Process process = pb.start();
+
+    return startContender(
+        request,
+        commandBudget,
+        process,
+        process.getOutputStream(),
+        process.getInputStream(),
+        process.getErrorStream()
+    );
+  }
+
+  static ContenderHandle startContender(
+      ChildRequest request,
+      Duration commandBudget,
+      Process process,
+      OutputStream outputStream,
+      InputStream inputStream,
+      InputStream errorStream
+  ) throws Exception {
+    long startNanos = System.nanoTime();
+    long budgetNanos = commandBudget.toNanos();
     ContenderHandle handle = null;
 
     try {
       // 1. Concurrent bounded stderr drainer
-      StderrDrainer drainer = new StderrDrainer(process.getErrorStream());
+      StderrDrainer drainer = new StderrDrainer(errorStream);
       Thread drainerThread = new Thread(drainer, "child-stderr-drainer");
       drainerThread.setDaemon(true);
       drainerThread.start();
@@ -749,8 +852,8 @@ public final class OperationReviewChildJvm {
       });
 
       // 3. Stdin writer and stdout stream
-      BufferedWriter stdinWriter = new BufferedWriter(new OutputStreamWriter(process.getOutputStream(), StandardCharsets.UTF_8));
-      InputStream stdoutStream = process.getInputStream();
+      BufferedWriter stdinWriter = new BufferedWriter(new OutputStreamWriter(outputStream, StandardCharsets.UTF_8));
+      InputStream stdoutStream = inputStream;
 
       // Extract expected operation ID if known
       String expectedOpId = request.operationId();
@@ -763,7 +866,19 @@ public final class OperationReviewChildJvm {
         } catch (Exception ignored) {}
       }
 
-      // Serialize request payload
+      GitHubBusinessOperationBinding.ExpectedProfile expectedProfile = null;
+      try {
+        ObjectNode syntheticPolicy = createPolicy(request.policyOutcome() != null ? request.policyOutcome() : "require_approval");
+        expectedProfile = createExpectedProfile(syntheticPolicy);
+      } catch (Exception ignored) {}
+
+      // 4. UNCONDITIONAL OWNERSHIP: ContenderHandle takes ownership of all resources IMMEDIATELY
+      handle = new ContenderHandle(
+          process, stdinWriter, stdoutStream, drainer, drainerThread, executor,
+          startNanos, budgetNanos, expectedOpId, expectedProfile
+      );
+
+      // 5. Serialize request payload
       ObjectNode reqNode = JsonSupport.MAPPER.createObjectNode();
       reqNode.put("command", request.command());
       reqNode.put("jdbcUrl", request.jdbcUrl());
@@ -788,7 +903,7 @@ public final class OperationReviewChildJvm {
         throw new ProtocolException("Serialized ChildRequest exceeds MAX_LINE_BYTES bound");
       }
 
-      // Send request payload bounded by monotonic command budget
+      // 6. Send request payload bounded by monotonic command budget
       long writeRemNanos = Math.max(0, budgetNanos - (System.nanoTime() - startNanos));
       if (writeRemNanos <= 0) {
         throw new TimeoutException("Monotonic command budget expired before request write");
@@ -803,14 +918,12 @@ public final class OperationReviewChildJvm {
         writeFuture.get(writeRemNanos, TimeUnit.NANOSECONDS);
       } catch (TimeoutException te) {
         throw new TimeoutException("Child request write timed out within monotonic command budget");
+      } catch (InterruptedException ie) {
+        Thread.currentThread().interrupt();
+        throw ie;
       } catch (ExecutionException ee) {
         throw new IOException("Failed to write request to child stdin", ee.getCause());
       }
-
-      handle = new ContenderHandle(
-          process, stdinWriter, stdoutStream, drainer, drainerThread, executor,
-          startNanos, budgetNanos, expectedOpId
-      );
 
       if (request.barrier()) {
         handle.awaitReady();
@@ -828,9 +941,12 @@ public final class OperationReviewChildJvm {
             Thread.currentThread().interrupt();
           }
         }
-        try { process.getInputStream().close(); } catch (Throwable ignored) {}
-        try { process.getOutputStream().close(); } catch (Throwable ignored) {}
-        try { process.getErrorStream().close(); } catch (Throwable ignored) {}
+        try { inputStream.close(); } catch (Throwable ignored) {}
+        try { outputStream.close(); } catch (Throwable ignored) {}
+        try { errorStream.close(); } catch (Throwable ignored) {}
+      }
+      if (t instanceof InterruptedException) {
+        Thread.currentThread().interrupt();
       }
       throw t;
     }
@@ -846,7 +962,11 @@ public final class OperationReviewChildJvm {
     private final long startNanos;
     private final long budgetNanos;
     private final String expectedOperationId;
+    private final GitHubBusinessOperationBinding.ExpectedProfile expectedProfile;
     private final AtomicBoolean closed = new AtomicBoolean(false);
+    private final AtomicBoolean cleanlyReaped = new AtomicBoolean(false);
+    private final AtomicBoolean executorTerminated = new AtomicBoolean(false);
+    private final AtomicBoolean drainerJoined = new AtomicBoolean(false);
 
     ContenderHandle(
         Process process,
@@ -857,7 +977,8 @@ public final class OperationReviewChildJvm {
         ExecutorService executor,
         long startNanos,
         long budgetNanos,
-        String expectedOperationId
+        String expectedOperationId,
+        GitHubBusinessOperationBinding.ExpectedProfile expectedProfile
     ) {
       this.process = process;
       this.stdinWriter = stdinWriter;
@@ -868,6 +989,7 @@ public final class OperationReviewChildJvm {
       this.startNanos = startNanos;
       this.budgetNanos = budgetNanos;
       this.expectedOperationId = expectedOperationId;
+      this.expectedProfile = expectedProfile;
     }
 
     public boolean isAlive() {
@@ -880,6 +1002,18 @@ public final class OperationReviewChildJvm {
 
     public void destroy() {
       close();
+    }
+
+    public boolean cleanlyReaped() {
+      return cleanlyReaped.get();
+    }
+
+    public boolean executorTerminated() {
+      return executorTerminated.get();
+    }
+
+    public boolean drainerTerminated() {
+      return drainerJoined.get();
     }
 
     private long remainingNanos() {
@@ -1012,11 +1146,17 @@ public final class OperationReviewChildJvm {
         boolean exited = process.waitFor(waitMillis, TimeUnit.MILLISECONDS);
         if (!exited) {
           process.destroyForcibly();
-          process.waitFor(REAP_RESERVE_MS, TimeUnit.MILLISECONDS);
+          exited = process.waitFor(REAP_RESERVE_MS, TimeUnit.MILLISECONDS);
         }
+        if (!exited) {
+          cleanlyReaped.set(false);
+          return unacknowledged(-1, drainer);
+        }
+        cleanlyReaped.set(true);
         int exitCode = process.exitValue();
 
         drainerThread.join(500);
+        drainerJoined.set(!drainerThread.isAlive());
 
         if (responseLine == null || responseLine.isBlank() || exitCode != 0) {
           return unacknowledged(exitCode, drainer);
@@ -1115,6 +1255,33 @@ public final class OperationReviewChildJvm {
             return unacknowledged(exitCode, drainer);
           }
 
+          // Strict factId join: snapshot must have transitions and last fact sequence must match factId
+          JsonNode transitions = snapshot.path("transitions");
+          if (!transitions.isArray() || transitions.isEmpty()) {
+            return unacknowledged(exitCode, drainer);
+          }
+          JsonNode lastFact = transitions.get(transitions.size() - 1);
+          int lastSeq = lastFact.path("sequence").asInt(-1);
+          if (lastSeq < 0) {
+            return unacknowledged(exitCode, drainer);
+          }
+          String expectedFactId = operationId + "#" + lastSeq;
+          if (!expectedFactId.equals(factIdNode.textValue())) {
+            return unacknowledged(exitCode, drainer);
+          }
+
+          // Strict bindingDigest join: bind against expectedProfile and verify digest
+          if (expectedProfile != null) {
+            try {
+              var bound = GitHubBusinessOperationBinding.bind(SCOPE, snapshot, expectedProfile);
+              if (!bound.bindingDigest().equals(bindingDigestNode.textValue())) {
+                return unacknowledged(exitCode, drainer);
+              }
+            } catch (Exception bindingFailed) {
+              return unacknowledged(exitCode, drainer);
+            }
+          }
+
           return new ChildResult(
               true, exitCode, jvmId, "OK", null, resultStatus, snapshotHash, snapshot,
               drainer.categories(), drainer.lineCount(), drainer.byteCount(), drainer.isTruncated()
@@ -1162,30 +1329,71 @@ public final class OperationReviewChildJvm {
         return;
       }
       // 1. Destroy owned process FIRST to unblock any pending stream I/O
+      boolean reaped = false;
       if (process.isAlive()) {
         process.destroyForcibly();
         try {
-          process.waitFor(REAP_RESERVE_MS, TimeUnit.MILLISECONDS);
+          reaped = process.waitFor(REAP_RESERVE_MS, TimeUnit.MILLISECONDS);
         } catch (InterruptedException ie) {
           Thread.currentThread().interrupt();
         }
+      } else {
+        reaped = true;
       }
+      cleanlyReaped.set(reaped);
+
       // 2. Shut down IO executor with finite wait
       executor.shutdownNow();
+      boolean execTerm = false;
       try {
-        executor.awaitTermination(500, TimeUnit.MILLISECONDS);
+        execTerm = executor.awaitTermination(500, TimeUnit.MILLISECONDS);
       } catch (InterruptedException ie) {
         Thread.currentThread().interrupt();
       }
+      executorTerminated.set(execTerm);
+
       // 3. Close streams
       try { stdinWriter.close(); } catch (Throwable ignored) {}
       try { stdoutStream.close(); } catch (Throwable ignored) {}
+
       // 4. Join drainer thread with finite wait
+      boolean joined = false;
       try {
         drainerThread.join(500);
+        joined = !drainerThread.isAlive();
       } catch (InterruptedException ie) {
         Thread.currentThread().interrupt();
       }
+      drainerJoined.set(joined);
+    }
+  }
+
+  public static Path findRepoRoot() {
+    String prop = System.getProperty("tracepermit.repositoryRoot");
+    if (prop != null && !prop.isBlank()) {
+      return Path.of(prop);
+    }
+    Path current = Path.of("").toAbsolutePath();
+    while (current != null) {
+      if (Files.exists(current.resolve("contracts/vectors/business-operation-v1.json"))) {
+        return current;
+      }
+      current = current.getParent();
+    }
+    return Path.of(".");
+  }
+
+  public static ObjectNode createBaselineOkResponse(Path repoRoot) {
+    try {
+      ObjectNode policy = createPolicy("require_approval");
+      var target = createExpectedProfile(policy);
+      ObjectNode snapshot = createInitialOperation(target, repoRoot);
+      ObjectNode response = JsonSupport.MAPPER.createObjectNode();
+      response.put("jvmId", JVM_ID);
+      populateOk(response, snapshot, SCOPE, target);
+      return response;
+    } catch (Exception e) {
+      throw new RuntimeException("Failed to create baseline OK response", e);
     }
   }
 
