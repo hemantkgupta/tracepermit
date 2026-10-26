@@ -71,9 +71,14 @@ class PilotArchiveTest {
   }
 
   @Test void syntheticDnsTripwireIsActiveAndOfflineMakesZeroProviderOrDnsCalls() throws Exception {
-    var result = command(List.of(java(), "-cp", System.getProperty("tracepermit.pilotTestClasspath"),
-        PilotOfflineProbe.class.getName()), false);
+    var result = command(probeCommand(probeClasspath()), false);
     assertThat(result.exit).isZero(); assertThat(result.output).isEqualTo("OFFLINE_ZERO_DNS_ZERO_PROVIDER\n");
+  }
+
+  @Test void oldBuildClasspathIsRejectedAsInstalledRuntimeEvidence() throws Exception {
+    var result = command(probeCommand(System.getProperty("tracepermit.pilotLegacyTestClasspath")), false);
+    assertThat(result.exit).isEqualTo(9);
+    assertThat(result.output).isEqualTo("ARCHIVE_RUNTIME_ORIGIN_REJECTED\n");
   }
 
   @Test void launcherErasesAmbientJvmOptionsAndNeverEchoesConfiguration() throws Exception {
@@ -133,6 +138,12 @@ class PilotArchiveTest {
     }
   }
 
+  private List<String> probeCommand(String classpath) {
+    return List.of(java(), "-cp", classpath, PilotOfflineProbe.class.getName(), distribution.resolve("lib").toString());
+  }
+  private String probeClasspath() {
+    return System.getProperty("tracepermit.pilotProbeJar") + File.pathSeparator + distribution.resolve("lib/*");
+  }
   private String launcher() { return distribution.resolve("bin/tracepermit-pilot-operator").toString(); }
   private static String java() { return Path.of(System.getProperty("java.home"), "bin/java").toString(); }
   private Receipt command(List<String> command, boolean poison) throws Exception { return finish(builder(command, poison)); }

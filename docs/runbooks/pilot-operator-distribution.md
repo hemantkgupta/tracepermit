@@ -134,6 +134,14 @@ skips/cache facts and final source provenance in the PR handoff. No live
 provider, installation token response compatibility, hardware key custody,
 production authority, macOS host or cross-platform certification is implied.
 
+The installed zero-DNS/zero-provider probe uses one isolated helper JAR containing
+only the probe, denying DNS SPI and service descriptor. All production classes and
+dependencies are loaded from the extracted distribution's `lib/*.jar`; the probe
+checks the complete runtime classpath, helper inventory and exact code-source JARs
+for the operator/configuration/provider classes before running the DNS control.
+The former build test runtime classpath is retained only as a bounded negative
+control and must be rejected as installed-byte evidence.
+
 ### Temporary-path fixture portability
 
 Independent coordinator review on unmodified `b1a8847` found three failures in
