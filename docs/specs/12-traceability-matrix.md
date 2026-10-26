@@ -971,3 +971,11 @@ remain unknown without another dispatch. The fixture uses only fake exchanges
 and a numeric-loopback fake target. The process-local ledger is test state;
 durable business-operation authority and shipped-runtime integration remain
 unimplemented by this lane. No other requirement status or lane claim changes.
+
+## GitHub pilot operator diagnostics (ADR0081)
+
+| Requirements                 | Evidence                                                                                                        | Boundary                                                                                                     |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| SEC-001/002/003/012          | `pilot-operator` private bounded strict JSON/key validation; `PilotConfigurationTest`; `PilotArchiveTest`       | Operator pins only; no identity/authority claims or secret rendering                                         |
+| SEC-007/015; REL-001/005/009 | Concrete existing credential provider + exact existing target GET preflight; `PilotPreflightTest`               | Synthetic only; no dispatch, reconciliation, live compatibility or absence proof                             |
+| OPS-002/004                  | Clean-source manifest, dependency hashes, source-free launcher/archive and operator runbook; distribution tests | Integrity metadata is not current policy, a signature or production authority; macOS host validation pending |
