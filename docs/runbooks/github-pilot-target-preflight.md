@@ -139,3 +139,13 @@ It documents these endpoints, pagination parameters and response schemas:
 These are source facts, not evidence of live permission/installation readiness.
 The restricted cloud network allowed the official GitHub source mirror; no
 network policy, provider setting or paid API was changed.
+
+## Separate unwired credential-provider foundation
+
+The [installation-credential runbook](github-app-installation-credentials.md)
+and [ADR0076](../architecture/0076-github-installation-credential-provider.md)
+describe a new operator-only Java implementation behind the existing provider
+port. It is not wired into this target adapter or any live runtime. Its optional
+provider-assurance fields are mandatory locally; missing confirmation stops
+rather than weakening this preflight. Private-key custody/installation, live
+App/token/target qualification and operation composition need separate approval.

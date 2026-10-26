@@ -100,6 +100,11 @@ jobs:
           pnpm build:endpoint-distribution
           pnpm test:endpoint-distribution
 
+      - name: Verify source-free GitHub pilot operator diagnostics
+        run: |
+          bash scripts/build-pilot-operator-distribution.sh --max-workers=2
+          bash scripts/test-pilot-operator-distribution.sh
+
   qualification:
     runs-on: ubuntu-latest
     timeout-minutes: 15

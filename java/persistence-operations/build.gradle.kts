@@ -1,5 +1,6 @@
 dependencies {
   api(project(":application"))
+  api(project(":adapters-remote")) // Reuse the pure, closed GitHub binding; no transport port in the writer.
   implementation("org.flywaydb:flyway-core:13.10.3")
   implementation("org.flywaydb:flyway-database-postgresql:13.10.3")
   implementation("org.flywaydb:flyway-mysql:13.10.3")
