@@ -314,8 +314,20 @@ class OperationReviewChildJvmSupervisionTest {
   @Test
   void testPartialConstructionFailureCleansUpAcquiredResources() throws Exception {
     Process mockProc = new ProcessBuilder("sleep", "60").start();
+    AtomicReference<OperationReviewChildJvm.PartialConstructionObservation> obsRef = new AtomicReference<>();
+    OperationReviewChildJvm.testPartialCleanupObserver = obsRef::set;
+    CountDownLatch taskRunning = new CountDownLatch(1);
     try {
-      OperationReviewChildJvm.testHookBeforeHandleCreation = () -> {
+      OperationReviewChildJvm.testHookBeforeHandleCreation = (exec) -> {
+        exec.submit(() -> {
+          taskRunning.countDown();
+          try {
+            Thread.sleep(10000);
+          } catch (InterruptedException ignored) {}
+        });
+        try {
+          taskRunning.await(2, TimeUnit.SECONDS);
+        } catch (InterruptedException ignored) {}
         throw new RuntimeException("simulated failure before handle creation");
       };
       var req = OperationReviewChildJvm.ChildRequest.builder("TEST", "dummy", "u", "p").build();
@@ -327,8 +339,17 @@ class OperationReviewChildJvmSupervisionTest {
 
       mockProc.waitFor(2, TimeUnit.SECONDS);
       assertThat(mockProc.isAlive()).isFalse();
+
+      OperationReviewChildJvm.PartialConstructionObservation obs = obsRef.get();
+      assertThat(obs).isNotNull();
+      assertThat(obs.cleanupCompleted).isTrue();
+      assertThat(obs.processReaped).isTrue();
+      assertThat(obs.executorTerminated).isTrue();
+      assertThat(obs.drainerJoined).isTrue();
+      assertThat(obs.streamsClosed).isTrue();
     } finally {
       OperationReviewChildJvm.testHookBeforeHandleCreation = null;
+      OperationReviewChildJvm.testPartialCleanupObserver = null;
       if (mockProc.isAlive()) {
         mockProc.destroyForcibly();
         mockProc.waitFor(2, TimeUnit.SECONDS);
@@ -360,8 +381,9 @@ class OperationReviewChildJvmSupervisionTest {
     };
 
     var req = OperationReviewChildJvm.ChildRequest.builder("TEST", "dummy", "u", "p").build();
+    OperationReviewChildJvm.ContenderHandle handle = null;
     try {
-      var handle = OperationReviewChildJvm.startContender(
+      handle = OperationReviewChildJvm.startContender(
           req, Duration.ofSeconds(5), mockProc,
           hostileOut, new ByteArrayInputStream(new byte[0]), new ByteArrayInputStream(new byte[0])
       );
@@ -380,9 +402,17 @@ class OperationReviewChildJvmSupervisionTest {
       assertThat(handle.streamsClosed()).isFalse();
       assertThat(handle.cleanlyReaped()).isTrue();
       assertThat(handle.executorTerminated()).isTrue();
+
+      // Closer worker future is owned and not done before release
+      assertThat(handle.stdinCloseFuture()).isNotNull();
+      assertThat(handle.stdinCloseFuture().isDone()).isFalse();
     } finally {
       // In unconditional fixture finally, release the controlled stall and verify clean worker termination
       releaseClose.countDown();
+      if (handle != null && handle.stdinCloseFuture() != null) {
+        handle.stdinCloseFuture().get(2, TimeUnit.SECONDS);
+        assertThat(handle.stdinCloseFuture().isDone()).isTrue();
+      }
       if (mockProc.isAlive()) {
         mockProc.destroyForcibly();
         mockProc.waitFor(2, TimeUnit.SECONDS);
@@ -633,5 +663,199 @@ class OperationReviewChildJvmSupervisionTest {
     assertThat(result.toString()).doesNotContain(CANARY);
     assertThat(result.diagnosticCategories()).noneMatch(c -> c.contains(CANARY));
     assertThat(directReq.toString()).doesNotContain(CANARY);
+  }
+
+  @Test
+  void testThrowingStreamCloseReportsStreamsNotClosedCleanly() throws Exception {
+    Process mockProc = new ProcessBuilder("sleep", "60").start();
+    OutputStream throwingOut = new OutputStream() {
+      @Override
+      public void write(int b) throws IOException {}
+
+      @Override
+      public void close() throws IOException {
+        throw new IOException("simulated disk/pipe write error during flush on close");
+      }
+    };
+
+    var req = OperationReviewChildJvm.ChildRequest.builder("TEST", "dummy", "u", "p").build();
+    OperationReviewChildJvm.ContenderHandle handle = null;
+    try {
+      handle = OperationReviewChildJvm.startContender(
+          req, Duration.ofSeconds(5), mockProc,
+          throwingOut, new ByteArrayInputStream(new byte[0]), new ByteArrayInputStream(new byte[0])
+      );
+      handle.close();
+      // Throwing stream close must report streams not closed cleanly rather than falsely claiming clean close
+      assertThat(handle.streamsClosed()).isFalse();
+      assertThat(handle.cleanlyReaped()).isTrue();
+      assertThat(handle.executorTerminated()).isTrue();
+      assertThat(handle.drainerTerminated()).isTrue();
+    } finally {
+      if (handle != null) {
+        handle.close();
+      }
+      if (mockProc.isAlive()) {
+        mockProc.destroyForcibly();
+        mockProc.waitFor(2, TimeUnit.SECONDS);
+      }
+    }
+  }
+
+  @Test
+  void testInterruptDuringStreamClosePreservesInterruptFlagAndReportsResidualStatus() throws Exception {
+    Process mockProc = new ProcessBuilder("sleep", "60").start();
+    CountDownLatch closeEntered = new CountDownLatch(1);
+    CountDownLatch releaseClose = new CountDownLatch(1);
+
+    OutputStream stallingOut = new OutputStream() {
+      @Override
+      public void write(int b) throws IOException {}
+
+      @Override
+      public void close() throws IOException {
+        closeEntered.countDown();
+        try {
+          releaseClose.await();
+        } catch (InterruptedException ie) {
+          try {
+            releaseClose.await();
+          } catch (InterruptedException ignored) {}
+        }
+      }
+    };
+
+    var req = OperationReviewChildJvm.ChildRequest.builder("TEST", "dummy", "u", "p").build();
+    OperationReviewChildJvm.ContenderHandle handle = null;
+    boolean interrupted = false;
+    try {
+      handle = OperationReviewChildJvm.startContender(
+          req, Duration.ofSeconds(5), mockProc,
+          stallingOut, new ByteArrayInputStream(new byte[0]), new ByteArrayInputStream(new byte[0])
+      );
+
+      // Pre-interrupt caller thread
+      Thread.currentThread().interrupt();
+      try {
+        handle.close();
+      } finally {
+        interrupted = Thread.interrupted();
+      }
+
+      // Interrupt flag must be preserved across cleanup
+      assertThat(interrupted).isTrue();
+      assertThat(handle.streamsClosed()).isFalse();
+      assertThat(handle.cleanlyReaped()).isTrue();
+    } finally {
+      releaseClose.countDown();
+      if (handle != null && handle.stdinCloseFuture() != null) {
+        handle.stdinCloseFuture().get(2, TimeUnit.SECONDS);
+      }
+      if (mockProc.isAlive()) {
+        mockProc.destroyForcibly();
+        mockProc.waitFor(2, TimeUnit.SECONDS);
+      }
+    }
+  }
+
+  @Test
+  void testSequentialStreamCloseStallsShareSingleCleanupBudget() throws Exception {
+    Process mockProc = new ProcessBuilder("sleep", "60").start();
+    CountDownLatch inCloseEntered = new CountDownLatch(1);
+    CountDownLatch outCloseEntered = new CountDownLatch(1);
+    CountDownLatch releaseAll = new CountDownLatch(1);
+
+    OutputStream stallingOut = new OutputStream() {
+      @Override
+      public void write(int b) throws IOException {}
+
+      @Override
+      public void close() throws IOException {
+        outCloseEntered.countDown();
+        try {
+          releaseAll.await();
+        } catch (InterruptedException ie) {
+          try {
+            releaseAll.await();
+          } catch (InterruptedException ignored) {}
+        }
+      }
+    };
+
+    InputStream stallingIn = new InputStream() {
+      @Override
+      public int read() { return -1; }
+
+      @Override
+      public void close() throws IOException {
+        inCloseEntered.countDown();
+        try {
+          releaseAll.await();
+        } catch (InterruptedException ie) {
+          try {
+            releaseAll.await();
+          } catch (InterruptedException ignored) {}
+        }
+      }
+    };
+
+    var req = OperationReviewChildJvm.ChildRequest.builder("TEST", "dummy", "u", "p").build();
+    OperationReviewChildJvm.ContenderHandle handle = null;
+    try {
+      handle = OperationReviewChildJvm.startContender(
+          req, Duration.ofSeconds(5), mockProc,
+          stallingOut, stallingIn, new ByteArrayInputStream(new byte[0])
+      );
+
+      long start = System.nanoTime();
+      handle.close();
+      long elapsedMs = Duration.ofNanos(System.nanoTime() - start).toMillis();
+
+      // Total close elapsed time must remain bounded by single cleanup envelope (not 2x budget)
+      assertThat(elapsedMs).isLessThan(4000);
+      assertThat(handle.streamsClosed()).isFalse();
+      assertThat(handle.cleanlyReaped()).isTrue();
+      assertThat(handle.executorTerminated()).isTrue();
+    } finally {
+      releaseAll.countDown();
+      if (handle != null) {
+        if (handle.stdinCloseFuture() != null) {
+          handle.stdinCloseFuture().get(2, TimeUnit.SECONDS);
+        }
+        if (handle.stdoutCloseFuture() != null) {
+          handle.stdoutCloseFuture().get(2, TimeUnit.SECONDS);
+        }
+      }
+      if (mockProc.isAlive()) {
+        mockProc.destroyForcibly();
+        mockProc.waitFor(2, TimeUnit.SECONDS);
+      }
+    }
+  }
+
+  @Test
+  void testNormalStreamCloseReportsStreamsClosedCleanly() throws Exception {
+    Process mockProc = new ProcessBuilder("sleep", "60").start();
+    var req = OperationReviewChildJvm.ChildRequest.builder("TEST", "dummy", "u", "p").build();
+    OperationReviewChildJvm.ContenderHandle handle = null;
+    try {
+      handle = OperationReviewChildJvm.startContender(
+          req, Duration.ofSeconds(5), mockProc,
+          mockProc.getOutputStream(), mockProc.getInputStream(), mockProc.getErrorStream()
+      );
+      handle.close();
+      assertThat(handle.streamsClosed()).isTrue();
+      assertThat(handle.cleanlyReaped()).isTrue();
+      assertThat(handle.executorTerminated()).isTrue();
+      assertThat(handle.drainerTerminated()).isTrue();
+    } finally {
+      if (handle != null) {
+        handle.close();
+      }
+      if (mockProc.isAlive()) {
+        mockProc.destroyForcibly();
+        mockProc.waitFor(2, TimeUnit.SECONDS);
+      }
+    }
   }
 }

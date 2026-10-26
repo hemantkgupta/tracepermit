@@ -734,7 +734,7 @@ abstract class OperationReviewCrossProcessContract {
   }
 
   @Test
-  void testCommittedEvaluationBarrierReadbackFailureCleansUpResourcesWithUnchangedDurableCounts() throws Exception {
+  void testCommittedEvaluationBarrierPostCommitAssertionFailureCleansUpResourcesWithUnchangedDurableCounts() throws Exception {
     AtomicReference<ContenderHandle> retained = new AtomicReference<>();
     try {
       try (ContenderHandle handle = OperationReviewChildJvm.startContender(
@@ -748,15 +748,15 @@ abstract class OperationReviewCrossProcessContract {
         // Wait until child has committed the transaction to the database
         handle.awaitCommitted(Duration.ofSeconds(15));
 
-        // Verify the commit is already durable in the DB before failure
+        // Verify the commit is already durable in the DB before deliberate failure
         assertThat(count("tp_operation_lifecycle_facts")).isEqualTo(1);
         assertThat(count("tp_operation_review_bindings")).isEqualTo(1);
 
-        // Simulate deliberate assertion failure during readback/post-commit handling
-        throw new DeliberateAssertionFailure("simulated deliberate readback failure at committed barrier");
+        // Deliberate post-commit assertion failure (not a simulated JDBC failure) to verify teardown
+        throw new DeliberateAssertionFailure("deliberate post-commit assertion failure at barrier");
       }
     } catch (DeliberateAssertionFailure expected) {
-      assertThat(expected.getMessage()).isEqualTo("simulated deliberate readback failure at committed barrier");
+      assertThat(expected.getMessage()).isEqualTo("deliberate post-commit assertion failure at barrier");
     }
 
     var handle = retained.get();
@@ -781,6 +781,7 @@ abstract class OperationReviewCrossProcessContract {
   void testCommittedEvaluationBarrierInterruptedCleansUpResourcesWithUnchangedDurableCounts() throws Exception {
     AtomicReference<ContenderHandle> retained = new AtomicReference<>();
     Thread caller = Thread.currentThread();
+    boolean wasInterrupted = false;
 
     try {
       try (ContenderHandle handle = OperationReviewChildJvm.startContender(
@@ -795,19 +796,21 @@ abstract class OperationReviewCrossProcessContract {
 
         // Verify transaction committed
         assertThat(count("tp_operation_lifecycle_facts")).isEqualTo(1);
+        assertThat(count("tp_operation_review_bindings")).isEqualTo(1);
 
         // Interrupt caller thread while at committed barrier
         caller.interrupt();
 
-        // Calling awaitResult while interrupted must throw InterruptedException
-        handle.awaitResult(Duration.ofSeconds(10));
+        // Mandatory interruption witness: calling awaitResult while interrupted must throw InterruptedException
+        assertThatThrownBy(() -> handle.awaitResult(Duration.ofSeconds(10)))
+            .isInstanceOf(InterruptedException.class);
       }
-    } catch (InterruptedException ie) {
-      // Caller interrupt flag must be preserved/restored
-      assertThat(Thread.currentThread().isInterrupted()).isTrue();
     } finally {
-      Thread.interrupted(); // clear interrupt flag
+      wasInterrupted = Thread.interrupted(); // check and clear interrupt flag
     }
+
+    // Caller interrupt flag must be preserved/restored across cleanup
+    assertThat(wasInterrupted).isTrue();
 
     var handle = retained.get();
     assertThat(handle).isNotNull();
@@ -816,7 +819,7 @@ abstract class OperationReviewCrossProcessContract {
     assertThat(handle.executorTerminated()).isTrue();
     assertThat(handle.drainerTerminated()).isTrue();
 
-    // Verify durable counts remain unchanged
+    // Verify durable counts remain unchanged and consistent
     assertThat(count("tp_operation_lifecycle_facts")).isEqualTo(1);
     assertThat(count("tp_operation_review_bindings")).isEqualTo(1);
   }

@@ -34,6 +34,8 @@ import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Logger;
 import java.util.regex.Pattern;
 import javax.sql.DataSource;
@@ -809,7 +811,24 @@ public final class OperationReviewChildJvm {
 
   // --- Narrow package-private test-helper observation and injection seams ---
   static volatile java.util.function.Consumer<ContenderHandle> testHandleObserver = null;
-  static volatile Runnable testHookBeforeHandleCreation = null;
+  static volatile java.util.function.Consumer<ExecutorService> testHookBeforeHandleCreation = null;
+
+  static final class PartialConstructionObservation {
+    volatile Process process;
+    volatile Thread drainerThread;
+    volatile ExecutorService executor;
+    volatile BufferedWriter stdinWriter;
+    volatile OutputStream out;
+    volatile InputStream in;
+    volatile InputStream err;
+    volatile boolean cleanupCompleted;
+    volatile boolean drainerJoined;
+    volatile boolean executorTerminated;
+    volatile boolean processReaped;
+    volatile boolean streamsClosed;
+  }
+
+  static volatile java.util.function.Consumer<PartialConstructionObservation> testPartialCleanupObserver = null;
 
   private static final ExecutorService STREAM_CLOSER = Executors.newCachedThreadPool(r -> {
     Thread t = new Thread(r, "stream-closer-worker");
@@ -817,34 +836,54 @@ public final class OperationReviewChildJvm {
     return t;
   });
 
-  static boolean closeStreamBounded(AutoCloseable stream, long timeoutMs) {
-    if (stream == null) return true;
-    if (timeoutMs <= 0) return false;
+  static final class StreamCloseOutcome {
+    final boolean completedCleanly;
+    final boolean threwException;
+    final boolean timedOut;
+    final boolean interrupted;
+    final Future<?> closeFuture;
+
+    StreamCloseOutcome(boolean completedCleanly, boolean threwException, boolean timedOut, boolean interrupted, Future<?> closeFuture) {
+      this.completedCleanly = completedCleanly;
+      this.threwException = threwException;
+      this.timedOut = timedOut;
+      this.interrupted = interrupted;
+      this.closeFuture = closeFuture;
+    }
+  }
+
+  static StreamCloseOutcome closeStreamBounded(AutoCloseable stream, long timeoutMs) {
+    if (stream == null) {
+      return new StreamCloseOutcome(true, false, false, false, null);
+    }
+    if (timeoutMs <= 0) {
+      return new StreamCloseOutcome(false, false, true, false, null);
+    }
     Future<?> f = STREAM_CLOSER.submit(() -> {
-      try {
-        stream.close();
-      } catch (Throwable ignored) {}
+      stream.close();
+      return null;
     });
     try {
       f.get(timeoutMs, TimeUnit.MILLISECONDS);
-      return true;
+      return new StreamCloseOutcome(true, false, false, false, f);
     } catch (TimeoutException te) {
-      f.cancel(true);
-      return false;
+      return new StreamCloseOutcome(false, false, true, false, f);
+    } catch (InterruptedException ie) {
+      return new StreamCloseOutcome(false, false, false, true, f);
+    } catch (ExecutionException ee) {
+      return new StreamCloseOutcome(false, true, false, false, f);
     } catch (Throwable t) {
-      return false;
+      return new StreamCloseOutcome(false, true, false, false, f);
     }
   }
 
   static void cleanupProcessDirect(Process process) {
-    if (process == null) return;
-    if (process.isAlive()) {
-      process.destroyForcibly();
-      try {
-        process.waitFor(REAP_RESERVE_MS, TimeUnit.MILLISECONDS);
-      } catch (InterruptedException ie) {
-        Thread.currentThread().interrupt();
-      }
+    if (process == null || !process.isAlive()) return;
+    process.destroyForcibly();
+    try {
+      process.waitFor(REAP_RESERVE_MS, TimeUnit.MILLISECONDS);
+    } catch (InterruptedException ie) {
+      Thread.currentThread().interrupt();
     }
   }
 
@@ -859,48 +898,99 @@ public final class OperationReviewChildJvm {
   ) {
     long cleanupStartNanos = System.nanoTime();
     long totalCleanupBudgetNanos = TimeUnit.MILLISECONDS.toNanos(ContenderHandle.CLEANUP_ENVELOPE_MS);
+    long cleanupDeadlineNanos = cleanupStartNanos + totalCleanupBudgetNanos;
+
+    PartialConstructionObservation obs = null;
+    if (testPartialCleanupObserver != null) {
+      obs = new PartialConstructionObservation();
+      obs.process = process;
+      obs.drainerThread = drainerThread;
+      obs.executor = executor;
+      obs.stdinWriter = stdinWriter;
+      obs.out = out;
+      obs.in = in;
+      obs.err = err;
+    }
 
     boolean interrupted = Thread.interrupted();
     try {
       // 1. Process destroy and reap
-      if (process != null && process.isAlive()) {
-        process.destroyForcibly();
-        long remNanos = Math.max(0, totalCleanupBudgetNanos - (System.nanoTime() - cleanupStartNanos));
-        long waitNanos = Math.min(remNanos, TimeUnit.MILLISECONDS.toNanos(1000));
-        try {
-          process.waitFor(waitNanos, TimeUnit.NANOSECONDS);
-        } catch (InterruptedException ie) {
-          interrupted = true;
+      boolean pReaped = false;
+      if (process != null) {
+        if (process.isAlive()) {
+          process.destroyForcibly();
+          long remNanos = Math.max(0, cleanupDeadlineNanos - System.nanoTime());
+          long waitNanos = Math.min(remNanos, TimeUnit.MILLISECONDS.toNanos(1000));
+          try {
+            pReaped = process.waitFor(waitNanos, TimeUnit.NANOSECONDS);
+          } catch (InterruptedException ie) {
+            interrupted = true;
+          }
+        } else {
+          pReaped = true;
         }
       }
 
       // 2. Shut down executor
+      boolean eTerm = false;
       if (executor != null) {
         executor.shutdownNow();
-        long remNanos = Math.max(0, totalCleanupBudgetNanos - (System.nanoTime() - cleanupStartNanos));
+        long remNanos = Math.max(0, cleanupDeadlineNanos - System.nanoTime());
         long waitNanos = Math.min(remNanos, TimeUnit.MILLISECONDS.toNanos(500));
         try {
-          executor.awaitTermination(waitNanos, TimeUnit.NANOSECONDS);
+          eTerm = executor.awaitTermination(waitNanos, TimeUnit.NANOSECONDS);
         } catch (InterruptedException ie) {
           interrupted = true;
         }
+      } else {
+        eTerm = true;
       }
 
-      // 3. Close streams boundedly
-      closeStreamBounded(stdinWriter, 200);
-      closeStreamBounded(out, 100);
-      closeStreamBounded(in, 100);
-      closeStreamBounded(err, 100);
+      // 3. Close streams boundedly with recomputed remaining time
+      long remNanos = Math.max(0, cleanupDeadlineNanos - System.nanoTime());
+      StreamCloseOutcome wOut = closeStreamBounded(stdinWriter, Math.min(TimeUnit.NANOSECONDS.toMillis(remNanos), 150));
+      if (wOut.interrupted) interrupted = true;
+
+      remNanos = Math.max(0, cleanupDeadlineNanos - System.nanoTime());
+      StreamCloseOutcome oOut = closeStreamBounded(out, Math.min(TimeUnit.NANOSECONDS.toMillis(remNanos), 100));
+      if (oOut.interrupted) interrupted = true;
+
+      remNanos = Math.max(0, cleanupDeadlineNanos - System.nanoTime());
+      StreamCloseOutcome iOut = closeStreamBounded(in, Math.min(TimeUnit.NANOSECONDS.toMillis(remNanos), 100));
+      if (iOut.interrupted) interrupted = true;
+
+      remNanos = Math.max(0, cleanupDeadlineNanos - System.nanoTime());
+      StreamCloseOutcome eOut = closeStreamBounded(err, Math.min(TimeUnit.NANOSECONDS.toMillis(remNanos), 100));
+      if (eOut.interrupted) interrupted = true;
+
+      boolean streamsClean = wOut.completedCleanly && oOut.completedCleanly && iOut.completedCleanly && eOut.completedCleanly;
 
       // 4. Join drainer thread
-      if (drainerThread != null && drainerThread.isAlive()) {
-        long remNanos = Math.max(0, totalCleanupBudgetNanos - (System.nanoTime() - cleanupStartNanos));
-        long waitMillis = Math.min(TimeUnit.NANOSECONDS.toMillis(remNanos), 500);
-        try {
-          drainerThread.join(Math.max(1, waitMillis));
-        } catch (InterruptedException ie) {
-          interrupted = true;
+      boolean dJoined = false;
+      if (drainerThread != null) {
+        if (drainerThread.isAlive()) {
+          remNanos = Math.max(0, cleanupDeadlineNanos - System.nanoTime());
+          long waitMillis = Math.min(TimeUnit.NANOSECONDS.toMillis(remNanos), 300);
+          try {
+            drainerThread.join(Math.max(1, waitMillis));
+            dJoined = !drainerThread.isAlive();
+          } catch (InterruptedException ie) {
+            interrupted = true;
+          }
+        } else {
+          dJoined = true;
         }
+      } else {
+        dJoined = true;
+      }
+
+      if (obs != null) {
+        obs.processReaped = pReaped;
+        obs.executorTerminated = eTerm;
+        obs.drainerJoined = dJoined;
+        obs.streamsClosed = streamsClean;
+        obs.cleanupCompleted = true;
+        testPartialCleanupObserver.accept(obs);
       }
     } finally {
       if (interrupted) {
@@ -1043,7 +1133,7 @@ public final class OperationReviewChildJvm {
 
       // Test hook before handle creation to simulate partial construction failure
       if (testHookBeforeHandleCreation != null) {
-        testHookBeforeHandleCreation.run();
+        testHookBeforeHandleCreation.accept(guardedExecutor);
       }
 
       // 4. UNCONDITIONAL OWNERSHIP: ContenderHandle takes ownership of all resources IMMEDIATELY
@@ -1142,6 +1232,23 @@ public final class OperationReviewChildJvm {
     private final AtomicBoolean executorTerminated = new AtomicBoolean(false);
     private final AtomicBoolean drainerJoined = new AtomicBoolean(false);
     private final AtomicBoolean streamsClosed = new AtomicBoolean(false);
+    private final AtomicLong cleanupDeadlineNanos = new AtomicLong(0);
+    private final AtomicReference<Future<?>> stdinCloseFuture = new AtomicReference<>();
+    private final AtomicReference<Future<?>> stdoutCloseFuture = new AtomicReference<>();
+
+    public Future<?> stdinCloseFuture() {
+      return stdinCloseFuture.get();
+    }
+
+    public Future<?> stdoutCloseFuture() {
+      return stdoutCloseFuture.get();
+    }
+
+    long establishCleanupDeadline() {
+      long candidate = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(CLEANUP_ENVELOPE_MS);
+      cleanupDeadlineNanos.compareAndSet(0, candidate);
+      return cleanupDeadlineNanos.get();
+    }
 
     ContenderHandle(
         Process process,
@@ -1305,12 +1412,14 @@ public final class OperationReviewChildJvm {
 
     public ChildResult awaitResult(Duration timeout) throws Exception {
       long awaitStartNanos = System.nanoTime();
-      long totalBudgetNanos = Math.min(remainingNanos(), timeout.toNanos());
+      long callerDeadlineNanos = awaitStartNanos + timeout.toNanos();
+      long totalDeadlineNanos = Math.min(startNanos + budgetNanos, callerDeadlineNanos);
       long reapReserveNanos = TimeUnit.MILLISECONDS.toNanos(1000);
 
       try {
         String responseLine = null;
-        long readBudgetNanos = Math.max(0, totalBudgetNanos - reapReserveNanos);
+        long readDeadlineNanos = Math.max(awaitStartNanos, totalDeadlineNanos - reapReserveNanos);
+        long readBudgetNanos = Math.max(0, readDeadlineNanos - System.nanoTime());
         if (readBudgetNanos > 0 && !closed.get()) {
           try {
             Future<String> lineFuture = executor.submit(() -> readBoundedLine(stdoutStream, MAX_LINE_BYTES));
@@ -1323,14 +1432,22 @@ public final class OperationReviewChildJvm {
           }
         }
 
-        long elapsedNanos = System.nanoTime() - awaitStartNanos;
-        long remainingWaitNanos = Math.max(0, totalBudgetNanos - elapsedNanos);
-        long waitMillis = Math.max(1, TimeUnit.NANOSECONDS.toMillis(remainingWaitNanos));
-        boolean exited = process.waitFor(waitMillis, TimeUnit.MILLISECONDS);
-        if (!exited) {
-          process.destroyForcibly();
-          exited = process.waitFor(1000, TimeUnit.MILLISECONDS);
+        // Wait for child process exit within remaining command budget
+        long remainingCommandNanos = Math.max(0, totalDeadlineNanos - System.nanoTime());
+        boolean exited = false;
+        if (remainingCommandNanos > 0) {
+          long waitMillis = Math.max(1, TimeUnit.NANOSECONDS.toMillis(remainingCommandNanos));
+          exited = process.waitFor(waitMillis, TimeUnit.MILLISECONDS);
         }
+
+        if (!exited) {
+          long cleanupDeadline = establishCleanupDeadline();
+          process.destroyForcibly();
+          long remNanos = Math.max(0, cleanupDeadline - System.nanoTime());
+          long reapWaitNanos = Math.min(remNanos, TimeUnit.MILLISECONDS.toNanos(1000));
+          exited = process.waitFor(reapWaitNanos, TimeUnit.NANOSECONDS);
+        }
+
         if (!exited) {
           cleanlyReaped.set(false);
           return unacknowledged(-1, drainer);
@@ -1338,7 +1455,13 @@ public final class OperationReviewChildJvm {
         cleanlyReaped.set(true);
         int exitCode = process.exitValue();
 
-        drainerThread.join(300);
+        // Drainer join within remaining cleanup budget
+        long cleanupDeadline = establishCleanupDeadline();
+        long remNanos = Math.max(0, cleanupDeadline - System.nanoTime());
+        long drainerWaitMs = Math.min(TimeUnit.NANOSECONDS.toMillis(remNanos), 300);
+        if (drainerWaitMs > 0) {
+          drainerThread.join(drainerWaitMs);
+        }
         drainerJoined.set(!drainerThread.isAlive());
 
         if (responseLine == null || responseLine.isBlank() || exitCode != 0) {
@@ -1512,8 +1635,7 @@ public final class OperationReviewChildJvm {
       if (!closed.compareAndSet(false, true)) {
         return;
       }
-      long cleanupStartNanos = System.nanoTime();
-      long budgetNanos = TimeUnit.MILLISECONDS.toNanos(CLEANUP_ENVELOPE_MS);
+      long cleanupDeadline = establishCleanupDeadline();
       boolean interrupted = Thread.interrupted();
 
       try {
@@ -1521,7 +1643,7 @@ public final class OperationReviewChildJvm {
         boolean reaped = false;
         if (process.isAlive()) {
           process.destroyForcibly();
-          long remNanos = Math.max(0, budgetNanos - (System.nanoTime() - cleanupStartNanos));
+          long remNanos = Math.max(0, cleanupDeadline - System.nanoTime());
           long waitNanos = Math.min(remNanos, TimeUnit.MILLISECONDS.toNanos(1000));
           try {
             reaped = process.waitFor(waitNanos, TimeUnit.NANOSECONDS);
@@ -1536,7 +1658,7 @@ public final class OperationReviewChildJvm {
         // 2. Shut down IO executor with finite wait from remaining budget
         executor.shutdownNow();
         boolean execTerm = false;
-        long remNanos = Math.max(0, budgetNanos - (System.nanoTime() - cleanupStartNanos));
+        long remNanos = Math.max(0, cleanupDeadline - System.nanoTime());
         long waitNanos = Math.min(remNanos, TimeUnit.MILLISECONDS.toNanos(500));
         try {
           execTerm = executor.awaitTermination(waitNanos, TimeUnit.NANOSECONDS);
@@ -1546,15 +1668,27 @@ public final class OperationReviewChildJvm {
         executorTerminated.set(execTerm);
 
         // 3. Close streams boundedly within remaining budget
-        remNanos = Math.max(0, budgetNanos - (System.nanoTime() - cleanupStartNanos));
-        long streamWaitMs = Math.min(TimeUnit.NANOSECONDS.toMillis(remNanos), 300);
-        boolean wClosed = closeStreamBounded(stdinWriter, streamWaitMs);
-        boolean rClosed = closeStreamBounded(stdoutStream, streamWaitMs);
-        streamsClosed.set(wClosed && rClosed);
+        remNanos = Math.max(0, cleanupDeadline - System.nanoTime());
+        long stdinWaitMs = Math.min(TimeUnit.NANOSECONDS.toMillis(remNanos), 300);
+        StreamCloseOutcome wOutcome = closeStreamBounded(stdinWriter, stdinWaitMs);
+        stdinCloseFuture.set(wOutcome.closeFuture);
+        if (wOutcome.interrupted) {
+          interrupted = true;
+        }
+
+        remNanos = Math.max(0, cleanupDeadline - System.nanoTime());
+        long stdoutWaitMs = Math.min(TimeUnit.NANOSECONDS.toMillis(remNanos), 300);
+        StreamCloseOutcome rOutcome = closeStreamBounded(stdoutStream, stdoutWaitMs);
+        stdoutCloseFuture.set(rOutcome.closeFuture);
+        if (rOutcome.interrupted) {
+          interrupted = true;
+        }
+
+        streamsClosed.set(wOutcome.completedCleanly && rOutcome.completedCleanly);
 
         // 4. Join drainer thread with finite wait from remaining budget
         boolean joined = false;
-        remNanos = Math.max(0, budgetNanos - (System.nanoTime() - cleanupStartNanos));
+        remNanos = Math.max(0, cleanupDeadline - System.nanoTime());
         long drainerWaitMs = Math.min(TimeUnit.NANOSECONDS.toMillis(remNanos), 500);
         try {
           drainerThread.join(Math.max(1, drainerWaitMs));

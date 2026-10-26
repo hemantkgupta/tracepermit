@@ -284,6 +284,17 @@ Subsequent reruns passed all tests.
     - Setup unit assertions hardened with explicit latch reach checks (`writeEntered.await()`), retained handle state verification, invalid budget coverage, partial construction failure tests, and hostile non-cooperative stream close test.
     - COMMITTED barrier readback deliberate failure and interruption qualification added across all three database engines with intact durable transaction counts.
     - The targeted cross-process qualification suite expanded from 59 to 69 tests (33 supervision unit tests + 36 cross-process database tests), all passing cleanly with 96% instruction / 75% branch coverage in `persistence-operations`.
+11. Coordinator review on `a8754f802cfa70269f96d33664011d8471899163` identified four narrower qualification items:
+    - `STREAM_CLOSER` task swallowed stream close exceptions and cancelled futures on timeout/interrupt, preventing honest detection of throwing stream close errors and causing `Future.get()` to throw `CancellationException` rather than completing when released.
+    - Sequential stream closures and nested unwind failed to recompute monotonic remaining time against a single atomic cleanup deadline; `awaitResult` and `close()` required single shared cleanup deadline accounting across all teardown phases.
+    - Hostile stream teardown unit tests lacked verification that the closer worker future was actively running (`!isDone()`) before latch release and completed cleanly after release; partial construction tests lacked observation of active stream draining and executor tasks.
+    - COMMITTED barrier interruption test lacked a mandatory interruption witness (`assertThatThrownBy(...).isInstanceOf(InterruptedException.class)`), preserved interrupt assertion in `finally`, and unchanged durable count assertions; post-commit deliberate failure test required precise naming as an assertion failure rather than a simulated JDBC failure.
+12. Follow-up hardening resolved all four items:
+    - `StreamCloseOutcome` captures clean completion, thrown exception, timeout, and interruption; closer worker propagates errors to `ExecutionException` without cancelling the future, ensuring honest `streamsClosed() == false` reporting on throwing streams and clean `.get()` completion after releasing hostile stalls.
+    - Atomic single cleanup deadline (`establishCleanupDeadline()`) shared across process destroy/reap, executor shutdown, individual stream closes, and drainer join; `awaitResult` bounds read and exit within command budget before transitioning to the single cleanup budget.
+    - Retained `stdinCloseFuture` and `stdoutCloseFuture` on `ContenderHandle`; `PartialConstructionObservation` test seam verifies all active resources (process, active executor task, active stderr drainer, and streams) are cleanly reaped, terminated, joined, and closed on setup failure.
+    - Mandatory COMMITTED interruption witness with `Thread.interrupted() == true` preservation assertion and unchanged durable counts (1 fact, 1 binding) in DB; deliberate failure test renamed to `testCommittedEvaluationBarrierPostCommitAssertionFailureCleansUpResourcesWithUnchangedDurableCounts`.
+    - The cross-process qualification suite expanded from 69 to 73 tests (37 supervision unit tests + 36 cross-process database tests), all passing cleanly with 96.0% instruction / 75.2% branch / 97.6% line coverage in `persistence-operations`.
 
 ## Reproduction
 
@@ -312,11 +323,11 @@ git diff --check
 
 | Database Engine / Suite     | Suite Name                                  | Tests Executed | Passed | Failed | Errors | Skipped | Time  |
 | :-------------------------- | :------------------------------------------ | :------------- | :----- | :----- | :----- | :------ | :---- |
-| Independent JVM Supervision | `OperationReviewChildJvmSupervisionTest`    | 33             | 33     | 0      | 0      | 0       | 7.6s  |
-| PostgreSQL 16.4             | `PostgresOperationReviewCrossProcessTest`   | 12             | 12     | 0      | 0      | 0       | 48.9s |
-| MariaDB 11.4.13             | `MariaDb114OperationReviewCrossProcessTest` | 12             | 12     | 0      | 0      | 0       | 31.8s |
-| MariaDB 10.6.25             | `MariaDb106OperationReviewCrossProcessTest` | 12             | 12     | 0      | 0      | 0       | 32.2s |
-| **Total**                   |                                             | **69**         | **69** | **0**  | **0**  | **0**   |       |
+| Independent JVM Supervision | `OperationReviewChildJvmSupervisionTest`    | 37             | 37     | 0      | 0      | 0       | 9.9s  |
+| PostgreSQL 16.4             | `PostgresOperationReviewCrossProcessTest`   | 12             | 12     | 0      | 0      | 0       | 56.3s |
+| MariaDB 11.4.13             | `MariaDb114OperationReviewCrossProcessTest` | 12             | 12     | 0      | 0      | 0       | 41.2s |
+| MariaDB 10.6.25             | `MariaDb106OperationReviewCrossProcessTest` | 12             | 12     | 0      | 0      | 0       | 46.6s |
+| **Total**                   |                                             | **73**         | **73** | **0**  | **0**  | **0**   |       |
 
 This qualification qualifies the tested closed durable review scenarios across
 independent local JVM boundaries and process lifetimes on PostgreSQL 16.4, MariaDB 11.4.13,
