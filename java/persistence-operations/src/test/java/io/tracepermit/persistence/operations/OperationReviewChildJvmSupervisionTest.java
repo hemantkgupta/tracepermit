@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
@@ -182,6 +183,8 @@ class OperationReviewChildJvmSupervisionTest {
   @Test
   void testSetupWriteStallTimesOutAndCleansUpAllResources() throws Exception {
     Process mockProc = new ProcessBuilder("sleep", "60").start();
+    AtomicReference<OperationReviewChildJvm.ContenderHandle> retained = new AtomicReference<>();
+    OperationReviewChildJvm.testHandleObserver = retained::set;
     CountDownLatch writeEntered = new CountDownLatch(1);
     OutputStream blockingOut = new OutputStream() {
       @Override
@@ -200,21 +203,41 @@ class OperationReviewChildJvmSupervisionTest {
     var req = OperationReviewChildJvm.ChildRequest.builder("TEST", "dummy", "u", "p").build();
 
     long start = System.nanoTime();
-    assertThatThrownBy(() -> OperationReviewChildJvm.startContender(
-        req, Duration.ofMillis(300), mockProc, blockingOut, dummyIn, dummyErr))
-        .isInstanceOf(TimeoutException.class)
-        .hasMessageContaining("Child request write timed out");
-    long elapsedMs = Duration.ofNanos(System.nanoTime() - start).toMillis();
+    try {
+      assertThatThrownBy(() -> OperationReviewChildJvm.startContender(
+          req, Duration.ofMillis(300), mockProc, blockingOut, dummyIn, dummyErr))
+          .isInstanceOf(TimeoutException.class)
+          .hasMessageContaining("Child request write timed out");
+      long elapsedMs = Duration.ofNanos(System.nanoTime() - start).toMillis();
 
-    assertThat(elapsedMs).isLessThan(4000);
-    mockProc.waitFor(2, TimeUnit.SECONDS);
-    assertThat(mockProc.isAlive()).isFalse();
+      assertThat(elapsedMs).isLessThan(4000);
+      assertThat(writeEntered.await(5, TimeUnit.SECONDS)).isTrue();
+
+      mockProc.waitFor(2, TimeUnit.SECONDS);
+      assertThat(mockProc.isAlive()).isFalse();
+
+      var handle = retained.get();
+      assertThat(handle).isNotNull();
+      assertThat(handle.cleanlyReaped()).isTrue();
+      assertThat(handle.executorTerminated()).isTrue();
+      assertThat(handle.drainerTerminated()).isTrue();
+      assertThat(handle.streamsClosed()).isTrue();
+    } finally {
+      OperationReviewChildJvm.testHandleObserver = null;
+      if (mockProc.isAlive()) {
+        mockProc.destroyForcibly();
+        mockProc.waitFor(2, TimeUnit.SECONDS);
+      }
+    }
   }
 
   @Test
   void testSetupWriteInterruptedPreservesInterruptFlagAndCleansUp() throws Exception {
     Process mockProc = new ProcessBuilder("sleep", "60").start();
+    AtomicReference<OperationReviewChildJvm.ContenderHandle> retained = new AtomicReference<>();
+    OperationReviewChildJvm.testHandleObserver = retained::set;
     CountDownLatch writeEntered = new CountDownLatch(1);
+    AtomicBoolean writeEnteredReached = new AtomicBoolean(false);
     OutputStream blockingOut = new OutputStream() {
       @Override
       public void write(int b) throws IOException {
@@ -234,9 +257,11 @@ class OperationReviewChildJvmSupervisionTest {
     Thread caller = Thread.currentThread();
     Thread interrupter = new Thread(() -> {
       try {
-        writeEntered.await(5, TimeUnit.SECONDS);
-        Thread.sleep(50);
-        caller.interrupt();
+        if (writeEntered.await(5, TimeUnit.SECONDS)) {
+          writeEnteredReached.set(true);
+          Thread.sleep(50);
+          caller.interrupt();
+        }
       } catch (InterruptedException ignored) {}
     });
     interrupter.start();
@@ -246,13 +271,145 @@ class OperationReviewChildJvmSupervisionTest {
           req, Duration.ofSeconds(10), mockProc, blockingOut, dummyIn, dummyErr))
           .isInstanceOf(InterruptedException.class);
       assertThat(Thread.currentThread().isInterrupted()).isTrue();
+      assertThat(writeEnteredReached.get()).isTrue();
+
+      mockProc.waitFor(2, TimeUnit.SECONDS);
+      assertThat(mockProc.isAlive()).isFalse();
+
+      var handle = retained.get();
+      assertThat(handle).isNotNull();
+      assertThat(handle.cleanlyReaped()).isTrue();
+      assertThat(handle.executorTerminated()).isTrue();
+      assertThat(handle.drainerTerminated()).isTrue();
     } finally {
       Thread.interrupted(); // clear interrupted flag
       interrupter.join(1000);
+      OperationReviewChildJvm.testHandleObserver = null;
+      if (mockProc.isAlive()) {
+        mockProc.destroyForcibly();
+        mockProc.waitFor(2, TimeUnit.SECONDS);
+      }
     }
+  }
 
-    mockProc.waitFor(2, TimeUnit.SECONDS);
-    assertThat(mockProc.isAlive()).isFalse();
+  @Test
+  void testInvalidBudgetsLaunchNoChild() {
+    var req = OperationReviewChildJvm.ChildRequest.builder("TEST", "dummy", "u", "p").build();
+    assertThatThrownBy(() -> OperationReviewChildJvm.startContender(req, null))
+        .isInstanceOf(NullPointerException.class)
+        .hasMessageContaining("commandBudget must not be null");
+
+    assertThatThrownBy(() -> OperationReviewChildJvm.startContender(req, Duration.ZERO))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("commandBudget must be positive");
+
+    assertThatThrownBy(() -> OperationReviewChildJvm.startContender(req, Duration.ofSeconds(-5)))
+        .isInstanceOf(IllegalArgumentException.class)
+        .hasMessageContaining("commandBudget must be positive");
+
+    assertThatThrownBy(() -> OperationReviewChildJvm.startContender(req, Duration.ofSeconds(Long.MAX_VALUE)))
+        .isInstanceOf(IllegalArgumentException.class);
+  }
+
+  @Test
+  void testPartialConstructionFailureCleansUpAcquiredResources() throws Exception {
+    Process mockProc = new ProcessBuilder("sleep", "60").start();
+    try {
+      OperationReviewChildJvm.testHookBeforeHandleCreation = () -> {
+        throw new RuntimeException("simulated failure before handle creation");
+      };
+      var req = OperationReviewChildJvm.ChildRequest.builder("TEST", "dummy", "u", "p").build();
+      assertThatThrownBy(() -> OperationReviewChildJvm.startContender(
+          req, Duration.ofSeconds(5), mockProc,
+          mockProc.getOutputStream(), mockProc.getInputStream(), mockProc.getErrorStream()))
+          .isInstanceOf(RuntimeException.class)
+          .hasMessage("simulated failure before handle creation");
+
+      mockProc.waitFor(2, TimeUnit.SECONDS);
+      assertThat(mockProc.isAlive()).isFalse();
+    } finally {
+      OperationReviewChildJvm.testHookBeforeHandleCreation = null;
+      if (mockProc.isAlive()) {
+        mockProc.destroyForcibly();
+        mockProc.waitFor(2, TimeUnit.SECONDS);
+      }
+    }
+  }
+
+  @Test
+  void testHostileStreamCloseDoesNotHangTeardown() throws Exception {
+    Process mockProc = new ProcessBuilder("sleep", "60").start();
+    CountDownLatch closeEntered = new CountDownLatch(1);
+    CountDownLatch releaseClose = new CountDownLatch(1);
+
+    OutputStream hostileOut = new OutputStream() {
+      @Override
+      public void write(int b) throws IOException {}
+
+      @Override
+      public void close() throws IOException {
+        closeEntered.countDown();
+        try {
+          releaseClose.await();
+        } catch (InterruptedException ie) {
+          try {
+            releaseClose.await();
+          } catch (InterruptedException ignored) {}
+        }
+      }
+    };
+
+    var req = OperationReviewChildJvm.ChildRequest.builder("TEST", "dummy", "u", "p").build();
+    try {
+      var handle = OperationReviewChildJvm.startContender(
+          req, Duration.ofSeconds(5), mockProc,
+          hostileOut, new ByteArrayInputStream(new byte[0]), new ByteArrayInputStream(new byte[0])
+      );
+
+      long closeStart = System.nanoTime();
+      handle.close();
+      long closeElapsedMs = Duration.ofNanos(System.nanoTime() - closeStart).toMillis();
+
+      // Assert intended blocked phase was entered
+      assertThat(closeEntered.await(2, TimeUnit.SECONDS)).isTrue();
+
+      // Assert caller returns within finite bound (does not hang)
+      assertThat(closeElapsedMs).isLessThan(4000);
+
+      // Residual unclosed status reported honestly
+      assertThat(handle.streamsClosed()).isFalse();
+      assertThat(handle.cleanlyReaped()).isTrue();
+      assertThat(handle.executorTerminated()).isTrue();
+    } finally {
+      // In unconditional fixture finally, release the controlled stall and verify clean worker termination
+      releaseClose.countDown();
+      if (mockProc.isAlive()) {
+        mockProc.destroyForcibly();
+        mockProc.waitFor(2, TimeUnit.SECONDS);
+      }
+    }
+  }
+
+  @Test
+  void testMissingOrNullExpectedProfileRefusesBaselineOkResponseAsUnacknowledged() throws Exception {
+    var req = OperationReviewChildJvm.ChildRequest.builder("TEST", "dummy", "u", "p")
+        .testMode("BASELINE_OK")
+        .build();
+
+    // Start contender with explicitly null expectedProfile
+    try (var handle = OperationReviewChildJvm.startContenderWithExplicitProfile(req, Duration.ofSeconds(10), null)) {
+      OperationReviewChildJvm.ChildResult result = handle.awaitResult(Duration.ofSeconds(10));
+
+      // With missing expectedProfile, the valid baseline OK response MUST be refused as UNACKNOWLEDGED
+      assertThat(result.acknowledged()).isFalse();
+      assertThat(result.status()).isEqualTo("UNACKNOWLEDGED");
+
+      // Verify direct liveness and cleanup postconditions
+      assertThat(handle.isAlive()).isFalse();
+      assertThat(handle.cleanlyReaped()).isTrue();
+      assertThat(handle.executorTerminated()).isTrue();
+      assertThat(handle.drainerTerminated()).isTrue();
+    }
   }
 
   static class DeliberateAssertionFailure extends RuntimeException {

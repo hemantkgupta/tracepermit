@@ -263,7 +263,7 @@ Subsequent reruns passed all tests.
    - Incomplete response joins for `factId` and `bindingDigest`, with silent fallback to `resourceBindingHash`.
    - Vacuous cleanup test in `OperationReviewChildJvmSupervisionTest`.
    - Multi-reason negative vectors not isolating individual guards.
-8. Follow-up repair resolved all findings:
+8. Follow-up repair on `15735fc3013307ec16f2cd18bd5473f0d34edbec` resolved those findings:
    - `ContenderHandle` instantiated immediately before submitted writes, wrapping setup write in cleanup and restoring interrupt flags.
    - Exact `OPERATION_STATE_STALE` loser assertions restored in approve-vs-withdraw and approve-vs-deny races.
    - Strict `factId` and `bindingDigest` joins added, with zero fallback to unrelated hashes.
@@ -271,6 +271,19 @@ Subsequent reruns passed all tests.
    - One-property valid negative vectors implemented against a complete accepted baseline OK response.
    - Dedicated overlong stderr line and multibyte stderr pressure tests added.
    - The test suite expanded from 50 to 59 tests (29 supervision unit tests + 30 cross-process database tests).
+9. Static review on `15735fc3013307ec16f2cd18bd5473f0d34edbec` identified four remaining supervision qualification findings:
+   - Untimed stream close in teardown (`close()`) could block indefinitely if a writer retains its lock or a stream blocks on close.
+   - Resource acquisition before `ContenderHandle` construction lacked complete partial-failure cleanup (executor/drainer leaks on handle-null catch).
+   - Expected profile was swallowed on setup failure and optional in OK response validation, risking skipped `bindingDigest` verification.
+   - Setup unit tests omitted latch reach assertions and full resource lifecycle verification on failure/interrupt paths, and cross-process tests lacked COMMITTED barrier deliberate-failure and interrupt coverage.
+10. Final follow-up repair resolved all four findings:
+    - Bounded stream closure integrated into a unified finite cleanup envelope (`CLEANUP_ENVELOPE_MS = 2000L`) with non-hanging worker-pool teardown, reporting honest `streamsClosed()` residual status.
+    - Pre-launch request and positive budget validation prevents launching child processes on invalid configurations.
+    - Comprehensive partial-construction guard ensures process, executor, streams, and drainer threads are cleanly torn down if setup fails before `ContenderHandle` instantiation.
+    - Fail-closed expected profile enforcement: null or failed expected profile refuses setup or returns `UNACKNOWLEDGED` for any OK response without skipping `bindingDigest` verification.
+    - Setup unit assertions hardened with explicit latch reach checks (`writeEntered.await()`), retained handle state verification, invalid budget coverage, partial construction failure tests, and hostile non-cooperative stream close test.
+    - COMMITTED barrier readback deliberate failure and interruption qualification added across all three database engines with intact durable transaction counts.
+    - The targeted cross-process qualification suite expanded from 59 to 69 tests (33 supervision unit tests + 36 cross-process database tests), all passing cleanly with 96% instruction / 75% branch coverage in `persistence-operations`.
 
 ## Reproduction
 
@@ -299,11 +312,11 @@ git diff --check
 
 | Database Engine / Suite     | Suite Name                                  | Tests Executed | Passed | Failed | Errors | Skipped | Time  |
 | :-------------------------- | :------------------------------------------ | :------------- | :----- | :----- | :----- | :------ | :---- |
-| Independent JVM Supervision | `OperationReviewChildJvmSupervisionTest`    | 29             | 29     | 0      | 0      | 0       | 7.4s  |
-| PostgreSQL 16.4             | `PostgresOperationReviewCrossProcessTest`   | 10             | 10     | 0      | 0      | 0       | 51.8s |
-| MariaDB 11.4.13             | `MariaDb114OperationReviewCrossProcessTest` | 10             | 10     | 0      | 0      | 0       | 39.3s |
-| MariaDB 10.6.25             | `MariaDb106OperationReviewCrossProcessTest` | 10             | 10     | 0      | 0      | 0       | 37.5s |
-| **Total**                   |                                             | **59**         | **59** | **0**  | **0**  | **0**   |       |
+| Independent JVM Supervision | `OperationReviewChildJvmSupervisionTest`    | 33             | 33     | 0      | 0      | 0       | 7.6s  |
+| PostgreSQL 16.4             | `PostgresOperationReviewCrossProcessTest`   | 12             | 12     | 0      | 0      | 0       | 48.9s |
+| MariaDB 11.4.13             | `MariaDb114OperationReviewCrossProcessTest` | 12             | 12     | 0      | 0      | 0       | 31.8s |
+| MariaDB 10.6.25             | `MariaDb106OperationReviewCrossProcessTest` | 12             | 12     | 0      | 0      | 0       | 32.2s |
+| **Total**                   |                                             | **69**         | **69** | **0**  | **0**  | **0**   |       |
 
 This qualification qualifies the tested closed durable review scenarios across
 independent local JVM boundaries and process lifetimes on PostgreSQL 16.4, MariaDB 11.4.13,

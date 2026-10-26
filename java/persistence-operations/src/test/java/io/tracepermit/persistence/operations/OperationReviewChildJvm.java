@@ -791,11 +791,154 @@ public final class OperationReviewChildJvm {
     }
   }
 
+  static long validateBudget(Duration commandBudget) {
+    Objects.requireNonNull(commandBudget, "commandBudget must not be null");
+    if (commandBudget.isNegative() || commandBudget.isZero()) {
+      throw new IllegalArgumentException("commandBudget must be positive, got: " + commandBudget);
+    }
+    try {
+      long nanos = commandBudget.toNanos();
+      if (nanos <= 0) {
+        throw new IllegalArgumentException("commandBudget nanos must be positive");
+      }
+      return nanos;
+    } catch (ArithmeticException e) {
+      throw new IllegalArgumentException("commandBudget overflow: " + commandBudget, e);
+    }
+  }
+
+  // --- Narrow package-private test-helper observation and injection seams ---
+  static volatile java.util.function.Consumer<ContenderHandle> testHandleObserver = null;
+  static volatile Runnable testHookBeforeHandleCreation = null;
+
+  private static final ExecutorService STREAM_CLOSER = Executors.newCachedThreadPool(r -> {
+    Thread t = new Thread(r, "stream-closer-worker");
+    t.setDaemon(true);
+    return t;
+  });
+
+  static boolean closeStreamBounded(AutoCloseable stream, long timeoutMs) {
+    if (stream == null) return true;
+    if (timeoutMs <= 0) return false;
+    Future<?> f = STREAM_CLOSER.submit(() -> {
+      try {
+        stream.close();
+      } catch (Throwable ignored) {}
+    });
+    try {
+      f.get(timeoutMs, TimeUnit.MILLISECONDS);
+      return true;
+    } catch (TimeoutException te) {
+      f.cancel(true);
+      return false;
+    } catch (Throwable t) {
+      return false;
+    }
+  }
+
+  static void cleanupProcessDirect(Process process) {
+    if (process == null) return;
+    if (process.isAlive()) {
+      process.destroyForcibly();
+      try {
+        process.waitFor(REAP_RESERVE_MS, TimeUnit.MILLISECONDS);
+      } catch (InterruptedException ie) {
+        Thread.currentThread().interrupt();
+      }
+    }
+  }
+
+  static void cleanupPartialResources(
+      Process process,
+      Thread drainerThread,
+      ExecutorService executor,
+      BufferedWriter stdinWriter,
+      OutputStream out,
+      InputStream in,
+      InputStream err
+  ) {
+    long cleanupStartNanos = System.nanoTime();
+    long totalCleanupBudgetNanos = TimeUnit.MILLISECONDS.toNanos(ContenderHandle.CLEANUP_ENVELOPE_MS);
+
+    boolean interrupted = Thread.interrupted();
+    try {
+      // 1. Process destroy and reap
+      if (process != null && process.isAlive()) {
+        process.destroyForcibly();
+        long remNanos = Math.max(0, totalCleanupBudgetNanos - (System.nanoTime() - cleanupStartNanos));
+        long waitNanos = Math.min(remNanos, TimeUnit.MILLISECONDS.toNanos(1000));
+        try {
+          process.waitFor(waitNanos, TimeUnit.NANOSECONDS);
+        } catch (InterruptedException ie) {
+          interrupted = true;
+        }
+      }
+
+      // 2. Shut down executor
+      if (executor != null) {
+        executor.shutdownNow();
+        long remNanos = Math.max(0, totalCleanupBudgetNanos - (System.nanoTime() - cleanupStartNanos));
+        long waitNanos = Math.min(remNanos, TimeUnit.MILLISECONDS.toNanos(500));
+        try {
+          executor.awaitTermination(waitNanos, TimeUnit.NANOSECONDS);
+        } catch (InterruptedException ie) {
+          interrupted = true;
+        }
+      }
+
+      // 3. Close streams boundedly
+      closeStreamBounded(stdinWriter, 200);
+      closeStreamBounded(out, 100);
+      closeStreamBounded(in, 100);
+      closeStreamBounded(err, 100);
+
+      // 4. Join drainer thread
+      if (drainerThread != null && drainerThread.isAlive()) {
+        long remNanos = Math.max(0, totalCleanupBudgetNanos - (System.nanoTime() - cleanupStartNanos));
+        long waitMillis = Math.min(TimeUnit.NANOSECONDS.toMillis(remNanos), 500);
+        try {
+          drainerThread.join(Math.max(1, waitMillis));
+        } catch (InterruptedException ie) {
+          interrupted = true;
+        }
+      }
+    } finally {
+      if (interrupted) {
+        Thread.currentThread().interrupt();
+      }
+    }
+  }
+
   public static ContenderHandle startContender(ChildRequest request) throws Exception {
     return startContender(request, Duration.ofSeconds(60));
   }
 
   public static ContenderHandle startContender(ChildRequest request, Duration commandBudget) throws Exception {
+    Objects.requireNonNull(request, "request must not be null");
+    validateBudget(commandBudget);
+
+    GitHubBusinessOperationBinding.ExpectedProfile expectedProfile;
+    try {
+      ObjectNode syntheticPolicy = createPolicy(request.policyOutcome() != null ? request.policyOutcome() : "require_approval");
+      expectedProfile = createExpectedProfile(syntheticPolicy);
+    } catch (Exception e) {
+      throw new IllegalStateException("Failed to construct expected profile: " + e.getMessage(), e);
+    }
+    if (expectedProfile == null) {
+      throw new IllegalStateException("Expected profile must not be null");
+    }
+
+    return startContenderWithExplicitProfile(request, commandBudget, expectedProfile);
+  }
+
+  static ContenderHandle startContenderWithExplicitProfile(
+      ChildRequest request,
+      Duration commandBudget,
+      GitHubBusinessOperationBinding.ExpectedProfile explicitProfile
+  ) throws Exception {
+    Objects.requireNonNull(request, "request must not be null");
+    validateBudget(commandBudget);
+
     String javaBinary = Path.of(System.getProperty("java.home"), "bin", "java").toString();
     String classpath = System.getProperty("tracepermit.operationsTestClasspath");
     if (classpath == null || classpath.isBlank()) {
@@ -815,14 +958,18 @@ public final class OperationReviewChildJvm {
     // Explicitly do NOT put credentials or request into env or args!
     Process process = pb.start();
 
-    return startContender(
-        request,
-        commandBudget,
-        process,
-        process.getOutputStream(),
-        process.getInputStream(),
-        process.getErrorStream()
-    );
+    try {
+      OutputStream out = process.getOutputStream();
+      InputStream in = process.getInputStream();
+      InputStream err = process.getErrorStream();
+      return startContender(request, commandBudget, explicitProfile, process, out, in, err);
+    } catch (Throwable t) {
+      cleanupProcessDirect(process);
+      if (t instanceof InterruptedException) {
+        Thread.currentThread().interrupt();
+      }
+      throw t;
+    }
   }
 
   static ContenderHandle startContender(
@@ -833,27 +980,55 @@ public final class OperationReviewChildJvm {
       InputStream inputStream,
       InputStream errorStream
   ) throws Exception {
+    GitHubBusinessOperationBinding.ExpectedProfile expectedProfile;
+    try {
+      ObjectNode syntheticPolicy = createPolicy(request.policyOutcome() != null ? request.policyOutcome() : "require_approval");
+      expectedProfile = createExpectedProfile(syntheticPolicy);
+    } catch (Exception e) {
+      throw new IllegalStateException("Failed to construct expected profile: " + e.getMessage(), e);
+    }
+    return startContender(request, commandBudget, expectedProfile, process, outputStream, inputStream, errorStream);
+  }
+
+  static ContenderHandle startContender(
+      ChildRequest request,
+      Duration commandBudget,
+      GitHubBusinessOperationBinding.ExpectedProfile expectedProfile,
+      Process process,
+      OutputStream outputStream,
+      InputStream inputStream,
+      InputStream errorStream
+  ) throws Exception {
     long startNanos = System.nanoTime();
-    long budgetNanos = commandBudget.toNanos();
+    long budgetNanos = validateBudget(commandBudget);
+
+    Process guardedProcess = process;
+    OutputStream guardedOut = outputStream;
+    InputStream guardedIn = inputStream;
+    InputStream guardedErr = errorStream;
+    StderrDrainer guardedDrainer = null;
+    Thread guardedDrainerThread = null;
+    ExecutorService guardedExecutor = null;
+    BufferedWriter guardedStdinWriter = null;
     ContenderHandle handle = null;
 
     try {
       // 1. Concurrent bounded stderr drainer
-      StderrDrainer drainer = new StderrDrainer(errorStream);
-      Thread drainerThread = new Thread(drainer, "child-stderr-drainer");
-      drainerThread.setDaemon(true);
-      drainerThread.start();
+      guardedDrainer = new StderrDrainer(guardedErr);
+      guardedDrainerThread = new Thread(guardedDrainer, "child-stderr-drainer");
+      guardedDrainerThread.setDaemon(true);
+      guardedDrainerThread.start();
 
       // 2. IO worker executor
-      ExecutorService executor = Executors.newFixedThreadPool(2, r -> {
+      guardedExecutor = Executors.newFixedThreadPool(2, r -> {
         Thread t = new Thread(r, "contender-io-worker");
         t.setDaemon(true);
         return t;
       });
 
       // 3. Stdin writer and stdout stream
-      BufferedWriter stdinWriter = new BufferedWriter(new OutputStreamWriter(outputStream, StandardCharsets.UTF_8));
-      InputStream stdoutStream = inputStream;
+      guardedStdinWriter = new BufferedWriter(new OutputStreamWriter(guardedOut, StandardCharsets.UTF_8));
+      InputStream stdoutStream = guardedIn;
 
       // Extract expected operation ID if known
       String expectedOpId = request.operationId();
@@ -866,17 +1041,21 @@ public final class OperationReviewChildJvm {
         } catch (Exception ignored) {}
       }
 
-      GitHubBusinessOperationBinding.ExpectedProfile expectedProfile = null;
-      try {
-        ObjectNode syntheticPolicy = createPolicy(request.policyOutcome() != null ? request.policyOutcome() : "require_approval");
-        expectedProfile = createExpectedProfile(syntheticPolicy);
-      } catch (Exception ignored) {}
+      // Test hook before handle creation to simulate partial construction failure
+      if (testHookBeforeHandleCreation != null) {
+        testHookBeforeHandleCreation.run();
+      }
 
       // 4. UNCONDITIONAL OWNERSHIP: ContenderHandle takes ownership of all resources IMMEDIATELY
       handle = new ContenderHandle(
-          process, stdinWriter, stdoutStream, drainer, drainerThread, executor,
+          guardedProcess, guardedStdinWriter, stdoutStream, guardedDrainer, guardedDrainerThread, guardedExecutor,
           startNanos, budgetNanos, expectedOpId, expectedProfile
       );
+
+      // Notify test observer if registered
+      if (testHandleObserver != null) {
+        testHandleObserver.accept(handle);
+      }
 
       // 5. Serialize request payload
       ObjectNode reqNode = JsonSupport.MAPPER.createObjectNode();
@@ -908,10 +1087,11 @@ public final class OperationReviewChildJvm {
       if (writeRemNanos <= 0) {
         throw new TimeoutException("Monotonic command budget expired before request write");
       }
-      Future<?> writeFuture = executor.submit(() -> {
-        stdinWriter.write(serializedReq);
-        stdinWriter.newLine();
-        stdinWriter.flush();
+      BufferedWriter finalWriter = guardedStdinWriter;
+      Future<?> writeFuture = guardedExecutor.submit(() -> {
+        finalWriter.write(serializedReq);
+        finalWriter.newLine();
+        finalWriter.flush();
         return null;
       });
       try {
@@ -933,17 +1113,10 @@ public final class OperationReviewChildJvm {
       if (handle != null) {
         handle.close();
       } else {
-        if (process.isAlive()) {
-          process.destroyForcibly();
-          try {
-            process.waitFor(REAP_RESERVE_MS, TimeUnit.MILLISECONDS);
-          } catch (InterruptedException ie) {
-            Thread.currentThread().interrupt();
-          }
-        }
-        try { inputStream.close(); } catch (Throwable ignored) {}
-        try { outputStream.close(); } catch (Throwable ignored) {}
-        try { errorStream.close(); } catch (Throwable ignored) {}
+        cleanupPartialResources(
+            guardedProcess, guardedDrainerThread, guardedExecutor,
+            guardedStdinWriter, guardedOut, guardedIn, guardedErr
+        );
       }
       if (t instanceof InterruptedException) {
         Thread.currentThread().interrupt();
@@ -963,10 +1136,12 @@ public final class OperationReviewChildJvm {
     private final long budgetNanos;
     private final String expectedOperationId;
     private final GitHubBusinessOperationBinding.ExpectedProfile expectedProfile;
+    public static final long CLEANUP_ENVELOPE_MS = 2000L;
     private final AtomicBoolean closed = new AtomicBoolean(false);
     private final AtomicBoolean cleanlyReaped = new AtomicBoolean(false);
     private final AtomicBoolean executorTerminated = new AtomicBoolean(false);
     private final AtomicBoolean drainerJoined = new AtomicBoolean(false);
+    private final AtomicBoolean streamsClosed = new AtomicBoolean(false);
 
     ContenderHandle(
         Process process,
@@ -1014,6 +1189,10 @@ public final class OperationReviewChildJvm {
 
     public boolean drainerTerminated() {
       return drainerJoined.get();
+    }
+
+    public boolean streamsClosed() {
+      return streamsClosed.get();
     }
 
     private long remainingNanos() {
@@ -1125,14 +1304,17 @@ public final class OperationReviewChildJvm {
     }
 
     public ChildResult awaitResult(Duration timeout) throws Exception {
-      long remNanos = Math.min(remainingNanos(), timeout.toNanos());
+      long awaitStartNanos = System.nanoTime();
+      long totalBudgetNanos = Math.min(remainingNanos(), timeout.toNanos());
+      long reapReserveNanos = TimeUnit.MILLISECONDS.toNanos(1000);
 
       try {
         String responseLine = null;
-        if (remNanos > 0 && !closed.get()) {
+        long readBudgetNanos = Math.max(0, totalBudgetNanos - reapReserveNanos);
+        if (readBudgetNanos > 0 && !closed.get()) {
           try {
             Future<String> lineFuture = executor.submit(() -> readBoundedLine(stdoutStream, MAX_LINE_BYTES));
-            responseLine = lineFuture.get(remNanos, TimeUnit.NANOSECONDS);
+            responseLine = lineFuture.get(readBudgetNanos, TimeUnit.NANOSECONDS);
           } catch (TimeoutException te) {
             close();
             throw new TimeoutException("Child timed out waiting for response line within monotonic budget");
@@ -1141,12 +1323,13 @@ public final class OperationReviewChildJvm {
           }
         }
 
-        remNanos = remainingNanos();
-        long waitMillis = Math.max(1, TimeUnit.NANOSECONDS.toMillis(remNanos));
+        long elapsedNanos = System.nanoTime() - awaitStartNanos;
+        long remainingWaitNanos = Math.max(0, totalBudgetNanos - elapsedNanos);
+        long waitMillis = Math.max(1, TimeUnit.NANOSECONDS.toMillis(remainingWaitNanos));
         boolean exited = process.waitFor(waitMillis, TimeUnit.MILLISECONDS);
         if (!exited) {
           process.destroyForcibly();
-          exited = process.waitFor(REAP_RESERVE_MS, TimeUnit.MILLISECONDS);
+          exited = process.waitFor(1000, TimeUnit.MILLISECONDS);
         }
         if (!exited) {
           cleanlyReaped.set(false);
@@ -1155,7 +1338,7 @@ public final class OperationReviewChildJvm {
         cleanlyReaped.set(true);
         int exitCode = process.exitValue();
 
-        drainerThread.join(500);
+        drainerThread.join(300);
         drainerJoined.set(!drainerThread.isAlive());
 
         if (responseLine == null || responseLine.isBlank() || exitCode != 0) {
@@ -1270,16 +1453,17 @@ public final class OperationReviewChildJvm {
             return unacknowledged(exitCode, drainer);
           }
 
-          // Strict bindingDigest join: bind against expectedProfile and verify digest
-          if (expectedProfile != null) {
-            try {
-              var bound = GitHubBusinessOperationBinding.bind(SCOPE, snapshot, expectedProfile);
-              if (!bound.bindingDigest().equals(bindingDigestNode.textValue())) {
-                return unacknowledged(exitCode, drainer);
-              }
-            } catch (Exception bindingFailed) {
+          // Strict bindingDigest join: fail closed if expectedProfile is missing or binding does not match
+          if (expectedProfile == null) {
+            return unacknowledged(exitCode, drainer);
+          }
+          try {
+            var bound = GitHubBusinessOperationBinding.bind(SCOPE, snapshot, expectedProfile);
+            if (!bound.bindingDigest().equals(bindingDigestNode.textValue())) {
               return unacknowledged(exitCode, drainer);
             }
+          } catch (Exception bindingFailed) {
+            return unacknowledged(exitCode, drainer);
           }
 
           return new ChildResult(
@@ -1328,43 +1512,62 @@ public final class OperationReviewChildJvm {
       if (!closed.compareAndSet(false, true)) {
         return;
       }
-      // 1. Destroy owned process FIRST to unblock any pending stream I/O
-      boolean reaped = false;
-      if (process.isAlive()) {
-        process.destroyForcibly();
+      long cleanupStartNanos = System.nanoTime();
+      long budgetNanos = TimeUnit.MILLISECONDS.toNanos(CLEANUP_ENVELOPE_MS);
+      boolean interrupted = Thread.interrupted();
+
+      try {
+        // 1. Destroy owned process FIRST to unblock any pending stream I/O
+        boolean reaped = false;
+        if (process.isAlive()) {
+          process.destroyForcibly();
+          long remNanos = Math.max(0, budgetNanos - (System.nanoTime() - cleanupStartNanos));
+          long waitNanos = Math.min(remNanos, TimeUnit.MILLISECONDS.toNanos(1000));
+          try {
+            reaped = process.waitFor(waitNanos, TimeUnit.NANOSECONDS);
+          } catch (InterruptedException ie) {
+            interrupted = true;
+          }
+        } else {
+          reaped = true;
+        }
+        cleanlyReaped.set(reaped);
+
+        // 2. Shut down IO executor with finite wait from remaining budget
+        executor.shutdownNow();
+        boolean execTerm = false;
+        long remNanos = Math.max(0, budgetNanos - (System.nanoTime() - cleanupStartNanos));
+        long waitNanos = Math.min(remNanos, TimeUnit.MILLISECONDS.toNanos(500));
         try {
-          reaped = process.waitFor(REAP_RESERVE_MS, TimeUnit.MILLISECONDS);
+          execTerm = executor.awaitTermination(waitNanos, TimeUnit.NANOSECONDS);
         } catch (InterruptedException ie) {
+          interrupted = true;
+        }
+        executorTerminated.set(execTerm);
+
+        // 3. Close streams boundedly within remaining budget
+        remNanos = Math.max(0, budgetNanos - (System.nanoTime() - cleanupStartNanos));
+        long streamWaitMs = Math.min(TimeUnit.NANOSECONDS.toMillis(remNanos), 300);
+        boolean wClosed = closeStreamBounded(stdinWriter, streamWaitMs);
+        boolean rClosed = closeStreamBounded(stdoutStream, streamWaitMs);
+        streamsClosed.set(wClosed && rClosed);
+
+        // 4. Join drainer thread with finite wait from remaining budget
+        boolean joined = false;
+        remNanos = Math.max(0, budgetNanos - (System.nanoTime() - cleanupStartNanos));
+        long drainerWaitMs = Math.min(TimeUnit.NANOSECONDS.toMillis(remNanos), 500);
+        try {
+          drainerThread.join(Math.max(1, drainerWaitMs));
+          joined = !drainerThread.isAlive();
+        } catch (InterruptedException ie) {
+          interrupted = true;
+        }
+        drainerJoined.set(joined);
+      } finally {
+        if (interrupted) {
           Thread.currentThread().interrupt();
         }
-      } else {
-        reaped = true;
       }
-      cleanlyReaped.set(reaped);
-
-      // 2. Shut down IO executor with finite wait
-      executor.shutdownNow();
-      boolean execTerm = false;
-      try {
-        execTerm = executor.awaitTermination(500, TimeUnit.MILLISECONDS);
-      } catch (InterruptedException ie) {
-        Thread.currentThread().interrupt();
-      }
-      executorTerminated.set(execTerm);
-
-      // 3. Close streams
-      try { stdinWriter.close(); } catch (Throwable ignored) {}
-      try { stdoutStream.close(); } catch (Throwable ignored) {}
-
-      // 4. Join drainer thread with finite wait
-      boolean joined = false;
-      try {
-        drainerThread.join(500);
-        joined = !drainerThread.isAlive();
-      } catch (InterruptedException ie) {
-        Thread.currentThread().interrupt();
-      }
-      drainerJoined.set(joined);
     }
   }
 

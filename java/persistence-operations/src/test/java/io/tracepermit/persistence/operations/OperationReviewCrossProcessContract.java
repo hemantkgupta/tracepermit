@@ -23,6 +23,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.logging.Logger;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.*;
@@ -725,6 +726,99 @@ abstract class OperationReviewCrossProcessContract {
       assertThat(count("tp_operation_lifecycle_facts")).isEqualTo(2);
       assertThat(count("tp_operation_review_bindings")).isEqualTo(1);
     }
+  }
+
+  static class DeliberateAssertionFailure extends RuntimeException {
+    private static final long serialVersionUID = 1L;
+    DeliberateAssertionFailure(String msg) { super(msg); }
+  }
+
+  @Test
+  void testCommittedEvaluationBarrierReadbackFailureCleansUpResourcesWithUnchangedDurableCounts() throws Exception {
+    AtomicReference<ContenderHandle> retained = new AtomicReference<>();
+    try {
+      try (ContenderHandle handle = OperationReviewChildJvm.startContender(
+          requestBuilder("EVALUATE")
+              .operationJson(CanonicalJson.canonicalize(initial))
+              .evaluatorExpiryIso(fresh().toString())
+              .testMode("POST_COMMIT_BARRIER")
+              .build()
+      )) {
+        retained.set(handle);
+        // Wait until child has committed the transaction to the database
+        handle.awaitCommitted(Duration.ofSeconds(15));
+
+        // Verify the commit is already durable in the DB before failure
+        assertThat(count("tp_operation_lifecycle_facts")).isEqualTo(1);
+        assertThat(count("tp_operation_review_bindings")).isEqualTo(1);
+
+        // Simulate deliberate assertion failure during readback/post-commit handling
+        throw new DeliberateAssertionFailure("simulated deliberate readback failure at committed barrier");
+      }
+    } catch (DeliberateAssertionFailure expected) {
+      assertThat(expected.getMessage()).isEqualTo("simulated deliberate readback failure at committed barrier");
+    }
+
+    var handle = retained.get();
+    assertThat(handle).isNotNull();
+    assertThat(handle.isAlive()).isFalse();
+    assertThat(handle.cleanlyReaped()).isTrue();
+    assertThat(handle.executorTerminated()).isTrue();
+    assertThat(handle.drainerTerminated()).isTrue();
+
+    // Verify durable counts remain unchanged and consistent
+    assertThat(count("tp_operation_lifecycle_facts")).isEqualTo(1);
+    assertThat(count("tp_operation_review_bindings")).isEqualTo(1);
+
+    // Fresh reader proves state is awaiting_approval
+    ChildResult freshRead = OperationReviewChildJvm.runChild(
+        requestBuilder("READ_CURRENT").operationId(id()).build(), Duration.ofSeconds(30));
+    assertThat(freshRead.isOk()).isTrue();
+    assertThat(freshRead.resultStatus()).isEqualTo("awaiting_approval");
+  }
+
+  @Test
+  void testCommittedEvaluationBarrierInterruptedCleansUpResourcesWithUnchangedDurableCounts() throws Exception {
+    AtomicReference<ContenderHandle> retained = new AtomicReference<>();
+    Thread caller = Thread.currentThread();
+
+    try {
+      try (ContenderHandle handle = OperationReviewChildJvm.startContender(
+          requestBuilder("EVALUATE")
+              .operationJson(CanonicalJson.canonicalize(initial))
+              .evaluatorExpiryIso(fresh().toString())
+              .testMode("POST_COMMIT_BARRIER")
+              .build()
+      )) {
+        retained.set(handle);
+        handle.awaitCommitted(Duration.ofSeconds(15));
+
+        // Verify transaction committed
+        assertThat(count("tp_operation_lifecycle_facts")).isEqualTo(1);
+
+        // Interrupt caller thread while at committed barrier
+        caller.interrupt();
+
+        // Calling awaitResult while interrupted must throw InterruptedException
+        handle.awaitResult(Duration.ofSeconds(10));
+      }
+    } catch (InterruptedException ie) {
+      // Caller interrupt flag must be preserved/restored
+      assertThat(Thread.currentThread().isInterrupted()).isTrue();
+    } finally {
+      Thread.interrupted(); // clear interrupt flag
+    }
+
+    var handle = retained.get();
+    assertThat(handle).isNotNull();
+    assertThat(handle.isAlive()).isFalse();
+    assertThat(handle.cleanlyReaped()).isTrue();
+    assertThat(handle.executorTerminated()).isTrue();
+    assertThat(handle.drainerTerminated()).isTrue();
+
+    // Verify durable counts remain unchanged
+    assertThat(count("tp_operation_lifecycle_facts")).isEqualTo(1);
+    assertThat(count("tp_operation_review_bindings")).isEqualTo(1);
   }
 
   @Test
