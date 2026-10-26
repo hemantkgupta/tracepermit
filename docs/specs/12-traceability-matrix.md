@@ -1,5 +1,29 @@
 # Requirements traceability matrix
 
+## Execution-disabled AgentCore registration ingress
+
+Requirements: FR-002/003/010/012; SEC-001/002/003/004/009/012;
+REL-001/002/003/005/009; DATA-001; OPS-002/004; PORT-004.
+`AgentCoreRegistrationIngress` verifies the unchanged access-token profile and
+exact operator workload enrollment, derives scope/target/canonical metadata,
+rejects closed-schema violations and all human/OBO token composition, consumes
+an exact credential fingerprint through the existing replay port and registers
+through `BusinessOperationRepository`. It returns no execution authority.
+`AgentCoreRegistrationIngressTest` uses local RSA tokens and a recording port
+for positive controls, wrong trust/scope/time/enrollment, unrelated valid token
+pairs, substitutions, malformed/bounded JSON, concurrent replay, original-return
+retry and fixed conflict/uncertainty/dependency errors. There is no execution,
+target credential or transport dependency. See
+[ADR0078](../architecture/0078-agentcore-execution-disabled-registration.md) and
+[runbook](../runbooks/agentcore-trusted-ingress.md).
+
+This is an unwired synthetic slice. Live provider claim compatibility, a verified
+workload-to-human grant/exchange artifact, transport sender proof, shared durable
+replay and composed ingress/JDBC qualification remain separate gates. Existing
+repository durability is independently tested on its unchanged fixtures; local
+token/repository fixtures are not provider interoperability or durable ingress
+proof. No whole-requirement status is promoted.
+
 ## Closed durable operation review — opt-in V4 library
 
 [ADR0085](../architecture/0085-closed-durable-operation-review.md) adds the closed
