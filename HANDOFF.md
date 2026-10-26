@@ -557,6 +557,43 @@ TRACEPERMIT HANDOFF
 
 ## Historical PR101 reconciliation receipt — now merged into main
 
+- [Producer CI run](https://github.com/hemantkgupta/tracepermit/actions/runs/40093825438)
+  passed at365d5dd before MariaDB integration, with an observed8m39s completion.
+- [Merged MariaDB handoff](https://github.com/hemantkgupta/tracepermit/pull/94#issuecomment-6384587169)
+  and [PR100 handoff](https://github.com/hemantkgupta/tracepermit/pull/100#issuecomment-6384195456)
+  preserve their original evidence and limits. These receipts do not replace this
+  reconciled workflow's exact-head qualification.
+
+## Wave 1 credential-provider lane checkpoint — PR105 only
+
+The earlier record is preserved from the frozen base as historical evidence; it
+does not assign this branch. This scoped record follows the wave-one shared
+protocol and preserves other lanes' claims. No private inputs were used.
+
+TRACEPERMIT HANDOFF
+
+- Task: Implement the unwired GitHub App installation credential-provider foundation; synthetic proof and bounded delivery.
+- Repository: https://github.com/hemantkgupta/tracepermit
+- Branch: codex/github-app-installation-credentials
+- Base commit: f23dc22f056058d7977715e0878c284728d10d17 (frozen main).
+- Latest pushed commit: public ownership/plan checkpoint b944f05; this tested source/evidence checkpoint follows. Resolve exact final pushed head from PR105 before taking ownership.
+- PR URL: https://github.com/hemantkgupta/tracepermit/pull/105 (draft, open, unmerged).
+- Branch owner now: cloud credential writer through final publication; final documentation/PR handoff explicitly releases writing. Mac operation binding/lifecycle, Gemini OIDC/MariaDB design and cloud setup lanes are untouched.
+- Working tree status: scoped Java/docs checkpoint pending normal commit/push; no merge/rebase/force-push or other-checkout edits.
+- Completed: immutable operator App/installation/owner/repository/minimum-permission configuration; explicit private POSIX PKCS#8 DER source; bounded RS256 JWT; fixed HTTPS/public DNS/platform TLS/no-follow-up exchange; typed installation GET and one restricted token POST; response assurance/expiry-after-cleanup; no cache; fixed cause/suppression-safe diagnostics. ADR0076, runbook, learning, scoped specifications/traceability and official-source facts recorded. Requirements: FR-001/008/009/012; SEC-001/002/003/012/015/019; REL-001/003/005/009; OPS-002/004; no whole-ID promotion.
+- Remaining: independent review, exact-head hosted gates and the failed local native process-cleanup qualification. No unrelated repair/retry or merge authorized. Live response compatibility, private-key custody/installation, durable operation composition and target wiring remain separate.
+- Files materially changed: seven runtime and two test files in github.credentials; ADR0076, dedicated runbook/learning/plan; appended ADR0073/preflight-runbook context, specs README/08/11/12 and this scoped handoff. Shared-doc overlap with PR95/101 is acknowledged; no other lane's claim is rewritten.
+- Tests passed: frozen install;143 new focused cases;443 complete remote cases (300 retained+143 new), fresh again after guard restoration; no focused/remote failures/errors/skips. Removing two identity comparisons caused three expected failures among44 cases, then exact restoration. Build/typecheck,124 React tests and Java environment check passed; formatting, docs links,13 synchronized flow tests and whitespace passed. Final exact counts are recorded in PR105.
+- Tests failed/not run: one pnpm check FAILED: HTTP428=424 passed,3 unchanged native process-tree cleanup failures,1 existing installed-archive/native-PTY skip. Failures: processTreeTrackerHandlesRootEarlyExitWithoutProcessNameKills, processTreeTrackerEscalatesToForceKillWhenTermIgnored, ptyProcessTreeCleanupTerminatesAllDescendantsWithNoLingeringProcesses; existing termination helper reported cleanup unconfirmed. Later Java/forced PostgreSQL-MariaDB/aggregate coverage gates not reached; no broad retry. Hosted exact-head, live provider/target, custody/rotation, installed/public-edge or production qualification not supplied.
+- Exact next command: gh pr view 105 --repo hemantkgupta/tracepermit (review candidate and recorded gates; no live action).
+- Required environment: prepared Java21.0.12.1, Node22+ (observed24.19.0), Corepack pnpm11.25.0; managed Docker28.4.0/pinned fixtures for full checks; one Gradle worker. Existing prepared Corepack cache/lane-local shims selected without installing tooling or changing network policy.
+- Local-only/manual steps: official-source downloads, JUnit/log/control receipts and caches remain outside Git. No real credential installation or provider call. Runtime-generated temporary key files only; no committed private/development key.
+- Security constraints: existing provider port/adapter/preflight/action/canonical/permit/authority behavior unchanged; no operation bridge, target dispatch, public endpoint/tunnel, arbitrary origin/trust, paid API, cache/refresh loop or retry. Private agentcore-work excluded before materialization and unread. No secrets/raw fragments/causes/suppression in diagnostics; no other-lane or global Docker/process changes.
+- Known limitations: strict organization/one-repository/three-permission/DER-POSIX profile; GitHub optional assurance omissions fail closed, so live compatibility is unqualified. Opaque token installation provenance trusts authenticated GitHub minting contract, not independent introspection. Local key I/O and Java secret memory are not universal deadline/erasure guarantees. A failed mint/cleanup may leave an unused token until expiry. Local whole-repo validation is red; zero running test containers is not confirmation of the failed native process cleanup.
+- Safe for another environment to continue: yes for read-only review; writer transfer requires final explicit release and verified exact pushed clean head.
+
+## Preserved PR101 reconciliation handoff
+
 The following lifecycle receipt is retained for provenance, not current branch
 ownership or fresh binding qualification. PR101 was subsequently merged; its
 [final public handoff](https://github.com/hemantkgupta/tracepermit/pull/101#issuecomment-6385799517)
@@ -629,3 +666,32 @@ TRACEPERMIT HANDOFF
 
 These historical receipts retain their original scope; fresh merged-head PR101
 local checks are recorded above, with exact-final-head hosted checks separate.
+
+## Wave 2 Cloud 1 review and synthetic composition — PR105
+
+This scoped receipt preserves the earlier failed local native-process cleanup
+run and every other lane's handoff. It does not assign application authority,
+persistence, identity, ingress or CI to Cloud 1. The exact final published SHA,
+hosted checks and writer release are authoritative in PR105's final comment.
+
+TRACEPERMIT HANDOFF
+
+- Task: Approved eight-hour Cloud 1 packet: reconcile PR105, independently review the installation provider, repair owned-buffer erasure and prove concrete-provider/adapter composition with fake peers. Eight hours is a ceiling; completed acceptance work is not padded.
+- Repository: https://github.com/hemantkgupta/tracepermit; prepared checkout `/workspace/tracepermit`.
+- Branch: codex/github-app-installation-credentials.
+- Base commit: planning main `0bc6b618aa9eac7df3bacf7a6d4bcafe2a824c4f`; prior released PR105 head `9405c0ee476b28322a5930a5a88a2d5032abc6b3`.
+- Latest pushed commit: normal merge `6c999a8ea9e9efeb6e9e47cd08b235fd757b2125`; the reviewed source/evidence checkpoint follows. Resolve its exact SHA from PR105's final handoff before continuing.
+- PR URL: https://github.com/hemantkgupta/tracepermit/pull/105; draft, open, unmerged.
+- Branch owner now: Cloud 1 until final normal publication and explicit release in PR105. That final release supersedes this pre-publication field. No concurrent writer was observed before the claim.
+- Working tree status: scoped source/evidence ready for normal commit/publication; final clean local/upstream/PR equality is checked before release. No reset, discard, clean, rebase or force-push.
+- Completed: environment/Start/runtime verification, two ready preflights/nine setup cases; normal merge preserving both parents and all handoffs; closed status/pagination buffer erasure gap;105 review, eight transport-budget and15 concrete-provider composition regressions. Existing permit/request/allowlist/preflight/unknown-outcome behavior is unchanged. ADR0076 and narrowly appended specifications/traceability/runbook describe test-only composition; ADR0079 is unused.
+- Remaining: exact-final-head hosted qualification and independent/operator review at this documentation checkpoint; no merge authorized. Live App/installation/key custody/response compatibility, shipped launcher, durable business-operation executor and target qualification remain separate gates.
+- Files materially changed: two existing github.credentials runtime files; new CredentialReviewRegressionTest, CredentialTransportBudgetTest, SyntheticInstallationCredentialFixture and GitHubCredentialCompositionTest; ADR0076, credential runbook, specs README/11/12 and this handoff. Normal merge preserves unrelated incoming code; no other-lane runtime or CI edit.
+- Tests passed: frozen install;143 merged-baseline credential cases; fresh full remote673/17 suites with all17 tasks executed and zero failures/errors/skips; full pnpm check (124 React,2,096 recorded Java cases/150 suites, zero failures/errors, one archive/native-PTY skip; six tasks executed/59 up-to-date,4m8s); coverage94.5357% line/78.5294% branch unchanged gates; forced operations245 (78 per exact engine plus11 reader),14 tasks executed/no cache, zero failures/errors/skips; forced standalone MariaDB17 including10.6.25/11.4.13,10 tasks executed/no cache, zero failures/errors/skips; format,1,130 links/three helpers,13 flows/drift, diff checks.
+- Tests failed/not run: temporarily reverting only the buffer repair produced exactly two expected failures among four cases; repair restored before fresh673 pass. Two intermediate composition runs had one fixture URL-query assertion failure each, repaired by exact path ordering and independent exact query-parameter checks. Original PR105's three local native cleanup failures remain historical failures. Current existing installed-archive/native-PTY case skipped because the archive was absent; no installed/native or live/provider/production qualification. Hosted final-head results pending here; final PR comment records them separately.
+- Exact next command: `gh pr view 105 --repo hemantkgupta/tracepermit --json headRefOid,state,isDraft,statusCheckRollup`.
+- Required environment: published tracepermit-java21-docker; activate `TRACEPERMIT_JAVA_HOME=/workspace/.local/jdk-21`, saved XDG directories and `scripts/configure-java-environment.sh`; Java/javac21.0.8, Node24.19.0, pnpm11.25.0, Gradle8.14.3; managed Unix Docker28.4.0 and exact retained fixtures; max two Gradle workers, unchanged internal test concurrency/deadlines/assertions.
+- Local-only/manual steps: sanitized aggregate receipts plus ignored raw logs/JUnit/caches and exact-Git-object publication helper under `/tmp/tracepermit-cloud1-*`; generated temporary synthetic keys only. No real key/credential installation. The app's artifact-attachment tool was attempted but reports unavailable on this host; PR105 is linked here and in the final response.
+- Security constraints: private agentcore-work excluded before materialization and unread/unstaged; no customer/live App/token/target/AWS/AgentCore call, shipped launcher, authority interface, production claim, public listener/tunnel, proxy/TLS bypass, daemon restart/prune, other-task resource cleanup, broader credentials/network policy, effectful retry, paid API fallback or PR merge. GH_TOKEN remains scoped to api.github.com; Git publication preserves exact local object IDs and expected-head non-forced updates.
+- Known limitations: strict optional-assurance/organization/DER-POSIX profile; opaque minting provenance trusts GitHub; policy-level TLS/DNS tests are not live compatibility. Java strings/key memory and local key I/O are not universal erasure/deadline guarantees. Composition is test-source only; its in-memory ledger is process-local and provides no durable authority. Explicit replay may mint fresh credentials without another target write; unknown outcome never permits automatic dispatch. This prepared environment's passing gate does not relabel the earlier host's cleanup failures.
+- Safe for another environment to continue: yes after the final explicit PR105 release, verifying exact published head/clean tree and claiming sole ownership; no automatic merge or live action is authorized.
