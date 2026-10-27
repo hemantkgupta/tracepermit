@@ -4,6 +4,13 @@ These documents describe the Java/React POC and distinguish implemented
 controls from target enterprise requirements. Source and tests determine what
 actually runs; a target requirement is not an implementation claim.
 
+[ADR0089](../architecture/0089-source-free-synthetic-registration-cli.md) adds
+the independent source-free local synthetic registration command. Its
+[runbook](../runbooks/source-free-synthetic-registration-cli.md) defines closed
+private framing, offline public trust, loopback-only stores and qualification
+status. All receipts remain execution-disabled; no live provider or target
+authority is added.
+
 [ADR0067](../architecture/0067-bounded-okta-oidc-qualification.md) and the
 [Okta operator runbook](../runbooks/okta-oidc-qualification.md) define the
 schema1.2 public/native custom-server foundation. Generated-signature tests

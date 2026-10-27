@@ -1,5 +1,26 @@
 # Requirements traceability matrix
 
+## Source-free local synthetic registration command
+
+Requirements: FR-003/008/011/012; SEC-001/003/006/009/012; REL-001/002/004;
+OPS-002/004. Partial evidence only, with no whole-ID status promotion.
+
+`agentcore-registration-cli` adds a source-free Java21 distribution around the
+unchanged concrete durable factory. `OperatorConfig`/`Protocol` enforce separate
+closed trusted/untrusted pipe frames and exact numeric-loopback driver settings;
+`Worker` constructs the offline pinned real verifier and invokes registration
+once. `Supervisor` bounds owned worker/read/write/cleanup lifecycle and requires
+an acknowledged closed receipt. `BoundaryTest` guards offline DNS/network/JDBC;
+`InstalledRegistrationContract` covers installed three-engine restart, signature,
+enrollment, schema/capacity/privilege controls, both32-process races and real
+commit-reply loss/death/readback denial. `SupervisorTest`/`ArchiveBoundaryTest`
+cover positive stalls, pressure/interrupt/exit and source-free inventory/hash.
+The [runbook](../runbooks/source-free-synthetic-registration-cli.md) records actual
+qualification status and failures; implemented tests are not a pass claim.
+See [ADR0089](../architecture/0089-source-free-synthetic-registration-cli.md).
+No live enrollment, human delegation, approval, admission, permit, target,
+revocation, restore/failover fence or production-readiness claim follows.
+
 ## Bounded Okta public/native foundation
 
 FR-003/007/012; SEC-002/003/004/009/011/012/015; REL-001/004/009;
