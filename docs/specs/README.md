@@ -4,6 +4,14 @@ These documents describe the Java/React POC and distinguish implemented
 controls from target enterprise requirements. Source and tests determine what
 actually runs; a target requirement is not an implementation claim.
 
+[ADR0092](../architecture/0092-installed-durable-agentcore-http-session.md)
+adds a separate source-free Java21 command that starts the existing closed
+durable registration HTTP composition only for an explicit bounded session. Its
+[runbook](../runbooks/installed-durable-agentcore-http.md) defines the exact
+two-frame anonymous-pipe input, lifecycle-only receipts and installed
+three-engine evidence. Session end is not registration rollback, approval,
+admission or execution authority.
+
 [ADR0091](../architecture/0091-durable-agentcore-registration-http-composition.md)
 adds the closed trusted-operator composition of the existing numeric-loopback
 HTTP server and existing durable AgentCore registration factory. Its
