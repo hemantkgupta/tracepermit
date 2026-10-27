@@ -20,7 +20,7 @@ pipe lifecycle within documented JVM/OS limits. `check-config` performs no
 DNS/network/JDBC/signing/replay/registration operation. This is partial
 FR-003/008/011/012, SEC-001/003/006/009/012, REL-001/002/004 and OPS-002/004
 evidence; qualification status and exact framing/configuration are in
-[ADR0088](../architecture/0088-source-free-synthetic-registration-cli.md) and the
+[ADR0089](../architecture/0089-source-free-synthetic-registration-cli.md) and the
 [runbook](../runbooks/source-free-synthetic-registration-cli.md).
 
 ## Durable execution-disabled AgentCore registration composition

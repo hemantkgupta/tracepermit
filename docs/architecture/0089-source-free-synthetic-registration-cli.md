@@ -1,4 +1,4 @@
-# ADR0088: source-free local synthetic registration command
+# ADR0089: source-free local synthetic registration command
 
 Status: implemented and locally qualified across the three exact database engines.
 

@@ -17,7 +17,7 @@ commit-reply loss/death/readback denial. `SupervisorTest`/`ArchiveBoundaryTest`
 cover positive stalls, pressure/interrupt/exit and source-free inventory/hash.
 The [runbook](../runbooks/source-free-synthetic-registration-cli.md) records actual
 qualification status and failures; implemented tests are not a pass claim.
-See [ADR0088](../architecture/0088-source-free-synthetic-registration-cli.md).
+See [ADR0089](../architecture/0089-source-free-synthetic-registration-cli.md).
 No live enrollment, human delegation, approval, admission, permit, target,
 revocation, restore/failover fence or production-readiness claim follows.
 

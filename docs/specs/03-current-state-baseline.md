@@ -21,7 +21,7 @@ reconstruction. Configuration validation is offline and has zero JDBC/network
 effects. This is local synthetic behavior; the [qualification runbook](../runbooks/source-free-synthetic-registration-cli.md)
 records actual pass/failure status. It adds no human/OBO, approval, admission,
 permit, listener, target transport or live AgentCore/Okta support. See
-[ADR0088](../architecture/0088-source-free-synthetic-registration-cli.md).
+[ADR0089](../architecture/0089-source-free-synthetic-registration-cli.md).
 
 ## Opt-in closed durable operation review
 

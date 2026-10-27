@@ -4,7 +4,7 @@ Status: local three-engine and repository qualification complete. This is not a
 release or live-provider qualification.
 
 This is partial FR-003/008/011/012, SEC-001/003/006/009/012, REL-001/002/004 and
-OPS-002/004 evidence. [ADR0088](../architecture/0088-source-free-synthetic-registration-cli.md)
+OPS-002/004 evidence. [ADR0089](../architecture/0089-source-free-synthetic-registration-cli.md)
 defines the trust/process boundary. The frozen producer is PR120 at
 `f655db740f90d008f2d8237e0a3fe40baa82bc37`.
 
