@@ -2,7 +2,8 @@
 
 Track A implements the approved [ADR0090](../architecture/0090-closed-durable-synthetic-delivery.md)
 contract after [V6 admission](closed-operation-admission.md). Qualification is
-in progress; no published passing candidate or final merge readiness is claimed.
+incomplete; human-authorized draft publication retains known failures and unrun
+gates. No passing candidate or final merge readiness is claimed.
 
 ## Operator boundary
 
@@ -187,8 +188,8 @@ result. Results-only Markdown is scoped-formatted separately, not a full gate.
 The observed test worker and all10 actual crash/restart receipt PIDs exited;
 there were zero running Testcontainers at stop. No other-worker process action,
 Docker restart/prune or repair occurred. The known exited PID1 subreaper zombie
-remains disclosed. Track A ownership is released, source remains local/unpublished,
-and no PR or merge readiness is claimed. A historical-principal field-type source
+remains disclosed. That cycle released Track A with source local/unpublished,
+and no PR or merge readiness was claimed. A historical-principal field-type source
 review note remains for a bounded distinguishing proof, not a claimed bypass or
 a diagnosis of this timeout.
 
@@ -202,3 +203,21 @@ target, claims or decision. Actual restricted JDBC/forwarded faults exercise
 transaction boundaries; these are not physical service/DB crash certification.
 Even a green original-base A draft awaits a separately coordinated refresh onto
 the accepted B-first main; original-base tests cannot qualify that composition.
+
+## Human-authorized publication with known qualification gaps
+
+The human subsequently instructed moving ahead with the known failed/skipped
+cases and providing a PR targeting main. This permits a guarded normal push and
+draft PR of the preserved candidate; it does not make the stopped gate pass or
+authorize check bypass, ready/final merge, weakened tests or source repair.
+Publication changes only status documentation; runtime/test bytes remain9072586.
+The skipped review case is
+`issuerRechecksFreshExecuteIdentityAfterActualHeadLockWait`, skipped after the
+unchanged90-second timeout described above. The original logs/XML/partial
+execution data and all earlier stopped/negative-control receipts remain retained.
+
+Publication-time lightweight checks and exact-head hosted results belong in the
+PR's full handoff. Original-base tests must not be relabelled current-main
+qualification. Accepted B-first main221be9f reconciliation, remaining engine/full
+repository/coverage gates and the historical-principal field-type review remain
+open. The draft is available for review; it is not a green merge recommendation.
