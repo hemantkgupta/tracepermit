@@ -996,3 +996,26 @@ TRACEPERMIT HANDOFF
 - Security constraints: private agentcore-work excluded before materialization and unread/unstaged; no customer/live App/token/target/AWS/AgentCore call, shipped launcher, authority interface, production claim, public listener/tunnel, proxy/TLS bypass, daemon restart/prune, other-task resource cleanup, broader credentials/network policy, effectful retry, paid API fallback or PR merge. GH_TOKEN remains scoped to api.github.com; Git publication preserves exact local object IDs and expected-head non-forced updates.
 - Known limitations: strict optional-assurance/organization/DER-POSIX profile; opaque minting provenance trusts GitHub; policy-level TLS/DNS tests are not live compatibility. Java strings/key memory and local key I/O are not universal erasure/deadline guarantees. Composition is test-source only; its in-memory ledger is process-local and provides no durable authority. Explicit replay may mint fresh credentials without another target write; unknown outcome never permits automatic dispatch. This prepared environment's passing gate does not relabel the earlier host's cleanup failures.
 - Safe for another environment to continue: yes after the final explicit PR105 release, verifying exact published head/clean tree and claiming sole ownership; no automatic merge or live action is authorized.
+
+## Issue126 process-harness reliability — local Mac
+
+The human authorized a separate local reliability lane while Mac Air continues
+Track E. Base is accepted main `3c89887f8e2398eab557091d27d97e9aa238035c`;
+branch `codex/issue126-process-test-reliability`. Only old process-test harnesses,
+new harness regressions and additive lane-specific docs are owned here. Mac Air
+retains E runtime/facades, four D tests and E documentation. Preserve all earlier
+failed/stopped handoffs and both writers' sections during integration.
+
+The [reliability record](docs/runbooks/issue126-process-test-reliability.md)
+separates the Linux metadata reproduction, native focused results and pending
+full/hosted qualification. All tests/assertions/deadlines/session lifetimes,
+workloads/grants/cleanup/94%LINE/75%BRANCH gates remain active. There is no new
+production, protocol, CI, schema or authority change and no automatic future merge.
+Issue126 stays open while any required failure/coverage gate remains unmet.
+
+The [org sandbox acceptance plan](docs/runbooks/org-sandbox-acceptance-plan.md)
+is a proposed manifest, ordered evidence gates and go/no-go contract. Org-specific
+identities, exact topology/target bindings, credentials and deployment remain
+pending. EKS/Okta/GitHub draft PR is the human-selected next direction; the plan
+does not enable a live resource. Exact final candidate identities,
+qualification, cleanup and writer release belong in the final PR/issue handoff.

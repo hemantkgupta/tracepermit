@@ -385,3 +385,20 @@ Linux POSIX synthetic tests do not certify a Mac, live key/provider/target,
 current policy, durable authority, execution, reconciliation or absence after
 an interrupted/lost response. Preserve failure, skip and cache evidence in the
 exact-head handoff.
+
+## Issue126 process-harness reliability
+
+Test-source-only acceptance requires exact owned-worker discovery when optional
+Java process metadata is absent, refusal of wrong-main/command/overflow controls,
+bounded failed-start and group cleanup, preserved interruption and fixed-vocabulary
+failure diagnostics. Keep every existing process timeout, session lifetime,
+contender/request count, authority/grant assertion and coverage threshold active.
+The cached Linux extracted-archive metadata probe is separate from native
+three-engine suites, full repository qualification and exact-head hosted CI.
+Neither a local pass nor a merged exception changes earlier failed results.
+
+The [reliability record](../runbooks/issue126-process-test-reliability.md) maps actual
+evidence and unresolved limits; the [learning note](../learning/optional-process-metadata-is-not-worker-identity.md)
+explains why process metadata is not authority. The
+[org sandbox acceptance plan](../runbooks/org-sandbox-acceptance-plan.md) remains
+a proposed deployment contract, not OPS-005 or real-target qualification.
