@@ -135,3 +135,14 @@ empty content. Fourteen failed before the typed matcher; all pass with it.
 Guard-removal positive controls are recorded in the PR; guards
 are restored before mandatory gates. Official source facts and operator limits
 are in the [dedicated runbook](../runbooks/github-pilot-target-preflight.md).
+
+## Subsequent credential library foundation
+
+[ADR0076](0076-github-installation-credential-provider.md) adds a separately
+qualified, unwired implementation behind the trusted credential-provider port.
+The original no-minting baseline above remains historical for the target adapter;
+that adapter/preflight is unchanged and does not automatically instantiate or
+install the new library. Strict App/installation/repository/permission observations
+and private operator signing inputs narrow the provider boundary, while opaque
+minted-token provenance still trusts GitHub's authenticated endpoint contract.
+Synthetic evidence is not live installation, operation bridging or dispatch.

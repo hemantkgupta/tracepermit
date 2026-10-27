@@ -10,6 +10,7 @@ import io.tracepermit.execution.TenantPartition;
 import io.tracepermit.identity.ConnectorOrigin;
 import io.tracepermit.identity.ConnectorScope;
 import io.tracepermit.identity.OidcProviderConfiguration;
+import io.tracepermit.identity.OidcTokenProfile;
 import java.io.IOException;
 import java.net.URI;
 import java.nio.ByteBuffer;
@@ -75,11 +76,27 @@ final class SimulatorApprovalConfiguration {
           ? Set.of("schemaVersion", "port", "postgres", "oidc", "memberships", "permit", "browser")
           : Set.of("schemaVersion", "port", "postgres", "oidc", "memberships", "permit"));
       String version = text(root, "schemaVersion", 8);
-      require(Set.of("1.0", "1.1").contains(version));
-      require(!"1.1".equals(version) || root.has("browser"));
+      require(Set.of("1.0", "1.1", "1.2").contains(version));
+      require("1.0".equals(version) || root.has("browser"));
+      boolean okta = "1.2".equals(version);
       int port = integer(root, "port", 1, 65_535);
       JsonNode oidc = root.path("oidc");
-      fields(oidc, Set.of("issuer", "audience", "jwksUri", "clientId", "tenantClaim", "tenantValue", "tenantId"));
+      Set<String> oidcFields = new HashSet<>(Set.of("issuer", "audience", "jwksUri", "clientId", "tenantClaim", "tenantValue", "tenantId"));
+      if (okta) oidcFields.addAll(Set.of("profile", "groupsClaim", "groupRoleMappings"));
+      fields(oidc, oidcFields);
+      OidcTokenProfile tokenProfile = OidcTokenProfile.standard();
+      if (okta) {
+        require(OidcTokenProfile.OKTA.equals(text(oidc, "profile", 64)));
+        JsonNode bindings = oidc.path("groupRoleMappings");
+        require(bindings.isObject() && bindings.size() >= 2 && bindings.size() <= 32);
+        Map<String, String> mappings = new java.util.HashMap<>();
+        bindings.fields().forEachRemaining(entry -> {
+          require(entry.getValue().isTextual());
+          mappings.put(entry.getKey(), entry.getValue().textValue());
+        });
+        require(mappings.containsValue("REQUESTER") && mappings.containsValue("REVIEWER"));
+        tokenProfile = OidcTokenProfile.okta(text(oidc, "groupsClaim", 64), mappings);
+      }
       URI issuer = URI.create(text(oidc, "issuer", 512));
       String audience = text(oidc, "audience", 512);
       String clientId = tokenIdentifier(oidc, "clientId", false);
@@ -89,8 +106,10 @@ final class SimulatorApprovalConfiguration {
           "TracePermit local simulator approvals", Map.of(clientId, "Approval API client"),
           text(oidc, "tenantClaim", 256), Map.of(tokenIdentifier(oidc, "tenantValue", false), tenant.value()),
           root.has("browser") ? java.util.stream.Stream.concat(SCOPES.stream(),
-              java.util.stream.Stream.of(ConnectorScope.of("openid"))).collect(java.util.stream.Collectors.toUnmodifiableSet()) : SCOPES,
-          ConnectorOrigin.CLI, Duration.ofMinutes(15), Duration.ofMinutes(1), Duration.ofSeconds(5));
+              (okta ? java.util.stream.Stream.of(ConnectorScope.of("openid"), ConnectorScope.of("groups"))
+                  : java.util.stream.Stream.of(ConnectorScope.of("openid"))))
+              .collect(java.util.stream.Collectors.toUnmodifiableSet()) : SCOPES,
+          ConnectorOrigin.CLI, Duration.ofMinutes(15), Duration.ofMinutes(1), Duration.ofSeconds(5), tokenProfile);
       // Constructor validates the exact URL syntax without resolving DNS or opening a connection.
       new SsrfSafeHttpsJwkSetSource(Set.of(provider.jwksUri()), Duration.ofSeconds(3), Duration.ofSeconds(5));
       // This API has no OAuth discovery/browser flow. Metadata/origin fields above are verifier context only.
@@ -134,8 +153,9 @@ final class SimulatorApprovalConfiguration {
         String method = "1.0".equals(version) ? "client_secret_basic"
             : text(web, "tokenEndpointAuthMethod", 32);
         require(Set.of("none", "client_secret_basic").contains(method));
+        require(!okta || "none".equals(method));
         Set<String> webFields = new HashSet<>(Set.of("authorizationUri", "tokenUri", "consoleDirectory"));
-        if ("1.1".equals(version)) webFields.add("tokenEndpointAuthMethod");
+        if (!"1.0".equals(version)) webFields.add("tokenEndpointAuthMethod");
         if ("client_secret_basic".equals(method)) webFields.add("clientSecretFile");
         fields(web, webFields);
         URI authorizationUri = URI.create(text(web, "authorizationUri", 768));
@@ -148,6 +168,13 @@ final class SimulatorApprovalConfiguration {
           secret = utf8(readPrivateFile(reference(config, web, "clientSecretFile"), 4096));
           if (secret.endsWith("\n")) secret = secret.substring(0, secret.length() - 1);
           require(operatorSecret(secret));
+        } else if (okta) {
+          organization = tokenIdentifier(oidc, "tenantValue", false);
+          require(issuer.getRawPath() != null
+              && issuer.getRawPath().matches("/oauth2/[A-Za-z0-9_-]{1,128}"));
+          require(authorizationUri.toString().equals(issuer + "/v1/authorize")
+              && tokenUri.toString().equals(issuer + "/v1/token")
+              && provider.jwksUri().toString().equals(issuer + "/v1/keys"));
         } else {
           // Narrow native Auth0 candidate: exact same-issuer endpoints and signed organization.
           require("org_id".equals(provider.tenantClaim()));

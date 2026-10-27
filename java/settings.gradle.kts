@@ -13,9 +13,12 @@ include(
   "agentcore-registration-http",
   "endpoint-connector",
   "review-verifier",
+  "pilot-operator",
   "persistence-postgres",
   "persistence-mariadb",
   "persistence-operations",
+  "persistence-identity",
+  "agentcore-durable-registration",
   "observability-otel",
   "conformance",
 )
