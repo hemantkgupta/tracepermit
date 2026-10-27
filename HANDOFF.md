@@ -3,39 +3,74 @@
 GitHub is authoritative. Keep credentials, raw claims and private operator/customer
 planning outside Git. Historical receipts below are not fresh qualification.
 
-## PR128 bounded current-main reconciliation and strict-type repair
+## PR128 identity repair — resumed from preserved failed checkpoint
 
-The next human-authorized cycle normally merges pinned main
-`02a7f27e36f674c008124b2b77b2bc5e030171bd` into published A
-`d1e915b73ee72ae222ee34bc3b7e71c84bdb865a`, preserving that ordered parent intent.
-Exactly four documentation conflicts are retained as additive unions: this
-handoff, interface contracts, traceability and specification README. Baseline
-auto-merges. Fifteen A runtime/test paths remain exact published blobs. The two
-justified A exceptions are one isTextual guard in OperationDeliveryJournal and
-its positive/negative OperationDeliveryContract regression. Imported B/C/main
-runtime/build/CI/contracts/migrations and every other main path remain exact.
+The human released the external editing hold and assigned this writer only
+PR128. Exact public head de7c92d89d29a1be556da67e5cb93dc3fbf7885d already contains
+main02a7f27e36f674c008124b2b77b2bc5e030171bd through normal mergeaeba870.
+Local provenance9537b94364c6ebf72dfacb67d11a4f8965fabeb2 preserves the earlier
+failed staged treed3e3b5521c033c9c7b92a35d516eac8cbb4699d9 without reset/discard.
+A normal ancestry integration retains the external documentation/status/spacing
+work, the one-line V7 textual-principal guard and its meaningful regression.
+Other A/B/C runtime, legacy migration/default V2, grants, deadlines and CI remain
+unchanged. This checkpoint is local/unpublished and not verified.
 
-The historical d1e915b CI run40495424499 remains red: core failed two simulator
-owner-inspection assertions and one PostgreSQL durable-registration child case;
-verify failed and coverage was skipped. All three operations jobs and Cloudflare
-passed on that old tree. Neither those passes nor earlier local receipts qualify
-this new composition. One isolated read-only metadata-type diagnostic accepted
-coherently linked numeric/boolean V7 principal metadata for legitimate String
-owners; typed-review, wrong-owner and broken-hash controls refused, with zero
-target invocations. The human then authorized the smallest A-owned strict-type
-guard plus meaningful regression and known-failure publication. It is a metadata
-integrity gap requiring privileged fixture rewrites, not a demonstrated authority
-bypass. Admission/legacy asText patterns remain unproved source-review items.
-The three-engine focused result, current head/tree/parents and current CI state
-belong to the next exact-head public handoff; old receipts stay historical.
+The preceding one-shot focused run recorded18cases:15pass/3fail/0errors/0skips,
+18fresh tasks in36m20. Both MariaDB six-case suites passed. PostgreSQL UNKNOWN
+failed OPERATION_STORAGE_UNAVAILABLE in review evaluation before delivery; both
+new principal cases exceeded the unchanged120s timeout despite reaching safe
+control assertions. Those phase receipts do not make a test pass. Exact XML,
+stacks, hashes and the stopped candidate remain preserved in the
+[stopped handoff](https://github.com/hemantkgupta/tracepermit/pull/128#issuecomment-6442882333).
+The bounded next diagnostic measures duplicate fixture reset time and safe JDBC
+phase/error categories, with no production diagnostic hook or new trust policy.
+Only an evidence-established fixture repair and genuinely passing fresh focused
+three-engine identity verification permit publication. No blind retry is allowed.
 
-PR127's human merge accepted its recorded nine hosted failures/missing coverage
-in [issue126](https://github.com/hemantkgupta/tracepermit/issues/126). That exception
-applies only to PR127, not PR128. Strict verify/coverage/security/tests remain
-unchanged. Root owns a separately recorded PR128 final-merge disposition after
-this checkpoint; this writer does not merge, alter rules or claim green.
+The original bounded diagnostic demonstrated coherently rehashed numeric/boolean
+V7 metadata acceptance for legitimate String owners; typed-review/wrong-owner/
+hash controls refused, target0. This is privileged stored-metadata integrity,
+not a demonstrated request/cross-owner/execution-authority bypass. Admission and
+legacy actor asText patterns remain unproved source-review observations.
+Historical local/core failures, skips and missing aggregate94/75 coverage stay
+unqualified. Root alone owns the separate final merge disposition; this writer
+never merges, changes rules or claims green from an exception. Exact new results,
+refs, ownership and limits belong to the next full public handoff.
 
-## Historical Track A publication — qualification incomplete
+## PR128 status after documentation conflict resolution
+
+GitHub status checked on 2026-10-27 at 18:34 IST (13:04 UTC):
+
+- [Track A PR128](https://github.com/hemantkgupta/tracepermit/pull/128) is open,
+  non-draft and unmerged. Its inspected head is
+  `aeba87003d1aae44581b11984c4b7f76c239e4f2`, which merges main into
+  `codex/closed-durable-delivery-v7`. The base is
+  `02a7f27e36f674c008124b2b77b2bc5e030171bd`.
+- [Track B PR125](https://github.com/hemantkgupta/tracepermit/pull/125) merged
+  into main at `221be9f599c2ee558041466ac5132a40bf540a2c`.
+- [Track C PR127](https://github.com/hemantkgupta/tracepermit/pull/127) merged
+  into main at `02a7f27e36f674c008124b2b77b2bc5e030171bd`.
+- [CI run 40508691569](https://github.com/hemantkgupta/tracepermit/actions/runs/40508691569)
+  was in progress for the inspected PR128 head. The earlier
+  [run 40495424499](https://github.com/hemantkgupta/tracepermit/actions/runs/40495424499)
+  failed; its failures and skipped coverage remain recorded in PR128. Neither
+  that earlier run nor either merged track qualifies the new combined tree.
+
+This is a status snapshot before the handoff-only update. Check PR128's latest
+head and its own checks after any subsequent commit; a previous head's CI result
+does not qualify a later head. No passing aggregate, coverage result or merge
+readiness is established here.
+
+All producer receipts below are historical, including headings that still say
+"current", ownership claims, working-tree statements, branch/base references and
+pending/unmerged status. Each test result belongs to its recorded track and
+composition; do not combine counts or transfer qualification between tracks.
+Earlier publication authorization is recorded history, not authorization to
+publish again, bypass checks, mark ready or merge. Verify current ownership and
+refs before further implementation work. This update changes only this handoff;
+the Track A, B and C implementation boundaries remain separate.
+
+## Historical Track A draft-publication receipt — qualification incomplete
 
 The human explicitly authorized publishing the preserved implementation despite
 the known failed/skipped cases and incomplete gates. The first complete operations
@@ -57,9 +92,9 @@ TRACEPERMIT HANDOFF
 - Branch: codex/closed-durable-delivery-v7
 - Base commit: refreshed target221be9f599c2ee558041466ac5132a40bf540a2c, tree8cb93714ee970230a65b1bdca74df9ed1965cced. Original A base8d5a5d784fdb9adce632e2d418c702940c13d2a0.
 - Latest pushed commit: use the PR's exact head and publication handoff. A runtime checkpoint90725868238b64dd10286390086490351913a50b, treefc7a24ad4aef353d9c5cb362e7d28366c188115e; accepted B content is imported from221be9f without manual runtime/test edits.
-- PR URL: assigned after this documentation checkpoint; the publication handoff records its exact URL and pushed SHA.
-- Branch owner now: TP-Cloud-New owns only the bounded A publication at preparation; the PR handoff records release. Other lanes/checkouts/evidence are preserved.
-- Working tree status: clean after the publication-documentation checkpoint; verify exact local/remote HEAD before continuation.
+- PR URL: https://github.com/hemantkgupta/tracepermit/pull/128; consult its latest head and publication handoff for subsequent status.
+- Branch owner at preparation: TP-Cloud-New owned only the bounded A publication; the PR handoff records release. Other lanes/checkouts/evidence were preserved. This historical receipt assigns no current ownership.
+- Working tree at publication checkpoint: recorded clean after the publication-documentation checkpoint; verify exact local/remote HEAD before continuation.
 - Completed: additive V7 journal/reader/explicit migration, writer-time capped lease/fence, acknowledged start before deterministic synthetic target, distinct results/read-only reconciliation/no resend; ADR0090/specifications/learning/runbook; normal current-main ancestry refresh with four documentation unions. V1–V6 SQL/default V2 remain unchanged; B runtime/tests exactly match accepted main.
 - Remaining: evidence-led timeout diagnosis under a separately bounded follow-up; complete refreshed-composition engine/repository/coverage/CI gates; assess the noted historical-principal field-type review item. No old-base receipt qualifies the new composition.
 - Files materially changed:25 paths covering application diagnostics, operations V7 implementation/compatibility/tests and A-only documentation; no dependencies or CI changes.
@@ -72,20 +107,16 @@ TRACEPERMIT HANDOFF
 - Known limitations: timeout phase/cause is unknown; earlier generic child failure did not reproduce but is not declared repaired. A source-review note on historical principalId.asText typing needs focused proof; it is not a demonstrated authority bypass. Worker pause cannot be atomically fenced by DB lease; no physical restore/live-target/exactly-once or old-binary rolling-upgrade qualification. Owned observed worker/10 crash child PIDs exited, no running Testcontainers at stop; the exited PID1 subreaper zombie remains disclosed/unrepaired.
 - Safe for another environment to continue: read-only review after publication, yes; merge-ready, no. A follow-up writer needs exact ownership/refs/runtime/evidence re-verification and a separately bounded reconciliation/qualification scope.
 
-The following B section is retained as an accepted historical producer receipt.
-PR125 is merged into main221be9f and Air released ownership in its
-[authoritative handoff](https://github.com/hemantkgupta/tracepermit/pull/125#issuecomment-6436904634).
-Those receipts do not qualify this A+B refresh.
+## Historical Track C installed durable AgentCore HTTP session receipt
 
-## Current Track C installed durable AgentCore HTTP session
-
-Mac Air owns only `codex/installed-durable-agentcore-http`, based on accepted
+At preparation, Mac Air owned only `codex/installed-durable-agentcore-http`, based on accepted
 main `221be9f599c2ee558041466ac5132a40bf540a2c` (tree
 `8cb93714ee970230a65b1bdca74df9ed1965cced`). The branch adds the separate
 source-free `agentcore-registration-http-cli`, a narrow reuse facade in the
 existing installed registration CLI, ADR0092, its runbook/learning note and
-additive specification mappings. Track A authority/migration files and the
-merged Track B implementation remain unchanged.
+additive specification mappings. At that checkpoint, Track C made no changes to
+Track A authority/migration files or the merged Track B implementation; this is
+not a statement about the combined PR128 diff.
 
 The command accepts exactly the closed operator frame plus an explicit bounded
 session frame through anonymous stdin, then starts only the existing numeric
@@ -106,12 +137,20 @@ before READY. Aggregate coverage therefore did not run. Formatting,1,349 links,
 13 flow/drift cases and diff checks passed. The human explicitly accepted
 publishing this code checkpoint with both active failures deferred to
 [issue126](https://github.com/hemantkgupta/tracepermit/issues/126); this is not a
-passing qualification claim and neither test is disabled or weakened. Exact-head
-hosted checks and the draft PR remain pending. All PRs remain unmerged.
+passing qualification claim and neither test is disabled or weakened. Hosted
+checks and draft publication were pending at preparation. PR127 has since
+merged, as recorded in the status snapshot above; that merge does not convert
+these failed or unrun gates into passing qualification.
 
-## Current Track B durable registration HTTP composition
+The following B section is retained as an accepted historical producer receipt.
+PR125 merged into main at `221be9f599c2ee558041466ac5132a40bf540a2c`; Air's
+ownership release is recorded in its
+[authoritative handoff](https://github.com/hemantkgupta/tracepermit/pull/125#issuecomment-6436904634).
+Those receipts do not qualify the combined Track A+B+C tree.
 
-Mac Air owns only `codex/track-b-durable-agentcore-composition`, based on human-
+## Historical Track B durable registration HTTP composition receipt
+
+At preparation, Mac Air owned only `codex/track-b-durable-agentcore-composition`, based on human-
 accepted main `8d5a5d784fdb9adce632e2d418c702940c13d2a0` (tree
 `84f9f0b6b84f437d11521c38743d53cd20223fd9`). The branch adds the closed
 `DurableAgentCoreRegistrationHttpServer` wrapper inside the existing durable
@@ -131,9 +170,10 @@ Java tests across 206 suites, zero failures/errors and one existing opt-in
 absent-archive native-PTY skip; coverage passed at 94.5667% LINE/78.0458% BRANCH.
 Gradle used 45 executed/20 cached/27 up-to-date tasks, including reuse of the
 immediately preceding fresh Track B outputs. Final formatting, 1,335-link and 13
-flow/drift gates passed; exact-pushed-head hosted receipts remain pending. This
-writer retains ownership until the draft PR final handoff explicitly releases
-it. All PRs remain unmerged.
+flow/drift gates passed. Hosted receipts and writer release were pending at
+preparation; the subsequent handoff above records release, and PR125 is merged.
+These test results describe Track B's recorded composition, not the combined
+PR128 tree.
 
 ## Current PR95 reconciliation
 

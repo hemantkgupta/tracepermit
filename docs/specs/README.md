@@ -11,7 +11,6 @@ writer-time leases, acknowledged start, observations and no-resend recovery.
 Implementation/qualification are in progress; no endpoint/default/live target
 is enabled. The [learning note](../learning/lease-is-not-an-exactly-once-target-fence.md)
 explains why a lease cannot atomically fence a paused target call.
-
 [ADR0092](../architecture/0092-installed-durable-agentcore-http-session.md)
 adds a separate source-free Java21 command that starts the existing closed
 durable registration HTTP composition only for an explicit bounded session. Its
