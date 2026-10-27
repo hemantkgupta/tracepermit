@@ -10,6 +10,7 @@ and its [runbook](../runbooks/closed-synthetic-operation-delivery.md) define cap
 writer-time leases, exact fencing, acknowledged-start/no-resend and read-only
 reconciliation. No whole requirement status, passing qualification, live target,
 endpoint/default runtime or final merge readiness is promoted.
+
 ## Installed bounded durable AgentCore HTTP session
 
 Requirements: FR-002/003/008/010/011/012;
