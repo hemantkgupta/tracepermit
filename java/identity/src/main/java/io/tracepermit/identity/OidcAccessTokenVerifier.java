@@ -75,7 +75,7 @@ public final class OidcAccessTokenVerifier implements ConnectorAuthenticator {
     String algorithm = requiredText(header, "alg", 16);
     String type = requiredText(header, "typ", 32);
     String keyId = requiredIdentifier(header, "kid");
-    if (header.size() != 3 || !"RS256".equals(algorithm) || !"at+jwt".equals(type)) {
+    if (header.size() != 3 || !"RS256".equals(algorithm)) {
       throw invalidClaims("HEADER_PROFILE");
     }
 
@@ -89,13 +89,23 @@ public final class OidcAccessTokenVerifier implements ConnectorAuthenticator {
       throw unavailableConfiguration(exception);
     }
 
+    if (!(provider.tokenProfile().isOkta() ? "JWT" : "at+jwt").equals(type)) {
+      throw invalidClaims("HEADER_PROFILE");
+    }
+
     Instant start = clock.instant();
     var verificationKey = keys.resolve(provider, keyId, algorithm, start);
-    verifySignature(token, verificationKey);
+    verifySignature(token, verificationKey, type);
 
     Instant verifiedAt = clock.instant();
     ParsedClaims parsed = parseClaims(claims, provider);
     validateClaims(parsed, provider, verifiedAt);
+    Optional<String> mappedRole;
+    try {
+      mappedRole = provider.tokenProfile().mappedRole(claims);
+    } catch (IllegalArgumentException failure) {
+      throw invalidClaims("GROUP_MAPPING");
+    }
     return new AuthenticatedConnector(
         provider.issuer() + "#" + parsed.subject(),
         parsed.displayName(),
@@ -105,12 +115,12 @@ public final class OidcAccessTokenVerifier implements ConnectorAuthenticator {
         parsed.clientName(),
         issuer,
         verifiedAt,
-        AUTHENTICATION_PROFILE,
+        provider.tokenProfile().authenticationProfile(),
         keyId,
         fingerprint(token),
         parsed.scopes(),
         Instant.ofEpochSecond(parsed.expiresAt()),
-        senderConstraint(claims));
+        senderConstraint(claims), mappedRole);
   }
 
   private static Optional<TokenSenderConstraint> senderConstraint(JsonNode claims) {
@@ -144,10 +154,13 @@ public final class OidcAccessTokenVerifier implements ConnectorAuthenticator {
 
   private static ParsedClaims parseClaims(
       JsonNode claims, OidcProviderConfiguration provider) {
+    boolean okta = provider.tokenProfile().isOkta();
     String issuer = requiredText(claims, "iss", 512);
+    if (okta && !claims.path("aud").isTextual()) throw invalidClaims("AUDIENCE_SHAPE");
     Set<String> audiences = parseAudiences(claims.get("aud"));
     String subject = requiredSubjectIdentifier(claims);
-    String clientId = requiredIdentifier(claims, "client_id");
+    if (okta && (claims.has("client_id") || claims.has("scope"))) throw invalidClaims("CLAIM_SHAPE");
+    String clientId = requiredIdentifier(claims, okta ? "cid" : "client_id");
     String clientName = provider.clientName(clientId);
     if (clientName == null) throw invalidClaims("CLIENT_MAPPING");
     String externalTenant = requiredText(claims, provider.tenantClaim(), 256);
@@ -155,7 +168,8 @@ public final class OidcAccessTokenVerifier implements ConnectorAuthenticator {
     if (tenantId == null) throw invalidClaims("TENANT_MAPPING");
     String tokenId = requiredIdentifier(claims, "jti");
     String displayName = optionalDisplayName(claims, subject);
-    List<ConnectorScope> scopes = parseScopes(claims.path("scope"), provider.supportedScopes());
+    List<ConnectorScope> scopes = okta ? parseOktaScopes(claims.path("scp"), provider.supportedScopes())
+        : parseScopes(claims.path("scope"), provider.supportedScopes());
     return new ParsedClaims(
         issuer,
         audiences,
@@ -232,6 +246,17 @@ public final class OidcAccessTokenVerifier implements ConnectorAuthenticator {
     return List.copyOf(result);
   }
 
+  private static List<ConnectorScope> parseOktaScopes(JsonNode value, Set<ConnectorScope> allowed) {
+    if (!value.isArray() || value.isEmpty() || value.size() > 32) throw invalidClaims("SCOPE_SHAPE");
+    List<String> scopes = new ArrayList<>();
+    for (JsonNode item : value) {
+      String scope = boundedText(item, 256);
+      if (!SAFE_IDENTIFIER.matcher(scope).matches()) throw invalidClaims("SCOPE_SHAPE");
+      scopes.add(scope);
+    }
+    return parseScopes(STRICT_MAPPER.getNodeFactory().textNode(String.join(" ", scopes)), allowed);
+  }
+
   private static String optionalDisplayName(JsonNode claims, String fallback) {
     JsonNode value = claims.get("name");
     if (value == null) return fallback;
@@ -244,11 +269,11 @@ public final class OidcAccessTokenVerifier implements ConnectorAuthenticator {
     return value.textValue();
   }
 
-  private static void verifySignature(String token, java.security.interfaces.RSAPublicKey key) {
+  private static void verifySignature(String token, java.security.interfaces.RSAPublicKey key, String type) {
     try {
       SignedJWT parsed = SignedJWT.parse(token);
       if (!JWSAlgorithm.RS256.equals(parsed.getHeader().getAlgorithm())
-          || !new JOSEObjectType("at+jwt").equals(parsed.getHeader().getType())
+          || !new JOSEObjectType(type).equals(parsed.getHeader().getType())
           || !parsed.verify(new RSASSAVerifier(key))) {
         throw error("INVALID_ACCESS_TOKEN", "The bearer token signature is invalid.");
       }
