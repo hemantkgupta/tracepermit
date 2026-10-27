@@ -3,18 +3,36 @@
 GitHub is authoritative. Keep credentials, raw claims and private operator/customer
 planning outside Git. Historical receipts below are not fresh qualification.
 
-## Track A acquisition — closed durable synthetic delivery
+## Track A stopped qualification — writer released
 
-TP-Cloud-New is sole Track A writer on `codex/closed-durable-delivery-v7`, from
-accepted main `8d5a5d784fdb9adce632e2d418c702940c13d2a0`, tree
-`84f9f0b6b84f437d11521c38743d53cd20223fd9`. ADR0090 is reserved for A.
-Scope is operations delivery/outbox lease/fencing, reader/migration/tests and
-A documentation. B's HTTP/durable-registration modules and ADR0091 are excluded.
-The prepared Java21/Node24/pnpm11.25/Gradle8.14.3/Docker cached runtime is used;
-private source paths were excluded before materialization. Prior checkouts and
-issue124 receipts are preserved. Implementation/qualification remain in progress;
-no target provider, endpoint, default enablement, merge or ready action is authorized.
-See [ADR0090](docs/architecture/0090-closed-durable-synthetic-delivery.md).
+The feature is local and unpublished. The first complete operations invocation
+stopped on an unchanged review-test90-second timeout; cause is unestablished.
+No full repository check, aggregate coverage or hosted qualification is claimed.
+This original-base cycle does not qualify accepted B-first main221be9f.
+See [ADR0090](docs/architecture/0090-closed-durable-synthetic-delivery.md) and the
+[retained qualification scope](docs/runbooks/closed-synthetic-operation-delivery.md).
+
+TRACEPERMIT HANDOFF
+
+- Task: Track A opt-in V7 closed synthetic delivery and read-only reconciliation; bounded cycle stopped.
+- Repository: https://github.com/hemantkgupta/tracepermit
+- Branch: codex/closed-durable-delivery-v7
+- Base commit: 8d5a5d784fdb9adce632e2d418c702940c13d2a0; tree84f9f0b6b84f437d11521c38743d53cd20223fd9.
+- Latest pushed commit: none. Local runtime checkpoint90725868238b64dd10286390086490351913a50b, treefc7a24ad4aef353d9c5cb362e7d28366c188115e; results-only documentation follows locally.
+- PR URL: none; no push or draft PR because required local qualification did not pass.
+- Branch owner now: unassigned; TP-Cloud-New releases Track A only. Other lanes/checkouts/evidence are preserved.
+- Working tree status: clean after the local results-documentation checkpoint; verify HEAD before continuation.
+- Completed: additive V7 journal/reader/explicit migration, writer-time capped lease/fence, acknowledged start before deterministic synthetic target, distinct results/read-only reconciliation/no resend; ADR0090/specifications/learning/runbook. V1–V6 SQL/default V2 and B runtime/tests are unchanged.
+- Remaining: evidence-led timeout diagnosis under a separately bounded follow-up; complete remaining engine/repository/coverage/format/CI gates; assess the noted historical-principal field-type review item; separately pinned reconciliation with accepted main221be9f599c2ee558041466ac5132a40bf540a2c.
+- Files materially changed:25 paths covering application diagnostics, operations V7 implementation/compatibility/tests and A-only documentation; no dependencies or CI changes.
+- Tests passed:219 recorded cases before full-module stop, including all61 new MariaDB10.6 delivery cases; earlier focused three-engine receipts retained;21 distinguishing controls yielded6 intended failures/15 passes; Java environment152 scenarios;1331 documentation links/3 helpers;13 flow/drift tests.
+- Tests failed/not run: full module221 recorded cases,1 failure/0 errors/1 fail-fast skip,18 fresh tasks27m55. MariaDb106OperationReviewTest.populatedV3WithEquivalentTimestampSpellingUpgradesAndCanEvaluate exceeded unchanged90seconds. Complete MariaDB11.4/PostgreSQL A matrices, full pnpm check, full format:check, aggregate94/75 and exact-head CI/Cloudflare NOT RUN. Historical stopped-run failures remain retained; no flakiness/root-cause inference or blind retry.
+- Exact next command: git status --short; then read the private stopped handoff before any new writer/test action. No automatic rerun/push is authorized by this receipt.
+- Required environment: existing Java/javac21.0.13, Node24.19, cached pnpm11.25/Gradle8.14.3 and three exact cached database images through the managed Unix socket; no installation/download/rebuild fallback.
+- Local-only/manual steps: private Cloud logs/XML/source hashes/partial execution data/crash/wait receipts are retained outside Git. Copied prepared Node graph matches the lock semantically; invocation-only pnpm warn mode avoids automatic install despite historical absolute workspace paths. No global/source configuration or dependency metadata was rewritten.
+- Security constraints: deterministic synthetic target only; no credentials/private source, live resources, endpoint/default enablement, resend after start, authority renewal, weakened gates/grants/deadlines, force/rebase/ready or final merge. Private/agentcore-work paths remain excluded.
+- Known limitations: timeout phase/cause is unknown; earlier generic child failure did not reproduce but is not declared repaired. A source-review note on historical principalId.asText typing needs focused proof; it is not a demonstrated authority bypass. Worker pause cannot be atomically fenced by DB lease; no physical restore/live-target/exactly-once or old-binary rolling-upgrade qualification. Owned observed worker/10 crash child PIDs exited, no running Testcontainers at stop; the exited PID1 subreaper zombie remains disclosed/unrepaired.
+- Safe for another environment to continue: no. Source is unpublished and qualification blocked; same-environment read-only review is safe, but a new bounded writer cycle needs exact ownership/refs/evidence re-verification.
 
 ## Current PR95 reconciliation
 

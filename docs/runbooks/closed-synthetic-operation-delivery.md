@@ -156,6 +156,42 @@ timestamps proving recovery after first-lease expiry, fence2 and one dispatch
 before original-permit expiry. The stopped run and safe phase/timing receipt are
 retained. This does not qualify the unreached cases or justify longer authority.
 
+The first forced/cache-disabled COMPLETE operations-module invocation then
+stopped at an unchanged existing review test:
+`MariaDb106OperationReviewTest.populatedV3WithEquivalentTimestampSpellingUpgradesAndCanEvaluate`.
+Its unchanged class-level90-second timeout expired; XML contains no operation-phase
+stack. No cause, environment flakiness or safe repair is established. No retry,
+assertion/deadline/workload change or issue124 investigation followed.
+
+Actual XML:221 cases across7 suites,219 passed/1 failed/0 errors/1 fail-fast skip;
+all18 tasks executed in27m55. The complete new MariaDB10.6 delivery suite passed
+all61 cases. The remaining MariaDB11.4/PostgreSQL suites were not reached and
+cannot be qualified from earlier focused subsets. A bounded earlier owned-worker
+snapshot observed a different review/permit deadline case; it does not identify
+the failing case's phase or cause. All source hashes matched runtime9072586.
+
+Separately, the isolated removed-guard controls recorded21 cases:6 intended
+failures/15 passes/0 errors/skips,18 executed tasks6m48. Across all three engines,
+removing post-write authority/live checks incorrectly acknowledged the expired
+claim; removing start rechecks actually invoked target1 after expiry instead of0.
+Control/head expiry cases still refused and9 pure deadline controls passed.
+Both guard sites were restored byte-identically and the owned temporary checkout
+removed; the correct feature branch was never weakened.
+
+Lightweight documentation checks passed on runtime9072586:1331 links/3 helpers,
+all13 flow tests and drift synchronization. The full pnpm check, full
+format:check, aggregate coverage94/75 and hosted CI/Cloudflare were NOT RUN after
+the module stop. Partial execution data is retained privately, not a coverage
+result. Results-only Markdown is scoped-formatted separately, not a full gate.
+
+The observed test worker and all10 actual crash/restart receipt PIDs exited;
+there were zero running Testcontainers at stop. No other-worker process action,
+Docker restart/prune or repair occurred. The known exited PID1 subreaper zombie
+remains disclosed. Track A ownership is released, source remains local/unpublished,
+and no PR or merge readiness is claimed. A historical-principal field-type source
+review note remains for a bounded distinguishing proof, not a claimed bypass or
+a diagnosis of this timeout.
+
 The human has now merged B/PR125 into main `221be9f599c2ee558041466ac5132a40bf540a2c`.
 This was the planned B-first advance. A remains on its original accepted base;
 none of these results qualifies that newer main composition. Reconciliation is
