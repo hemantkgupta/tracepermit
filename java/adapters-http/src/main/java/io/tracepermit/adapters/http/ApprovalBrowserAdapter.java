@@ -107,10 +107,14 @@ final class ApprovalBrowserAdapter {
         cookie(request, FLOW_COOKIE, binder, 120);
         var parameters = new HashMap<>(Map.of(
             "response_type", "code", "client_id", clientId, "redirect_uri", callback(port),
-            "scope", "openid approvals.read approvals.request approvals.decide approvals.execute approvals.cancel",
-            "audience", audience, "state", flow.state(), "nonce", flow.nonce(),
+            "scope", (identity.usesOktaProfile() ? "openid groups " : "openid ")
+                + "approvals.read approvals.request approvals.decide approvals.execute approvals.cancel",
+            "state", flow.state(), "nonce", flow.nonce(),
             "code_challenge", challenge(flow.verifier()), "code_challenge_method", "S256"));
-        if (organization != null) parameters.put("organization", organization);
+        if (!identity.usesOktaProfile()) {
+          parameters.put("audience", audience);
+          if (organization != null) parameters.put("organization", organization);
+        }
         redirect(request, authorizationUri + "?" + form(parameters));
       }
       case "/auth/callback" -> callback(request, port);

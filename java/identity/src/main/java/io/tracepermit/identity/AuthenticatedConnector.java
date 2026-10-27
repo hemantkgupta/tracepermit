@@ -19,7 +19,17 @@ public record AuthenticatedConnector(
     CredentialFingerprint credentialFingerprint,
     List<ConnectorScope> scopes,
     Instant expiresAt,
-    Optional<TokenSenderConstraint> senderConstraint) {
+    Optional<TokenSenderConstraint> senderConstraint,
+    Optional<String> mappedRole) {
+
+  public AuthenticatedConnector(String subjectId, String displayName, String organizationId,
+      ConnectorOrigin origin, String clientId, String clientName, String issuer, Instant verifiedAt,
+      String authenticationProfile, String verificationKeyId, CredentialFingerprint credentialFingerprint,
+      List<ConnectorScope> scopes, Instant expiresAt, Optional<TokenSenderConstraint> senderConstraint) {
+    this(subjectId, displayName, organizationId, origin, clientId, clientName, issuer, verifiedAt,
+        authenticationProfile, verificationKeyId, credentialFingerprint, scopes, expiresAt,
+        senderConstraint, Optional.empty());
+  }
 
   public AuthenticatedConnector(
       String subjectId,
@@ -67,6 +77,9 @@ public record AuthenticatedConnector(
     scopes = List.copyOf(scopes);
     Objects.requireNonNull(expiresAt);
     senderConstraint = Objects.requireNonNull(senderConstraint);
+    mappedRole = Objects.requireNonNull(mappedRole);
+    if (mappedRole.isPresent() && !java.util.Set.of("REQUESTER", "REVIEWER", "VIEWER")
+        .contains(mappedRole.orElseThrow())) throw new IllegalArgumentException("Invalid mapped role.");
     if (!expiresAt.isAfter(verifiedAt)) {
       throw new IllegalArgumentException("Authenticated connector credentials must not be expired.");
     }

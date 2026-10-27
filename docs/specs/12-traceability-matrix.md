@@ -1,5 +1,29 @@
 # Requirements traceability matrix
 
+## Bounded Okta public/native foundation
+
+FR-003/007/012; SEC-002/003/004/009/011/012/015; REL-001/004/009;
+OPS-002/004/005 receive bounded synthetic evidence through
+`OidcTokenProfile`, operator schema1.2, `OidcAccessTokenVerifier`,
+`BrowserIdTokenVerifier` and attenuating `ApprovalMemberships.resolve`.
+`OktaOidcQualificationTest`, `OktaApprovalConfigurationTest` and
+`OktaApprovalBrowserTest` cover explicit configuration, generated signatures,
+group/tenant/client/audience/scope/time/key negatives, rotation/expiry,
+requester/reviewer/viewer isolation, independent enrollment/human status,
+fresh-token group removal, current enrollment removal, request-role injection,
+mixed authentication, redirect/code/verifier substitution and concurrent
+single-exchange callback replay. Existing Auth0, standard OIDC, TLS/SSRF,
+diagnostic-redaction and durable simulator tests remain mandatory.
+
+[ADR0067](../architecture/0067-bounded-okta-oidc-qualification.md) and the
+[operator runbook](../runbooks/okta-oidc-qualification.md) distinguish the
+implemented foundation from the unperformed live gate. Raw groups/claims never
+become API role input or stored authority. Only explicitly mapped roles narrow
+trusted enrollment; provider removal is not instantaneous old-token revocation.
+No whole-ID status is promoted. Okta tenant mutation/login, EKS ingress, real
+targets, ADR0065 installed helper compatibility and broad IdP compatibility
+remain unqualified.
+
 ## Durable execution-disabled AgentCore registration composition
 
 Requirements: FR-003/008/011/012; SEC-001/003/006/009/012; REL-001/002/004;
