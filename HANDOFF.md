@@ -3,6 +3,19 @@
 GitHub is authoritative. Keep credentials, raw claims and private operator/customer
 planning outside Git. Historical receipts below are not fresh qualification.
 
+## Track A acquisition — closed durable synthetic delivery
+
+TP-Cloud-New is sole Track A writer on `codex/closed-durable-delivery-v7`, from
+accepted main `8d5a5d784fdb9adce632e2d418c702940c13d2a0`, tree
+`84f9f0b6b84f437d11521c38743d53cd20223fd9`. ADR0090 is reserved for A.
+Scope is operations delivery/outbox lease/fencing, reader/migration/tests and
+A documentation. B's HTTP/durable-registration modules and ADR0091 are excluded.
+The prepared Java21/Node24/pnpm11.25/Gradle8.14.3/Docker cached runtime is used;
+private source paths were excluded before materialization. Prior checkouts and
+issue124 receipts are preserved. Implementation/qualification remain in progress;
+no target provider, endpoint, default enablement, merge or ready action is authorized.
+See [ADR0090](docs/architecture/0090-closed-durable-synthetic-delivery.md).
+
 ## Current PR95 reconciliation
 
 Mac has claimed exclusive writer ownership to finish PR95 at clean published head

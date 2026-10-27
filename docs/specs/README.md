@@ -4,6 +4,14 @@ These documents describe the Java/React POC and distinguish implemented
 controls from target enterprise requirements. Source and tests determine what
 actually runs; a target requirement is not an implementation claim.
 
+[ADR0090](../architecture/0090-closed-durable-synthetic-delivery.md) reserves
+Track A's opt-in V7 closed synthetic delivery and read-only reconciliation.
+Its [runbook](../runbooks/closed-synthetic-operation-delivery.md) separates capped
+writer-time leases, acknowledged start, observations and no-resend recovery.
+Implementation/qualification are in progress; no endpoint/default/live target
+is enabled. The [learning note](../learning/lease-is-not-an-exactly-once-target-fence.md)
+explains why a lease cannot atomically fence a paused target call.
+
 [ADR0089](../architecture/0089-source-free-synthetic-registration-cli.md) adds
 the independent source-free local synthetic registration command. Its
 [runbook](../runbooks/source-free-synthetic-registration-cli.md) defines closed

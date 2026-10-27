@@ -34,6 +34,8 @@ public final class OperationDatabase {
       "tp_operation_schema_history", "tp_business_operations", "tp_business_operation_facts",
       "tp_operation_lifecycle_heads", "tp_operation_lifecycle_facts", "tp_operation_authority_controls",
       "tp_operation_review_bindings", "tp_operation_admissions", "tp_operation_admission_outbox");
+  private static final Set<String> V7_TABLES = java.util.stream.Stream.concat(V6_TABLES.stream(),
+      java.util.stream.Stream.of("tp_operation_delivery_events")).collect(java.util.stream.Collectors.toUnmodifiableSet());
 
   enum Engine {
     POSTGRESQL("postgresql"), MARIADB("mariadb");
@@ -73,6 +75,9 @@ public final class OperationDatabase {
     initializeEmpty(source, "6");
   }
 
+  /** Explicit stopped-writer synthetic delivery opt-in. No runtime migration or default change. */
+  public static void initializeDeliveryEmpty(DataSource source) { initializeEmpty(source, "7"); }
+
   private static void initializeEmpty(DataSource source, String version) {
     try (Connection connection = source.getConnection()) {
       Engine engine = inspectWriter(connection);
@@ -92,7 +97,7 @@ public final class OperationDatabase {
     String version;
     try (Connection connection = source.getConnection()) {
       Set<String> names = tables(connection);
-      version = names.contains("tp_operation_admissions") ? "6" : names.contains("tp_operation_review_bindings") ? "4"
+      version = names.contains("tp_operation_delivery_events") ? "7" : names.contains("tp_operation_admissions") ? "6" : names.contains("tp_operation_review_bindings") ? "4"
           : names.contains("tp_operation_authority_controls") ? "3" : "2";
     } catch (SQLException | RuntimeException failure) {
       throw error(OPERATION_SCHEMA_NOT_READY);
@@ -104,7 +109,7 @@ public final class OperationDatabase {
   static void validateAuthorityExisting(DataSource source) {
     String version;
     try (Connection connection = source.getConnection()) {
-      version = hasAdmissions(connection) ? "6" : hasReviewBindings(connection) ? "4" : "3";
+      version = hasDelivery(connection) ? "7" : hasAdmissions(connection) ? "6" : hasReviewBindings(connection) ? "4" : "3";
     } catch (SQLException | RuntimeException failure) {
       throw error(OPERATION_SCHEMA_NOT_READY);
     }
@@ -116,14 +121,33 @@ public final class OperationDatabase {
   static void validateReviewExisting(DataSource source) {
     String version;
     try (Connection connection = source.getConnection()) {
-      version = hasAdmissions(connection) ? "6" : "4";
+      version = hasDelivery(connection) ? "7" : hasAdmissions(connection) ? "6" : "4";
     } catch (SQLException | RuntimeException failure) {
       throw error(OPERATION_SCHEMA_NOT_READY);
     }
     validateSchema(source, version);
   }
 
-  static void validateAdmissionExisting(DataSource source) { validateSchema(source, "6"); }
+  static void validateAdmissionExisting(DataSource source) {
+    String version;
+    try (Connection connection = source.getConnection()) { version = hasDelivery(connection) ? "7" : "6"; }
+    catch (SQLException | RuntimeException failure) { throw error(OPERATION_SCHEMA_NOT_READY); }
+    validateSchema(source, version);
+  }
+
+  static void validateDeliveryExisting(DataSource source) { validateSchema(source, "7"); }
+
+  static boolean hasDelivery(Connection connection) throws SQLException {
+    try (var statement = JdbcBusinessOperationRepository.prepare(connection,
+        "SELECT version FROM tp_operation_schema_history WHERE version = '7'"); var rows = statement.executeQuery()) {
+      return rows.next(); // Includes failed/partial history; never fall back to an older writer.
+    }
+  }
+
+  static void requireDeliveryVersion(Connection connection) throws SQLException {
+    requireProtocol(connection, true);
+    if (!hasDelivery(connection)) throw error(OPERATION_SCHEMA_NOT_READY);
+  }
 
   static boolean hasAdmissions(Connection connection) throws SQLException {
     try (var statement = JdbcBusinessOperationRepository.prepare(connection,
@@ -159,10 +183,36 @@ public final class OperationDatabase {
         """); var rows = statement.executeQuery()) {
       if (!rows.next()) throw error(OPERATION_SCHEMA_NOT_READY);
       String version = rows.getString(1);
-      if (version == null || !(admission ? Set.of("6") : Set.of("4", "6")).contains(version) || !rows.getBoolean(2)) {
+      boolean deliveryTable = tables(connection).contains("tp_operation_delivery_events");
+      if (version == null || !(admission ? Set.of("6", "7") : Set.of("4", "6", "7")).contains(version) || !rows.getBoolean(2)
+          || ("7".equals(version) != deliveryTable)) {
         throw error(OPERATION_SCHEMA_NOT_READY);
       }
     }
+  }
+
+  /** Explicit V6->V7: populated closed replay, rollback and cleanup all precede its single DDL. */
+  public static void upgradeDeliveryFromV6(DataSource source) {
+    validateSchema(source, "6");
+    Engine engine;
+    try (Connection connection = source.getConnection()) {
+      engine = inspectWriter(connection);
+      connection.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ);
+      connection.setAutoCommit(false);
+      try (var statement = JdbcBusinessOperationRepository.prepare(connection,
+          "SELECT operation_id, snapshot_json FROM tp_business_operations"); var rows = statement.executeQuery()) {
+        while (rows.next()) {
+          var context = StoredOperationJson.read(rows.getString(2), JdbcBusinessOperationRepository.MAX_BYTES).path("trustedContext");
+          var scope = new io.tracepermit.application.BusinessOperationScope(context.path("tenantId").asText(),
+              context.path("workspaceId").asText(), context.path("requesterPrincipalId").asText());
+          var initial = JdbcBusinessOperationRepository.read(connection, scope, "operation_id", rows.getString(1))
+              .orElseThrow(() -> error(OPERATION_SCHEMA_NOT_READY));
+          JdbcBusinessOperationLifecycleRepository.current(connection, scope, rows.getString(1), initial, false);
+        }
+      } finally { connection.rollback(); }
+    } catch (SQLException | RuntimeException failure) { throw error(OPERATION_SCHEMA_NOT_READY); }
+    try { flyway(source, engine, "7").migrate(); validateDeliveryExisting(source); }
+    catch (RuntimeException failure) { throw error(OPERATION_SCHEMA_NOT_READY); }
   }
 
   /** Explicit V4->V6, with populated closed replay BEFORE either individual CREATE TABLE. */
@@ -287,10 +337,11 @@ public final class OperationDatabase {
     try (Connection connection = source.getConnection()) {
       Engine engine = inspectWriter(connection);
       boolean lifecycle = !"1".equals(version);
-      boolean admission = "6".equals(version);
+      boolean delivery = "7".equals(version);
+      boolean admission = delivery || "6".equals(version);
       boolean review = admission || "4".equals(version);
       boolean authority = review || "3".equals(version);
-      if (!tables(connection).equals(admission ? V6_TABLES : review ? V4_TABLES : authority ? V3_TABLES : lifecycle ? V2_TABLES : V1_TABLES)) {
+      if (!tables(connection).equals(delivery ? V7_TABLES : admission ? V6_TABLES : review ? V4_TABLES : authority ? V3_TABLES : lifecycle ? V2_TABLES : V1_TABLES)) {
         throw error(OPERATION_SCHEMA_NOT_READY);
       }
       requireNoExecutableObjects(connection, engine);
@@ -324,13 +375,19 @@ public final class OperationDatabase {
         requireForeignKey(connection, "tp_operation_admissions", "tp_operation_lifecycle_heads");
         requireForeignKey(connection, "tp_operation_admission_outbox", "tp_operation_admissions");
       }
+      if (delivery) {
+        requireUnique(connection, "tp_operation_delivery_events", List.of("operation_id", "event_sequence"));
+        requireForeignKey(connection, "tp_operation_delivery_events", "tp_operation_admission_outbox");
+      }
       OperationPhysicalSchema.require(connection, engine, version);
       if (engine == Engine.MARIADB) {
         try (PreparedStatement statement = connection.prepareStatement("""
             SELECT COUNT(*) FROM information_schema.tables
              WHERE table_schema = DATABASE() AND table_name IN
                (%s) AND engine = 'InnoDB'
-            """.formatted(admission
+            """.formatted(delivery
+                ? "'tp_business_operations', 'tp_business_operation_facts', 'tp_operation_lifecycle_heads', 'tp_operation_lifecycle_facts', 'tp_operation_authority_controls', 'tp_operation_review_bindings', 'tp_operation_admissions', 'tp_operation_admission_outbox', 'tp_operation_delivery_events'"
+                : admission
                 ? "'tp_business_operations', 'tp_business_operation_facts', 'tp_operation_lifecycle_heads', 'tp_operation_lifecycle_facts', 'tp_operation_authority_controls', 'tp_operation_review_bindings', 'tp_operation_admissions', 'tp_operation_admission_outbox'"
                 : review
                 ? "'tp_business_operations', 'tp_business_operation_facts', 'tp_operation_lifecycle_heads', 'tp_operation_lifecycle_facts', 'tp_operation_authority_controls', 'tp_operation_review_bindings'"
@@ -340,7 +397,7 @@ public final class OperationDatabase {
                 : "'tp_business_operations', 'tp_business_operation_facts'"))) {
           statement.setQueryTimeout(5);
           try (ResultSet rows = statement.executeQuery()) {
-            if (!rows.next() || rows.getInt(1) != (admission ? 8 : review ? 6 : authority ? 5 : lifecycle ? 4 : 2)) {
+            if (!rows.next() || rows.getInt(1) != (delivery ? 9 : admission ? 8 : review ? 6 : authority ? 5 : lifecycle ? 4 : 2)) {
               throw error(OPERATION_SCHEMA_NOT_READY);
             }
           }
