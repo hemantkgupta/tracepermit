@@ -44,6 +44,37 @@ The following B section is retained as an accepted historical producer receipt.
 PR125 is merged into main221be9f and Air released ownership in its
 [authoritative handoff](https://github.com/hemantkgupta/tracepermit/pull/125#issuecomment-6436904634).
 Those receipts do not qualify this A+B refresh.
+## Current Track C installed durable AgentCore HTTP session
+
+Mac Air owns only `codex/installed-durable-agentcore-http`, based on accepted
+main `221be9f599c2ee558041466ac5132a40bf540a2c` (tree
+`8cb93714ee970230a65b1bdca74df9ed1965cced`). The branch adds the separate
+source-free `agentcore-registration-http-cli`, a narrow reuse facade in the
+existing installed registration CLI, ADR0092, its runbook/learning note and
+additive specification mappings. Track A authority/migration files and the
+merged Track B implementation remain unchanged.
+
+The command accepts exactly the closed operator frame plus an explicit bounded
+session frame through anonymous stdin, then starts only the existing numeric
+loopback durable composition with unchanged HTTP defaults. Lifecycle receipts
+never acknowledge registration, rollback, approval, admission or execution.
+Fresh focused PostgreSQL16.4, MariaDB11.4.13 and MariaDB10.6.25 installed
+four-process tests have passed for shared replay/idempotency and concurrent
+races. The final fresh module gate passed33 cases across6 suites with zero
+failures/errors/skips and all34 tasks executed. The separate existing-CLI gate
+ran182 cases with one MariaDB11.4.13 distinct-token race failure; its one
+explicitly authorized unchanged focused rerun passed, while the original result
+remains preserved. The first repository aggregate passed the console build,
+typecheck,124 console tests and152 Java-environment shell scenarios, then failed
+two new-module cases among3,494 Java tests with one existing opt-in skip and zero
+errors: the MariaDB11.4.13 four-server exact-token race returned11 rather than15
+conflict replies, and the PostgreSQL replay commit-loss case returned FINAL
+before READY. Aggregate coverage therefore did not run. Formatting,1,349 links,
+13 flow/drift cases and diff checks passed. The human explicitly accepted
+publishing this code checkpoint with both active failures deferred to
+[issue126](https://github.com/hemantkgupta/tracepermit/issues/126); this is not a
+passing qualification claim and neither test is disabled or weakened. Exact-head
+hosted checks and the draft PR remain pending. All PRs remain unmerged.
 
 ## Current Track B durable registration HTTP composition
 

@@ -15,6 +15,29 @@ Results distinguish succeeded/failed/unknown; reconcile only reads metadata.
 V7 requires stopped-writer opt-in. V1–V6 SQL/default V2 remain unchanged.
 See [ADR0090](../architecture/0090-closed-durable-synthetic-delivery.md) for
 qualification status and the paused-worker limitation.
+## Installed bounded durable registration HTTP session
+
+`agentcore-registration-http-cli` packages only `check-session` and
+`serve-bounded` for Java21. Input is exactly the existing closed operator frame,
+one strict `tracepermit-local-synthetic-registration-http-session-v1` frame and
+EOF through a real anonymous pipe. The session frame requires an explicit port
+of zero or `1024..65535` and duration of `1000..30000` milliseconds. All input
+validates before datasource or listener effects. `check-session` is offline.
+
+`serve-bounded` starts only the existing numeric `127.0.0.1` durable composition
+with unchanged default HTTP limits. It emits at most `READY/LISTENING` and
+`FINAL/SESSION_ENDED` lifecycle receipts, each in a four-byte length-prefixed
+frame no larger than1024 bytes. The closed receipt schema always contains
+`executionEnabled:false` and `rollbackConfirmed:false`. Ready is bounded to20
+seconds, total lifecycle to60 seconds, each output to1 second and cleanup to a
+separate5 seconds with a1.5-second graceful window. Extra/partial/malformed
+output, stderr or exit mismatch fails closed.
+
+The HTTP response remains the only per-request registration acknowledgement.
+Session end is not drain, rollback, approval, admission or execution evidence.
+See [ADR0092](../architecture/0092-installed-durable-agentcore-http-session.md),
+the [runbook](../runbooks/installed-durable-agentcore-http.md) and the
+[uncertainty note](../learning/installed-session-ended-is-not-rollback.md).
 
 ## Source-free local synthetic registration command
 

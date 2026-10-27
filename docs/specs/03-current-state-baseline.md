@@ -41,6 +41,25 @@ and its [runbook](../runbooks/durable-agentcore-registration-http.md). This adds
 live provider/OBO, approval, admission, permit, target credential or execution
 authority.
 
+## Installed bounded durable registration HTTP session
+
+The separate `agentcore-registration-http-cli` Java21 distribution exposes only
+`check-session` and `serve-bounded`. It accepts the unchanged closed operator
+configuration plus one strict explicit port/duration frame through a real
+anonymous stdin pipe, validates both frames and EOF before effects, and starts
+only the existing durable numeric `127.0.0.1` composition. Port zero or
+`1024..65535` and `1000..30000` milliseconds are allowed; address, HTTP capacity
+and transport deadlines remain fixed by the existing defaults.
+
+Lifecycle output is at most one ready and one final length-prefixed receipt with
+`executionEnabled:false` and `rollbackConfirmed:false`. Parent and worker both
+verify anonymous input; the parent bounds ready, total, output and owned cleanup.
+`SESSION_ENDED` means the listener closed, not that dispatched JDBC work rolled
+back or drained. See [ADR0092](../architecture/0092-installed-durable-agentcore-http-session.md)
+and the [qualification runbook](../runbooks/installed-durable-agentcore-http.md).
+This remains a local synthetic session, not public/TLS ingress, live-provider
+interoperability, human delegation, approval, admission or target execution.
+
 ## Source-free local synthetic registration command
 
 The independent `agentcore-registration-cli` Java21 distribution implements
