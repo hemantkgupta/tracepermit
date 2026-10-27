@@ -1,12 +1,44 @@
 # Current-state capability matrix
 
-**As of:** 2026-10-24
+**As of:** 2026-10-25
 **Scope:** public Java-backend/React-console proof of concept
 
 This is the authoritative boundary between running POC behavior and product
 design. A passing test proves the named composition, not deployment to an
 enterprise network or control over arbitrary agent tools. The detailed
 requirement-to-test mapping is in the [traceability matrix](12-traceability-matrix.md).
+
+## Opt-in closed durable operation review
+
+[ADR0085](../architecture/0085-closed-durable-operation-review.md) adds an opt-in
+V4 Java/JDBC transaction for policy evaluation, independent-human approve/deny
+and pending withdrawal. Current profile/generation control is locked before the
+actual operation head, then fresh writer time and exact state/identity/group/
+deadline/strict target pins are checked. Immutable evaluation bindings, closed
+facts and head changes share one commit; coherent readers replay at fact time.
+Default V2 installation and V1-V3 migration bytes remain unchanged. See the
+[candidate qualification record](../runbooks/durable-operation-review.md).
+
+This library is not wired into an authenticated endpoint or simulator. It does
+not itself provide permit/admission, attempt/outbox, target dispatch, live IdP/AWS/RDS
+qualification, complete operator metadata visibility or restore/sender fencing.
+Existing simulator flows below remain separately qualified compositions.
+
+The human-approved next [permit/admission contract](../architecture/0087-fully-bound-operation-permit-and-admission.md)
+requires fresh owner execute permission and separately versioned, explicitly
+configured Ed25519 authority capped at 60 seconds and all original approval/
+identity deadlines. The separate opt-in `JdbcGitHubOperationPermitIssuer` now
+loads actual approved V4 history under current control/head locks, captures
+the exact approved state/settings/review/target bindings, then rolls back and
+closes before signing. Profile v3 pins explicit settings before evaluation;
+legacy v1/v2 recipes and V4 SQL stay unchanged. See [issuance scope and tests](../runbooks/closed-operation-permit-issuance.md).
+This is not wired to a route or service. Signature validity is not consumption.
+The separate opt-in V6 [admission library](../runbooks/closed-operation-admission.md)
+adds atomic single-use consumption/initial-attempt metadata, claimed fact/head
+and immutable outbox, with a compatible closed reader. It rechecks writer time
+after implicit write waits and has scoped three-engine local qualification;
+earlier issuer results are separate. Default V2/V1–V4 bytes remain unchanged.
+There is still no sender, authenticated endpoint, target call or execution lease.
 
 ## Approval review export and browser download
 
@@ -127,6 +159,18 @@ A missing/unsupported response still fails closed. The
 [sanitized record](../demo-scenarios/evidence/installed-auth0-approval-2026-10-22.md)
 bound that result. It does not qualify the container preparation profile,
 a public edge, arbitrary OIDC providers or production identity.
+
+## Okta public/native foundation
+
+The separate [Okta foundation](../architecture/0067-bounded-okta-oidc-qualification.md)
+adds schema1.2 code/S256 public login, pinned custom-server token grammar and
+tenant/group binding, with mapped groups attenuating operator enrollment.
+Generated-signature HTTP/PostgreSQL tests cover role boundaries and adversarial
+inputs. It preserves schema1.0/1.1 behavior and the existing bounded JWKS/TLS
+path. No live Okta, EKS/public ingress, installed Okta helper, instantaneous
+group revocation or general IdP compatibility is qualified. The
+[operator runbook](../runbooks/okta-oidc-qualification.md) defines the separate
+interactive gate; no real provider mutation/login was performed.
 
 ## OIDC refresh isolation
 

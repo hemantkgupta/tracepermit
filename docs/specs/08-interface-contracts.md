@@ -3,6 +3,26 @@
 **Status:** Current interfaces plus target extensions  
 **Applies to:** MCP, internal HTTP, control plane, and signed artifacts
 
+## Durable execution-disabled AgentCore registration composition
+
+`DurableAgentCoreRegistration.create` in `agentcore-durable-registration` takes
+the concrete trusted verifier, enrollment, clock, two dedicated initialized JDBC
+datasources, explicit agreed replay capacity and finite DML budget. It constructs
+the unchanged JDBC replay/repository and ingress internally, validates only, and
+has no in-memory fallback or injectable repository/replay supplier. Datasource
+ownership remains with the caller. Initialization failures become fixed
+`DURABLE_REGISTRATION_NOT_READY` with no retained causes/suppressed diagnostics.
+
+`register` exposes the existing closed body and minimal execution-disabled
+receipt. Verified-token replay consumption commits before a separate operation
+registration transaction; a failed registration can leave the token spent.
+Replay uncertainty cannot reach registration. Operation commit uncertainty is
+`AGENTCORE_REGISTRATION_UNKNOWN`, even if independently observed committed.
+No automatic retry follows either. Explicit fresh verified identity may recover
+the original scoped-key registration metadata, never authority or target dispatch.
+Human token pairing remains refused. See [ADR0086](../architecture/0086-durable-agentcore-registration-composition.md)
+and the [qualification matrix](../runbooks/agentcore-durable-registration-qualification.md).
+
 ## 1. Contract rules
 
 - External data is untrusted until validated by its adapter.
@@ -151,13 +171,28 @@ separate authenticated route. See [ADR 0062](../architecture/0062-loopback-conta
 
 ### Optional local browser approval boundary
 
+Schema1.2 additionally requires `oidc.profile: okta-custom-as-jwt-rs256-v1`,
+`groupsClaim` and `groupRoleMappings` alongside the existing explicit issuer,
+audience, client and tenant fields. It allows only `tokenEndpointAuthMethod:
+none`, exact `/oauth2/<server-id>/v1/{authorize,token,keys}` destinations and the
+derived numeric-loopback callback. Its RS256/`JWT` API tokens require `cid`,
+bounded unique `scp`, exact single audience, tenant and exactly one mapped
+group. The independent ID token must bind the same subject/client/tenant and
+mapped role. Only a derived role reaches membership resolution, where it
+narrows existing enrollment; request roles and raw claims grant no authority.
+The authorization request includes `openid groups` and API scopes without
+Auth0-specific audience/organization parameters. Callback `iss`, state/nonce,
+code/S256, mixed-auth and transport protections remain mandatory. Unknown
+profiles and cross-grammar fallback fail closed. See
+[ADR0067](../architecture/0067-bounded-okta-oidc-qualification.md).
+
 `SimulatorApprovalMain` schema1.0 accepts an optional strict `browser` object
 with `authorizationUri`, `tokenUri`, `clientSecretFile` and `consoleDirectory`.
 Schema1.1 requires a browser object and explicit `tokenEndpointAuthMethod`:
 `client_secret_basic` retains that private secret file; `none` forbids every
 secret field and sends configured `client_id` without an Authorization header.
 Both require code/S256 PKCE and the exact derived numeric-loopback callback.
-The public candidate requires an HTTPS-origin issuer ending `/`, same-issuer
+The schema1.1 public candidate requires an HTTPS-origin issuer ending `/`, same-issuer
 `/authorize`, `/oauth/token`, `/.well-known/jwks.json`, and one configured
 `org_id` with an `org_` identifier. Both signed tokens must bind to that
 organization. Login requires API scope `approvals.read`; `openid` is requested
@@ -535,6 +570,27 @@ workspace and requester; authentication and authorization remain adapter duties.
 See [ADR 0068](../architecture/0068-versioned-business-operation-contract.md) for
 the underlying document contract.
 
+### Execution-disabled workload registration candidate
+
+`AgentCoreRegistrationIngress` is an unwired Java library, not an HTTP route.
+Its closed ingress schema1.0 accepts only `schemaVersion`, `clientRequestKey`,
+`title` and optional nonblank `body`. Maximum input is32KiB UTF-8; duplicate
+keys, trailing values, malformed Unicode, unsupported fields/schemas and bounded
+parser violations fail closed. The operator enrollment supplies all scope and
+exact target/profile fields after the unchanged verifier checks the workload
+access token. No authenticated context or current policy authority comes from
+the body. Any second authorization value is rejected with
+`AGENTCORE_DELEGATION_CONTRACT_REQUIRED`.
+
+Registration uses only `BusinessOperationRepository`, preserves its original
+same-key return/conflict semantics and returns creation status, stored operation
+ID and `executionEnabled=false`. Exact token fingerprints are single-use through
+the existing replay port; explicit same-key retries need fresh tokens. There is
+no implicit human delegation, approval, permit, authority transition or execution.
+Live provider token compatibility, a verified workload-to-human exchange/grant,
+transport proof and durable replay deployment remain unqualified. See
+[ADR0078](../architecture/0078-agentcore-execution-disabled-registration.md).
+
 ## 3A. Java development control-plane reads
 
 The Java development adapter exposes these loopback-only reads:
@@ -703,6 +759,45 @@ across legacy overloads. These per-instance ports trust the supplied time and
 do not provide byte quotas, bounded lock waits, restart/durable recovery,
 distributed replay state, revocation or public saturation metrics. See
 [ADR 0054](../architecture/0054-bounded-local-replay-stores.md).
+
+### Durable workload-identity replay store
+
+`io.tracepermit.persistence.identity.JdbcWorkloadIdentityReplayStore` implements
+the `WorkloadIdentityReplayStore` port across PostgreSQL 16.4 and MariaDB 11.4.13/10.6.25
+(InnoDB). Compound identities (`tenantId`, `issuer`, `tokenId`) are hashed using a
+versioned, domain-separated, length-delimited SHA-256 recipe
+(`tracepermit:workload-identity-replay:v1\0`) with 4-byte big-endian integer byte-length
+delimiters over UTF-8 bytes. Maximum identifier lengths are enforced (`tenantId` <= 128,
+`issuer` <= 256, `tokenId` <= 256) and invalid Unicode surrogate pairs are rejected.
+
+The persistent schema (`tp_workload_replay_claims`) stores only bounded cryptographic
+digests (`claim_hash`, `tenant_hash`, `token_fingerprint`) and microsecond wall-clock
+timestamps (`expires_at`, `claimed_at`). Plain unique insertion serves as the concurrency
+arbiter: exactly one caller among racing store instances succeeds, and only expected
+duplicate-key errors (PostgreSQL 23505, MariaDB 1062/23000) represent replay. Submissions
+where `expiresAt <= now` fail closed and write nothing; replays never refresh expiry or
+overwrite existing timestamps.
+
+Finite capacity is enforced via an agreed operator-configured capacity column in
+schema V2 (`tp_workload_replay_state.capacity`, default `10,000`) and an atomic counter update on the
+state singleton (`total_claims = total_claims + 1 WHERE singleton = 1 AND capacity = ? AND total_claims < capacity`).
+Store initialization validates local capacity against persisted capacity and fails closed
+with `REPLAY_CAPACITY_MISMATCH` on disagreement. An explicit `upgradeFromV1` path upgrades
+schema V1 while preserving published V1 migration bytes unmodified. Physical schema validation
+directly checks table columns, types, nullability, collations (`"C"` on PostgreSQL, `ascii_bin`
+on MariaDB), and primary keys, rejecting drift or unmigrated structures.
+
+Finite statement query timeouts are enforced across all operations. The store evaluates
+post-wait validity using caller-trusted monotonic elapsed time against `expiresAt` after
+connection lease, after INSERT, after counter UPDATE, and after cleanup. If lock contention
+or query execution causes elapsed time to reach or exceed expiry before commit, the transaction
+rolls back and returns `false`. If commit acknowledges after expiry or cleanup delays past
+expiry, consumption fails closed with `REPLAY_COMMIT_UNKNOWN`. All thrown `WorkloadIdentityReplayException`
+instances disarm causes (`initCause = this`), disable exception suppression (`enableSuppression = false`),
+and omit arbitrary message constructors to prevent database credentials, canary tokens, and
+internal diagnostics from escaping. See
+[ADR 0080](../architecture/0080-durable-workload-identity-replay.md) and the
+[workload-identity replay runbook](../runbooks/workload-identity-replay-store.md).
 
 ## 6. Audit evidence contract
 
@@ -874,3 +969,21 @@ The installed `tracepermit-requester-auth` accepts exactly one of `--help`,
 from `TRACEPERMIT_REQUESTER_CONFIG`. The credential value is never accepted in
 argv. `--codex` consumes the verified credential and configures only the exact
 loopback `/mcp` URL with bearer variable `TRACEPERMIT_REQUESTER_BEARER`.
+
+## Unwired GitHub installation credential-provider foundation
+
+FR-001/008/009/012; SEC-001/002/003/012/015/019; REL-001/003/005/009;
+OPS-002/004. `GitHubInstallationCredentialProvider` implements the existing
+`getInstallationCredentials(String repository)` port without changing the action,
+preflight, permit, adapter or resolver contract. Only immutable operator App,
+installation/owner/repository IDs, exact allowlisted repository/minimum permissions
+and an explicit private POSIX DER key source select credentials. Production has
+no caller-chosen origin, trust, clock, test flag or public credential endpoint.
+
+The authenticated installation GET must match before one restricted token POST.
+Required typed token assurance is stricter than GitHub's optional schema fields:
+missing permissions/repositories/selection fail closed. Binding of the opaque
+token still trusts GitHub's authenticated installation-specific minting contract;
+no independent token introspection is claimed. The response is time-bounded and
+redacted; no cache/refresh/retry or automatic target dispatch. See
+[ADR0076](../architecture/0076-github-installation-credential-provider.md).

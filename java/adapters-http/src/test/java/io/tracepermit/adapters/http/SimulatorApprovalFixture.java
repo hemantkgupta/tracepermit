@@ -44,5 +44,20 @@ final class SimulatorApprovalFixture {
   }
 
   void save() throws Exception { write("operator.json", JsonSupport.MAPPER.writeValueAsBytes(json)); }
+  void oktaBrowser() throws Exception {
+    Files.createDirectories(directory.resolve("console"));
+    Files.writeString(directory.resolve("console/index.html"), "<html></html>");
+    String issuer = "https://idp.example.invalid/oauth2/synthetic";
+    json.put("schemaVersion", "1.2");
+    var oidc = json.withObject("/oidc");
+    oidc.put("issuer", issuer).put("jwksUri", issuer + "/v1/keys")
+        .put("tenantClaim", "tracepermit_tenant").put("tenantValue", "pilot-synthetic")
+        .put("profile", io.tracepermit.identity.OidcTokenProfile.OKTA).put("groupsClaim", "groups");
+    oidc.putObject("groupRoleMappings").put("pilot-requesters", "REQUESTER")
+        .put("pilot-reviewers", "REVIEWER").put("pilot-viewers", "VIEWER");
+    json.putObject("browser").put("tokenEndpointAuthMethod", "none")
+        .put("authorizationUri", issuer + "/v1/authorize").put("tokenUri", issuer + "/v1/token")
+        .put("consoleDirectory", "console");
+  }
   SimulatorApprovalConfiguration load() throws Exception { save(); return SimulatorApprovalConfiguration.load(config); }
 }

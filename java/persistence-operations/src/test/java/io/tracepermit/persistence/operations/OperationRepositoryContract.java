@@ -83,6 +83,24 @@ abstract class OperationRepositoryContract {
     repository = new JdbcBusinessOperationRepository(source);
   }
 
+  void mariaTableScopedRuntimeStillRequiresThePhysicalChecks() throws Exception {
+    try (var connection = runtimeSource.getConnection(); var statement = connection.createStatement()) {
+      statement.setQueryTimeout(5);
+      try (var rows = statement.executeQuery("SELECT COUNT(*) FROM information_schema.check_constraints WHERE CONSTRAINT_SCHEMA = DATABASE()")) {
+        assertThat(rows.next()).isTrue();
+        assertThat(rows.getInt(1)).as("exact-version table-scoped metadata is filtered").isZero();
+      }
+    }
+    assertThat(new JdbcBusinessOperationRepository(runtimeSource)).isNotNull();
+    try {
+      execute("ALTER TABLE tp_operation_lifecycle_facts MODIFY COLUMN actor_json LONGTEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL");
+      assertCode(() -> new JdbcBusinessOperationRepository(runtimeSource), OPERATION_SCHEMA_NOT_READY);
+    } finally {
+      execute("ALTER TABLE tp_operation_lifecycle_facts MODIFY COLUMN actor_json LONGTEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL CHECK (OCTET_LENGTH(actor_json) <= 4096)");
+    }
+    assertThat(new JdbcBusinessOperationRepository(runtimeSource)).isNotNull();
+  }
+
   @Test
   void restartAndTransportRetryReturnOriginalImmutableSnapshotAndPolicy() {
     ObjectNode first = operation();
@@ -372,12 +390,14 @@ abstract class OperationRepositoryContract {
     var command = withdrawal(initial, Instant.now().plusSeconds(60));
     var stores = List.of(new JdbcBusinessOperationLifecycleRepository(source),
         new JdbcBusinessOperationLifecycleRepository(source));
+    source.sqlCategories.clear();
     var outcomes = race(16, index -> {
       try {
         stores.get(index % stores.size()).withdraw(command);
         return "cancelled";
       } catch (BusinessOperationStorageException failure) {
-        assertThat(failure.code()).isEqualTo(OPERATION_STATE_STALE);
+        assertThat(failure.code()).as("fixed SQL categories: %s", source.sqlCategories)
+            .isEqualTo(OPERATION_STATE_STALE);
         return "stale";
       }
     });

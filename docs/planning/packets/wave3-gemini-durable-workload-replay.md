@@ -1,5 +1,23 @@
 # Gemini goal: durable shared workload-credential replay store
 
+## Recorded refresh and deferred qualification
+
+The current PR113 refresh starts at `54b8778109393b68822606394357a312cd744e7e`
+and incorporates main `c3bd77080681ff3eb33314e27d39e7b6d015333d`, including PR123.
+The runtime default capacity remains 10,000. Retain the PR111 JDBC, PR118
+replay-repair and PR120 durable-registration evidence. Historical receipts are
+not qualification of this new composition.
+
+The bounded qualification cycles stopped on their substantive failures. The
+human subsequently authorized the documentation conflict resolution and normal
+merge while deferring the known failures to
+[issue #124](https://github.com/hemantkgupta/tracepermit/issues/124). The Flyway
+closed-connection failure, earlier process-cleanup failures, and missing complete
+composition/aggregate-coverage qualification remain explicit follow-up work.
+This is not a green receipt. No runtime, test, CI, deadline, concurrency, cleanup
+or security change accompanies the deferral. GitHub is authoritative for PR
+status; the original draft, installation and retry directions below are historical.
+
 Repository: <https://github.com/hemantkgupta/tracepermit>.
 Frozen starting main: `0bc6b618aa9eac7df3bacf7a6d4bcafe2a824c4f`.
 Time allocation: up to eight productive hours, then a coherent handoff. This is

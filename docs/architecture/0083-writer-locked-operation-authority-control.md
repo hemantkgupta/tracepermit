@@ -44,6 +44,40 @@ An activation may actually have committed despite that error. A later ready-row
 lookup is not proof that the earlier caller received acknowledgement, and is
 never a substitute for approval/admission or permission to dispatch.
 
+## Physical structure and metadata visibility
+
+Flyway history/checksums are not proof that current physical tables still match
+the migrations. Read-only startup/pre-DDL validation additionally requires the
+known columns, types, lengths, nullability, defaults, character sets/collations;
+exact primary-key order and required foreign-key targets/rules; and known CHECK
+expressions. MariaDB sessions must enable both foreign-key and CHECK enforcement.
+No DDL, grant expansion or automatic repair occurs.
+
+PostgreSQL uses catalog CHECK definitions and validated/nondeferrable constraints.
+Trigger inspection uses `pg_trigger` on protected relations, including TRUNCATE
+triggers whose functions live outside `public`.
+
+On both qualified MariaDB versions the table-scoped runtime gets no
+CHECK_CONSTRAINTS rows despite SELECT on required tables. The implementation
+therefore reads bounded `SHOW CREATE TABLE` declarations with those existing
+SELECT grants and a closed lexer, then compares exact known CHECK expressions.
+It does not normalize arbitrary expressions, count quoted-name decoys, skip
+missing checks or adopt unknown output. Comments, quote escapes, unsupported
+quoting/malformed output and declarations over65,536 characters refuse readiness.
+Other physical properties and actual keys retain separate metadata checks:
+SHOW CREATE is not general physical-index attestation. The
+[official documentation](https://mariadb.com/docs/server/reference/sql-statements/administrative-sql-statements/show/show-create-table)
+describes its SELECT requirement, quoting/mode caveats and declaration limits.
+
+Limited runtime metadata **cannot prove complete absence** of MariaDB routines,
+events or hidden triggers. Zero visible forbidden objects is not an inventory
+certificate. A future deployment must separately qualify operator-controlled,
+fully visible pre-start inspection with writers stopped, keep that credential
+outside runtime and revalidate controlled DDL changes. That deployment gate or
+attestation is not implemented here; no request receipt is trusted. Startup is
+not a continuous fence against a privileged DBA. Do not grant runtime
+TRIGGER/EVENT/DDL/admin to hide this limitation.
+
 ## Lock and privilege boundary
 
 `OperationAuthorityControl.requireCurrent` takes the future transaction owner's

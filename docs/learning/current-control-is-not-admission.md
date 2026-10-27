@@ -9,7 +9,10 @@ The future authority owner must lock that row first, then the operation and
 approval/admission records, sample fresh database time after all waits, and
 repeat every independent deadline/binding/identity check before one atomic commit.
 Reading controls, closing the connection and then calling another store leaves
-a race; an unkeyed hash or a successful lookup does not close it.
+a race; an unkeyed hash or a successful lookup does not close it. The opt-in V4
+[closed review owner](../architecture/0085-closed-durable-operation-review.md)
+now composes the evaluation/review/pending-withdrawal part on one connection.
+It does not implement the later admission or execution attempt transaction.
 
 New or replaced controls start inactive. Quarantine is terminal for that
 generation; a new generation and explicit operator activation are required.
