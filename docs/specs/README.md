@@ -196,3 +196,10 @@ explicit existing read-only target preflight. The
 [setup runbook](../runbooks/pilot-operator-distribution.md) records source-free
 packaging and synthetic/POSIX qualification limits. No admission, approval,
 operation permit, execution or reconciliation authority is introduced.
+
+[ADR0082](../architecture/0082-loopback-agentcore-registration-http.md) adds an
+optional numeric-loopback HTTP registration library around the unchanged
+execution-disabled ingress, with explicit NIO deadlines and bounded admission.
+It has no executable/default wiring, public edge, OBO or execution capability.
+The [runbook](../runbooks/agentcore-loopback-registration-http.md) separates
+synthetic signed HTTP/JDBC evidence from future deployment and authority gates.
