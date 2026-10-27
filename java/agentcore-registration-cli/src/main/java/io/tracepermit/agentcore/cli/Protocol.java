@@ -46,7 +46,7 @@ final class Protocol {
     catch (Exception failure) { throw new CliFailure("INPUT_INVALID"); }
   }
 
-  private static byte[] frame(DataInputStream input,int maximum) throws java.io.IOException {
+  static byte[] frame(DataInputStream input,int maximum) throws java.io.IOException {
     int length=input.readInt();
     if(length<1||length>maximum)throw new CliFailure("INPUT_INVALID");
     byte[] value=input.readNBytes(length);

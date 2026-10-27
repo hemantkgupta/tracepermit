@@ -1,5 +1,31 @@
 # Requirements traceability matrix
 
+## Installed bounded durable AgentCore HTTP session
+
+Requirements: FR-002/003/008/010/011/012;
+SEC-001/002/003/004/006/009/012; REL-001/002/003/004/005/009; DATA-001;
+OPS-002/004; PORT-004. Partial evidence only; no whole-ID status promotion.
+
+`agentcore-registration-http-cli` packages a source-free Java21 launcher and one
+owned worker around the unchanged durable numeric-loopback composition. The
+narrow `InstalledHttpRuntime` facade reuses the existing operator parser,
+verifier, loopback datasources and concrete durable HTTP factory without adding
+an authority/repository/replay substitute. `ArchiveBoundaryTest`,
+`SessionProtocolTest` and `SessionSupervisorTest` cover source-free inventory,
+anonymous input, closed framing/receipts, deadlines, hostile output and cleanup.
+`InstalledHttpRegistrationContract` exercises at least four installed processes,
+real signed identity, shared replay/operation stores, cross-process restart and
+contention, fixed default4+8 HTTP capacity with forwarded JDBC commits, commit
+reply loss, authority rejection and cleanup on exact PostgreSQL16.4,
+MariaDB11.4.13 and MariaDB10.6.25.
+
+Lifecycle success does not acknowledge a registration or certify rollback.
+There is no public listener, TLS edge, live provider, human/OBO exchange,
+approval, permit, admission, target credential or execution path. See
+[ADR0092](../architecture/0092-installed-durable-agentcore-http-session.md), the
+[runbook](../runbooks/installed-durable-agentcore-http.md) and the
+[session-end note](../learning/installed-session-ended-is-not-rollback.md).
+
 ## Closed durable numeric-loopback AgentCore registration composition
 
 Requirements: FR-002/003/008/010/011/012;
