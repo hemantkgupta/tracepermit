@@ -8,6 +8,17 @@ design. A passing test proves the named composition, not deployment to an
 enterprise network or control over arbitrary agent tools. The detailed
 requirement-to-test mapping is in the [traceability matrix](12-traceability-matrix.md).
 
+## Opt-in closed synthetic delivery — Track A in progress
+
+The [V7 slice](../runbooks/closed-synthetic-operation-delivery.md) follows V6
+admission with append-only lease/fence/start/result metadata and read-only
+reconciliation. Leases are capped at30 seconds of writer time and every original
+authority deadline; no resend/new attempt follows dispatch_started. Only a
+deterministic in-memory target exists. No provider, endpoint/default, credential
+acquisition or exactly-once external claim is enabled. Accepted B-first main is
+included by normal ancestry refresh; qualification of that composition remains
+outstanding. Known local failed/skipped cases are disclosed in the runbook.
+
 ## Closed durable numeric-loopback registration composition
 
 `DurableAgentCoreRegistrationHttpServer` is an explicitly constructed Java

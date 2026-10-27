@@ -34,7 +34,47 @@ publishing this code checkpoint with both active failures deferred to
 [issue126](https://github.com/hemantkgupta/tracepermit/issues/126); this is not a
 passing qualification claim and neither test is disabled or weakened. Exact-head
 hosted checks and the draft PR remain pending. All PRs remain unmerged.
+## Track A human-authorized draft publication — qualification incomplete
 
+The human explicitly authorized publishing the preserved implementation despite
+the known failed/skipped cases and incomplete gates. The first complete operations
+invocation stopped on an unchanged review-test90-second timeout; cause remains
+unestablished. Publication does not turn this receipt green or authorize bypassing
+required checks, marking ready or merging. A's runtime/test bytes remain those of 9072586. A normal ancestry refresh imports accepted B-first main
+221be9f599c2ee558041466ac5132a40bf540a2c; manual resolutions retain both sides of
+four documentation conflicts. B runtime/test bytes equal that accepted main.
+No full repository check, aggregate coverage or hosted qualification is claimed.
+The original-base cycle does not qualify this refreshed composition. The PR's
+exact-head handoff is authoritative for publication, CI and ownership status.
+See [ADR0090](docs/architecture/0090-closed-durable-synthetic-delivery.md) and the
+[retained qualification scope](docs/runbooks/closed-synthetic-operation-delivery.md).
+
+TRACEPERMIT HANDOFF
+
+- Task: Publish Track A opt-in V7 closed synthetic delivery/read-only reconciliation as a draft with known qualification gaps, under the human's explicit follow-up instruction.
+- Repository: https://github.com/hemantkgupta/tracepermit
+- Branch: codex/closed-durable-delivery-v7
+- Base commit: refreshed target221be9f599c2ee558041466ac5132a40bf540a2c, tree8cb93714ee970230a65b1bdca74df9ed1965cced. Original A base8d5a5d784fdb9adce632e2d418c702940c13d2a0.
+- Latest pushed commit: use the PR's exact head and publication handoff. A runtime checkpoint90725868238b64dd10286390086490351913a50b, treefc7a24ad4aef353d9c5cb362e7d28366c188115e; accepted B content is imported from221be9f without manual runtime/test edits.
+- PR URL: assigned after this documentation checkpoint; the publication handoff records its exact URL and pushed SHA.
+- Branch owner now: TP-Cloud-New owns only the bounded A publication at preparation; the PR handoff records release. Other lanes/checkouts/evidence are preserved.
+- Working tree status: clean after the publication-documentation checkpoint; verify exact local/remote HEAD before continuation.
+- Completed: additive V7 journal/reader/explicit migration, writer-time capped lease/fence, acknowledged start before deterministic synthetic target, distinct results/read-only reconciliation/no resend; ADR0090/specifications/learning/runbook; normal current-main ancestry refresh with four documentation unions. V1–V6 SQL/default V2 remain unchanged; B runtime/tests exactly match accepted main.
+- Remaining: evidence-led timeout diagnosis under a separately bounded follow-up; complete refreshed-composition engine/repository/coverage/CI gates; assess the noted historical-principal field-type review item. No old-base receipt qualifies the new composition.
+- Files materially changed:25 paths covering application diagnostics, operations V7 implementation/compatibility/tests and A-only documentation; no dependencies or CI changes.
+- Tests passed:219 recorded cases before full-module stop, including all61 new MariaDB10.6 delivery cases; earlier focused three-engine receipts retained;21 distinguishing controls yielded6 intended failures/15 passes; Java environment152 scenarios;1331 documentation links/3 helpers;13 flow/drift tests.
+- Tests failed/not run: full module221 recorded cases,1 failure/0 errors/1 fail-fast skip,18 fresh tasks27m55. MariaDb106OperationReviewTest.populatedV3WithEquivalentTimestampSpellingUpgradesAndCanEvaluate exceeded unchanged90seconds; issuerRechecksFreshExecuteIdentityAfterActualHeadLockWait was skipped by fail-fast. Complete MariaDB11.4/PostgreSQL A matrices, full pnpm check, full format:check, aggregate94/75 and hosted gates were NOT RUN in that stopped cycle. Publication-time lightweight checks and exact-head CI are recorded separately in the PR handoff. Historical stopped-run failures remain retained; no flakiness/root-cause inference or blind retry.
+- Exact next command: read the PR's exact-head checks and full handoff before any merge or follow-up writer action; do not bypass failed/pending required gates.
+- Required environment: existing Java/javac21.0.13, Node24.19, cached pnpm11.25/Gradle8.14.3 and three exact cached database images through the managed Unix socket; no installation/download/rebuild fallback.
+- Local-only/manual steps: private Cloud logs/XML/source hashes/partial execution data/crash/wait receipts are retained outside Git. Copied prepared Node graph matches the lock semantically; invocation-only pnpm warn mode avoids automatic install despite historical absolute workspace paths. No global/source configuration or dependency metadata was rewritten.
+- Security constraints: deterministic synthetic target only; no credentials/private source, live resources, endpoint/default enablement, resend after start, authority renewal, weakened gates/grants/deadlines, force/rebase/ready or final merge. Private/agentcore-work paths remain excluded.
+- Known limitations: timeout phase/cause is unknown; earlier generic child failure did not reproduce but is not declared repaired. A source-review note on historical principalId.asText typing needs focused proof; it is not a demonstrated authority bypass. Worker pause cannot be atomically fenced by DB lease; no physical restore/live-target/exactly-once or old-binary rolling-upgrade qualification. Owned observed worker/10 crash child PIDs exited, no running Testcontainers at stop; the exited PID1 subreaper zombie remains disclosed/unrepaired.
+- Safe for another environment to continue: read-only review after publication, yes; merge-ready, no. A follow-up writer needs exact ownership/refs/runtime/evidence re-verification and a separately bounded reconciliation/qualification scope.
+
+The following B section is retained as an accepted historical producer receipt.
+PR125 is merged into main221be9f and Air released ownership in its
+[authoritative handoff](https://github.com/hemantkgupta/tracepermit/pull/125#issuecomment-6436904634).
+Those receipts do not qualify this A+B refresh.
 ## Current Track B durable registration HTTP composition
 
 Mac Air owns only `codex/track-b-durable-agentcore-composition`, based on human-

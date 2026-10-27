@@ -34,10 +34,23 @@ final class OperationPermitClaims {
   static ObjectNode capture(Connection connection, JsonNode initial, JsonNode approved,
       BusinessOperationAuthorityProfile profile, GitHubBusinessOperationBinding.ExpectedProfile target,
       BusinessOperationExecution command, Instant now) throws SQLException {
+    return capture(connection, initial, approved, profile, target, command, now, true);
+  }
+
+  /** Delivery already compared the command with the locked claimed head; recapture APPROVED anchors. */
+  static ObjectNode recaptureForDelivery(Connection connection, JsonNode initial, JsonNode approved,
+      BusinessOperationAuthorityProfile profile, GitHubBusinessOperationBinding.ExpectedProfile target,
+      BusinessOperationExecution command, Instant now) throws SQLException {
+    return capture(connection, initial, approved, profile, target, command, now, false);
+  }
+
+  private static ObjectNode capture(Connection connection, JsonNode initial, JsonNode approved,
+      BusinessOperationAuthorityProfile profile, GitHubBusinessOperationBinding.ExpectedProfile target,
+      BusinessOperationExecution command, Instant now, boolean compareApproved) throws SQLException {
     command.requireAuthorizedAt(profile, now);
     var scope = command.scope();
     var observed = new BusinessOperationTransitionPlanner().observe(scope, approved);
-    if (!observed.equals(command.expected())) throw error(OPERATION_STATE_STALE);
+    if (compareApproved && !observed.equals(command.expected())) throw error(OPERATION_STATE_STALE);
     if (!"approved".equals(approved.path("authorization").path("status").asText())
         || observed.authorizationVersion() != 3 || observed.lastSequence() != 5
         || observed.executionVersion() != 1 || observed.evidenceVersion() != 1

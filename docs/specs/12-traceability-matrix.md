@@ -25,7 +25,16 @@ approval, permit, admission, target credential or execution path. See
 [ADR0092](../architecture/0092-installed-durable-agentcore-http-session.md), the
 [runbook](../runbooks/installed-durable-agentcore-http.md) and the
 [session-end note](../learning/installed-session-ended-is-not-rollback.md).
+## Track A V7 closed synthetic delivery — qualification in progress
 
+Partial FR-007/008/009/010/012, SEC-001/002/003/004/005/006/009/012,
+REL-001/002/004/005 and DATA-001/004 evidence is being developed in the
+`persistence-operations` V7 journal/reader/synthetic sender and three-engine
+`OperationDeliveryContract`. [ADR0090](../architecture/0090-closed-durable-synthetic-delivery.md)
+and its [runbook](../runbooks/closed-synthetic-operation-delivery.md) define capped
+writer-time leases, exact fencing, acknowledged-start/no-resend and read-only
+reconciliation. No whole requirement status, passing qualification, live target,
+endpoint/default runtime or final merge readiness is promoted.
 ## Closed durable numeric-loopback AgentCore registration composition
 
 Requirements: FR-002/003/008/010/011/012;

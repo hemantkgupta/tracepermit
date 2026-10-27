@@ -11,7 +11,13 @@ durable registration HTTP composition only for an explicit bounded session. Its
 two-frame anonymous-pipe input, lifecycle-only receipts and installed
 three-engine evidence. Session end is not registration rollback, approval,
 admission or execution authority.
-
+[ADR0090](../architecture/0090-closed-durable-synthetic-delivery.md) reserves
+Track A's opt-in V7 closed synthetic delivery and read-only reconciliation.
+Its [runbook](../runbooks/closed-synthetic-operation-delivery.md) separates capped
+writer-time leases, acknowledged start, observations and no-resend recovery.
+Implementation/qualification are in progress; no endpoint/default/live target
+is enabled. The [learning note](../learning/lease-is-not-an-exactly-once-target-fence.md)
+explains why a lease cannot atomically fence a paused target call.
 [ADR0091](../architecture/0091-durable-agentcore-registration-http-composition.md)
 adds the closed trusted-operator composition of the existing numeric-loopback
 HTTP server and existing durable AgentCore registration factory. Its
