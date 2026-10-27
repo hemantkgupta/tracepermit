@@ -202,19 +202,41 @@ public final class AgentCoreRegistrationHttpServer implements AutoCloseable {
     for (int i = 0; i < limits.workers() + limits.pending(); i++) {
       SocketChannel channel = listener.accept();
       if (channel == null) return;
+      boolean reserved = false;
+      boolean tracked = false;
+      try {
+        configureAccepted(channel);
+        if (closing.get() || !capacity.tryAcquire()) {
+          channel.write(BUSY.buffer());
+          continue; // Nonblocking best effort503, otherwise close; never parse/authenticate.
+        }
+        reserved = true;
+        Context c = new Context(channel, System.nanoTime(), limits);
+        held.add(c);
+        tracked = true; // Shutdown now owns the channel and its reservation.
+        try {
+          c.key = channel.register(selector, SelectionKey.OP_READ, c);
+        } catch (IOException | RuntimeException failure) {
+          closeNetwork(c);
+        }
+      } finally {
+        // Until tracking succeeds, every exit (including setup/allocation failure) owns cleanup.
+        if (!tracked) {
+          closeChannel(channel);
+          if (reserved) capacity.release();
+        }
+      }
+    }
+  }
+
+  static void configureAccepted(SocketChannel channel) throws IOException {
+    boolean configured = false;
+    try {
       channel.configureBlocking(false);
       channel.setOption(StandardSocketOptions.SO_LINGER, -1);
-      if (closing.get() || !capacity.tryAcquire()) {
-        try { channel.write(BUSY.buffer()); } finally { closeChannel(channel); }
-        continue; // Nonblocking best effort503, otherwise transport close; never parse/authenticate.
-      }
-      Context c = new Context(channel, System.nanoTime(), limits);
-      held.add(c);
-      try {
-        c.key = channel.register(selector, SelectionKey.OP_READ, c);
-      } catch (IOException | RuntimeException failure) {
-        closeNetwork(c);
-      }
+      configured = true;
+    } finally {
+      if (!configured) closeChannel(channel);
     }
   }
 

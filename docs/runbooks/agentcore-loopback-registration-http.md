@@ -110,3 +110,15 @@ outputs and passed. These intentional red controls are not current failed gates;
 no weakened source, workload, timeout, assertion or threshold is retained.
 Final serialized full-check and exact-head hosted receipts belong to the PR
 handoff. Tests and controls are not run concurrently against shared outputs.
+
+Accepted-channel ownership repair: configuration could fail before an accepted
+socket entered the shutdown tracking set. Provisional ownership now closes failed
+nonblocking/socket-option setup and every untracked accept exit, returning any
+reserved capacity. Seven deterministic fake-channel cases cover checked,
+unchecked and error failures at both setup steps, plus successful transfer to
+caller ownership. Removing the setup cleanup deliberately failed6/7 cases; source
+was restored by hash before a new pristine run. That run passed164/164 cases
+(the previous157 plus7 setup cases), zero failures/errors/skips,21/21 tasks
+executed in42s with both caches disabled and fresh XML archived. Module coverage
+was96.17% line/77.63% branch. Prior157-case and hosted receipts apply to the prior
+head; the final handoff identifies the repaired head and its own hosted result.

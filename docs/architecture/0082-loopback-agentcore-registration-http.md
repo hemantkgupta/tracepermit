@@ -85,6 +85,13 @@ register the overflow request. It writes a small best-effort fixed503 using a
 nonblocking channel and closes; a reset/EOF instead of a complete error response
 is a supported pre-parse refusal outcome, not an assertion of success.
 
+An accepted channel remains provisionally owned until it is tracked for shutdown.
+Nonblocking/socket-option setup closes the channel on checked, unchecked or error
+failure. The accept boundary also closes every untracked channel and returns any
+acquired reservation on exceptional exits before tracking; listener shutdown alone
+cannot reclaim an accepted socket that was never tracked. The package-private
+setup helper adds no operator/request configuration or public trust seam.
+
 A network deadline removes pending work where the executor confirms removal;
 otherwise it marks cancellation and interrupts its worker. Work checks deadline/
 cancellation before invoking ingress. A running registration keeps its reservation
