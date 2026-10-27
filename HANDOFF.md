@@ -3,7 +3,39 @@
 GitHub is authoritative. Keep credentials, raw claims and private operator/customer
 planning outside Git. Historical receipts below are not fresh qualification.
 
-## Track A human-authorized draft publication — qualification incomplete
+## PR128 bounded current-main reconciliation and strict-type repair
+
+The next human-authorized cycle normally merges pinned main
+`02a7f27e36f674c008124b2b77b2bc5e030171bd` into published A
+`d1e915b73ee72ae222ee34bc3b7e71c84bdb865a`, preserving that ordered parent intent.
+Exactly four documentation conflicts are retained as additive unions: this
+handoff, interface contracts, traceability and specification README. Baseline
+auto-merges. Fifteen A runtime/test paths remain exact published blobs. The two
+justified A exceptions are one isTextual guard in OperationDeliveryJournal and
+its positive/negative OperationDeliveryContract regression. Imported B/C/main
+runtime/build/CI/contracts/migrations and every other main path remain exact.
+
+The historical d1e915b CI run40495424499 remains red: core failed two simulator
+owner-inspection assertions and one PostgreSQL durable-registration child case;
+verify failed and coverage was skipped. All three operations jobs and Cloudflare
+passed on that old tree. Neither those passes nor earlier local receipts qualify
+this new composition. One isolated read-only metadata-type diagnostic accepted
+coherently linked numeric/boolean V7 principal metadata for legitimate String
+owners; typed-review, wrong-owner and broken-hash controls refused, with zero
+target invocations. The human then authorized the smallest A-owned strict-type
+guard plus meaningful regression and known-failure publication. It is a metadata
+integrity gap requiring privileged fixture rewrites, not a demonstrated authority
+bypass. Admission/legacy asText patterns remain unproved source-review items.
+The three-engine focused result, current head/tree/parents and current CI state
+belong to the next exact-head public handoff; old receipts stay historical.
+
+PR127's human merge accepted its recorded nine hosted failures/missing coverage
+in [issue126](https://github.com/hemantkgupta/tracepermit/issues/126). That exception
+applies only to PR127, not PR128. Strict verify/coverage/security/tests remain
+unchanged. Root owns a separately recorded PR128 final-merge disposition after
+this checkpoint; this writer does not merge, alter rules or claim green.
+
+## Historical Track A publication — qualification incomplete
 
 The human explicitly authorized publishing the preserved implementation despite
 the known failed/skipped cases and incomplete gates. The first complete operations
@@ -44,6 +76,38 @@ The following B section is retained as an accepted historical producer receipt.
 PR125 is merged into main221be9f and Air released ownership in its
 [authoritative handoff](https://github.com/hemantkgupta/tracepermit/pull/125#issuecomment-6436904634).
 Those receipts do not qualify this A+B refresh.
+
+## Current Track C installed durable AgentCore HTTP session
+
+Mac Air owns only `codex/installed-durable-agentcore-http`, based on accepted
+main `221be9f599c2ee558041466ac5132a40bf540a2c` (tree
+`8cb93714ee970230a65b1bdca74df9ed1965cced`). The branch adds the separate
+source-free `agentcore-registration-http-cli`, a narrow reuse facade in the
+existing installed registration CLI, ADR0092, its runbook/learning note and
+additive specification mappings. Track A authority/migration files and the
+merged Track B implementation remain unchanged.
+
+The command accepts exactly the closed operator frame plus an explicit bounded
+session frame through anonymous stdin, then starts only the existing numeric
+loopback durable composition with unchanged HTTP defaults. Lifecycle receipts
+never acknowledge registration, rollback, approval, admission or execution.
+Fresh focused PostgreSQL16.4, MariaDB11.4.13 and MariaDB10.6.25 installed
+four-process tests have passed for shared replay/idempotency and concurrent
+races. The final fresh module gate passed33 cases across6 suites with zero
+failures/errors/skips and all34 tasks executed. The separate existing-CLI gate
+ran182 cases with one MariaDB11.4.13 distinct-token race failure; its one
+explicitly authorized unchanged focused rerun passed, while the original result
+remains preserved. The first repository aggregate passed the console build,
+typecheck,124 console tests and152 Java-environment shell scenarios, then failed
+two new-module cases among3,494 Java tests with one existing opt-in skip and zero
+errors: the MariaDB11.4.13 four-server exact-token race returned11 rather than15
+conflict replies, and the PostgreSQL replay commit-loss case returned FINAL
+before READY. Aggregate coverage therefore did not run. Formatting,1,349 links,
+13 flow/drift cases and diff checks passed. The human explicitly accepted
+publishing this code checkpoint with both active failures deferred to
+[issue126](https://github.com/hemantkgupta/tracepermit/issues/126); this is not a
+passing qualification claim and neither test is disabled or weakened. Exact-head
+hosted checks and the draft PR remain pending. All PRs remain unmerged.
 
 ## Current Track B durable registration HTTP composition
 

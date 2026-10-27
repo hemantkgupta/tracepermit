@@ -224,6 +224,7 @@ final class OperationDeliveryJournal {
   private static void identity(JsonNode value, BusinessOperationScope scope, Instant at) {
     fields(value, Set.of("scopeHash", "principalId", "authenticationMethod", "credentialFingerprint", "authorityExpiresAt"));
     if (!scope.fingerprint().equals(value.path("scopeHash").asText())
+        || !value.path("principalId").isTextual()
         || !scope.requesterPrincipalId().equals(value.path("principalId").asText())
         || !value.path("authenticationMethod").isTextual()
         || !value.path("authenticationMethod").asText().matches("[A-Za-z0-9][A-Za-z0-9._:@/+\\-]{0,127}")
