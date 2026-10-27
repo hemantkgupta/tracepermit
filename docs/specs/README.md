@@ -10,6 +10,10 @@ the independent source-free local synthetic registration command. Its
 private framing, offline public trust, loopback-only stores and qualification
 status. All receipts remain execution-disabled; no live provider or target
 authority is added.
+[ADR0067](../architecture/0067-bounded-okta-oidc-qualification.md) and the
+[Okta operator runbook](../runbooks/okta-oidc-qualification.md) define the
+schema1.2 public/native custom-server foundation. Generated-signature tests
+qualify the bounded implementation, not a live tenant or EKS deployment.
 
 | Document                                               | Purpose                                         |
 | ------------------------------------------------------ | ----------------------------------------------- |

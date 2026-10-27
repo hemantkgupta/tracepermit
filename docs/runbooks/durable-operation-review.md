@@ -4,6 +4,39 @@ Scope: [ADR0085](../architecture/0085-closed-durable-operation-review.md), an
 opt-in Java/JDBC library only. No listener, public body model, IdP/provider call,
 signing, credential minting, permit, admission or target action is enabled.
 
+## PR121 current-main supervision reconciliation
+
+PR121 head `3d0a1e379301d0072ea578aa4b473be304d55699` merged cleanly with
+current main `b4fb60286c24857ca0fb56291b8bd70fcdb2e67f`. The reconciliation
+changes only this runbook and the existing cross-process review test helper/tests.
+It does not change production Java, schema, grants, trust policy, concurrency,
+deadlines, assertions or coverage gates.
+
+The supervision evidence now retains the actual partial-construction close
+futures, proves the controlled hostile close phase was entered before teardown
+returned, and verifies sequential close stalls share one cleanup deadline. Once
+the fully constructed helper has accepted resource ownership, its caller no
+longer grants a second process-reap reserve after delegated cleanup. The
+post-commit interruption case now witnesses an interrupt arriving after the
+response read wait begins, preserves the interrupt flag, verifies teardown, and
+uses a fresh child reader to confirm the durable `awaiting_approval` state.
+
+The complete supervision class passed 37 fresh cases with all 18 Gradle tasks
+executed. The three real-engine cross-process suites then passed 36 fresh cases
+(12 each on PostgreSQL 16.4, MariaDB 11.4.13 and MariaDB 10.6.25), zero
+failures/errors/skips, again with all 18 tasks executed. The unchanged full
+`pnpm check` passed 124 React tests and recorded 2,959 Java tests across 184 XML
+suites, zero failures/errors and one inherited native-PTY opt-in skip. Gradle
+completed in 13m18 with 63 tasks executed and 17 up-to-date. Aggregate coverage
+passed at 94.567478% line and 78.051707% branch. Formatting, 1,266 Markdown
+links/three link helpers, 13 flow/drift cases and diff checks passed.
+
+The fresh sparse checkout caused `pnpm check` to materialize 102 packages from
+the existing content-addressable store with zero package downloads. Its wrapper
+then downloaded Gradle 8.14.3 because the prepared cache selector was not used;
+that environment-boundary deviation is retained rather than relabelled as an
+offline run. Exact pushed-head CI and publication remain separate gates.
+
 ## Operator lifecycle
 
 Use PostgreSQL 16.4, MariaDB 11.4.13 or MariaDB 10.6.25 in a dedicated writer
