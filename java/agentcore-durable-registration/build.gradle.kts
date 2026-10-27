@@ -1,5 +1,6 @@
 dependencies {
   api(project(":adapters-remote"))
+  api(project(":agentcore-registration-http"))
   implementation(project(":persistence-identity"))
   implementation(project(":persistence-operations"))
   testImplementation(project(":contracts"))

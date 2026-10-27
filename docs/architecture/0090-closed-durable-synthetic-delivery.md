@@ -68,6 +68,9 @@ instant revocation, older-backup, physical-schema deployment-attestation or live
 GitHub/AWS/Jira/AgentCore/IdP compatibility claim. No endpoint or default runtime
 is enabled. Raw permits/bearer values/private credentials never enter evidence.
 The human has merged B into main221be9f599c2ee558041466ac5132a40bf540a2c.
-A retains its original-base cycle. Even a green A draft PR awaits a separately
-coordinated refresh/qualification onto that accepted main; it is not finally
-merge-ready.
+The stopped A test cycle remains original-base evidence. A later human-authorized
+publication refresh normally merges that exact main, preserving both sides of
+four documentation conflicts and all accepted B runtime/test bytes. Those old
+tests do not qualify the refreshed composition; known failures, skips, unrun gates
+and the pending metadata-type review are disclosed. A draft is not finally
+merge-ready and does not authorize check bypass or final merge.

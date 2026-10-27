@@ -15,8 +15,31 @@ admission with append-only lease/fence/start/result metadata and read-only
 reconciliation. Leases are capped at30 seconds of writer time and every original
 authority deadline; no resend/new attempt follows dispatch_started. Only a
 deterministic in-memory target exists. No provider, endpoint/default, credential
-acquisition or exactly-once external claim is enabled. Qualification and later
-reconciliation with B remain outstanding.
+acquisition or exactly-once external claim is enabled. Accepted B-first main is
+included by normal ancestry refresh; qualification of that composition remains
+outstanding. Known local failed/skipped cases are disclosed in the runbook.
+
+## Closed durable numeric-loopback registration composition
+
+`DurableAgentCoreRegistrationHttpServer` is an explicitly constructed Java
+library that joins the existing numeric `127.0.0.1` HTTP server to the existing
+concrete durable AgentCore registration factory. Trusted operator inputs select
+the real verifier/enrollment, separate initialized replay and operation stores,
+agreed replay capacity, finite DML budget and existing bounded transport limits.
+Requests cannot inject any of those inputs or an authenticated/verified/delegated
+role. The wrapper has no launcher, default service wiring, fallback store or
+generic authority callback.
+
+Verified credential replay commits before the separate registration transaction.
+The same token is refused across independent servers and process restart; fresh
+tokens can recover only immutable same-key metadata. Transport timeout and
+registration acknowledgement loss remain unknown rather than rollback receipts.
+Receipts expose only creation state, operation ID and `executionEnabled:false`.
+Synthetic exact-engine qualification is documented in
+[ADR0091](../architecture/0091-durable-agentcore-registration-http-composition.md)
+and its [runbook](../runbooks/durable-agentcore-registration-http.md). This adds no
+live provider/OBO, approval, admission, permit, target credential or execution
+authority.
 
 ## Source-free local synthetic registration command
 

@@ -12,6 +12,15 @@ Implementation/qualification are in progress; no endpoint/default/live target
 is enabled. The [learning note](../learning/lease-is-not-an-exactly-once-target-fence.md)
 explains why a lease cannot atomically fence a paused target call.
 
+[ADR0091](../architecture/0091-durable-agentcore-registration-http-composition.md)
+adds the closed trusted-operator composition of the existing numeric-loopback
+HTTP server and existing durable AgentCore registration factory. Its
+[runbook](../runbooks/durable-agentcore-registration-http.md) covers actual
+HTTP/JWKS/signed-token/shared-replay/durable-registration evidence across the
+three exact database engines. It remains execution-disabled, synthetic and
+unwired; no live provider, human delegation, approval, admission or target is
+enabled.
+
 [ADR0089](../architecture/0089-source-free-synthetic-registration-cli.md) adds
 the independent source-free local synthetic registration command. Its
 [runbook](../runbooks/source-free-synthetic-registration-cli.md) defines closed

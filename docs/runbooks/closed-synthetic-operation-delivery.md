@@ -11,7 +11,8 @@ This is an unwired Java library and a deterministic in-memory target. No HTTP/MC
 endpoint, executable/default wiring, live provider, enrollment or credential
 acquisition exists. Constructor inputs are trusted deployment configuration,
 never public request fields. AgentCore registration remains execution-disabled.
-Track B/ADR0091 are separate; its accepted main integration is a later A refresh.
+Track B/ADR0091 remain separate; accepted B-first main is now included by normal
+ancestry refresh, without manual B runtime/test changes.
 
 Default installation remains V2. With all writers stopped, a separate privileged
 operator may call `initializeDeliveryEmpty` on an empty dedicated store, or
@@ -194,23 +195,28 @@ review note remains for a bounded distinguishing proof, not a claimed bypass or
 a diagnosis of this timeout.
 
 The human has now merged B/PR125 into main `221be9f599c2ee558041466ac5132a40bf540a2c`.
-This was the planned B-first advance. A remains on its original accepted base;
-none of these results qualifies that newer main composition. Reconciliation is
-a separately pinned follow-up after this writer's normal handoff/release.
+This was the planned B-first advance. The stopped A cycle used its original
+accepted base; none of those results qualifies the newer main composition.
+The later human-authorized publication refresh below records its separate scope.
 
 The package-internal observation-only crash seam supplies no time, identity,
 target, claims or decision. Actual restricted JDBC/forwarded faults exercise
 transaction boundaries; these are not physical service/DB crash certification.
-Even a green original-base A draft awaits a separately coordinated refresh onto
-the accepted B-first main; original-base tests cannot qualify that composition.
+Original-base tests cannot qualify the accepted B-first main composition.
 
 ## Human-authorized publication with known qualification gaps
 
 The human subsequently instructed moving ahead with the known failed/skipped
-cases and providing a PR targeting main. This permits a guarded normal push and
-draft PR of the preserved candidate; it does not make the stopped gate pass or
-authorize check bypass, ready/final merge, weakened tests or source repair.
-Publication changes only status documentation; runtime/test bytes remain9072586.
+cases and providing a PR targeting main. A normal ancestry merge of exact
+accepted main221be9f resolves four documentation conflicts as a union:
+HANDOFF, baseline, traceability and specification README. The interface contract
+auto-merges. No production/test/build conflict occurs. A runtime/test bytes remain
+9072586; B runtime/tests and all paths outside A's feature exactly retain accepted
+main. Manual changes are documentation-only.
+
+This permits a guarded normal push and draft PR with disclosed qualification
+gaps; it does not make the stopped gate pass or authorize check bypass,
+ready/final merge, weakened tests or source repair.
 The skipped review case is
 `issuerRechecksFreshExecuteIdentityAfterActualHeadLockWait`, skipped after the
 unchanged90-second timeout described above. The original logs/XML/partial
@@ -218,6 +224,6 @@ execution data and all earlier stopped/negative-control receipts remain retained
 
 Publication-time lightweight checks and exact-head hosted results belong in the
 PR's full handoff. Original-base tests must not be relabelled current-main
-qualification. Accepted B-first main221be9f reconciliation, remaining engine/full
-repository/coverage gates and the historical-principal field-type review remain
-open. The draft is available for review; it is not a green merge recommendation.
+qualification. The refreshed-composition engine/full repository/coverage gates
+and historical-principal field-type review remain open. The draft is available
+for review; it is not a green merge recommendation.
