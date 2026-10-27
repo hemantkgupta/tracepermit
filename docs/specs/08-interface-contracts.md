@@ -43,6 +43,29 @@ the original scoped-key registration metadata, never authority or target dispatc
 Human token pairing remains refused. See [ADR0086](../architecture/0086-durable-agentcore-registration-composition.md)
 and the [qualification matrix](../runbooks/agentcore-durable-registration-qualification.md).
 
+## Closed durable numeric-loopback AgentCore registration composition
+
+`DurableAgentCoreRegistrationHttpServer.create` accepts only the existing
+concrete verifier/enrollment, clock, separate initialized replay and operation
+datasources, agreed replay capacity, finite replay DML budget, requested port and
+the existing HTTP `Limits`. It first constructs the unchanged
+`DurableAgentCoreRegistration`, then passes its exact package-private ingress to
+the unchanged `AgentCoreRegistrationHttpServer`. Its public surface is only
+`create`, `port` and `close`; there is no public repository/replay supplier,
+registration callback, fallback store, launcher or default wiring.
+
+All [durable registration](#durable-execution-disabled-agentcore-registration-composition)
+and [numeric-loopback HTTP](#optional-numeric-loopback-registration-http-library)
+contracts remain independently controlling. Replay acknowledgement precedes a
+separate registration transaction. Replay uncertainty prevents registration;
+registration uncertainty remains `AGENTCORE_REGISTRATION_UNKNOWN`; transport
+timeout never certifies rollback or releases ignored-interruption work early.
+Fresh-token same-key recovery returns immutable metadata only. Responses remain
+minimal and `executionEnabled:false`; human/OBO, approval, permit, admission,
+target credentials and execution are absent. See
+[ADR0091](../architecture/0091-durable-agentcore-registration-http-composition.md)
+and the [qualification runbook](../runbooks/durable-agentcore-registration-http.md).
+
 ## 1. Contract rules
 
 - External data is untrusted until validated by its adapter.

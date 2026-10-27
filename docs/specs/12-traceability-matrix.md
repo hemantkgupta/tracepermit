@@ -1,5 +1,32 @@
 # Requirements traceability matrix
 
+## Closed durable numeric-loopback AgentCore registration composition
+
+Requirements: FR-002/003/008/010/011/012;
+SEC-001/002/003/004/006/009/012; REL-001/002/003/004/005/009; DATA-001;
+OPS-002/004; PORT-004. Partial evidence only; no whole-ID status promotion.
+
+`DurableAgentCoreRegistrationHttpServer` composes the existing concrete durable
+factory and numeric-loopback HTTP server without adding a verifier, replay,
+repository or authority callback seam. `DurableRegistrationHttpContract` runs on
+exact PostgreSQL16.4, MariaDB11.4.13 and MariaDB10.6.25 with real raw loopback
+HTTP, cached synthetic JWKS parsing, signed tokens, restricted runtime grants and
+both dedicated stores. Tests cover minimal initial metadata, independent-server
+single-token races, same-key immutable recovery/conflict/proposal distinctions,
+terminated child-JVM replay, identity/body/human-pair rejection, saturation and
+unready schemas, replay and registration write/commit/close faults, independent
+observer uncertainty and interruption-ignoring timeout/capacity behavior.
+
+The two databases are not one transaction. A network timeout is not a rollback
+receipt; a spent credential is never retried automatically; explicit fresh-token
+same-key recovery returns metadata only. The composition creates no approval,
+permit, admission, attempt, outbox, target credential or execution authority and
+has no launcher/default wiring. Live provider compatibility, TLS/private edge,
+revocation, database failover/restore and production qualification remain open.
+See [ADR0091](../architecture/0091-durable-agentcore-registration-http-composition.md),
+the [runbook](../runbooks/durable-agentcore-registration-http.md) and the
+[timeout note](../learning/registration-timeout-is-not-rollback.md).
+
 ## Source-free local synthetic registration command
 
 Requirements: FR-003/008/011/012; SEC-001/003/006/009/012; REL-001/002/004;

@@ -20,6 +20,16 @@ public final class RegistrationChild {
   private RegistrationChild() {}
 
   static String call(RegistrationDatabases db, String token, byte[] body, boolean nonDurableControl) throws Exception {
+    return call(db, token, body, nonDurableControl, false);
+  }
+
+  static String callHttp(RegistrationDatabases db, String token, byte[] body) throws Exception {
+    return call(db, token, body, false, true);
+  }
+
+  private static String call(
+      RegistrationDatabases db, String token, byte[] body, boolean nonDurableControl, boolean http)
+      throws Exception {
     String classpath = System.getProperty("tracepermit.registration.childClasspath");
     if (classpath == null) throw new AssertionError("SYNTHETIC_CHILD_CLASSPATH_MISSING");
     Process child = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
@@ -35,7 +45,7 @@ public final class RegistrationChild {
             write(pipe, value.getBytes(StandardCharsets.UTF_8));
           }
           write(pipe, RegistrationIdentity.publicKey()); write(pipe, token.getBytes(StandardCharsets.UTF_8));
-          write(pipe, body); pipe.writeBoolean(nonDurableControl);
+          write(pipe, body); pipe.writeBoolean(nonDurableControl); pipe.writeBoolean(http);
         }
         return null;
       });
@@ -67,12 +77,28 @@ public final class RegistrationChild {
       var publicKey = (RSAPublicKey) KeyFactory.getInstance("RSA").generatePublic(new X509EncodedKeySpec(read(pipe,1024)));
       String token = new String(read(pipe,16391),StandardCharsets.UTF_8);
       byte[] body = read(pipe,32768); boolean nonDurable = pipe.readBoolean();
+      boolean http = pipe.readBoolean();
+      if (nonDurable && http) throw new IOException();
       var replay = new BoundedJdbcSource(configuration[0],configuration[1],configuration[2]);
       var operations = new BoundedJdbcSource(configuration[3],configuration[4],configuration[5]);
       var verifier = RegistrationIdentity.verifier(publicKey);
       AgentCoreRegistrationIngress.Receipt receipt;
       try {
-        if (nonDurable) {
+        if (http) {
+          try (var server = DurableAgentCoreRegistrationHttpServer.create(
+              verifier, RegistrationIdentity.enrollment(), RegistrationIdentity.CLOCK,
+              replay, operations, 128, Duration.ofSeconds(2), 0,
+              io.tracepermit.agentcore.http.AgentCoreRegistrationHttpServer.Limits.defaults())) {
+            var response = RegistrationHttpTestClient.send(server.port(), token, body);
+            if (response.status() == 201) System.out.println("CREATED");
+            else if (response.status() == 200) System.out.println("EXISTING");
+            else if (response.status() == 409
+                && response.body().equals("{\"error\":\"AGENTCORE_REGISTRATION_REJECTED\"}")) {
+              System.out.println("REPLAY_REJECTED");
+            } else throw new IOException();
+          }
+          return;
+        } else if (nonDurable) {
           // Deliberately wrong TEST control, absent from the production factory/API.
           receipt = new AgentCoreRegistrationIngress(verifier,new InMemoryWorkloadIdentityReplayStore(),
               new JdbcBusinessOperationRepository(operations),RegistrationIdentity.CLOCK,RegistrationIdentity.enrollment())
