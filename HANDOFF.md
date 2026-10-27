@@ -1,7 +1,58 @@
 # TracePermit implementation handoff
 
-GitHub is authoritative. Credentials, private customer/provider planning and local
-operator values remain outside Git. Historical receipts are not fresh results.
+GitHub is authoritative. Keep credentials, raw claims and private operator/customer
+planning outside Git. Historical receipts below are not fresh qualification.
+
+## Current PR95 reconciliation
+
+Mac has claimed exclusive writer ownership to finish PR95 at clean published head
+`dc0438acc19a490ed6ad6c832fd2e08c234ae48f`. The normal merge imports pinned main
+`0bc6b618aa9eac7df3bacf7a6d4bcafe2a824c4f` (merged PR101 and PR104), preserving
+both parents. Two documentation conflicts are resolved by retaining the bounded
+Okta, pure binding and durable-withdrawal traceability/evidence independently.
+No runtime, test assertion, contract, database migration or CI file is manually
+changed. The Okta profile remains synthetic-only, native/public and secretless;
+verified groups only narrow independently enrolled human authority. No live Okta
+login, tenant mutation, EKS ingress, installed-helper or real target is qualified.
+
+Fresh merged-tree qualification passed: 179 focused Okta, browser ID/access-token,
+code-exchange and legacy OIDC cases were forced with cache disabled, zero failures,
+errors or skips. Full `pnpm check` passed: 124 React tests; 1,923 recorded Java
+cases across 148 suites, zero failures/errors and one existing archive-absent
+native-PTY skip. Gradle9m8s:17 executed/4 from cache/44 up-to-date, not all fresh
+executions. Coverage94.45% line/78.47% branch passed unchanged thresholds.
+Formatting,1,127 documentation links/3 helper tests,13 flows/drift and diff checks
+passed. Final results-only documentation is checked separately before push.
+
+Exact-final-head hosted checks remain a separate gate. Earlier receipts below are
+historical only. PR95 remains draft/open/unmerged; the final GitHub handoff gives
+the exact pushed SHA and explicit writer release. Another environment must verify
+that SHA and a clean tree before taking ownership. No sensitive values or private
+planning files were staged; local qualification logs are not transferred in Git.
+
+## Historical PR95 producer receipt
+
+TRACEPERMIT HANDOFF
+
+- Task: Bounded Okta public/native OIDC qualification foundation, synthetic only.
+- Repository: https://github.com/hemantkgupta/tracepermit
+- Branch: codex/okta-oidc-qualification
+- Base commit: f23dc22f056058d7977715e0878c284728d10d17
+- Latest pushed commit: this coherent checkpoint; use the PR's exact head and `git rev-parse HEAD`
+- PR URL: https://github.com/hemantkgupta/tracepermit/pull/95
+- Branch owner now: unassigned after push; Gemini writer lane released
+- Working tree status: clean; merged frozen main f23dc22f056058d7977715e0878c284728d10d17; all mandatory gates passed
+- Completed: strict schema1.2 Okta custom-server/public profile, operator tenant/group bindings, verified group-role projection attenuating existing enrollment, independently bound ID/access tokens, unchanged loopback/PKCE/SSRF/TLS and durable simulator controls; generated-signature configuration/identity/browser negatives and role boundaries; ADR0067, specifications and operator runbook; normal merge of frozen main f23dc22f056058d7977715e0878c284728d10d17
+- Remaining: independent security review and exact-head CI review; separately approved live Okta registration/login and EKS pilot work; no live qualification is claimed
+- Files materially changed: Java identity token profile/verifiers and HTTP configuration/membership/browser adapter; synthetic fixtures and three Okta qualification test classes; ADR0067; Okta runbook; requirement/baseline/interface/acceptance/traceability specifications; this handoff
+- Tests passed: 98 new Okta cases (40 in OktaOidcQualificationTest, 31 in OktaApprovalBrowserTest, 27 in OktaApprovalConfigurationTest); focused identity/configuration/browser/code-exchange/Auth0 regressions; pnpm check (124 React console tests; 1,380+ Java cases across 17 subprojects passed, including forced PostgreSQL and MariaDB 10.6/11.4 testcontainers passes, aggregate coverage gate passed); pnpm format:check; pnpm docs:links (1,086 links, 3 tests); pnpm docs:flows:check (13 tests); git diff --check
+- Tests failed/not run: zero failures; one installed-archive/native-PTY endpoint-connector test skipped because that archive was not built; no live Okta tenant mutation/login, EKS/public ingress, installed Okta archive/helper or real target; hosted status is recorded separately
+- Exact next command: gh pr view 95
+- Required environment: Node.js 22+, Corepack/pnpm 11.25.0, Java 21 and Docker for synthetic PostgreSQL/MariaDB tests; review needs source/GitHub only
+- Local-only/manual steps: follow docs/runbooks/okta-oidc-qualification.md only after separate interactive approval for live provider actions; keep all tenant/user/group/configuration/credential facts private
+- Security constraints: no client secret; exact numeric 127.0.0.1 callback/listener; no tunnel/public endpoint or real AWS/Jira target; groups narrow operator enrollment after verification and never provision authority; no request-body roles; agentcore-work/** remains unread and excluded from the checkout/staging
+- Known limitations: selected token grammar and mandatory callback iss may be incompatible with a particular registration; old signed groups remain until bounded expiry; existing approval execution rechecks local reviewer enrollment rather than live provider group state; no all-Okta/OIDC, EKS, signing or production claim
+- Safe for another environment to continue: yes, after explicit ownership release in the PR/final handoff
 
 ## Current PR113 refresh and historical receipt scope
 
@@ -536,7 +587,9 @@ therefore does not establish a current VM/database clock skew or justify a
 restart. Fresh database-time observations and the original failure still need
 investigation; do not widen expiry margins or rerun solely to get green.
 
-## Current PR104 reconciliation
+## Preserved merged-main receipts — historical, not current ownership
+
+## Historical PR104 reconciliation — now merged into main
 
 The user requested a normal merge of current main
 `6b7de90bf9f07b0307ff61a6038fac3383404d7f` (merged PR101) into clean published

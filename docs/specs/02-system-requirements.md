@@ -52,6 +52,17 @@
 
 ## Local public-client browser interpretation
 
+Schema1.2's explicitly selected Okta custom-server candidate additionally
+requires operator-owned tenant/group bindings, independently verified access
+and ID tokens, exactly one mapped group role in each and agreement between
+them. The mapped role SHALL only attenuate current subject/client/tenant
+enrollment and SHALL NOT provision authority or replace operation scopes.
+Missing, duplicate, ambiguous, malformed or unmapped groups MUST fail closed.
+FR-003/007/012, SEC-002/003/004/009/011/012/015, REL-001/004/009 and
+OPS-002/004/005 apply; no whole-ID status is promoted. Provider group changes
+are not instantaneous token revocation. See
+[ADR0067](../architecture/0067-bounded-okta-oidc-qualification.md).
+
 FR-003/007/012 and SEC-002/003/004/009/011/012/015 apply to the optional
 schema1.1 native/public candidate. Method `none` SHALL require code/S256 PKCE,
 exact numeric-loopback callback and one-use browser-bound state/nonce. It MUST
@@ -64,8 +75,9 @@ for API use. It need not echo `openid`. Existing schema1.0 confidential behavior
 SHALL remain compatible. See [ADR0063](../architecture/0063-explicit-public-browser-code-pkce.md).
 
 OPS-001/004/005 do not turn offline validation or local DB readiness into live
-IdP or production readiness. Auth0 `at+jwt`, callback `iss` and native
-organization interoperability remain pending qualification.
+IdP or production readiness. The named Auth0 composition retains its separately
+scoped evidence; Okta token/callback interoperability remains a separate live
+gate and cannot be inferred from the synthetic foundation.
 
 Rejected browser login callbacks SHALL keep the HTTP response generic while
 the local operator process MAY emit one fixed stage and one allowlisted reason.

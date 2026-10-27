@@ -171,13 +171,28 @@ separate authenticated route. See [ADR 0062](../architecture/0062-loopback-conta
 
 ### Optional local browser approval boundary
 
+Schema1.2 additionally requires `oidc.profile: okta-custom-as-jwt-rs256-v1`,
+`groupsClaim` and `groupRoleMappings` alongside the existing explicit issuer,
+audience, client and tenant fields. It allows only `tokenEndpointAuthMethod:
+none`, exact `/oauth2/<server-id>/v1/{authorize,token,keys}` destinations and the
+derived numeric-loopback callback. Its RS256/`JWT` API tokens require `cid`,
+bounded unique `scp`, exact single audience, tenant and exactly one mapped
+group. The independent ID token must bind the same subject/client/tenant and
+mapped role. Only a derived role reaches membership resolution, where it
+narrows existing enrollment; request roles and raw claims grant no authority.
+The authorization request includes `openid groups` and API scopes without
+Auth0-specific audience/organization parameters. Callback `iss`, state/nonce,
+code/S256, mixed-auth and transport protections remain mandatory. Unknown
+profiles and cross-grammar fallback fail closed. See
+[ADR0067](../architecture/0067-bounded-okta-oidc-qualification.md).
+
 `SimulatorApprovalMain` schema1.0 accepts an optional strict `browser` object
 with `authorizationUri`, `tokenUri`, `clientSecretFile` and `consoleDirectory`.
 Schema1.1 requires a browser object and explicit `tokenEndpointAuthMethod`:
 `client_secret_basic` retains that private secret file; `none` forbids every
 secret field and sends configured `client_id` without an Authorization header.
 Both require code/S256 PKCE and the exact derived numeric-loopback callback.
-The public candidate requires an HTTPS-origin issuer ending `/`, same-issuer
+The schema1.1 public candidate requires an HTTPS-origin issuer ending `/`, same-issuer
 `/authorize`, `/oauth/token`, `/.well-known/jwks.json`, and one configured
 `org_id` with an `org_` identifier. Both signed tokens must bind to that
 organization. Login requires API scope `approvals.read`; `openid` is requested

@@ -48,6 +48,7 @@ final class SimulatorApprovalBrowserFixture implements AutoCloseable {
   final KeyPair rsa;
   final String issuer;
   final String organization;
+  final boolean okta;
   final AtomicInteger tokenPosts = new AtomicInteger();
   final List<String> loginDiagnosticLines = new CopyOnWriteArrayList<>();
   volatile Consumer<String> loginDiagnostics = loginDiagnosticLines::add;
@@ -68,8 +69,14 @@ final class SimulatorApprovalBrowserFixture implements AutoCloseable {
   }
 
   SimulatorApprovalBrowserFixture(Path directory, PostgreSQLContainer<?> postgres, boolean publicClient) throws Exception {
-    issuer = publicClient ? ISSUER + "/" : ISSUER;
-    organization = publicClient ? "org_synthetic" : null;
+    this(directory, postgres, publicClient, false);
+  }
+
+  SimulatorApprovalBrowserFixture(Path directory, PostgreSQLContainer<?> postgres,
+      boolean publicClient, boolean okta) throws Exception {
+    this.okta = okta;
+    issuer = okta ? ISSUER + "/oauth2/synthetic" : publicClient ? ISSUER + "/" : ISSUER;
+    organization = okta ? "pilot-synthetic" : publicClient ? "org_synthetic" : null;
     var files = new SimulatorApprovalFixture(directory);
     if (publicClient) {
       java.nio.file.Files.createDirectories(directory.resolve("console"));
@@ -81,6 +88,7 @@ final class SimulatorApprovalBrowserFixture implements AutoCloseable {
           .put("authorizationUri", issuer + "authorize").put("tokenUri", issuer + "oauth/token")
           .put("consoleDirectory", "console");
     }
+    if (okta) files.oktaBrowser();
     files.json.withObject("/postgres").put("port", postgres.getMappedPort(5432))
         .put("database", postgres.getDatabaseName()).put("user", postgres.getUsername());
     files.write("database.secret", postgres.getPassword().getBytes(StandardCharsets.UTF_8));
@@ -165,8 +173,9 @@ final class SimulatorApprovalBrowserFixture implements AutoCloseable {
         .put("client_id", CLIENT).put("org_id", organization == null ? "alpha" : organization)
         .put("scope", "approvals.read approvals.request approvals.execute")
         .put("iat", now - 10).put("exp", now + 290).put("jti", UUID.randomUUID().toString());
+    oktaAccessShape(claims);
     accessClaims.accept(claims);
-    return sign(claims, "at+jwt");
+    return signAccess(claims);
   }
 
   private String exchange(Map<String, String> form) {
@@ -184,22 +193,50 @@ final class SimulatorApprovalBrowserFixture implements AutoCloseable {
           .put("client_id", CLIENT).put("org_id", organization == null ? "alpha" : organization)
           .put("scope", "approvals.read approvals.request approvals.decide approvals.execute approvals.cancel")
           .put("iat", now - 10).put("exp", now + 290).put("jti", UUID.randomUUID().toString());
+      oktaAccessShape(access);
       accessClaims.accept(access);
       ObjectNode identity = JsonSupport.MAPPER.createObjectNode().put("iss", issuer).put("aud", CLIENT)
           .put("sub", params.get("synthetic_subject")).put("nonce", params.get("nonce"))
           .put("iat", now - 10).put("exp", now + 290);
       if (organization != null) identity.put("org_id", organization);
+      if (okta) {
+        identity.remove("org_id");
+        identity.put("tracepermit_tenant", organization);
+        identity.putArray("groups").add(group(params.get("synthetic_subject")));
+      }
       idClaims.accept(identity);
-      lastTokenResponse = JsonSupport.MAPPER.createObjectNode().put("access_token", sign(access, "at+jwt"))
+      lastTokenResponse = JsonSupport.MAPPER.createObjectNode().put("access_token", signAccess(access))
           .put("id_token", sign(identity, "JWT")).put("token_type", "Bearer").toString();
       return lastTokenResponse;
     } catch (Exception failure) { throw new SecurityException("SYNTHETIC_CODE_REJECTED"); }
   }
 
   String sign(ObjectNode claims, String type) throws Exception {
+    return sign(claims, type, "JWT".equals(type) ? idHeader : accessHeader);
+  }
+
+  private String signAccess(ObjectNode claims) throws Exception {
+    return sign(claims, okta ? "JWT" : "at+jwt", accessHeader);
+  }
+
+  private void oktaAccessShape(ObjectNode claims) {
+    if (!okta) return;
+    String scopes = claims.path("scope").asText();
+    claims.remove(java.util.List.of("scope", "client_id", "org_id"));
+    claims.put("cid", CLIENT).put("tracepermit_tenant", organization);
+    var scopeArray = claims.putArray("scp");
+    for (String scope : scopes.split(" ")) scopeArray.add(scope);
+    claims.putArray("groups").add(group(claims.path("sub").asText()));
+  }
+
+  private static String group(String subject) {
+    return "bob".equals(subject) ? "pilot-reviewers" : "carol".equals(subject) ? "pilot-viewers" : "pilot-requesters";
+  }
+
+  private String sign(ObjectNode claims, String type, Consumer<ObjectNode> mutateHeader) throws Exception {
     var encoder = Base64.getUrlEncoder().withoutPadding();
     var header = JsonSupport.MAPPER.createObjectNode().put("alg", "RS256").put("typ", type).put("kid", "fixture-key");
-    if ("JWT".equals(type)) idHeader.accept(header); else accessHeader.accept(header);
+    mutateHeader.accept(header);
     String input = encoder.encodeToString(JsonSupport.MAPPER.writeValueAsBytes(header)) + "."
         + encoder.encodeToString(JsonSupport.MAPPER.writeValueAsBytes(claims));
     var signer = Signature.getInstance("SHA256withRSA"); signer.initSign(signingKey.getPrivate());

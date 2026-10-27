@@ -226,6 +226,21 @@ an archive runtime trial or live external-IdP/installed-Codex qualification.
 
 ## Public-client browser acceptance
 
+The separate schema1.2 Okta candidate requires `OktaOidcQualificationTest`,
+`OktaApprovalConfigurationTest` and `OktaApprovalBrowserTest`, plus all existing
+Auth0/standard-profile regressions. Cover missing/malformed/duplicate/ambiguous
+groups, unknown mappings, independent ID group/tenant mismatch, verified-role
+attenuation, subject/human enrollment, scopes, header/key/claim/time failures,
+rotation cooldown and no expired-key fallback, callback/redirect/code/verifier
+substitution, mixed authentication and concurrent one-exchange replay. Tests
+must assert requester/reviewer/viewer isolation and no unauthorized effect.
+Fresh-token group removal and current-enrollment removal are separate from an
+old token retaining signed groups until expiry. Runtime-generated test keys,
+bounded diagnostics and explicit cleanup are required. A live tenant change
+or login needs separate interactive approval and the
+[operator gate](../runbooks/okta-oidc-qualification.md); synthetic success never
+qualifies Okta generally, the installed helper or EKS deployment.
+
 Schema1.1 `none` requires successful code/S256 exchange without Authorization or
 secret, strict configuration/method rejection, exact redirect and independent
 ID/API-token organization bindings. `BrowserCodeExchangeTest` and

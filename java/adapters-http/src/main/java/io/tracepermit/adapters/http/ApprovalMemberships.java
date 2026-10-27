@@ -57,6 +57,13 @@ public final class ApprovalMemberships {
     Entry entry = entries.get(new Key(connector.subjectId(), connector.clientId(),
         new TenantPartition(connector.organizationId())));
     if (entry == null) throw new SecurityException("MEMBERSHIP_REQUIRED");
+    if (io.tracepermit.identity.OidcTokenProfile.OKTA.equals(connector.authenticationProfile())
+        && connector.mappedRole().isEmpty()) throw new SecurityException("MEMBERSHIP_REQUIRED");
+    if (connector.mappedRole().isPresent()) {
+      Role role = Role.valueOf(connector.mappedRole().orElseThrow());
+      if (!entry.roles().contains(role)) throw new SecurityException("MEMBERSHIP_REQUIRED");
+      return new Entry(entry.verifiedSubjectId(), entry.clientId(), entry.tenant(), entry.human(), Set.of(role));
+    }
     return entry;
   }
 
