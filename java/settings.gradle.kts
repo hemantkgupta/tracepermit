@@ -19,6 +19,7 @@ include(
   "persistence-operations",
   "persistence-identity",
   "agentcore-durable-registration",
+  "agentcore-registration-cli",
   "observability-otel",
   "conformance",
 )

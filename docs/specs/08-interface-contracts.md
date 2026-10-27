@@ -3,6 +3,26 @@
 **Status:** Current interfaces plus target extensions  
 **Applies to:** MCP, internal HTTP, control plane, and signed artifacts
 
+## Source-free local synthetic registration command
+
+`agentcore-registration-cli` packages only `check-config` and `register-once`
+for Java21. Versioned closed operator configuration and untrusted request frames
+arrive separately through bounded anonymous stdin pipes. All framing and EOF
+validate before effects. Offline public-key pinning constructs the real verifier;
+numeric127.0.0.1-only driver settings construct the real durable registration
+factory against two existing dedicated stores. No URL/property escape, runtime
+DDL, authority flag, human pairing or target transport is accepted.
+
+Only complete acknowledged fixed receipts can succeed. Worker/JDBC uncertainty
+is nonzero `UNKNOWN`, with no retry or reconstructed acknowledgement. The
+60second command budget and separate5second cleanup reserve cover worker and
+pipe lifecycle within documented JVM/OS limits. `check-config` performs no
+DNS/network/JDBC/signing/replay/registration operation. This is partial
+FR-003/008/011/012, SEC-001/003/006/009/012, REL-001/002/004 and OPS-002/004
+evidence; qualification status and exact framing/configuration are in
+[ADR0089](../architecture/0089-source-free-synthetic-registration-cli.md) and the
+[runbook](../runbooks/source-free-synthetic-registration-cli.md).
+
 ## Durable execution-disabled AgentCore registration composition
 
 `DurableAgentCoreRegistration.create` in `agentcore-durable-registration` takes
