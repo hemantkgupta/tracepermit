@@ -40,7 +40,7 @@ import org.testcontainers.containers.JdbcDatabaseContainer;
 @Timeout(120)
 abstract class OperationDeliveryContract {
   private static final String HASH = "sha256:" + "a".repeat(64);
-  private static final BusinessOperationScope SCOPE = new BusinessOperationScope("synthetic-tenant", "synthetic-github-sandbox", "principal:synthetic-requester");
+  private BusinessOperationScope SCOPE;
   private static final BusinessOperationTransitionPlanner PLANNER = new BusinessOperationTransitionPlanner();
   private JdbcDatabaseContainer<?> database;
   private Source owner, runtime;
@@ -83,7 +83,19 @@ abstract class OperationDeliveryContract {
     runtime = new Source("tp_delivery_runtime", password);
   }
   @AfterAll void stop() { if (database != null) database.stop(); }
-  @BeforeEach void reset() throws Exception {
+  @BeforeEach void reset(TestInfo info) throws Exception {
+    String principal = "principal:synthetic-requester";
+    if (info.getTestMethod().orElseThrow().getName().equals("historicalPrincipalTypesRemainStrictWithCoherentHashes")) {
+      principal = switch (info.getDisplayName()) {
+        case "strict-principal:123" -> "123";
+        case "strict-principal:true" -> "true";
+        default -> throw new IllegalStateException("Unexpected principal fixture");
+      };
+    }
+    reset(principal);
+  }
+  private void reset(String principal) throws Exception {
+    SCOPE = new BusinessOperationScope("synthetic-tenant", "synthetic-github-sandbox", principal);
     owner.fault = "none"; runtime.fault = "none"; runtime.watch = "none"; runtime.trace.clear(); runtime.categories.clear(); runtime.waitRows = -1;
     probePhase = "none"; probeQualified = false; probeRefusal = "not_observed";
     for (String table : List.of("tp_operation_delivery_events", "tp_operation_admission_outbox", "tp_operation_admissions", "tp_operation_review_bindings",
@@ -691,8 +703,9 @@ abstract class OperationDeliveryContract {
         new TrustedOperationGroupMembership(SCOPE.tenantId(), SCOPE.workspaceId(), "principal:reviewer", "synthetic-reviewers", HASH, Instant.now().minusSeconds(1), fresh().minusSeconds(30)));
   }
   private BusinessOperationExecution execution(JsonNode head, Instant expiry) { return new BusinessOperationExecution(SCOPE, id(), PLANNER.observe(SCOPE, head), requester(Set.of("operations.execute"), expiry), SCOPE.workspaceId()); }
-  private static TrustedRequesterContext requester(Set<String> scopes, Instant expiry) { return new TrustedRequesterContext(new TenantPartition(SCOPE.tenantId()), SCOPE.requesterPrincipalId(), true, Set.of("operation_requester"), scopes, "synthetic-test", HASH, expiry); }
+  private TrustedRequesterContext requester(Set<String> scopes, Instant expiry) { return new TrustedRequesterContext(new TenantPartition(SCOPE.tenantId()), SCOPE.requesterPrincipalId(), true, Set.of("operation_requester"), scopes, "synthetic-test", HASH, expiry); }
   private JsonNode current() { return new JdbcBusinessOperationLifecycleRepository(runtime).findCurrent(SCOPE, id()).orElseThrow(); }
+  private JsonNode current(JdbcBusinessOperationLifecycleRepository reader) { return reader.findCurrent(SCOPE, id()).orElseThrow(); }
   private String id() { return initial.path("operationId").asText(); }
   private static Instant fresh() { return Instant.now().plusSeconds(180); }
   private boolean pg() { return database.getJdbcUrl().startsWith("jdbc:postgresql:"); }
@@ -717,6 +730,7 @@ abstract class OperationDeliveryContract {
   }
   private ObjectNode operation() {
     ObjectNode value=(ObjectNode)JsonSupport.read(Path.of(System.getProperty("tracepermit.repositoryRoot")).resolve("contracts/vectors/business-operation-v1.json")).path("operation").deepCopy();
+    retargetSyntheticOwner(value);
     value.put("operationId",UUID.randomUUID().toString());((ArrayNode)value.path("transitions")).remove(3);
     ((ObjectNode)value.path("authorization")).put("status","evaluating").put("version",1).put("updatedAt",value.path("createdAt").asText());
     value.put("updatedAt",value.path("transitions").get(2).path("at").asText());
@@ -729,6 +743,77 @@ abstract class OperationDeliveryContract {
     value.put("targetIdempotencyKeyHash",BusinessOperationValidator.targetIdempotencyKeyHash(value.path("operationId").asText(),expected.adapterId(),1));
     return (ObjectNode)BusinessOperationValidator.validate(value);
   }
+  @ParameterizedTest(name = "strict-principal:{0}") @ValueSource(strings = {"123", "true"})
+  void historicalPrincipalTypesRemainStrictWithCoherentHashes(String principal) throws Exception {
+    // Prepare the intended owner once in BeforeEach; keep all business work inside the 120s test.
+    assertThat(SCOPE.requesterPrincipalId()).isEqualTo(principal);
+    JsonNode scalar = principal.equals("123") ? JsonSupport.MAPPER.getNodeFactory().numberNode(123)
+        : JsonSupport.MAPPER.getNodeFactory().booleanNode(true);
+    JsonNode wrong = principal.equals("123") ? JsonSupport.MAPPER.getNodeFactory().numberNode(124)
+        : JsonSupport.MAPPER.getNodeFactory().booleanNode(false);
+    assertThat(scalar.asText()).isEqualTo(SCOPE.requesterPrincipalId());
+    var reader = new JdbcBusinessOperationLifecycleRepository(runtime);
+    var delivery = new JdbcGitHubOperationDeliveryRepository(runtime, profile, expected, target,
+        point -> { if (point.equals("after_dispatch_started")) throw new Crash(); });
+    admit(); var command = execution(claimed, fresh()); var lease = delivery.claim(command, permit);
+    assertThatThrownBy(() -> delivery.dispatch(lease, command, permit)).isInstanceOf(Crash.class);
+    assertThat(current(reader).path("execution").path("status").asText()).isEqualTo("executing");
+    var originalLease = event(1); var originalStart = event(2);
+    try {
+      ObjectNode changed = originalLease.json(); ((ObjectNode) changed.path("identity")).set("principalId", scalar);
+      try (var connection = owner.getConnection(); var statement = connection.prepareStatement("UPDATE tp_operation_delivery_events SET event_json = ? WHERE operation_id = ? AND event_sequence = 1")) {
+        statement.setQueryTimeout(5); statement.setString(1, CanonicalJson.canonicalize(changed)); statement.setString(2, id()); assertThat(statement.executeUpdate()).isEqualTo(1);
+      }
+      assertCode(() -> current(reader), OPERATION_STORAGE_CORRUPT); // Broken-hash control.
+    } finally { restoreDeliveryChain(originalLease, originalStart); }
+    // Administrative mutations repair every linked hash/fact, so rejection must reach identity validation.
+    // The textual wrong owner reaches owner comparison after passing the strict type guard.
+    for (JsonNode value : List.of(scalar, wrong, JsonSupport.MAPPER.getNodeFactory().textNode("principal:other"))) {
+      try {
+        ObjectNode changedLease = originalLease.json(); ((ObjectNode) changedLease.path("identity")).set("principalId", value);
+        var nextLease = OperationDeliveryJournal.create(changedLease);
+        ObjectNode changedStart = originalStart.json().put("previousEventHash", nextLease.hash()).put("leaseHash", nextLease.hash());
+        var nextStart = OperationDeliveryJournal.create(changedStart);
+        replaceEvent(1, changedLease); replaceEvent(2, changedStart); replaceStartActor(nextStart);
+        assertCode(() -> current(reader), OPERATION_STORAGE_CORRUPT);
+      } finally { restoreDeliveryChain(originalLease, originalStart); }
+      try {
+        ObjectNode changedStart = originalStart.json(); ((ObjectNode) changedStart.path("identity")).set("principalId", value);
+        var nextStart = OperationDeliveryJournal.create(changedStart);
+        replaceEvent(2, changedStart); replaceStartActor(nextStart);
+        assertCode(() -> current(reader), OPERATION_STORAGE_CORRUPT);
+      } finally { restoreDeliveryChain(originalLease, originalStart); }
+    }
+    assertThat(current(reader).path("execution").path("status").asText()).isEqualTo("executing");
+    assertThat(repository().reconcile(SCOPE, id()).dispatchStarted()).isTrue();
+    assertThat(target.invocations(id())).isZero(); assertThat(count("tp_operation_delivery_events")).isEqualTo(2);
+    assertThat(owner.open.get()).isZero(); assertThat(runtime.open.get()).isZero();
+    writeSafeReceipt("strict-principal-type", JsonSupport.MAPPER.createObjectNode().put("engine", database.getDockerImageName())
+        .put("textualOwner", principal).put("matchingScalarRefused", true).put("wrongOwnerRefused", true)
+        .put("textualWrongOwnerRefused", true).put("retainedReader", true).put("restoredTextualHistoryAccepted", true).put("targetInvocations", 0).put("openConnections", 0));
+  }
+
+  private void restoreDeliveryChain(OperationDeliveryJournal.Event lease, OperationDeliveryJournal.Event start) throws SQLException {
+    replaceEvent(1, lease.json()); replaceEvent(2, start.json()); replaceStartActor(start);
+  }
+
+  private void retargetSyntheticOwner(JsonNode value) {
+    if (value instanceof ObjectNode object) {
+      List<String> names = new ArrayList<>(); object.fieldNames().forEachRemaining(names::add);
+      for (String name : names) {
+        JsonNode child = object.get(name);
+        if (child.isTextual() && child.asText().equals("principal:synthetic-requester")) object.put(name, SCOPE.requesterPrincipalId());
+        else retargetSyntheticOwner(child);
+      }
+    } else if (value instanceof ArrayNode array) {
+      for (int i = 0; i < array.size(); i++) {
+        JsonNode child = array.get(i);
+        if (child.isTextual() && child.asText().equals("principal:synthetic-requester")) array.set(i, JsonSupport.MAPPER.getNodeFactory().textNode(SCOPE.requesterPrincipalId()));
+        else retargetSyntheticOwner(child);
+      }
+    }
+  }
+
   private static final class Crash extends RuntimeException { private static final long serialVersionUID=1L; }
   private final class Source implements DataSource {
     private final String user, password;

@@ -74,3 +74,44 @@ four documentation conflicts and all accepted B runtime/test bytes. Those old
 tests do not qualify the refreshed composition; known failures, skips, unrun gates
 and the pending metadata-type review are disclosed. A draft is not finally
 merge-ready and does not authorize check bypass or final merge.
+
+## Current-main historical principal-type review
+
+The next normal ancestry refresh imports main02a7f27, retaining A/V7 and
+C/ADR0092 documentation. One bounded real restricted MariaDB10.6 diagnostic
+accepted coherently rehashed V7 lease/start identities containing numeric123 or
+booleantrue when the actual scoped owner was the legitimate String123 or
+Stringtrue. Typed-review, wrong-owner and stale-hash controls refused; target
+invocations remained zero. The mutation required administrative fixture writes
+to immutable history; no request or execution-authority bypass was demonstrated.
+
+The narrow repair requires principalId.isTextual before the existing exact owner
+comparison. It does not normalize, repair or rewrite stored history. Positive
+String owners and coherently linked matching/wrong scalar mutations are covered
+by the existing three-engine delivery fixture. No new authority, grant, lease,
+deadline, migration or parser policy is introduced. Admission/legacy actor
+asText patterns remain source-review observations without a dynamic proof here.
+Focused evidence and current CI belong to the exact-head public handoff; original
+local/hosted failures, skips and unestablished aggregate coverage remain disclosed.
+The human authorized this scoped repair and known-failure checkpoint; root owns
+the separate final-merge disposition, with no green or check-bypass claim.
+
+## Explicit PR128 publication disposition and retained failures
+
+The production textual-principal guard is byte-identical to the version exercised
+by a real9/9 passing focused run: six principal cases on all3exact engines and
+three PostgreSQL lifecycle outcomes. The fixture prepares its intended owner
+once and uses a concrete reader whose every call still validates writer/history
+state. A textual wrong owner exercises owner comparison after type validation.
+No test/assertion/workload requirement,120s deadline,30s lease, authority cap,
+grant, cleanup, coverage threshold or runtime/legacy migration policy is relaxed.
+
+The final affected6case run recorded4pass/2fail: MariaDB10.6 numeric returned
+OPERATION_DELIVERY_LEASE_EXPIRED and PostgreSQLboolean returned
+OPERATION_STORAGE_UNAVAILABLE instead of the expected post-start crash barrier,
+before metadata mutation. Their underlying causes remain unestablished. The
+human explicitly accepted this PR128 publication with these tests active and
+missing aggregate coverage recorded in
+[issue126](https://github.com/hemantkgupta/tracepermit/issues/126#issuecomment-6444912592).
+This does not relabel final6 green, transfer old CI qualification, authorize a
+future exception or let this writer perform the final merge/ruleset operation.
