@@ -26,3 +26,16 @@ demonstrated that metadata gap, not a runtime-grant or execution-authority bypas
 Regression controls keep valid String123/Stringtrue owners readable and refuse
 numeric/boolean lease/start identities even with coherent hashes. Runtime has no
 history-rewrite grant, and reconciliation still cannot dispatch or create authority.
+
+Prepare the intended test owner once; a discarded fixture reset consumes time
+without adding a business control. A retained concrete reader still opens a fresh
+snapshot and revalidates writer/history state per call. Use a textual wrong owner
+to exercise owner comparison independently of the scalar type refusal, retaining
+every existing mutation, deadline and zero-target assertion.
+
+Passing a stored-metadata control is not a passing test if the deadline or dispatch
+precondition fails. PR128's final six-case run retained two pre-mutation failures
+(lease expired/storage unavailable), despite earlier9/9 passing proof of the same
+production guard. Its human-authorized known-failure publication records those
+results and missing coverage in [issue126](https://github.com/hemantkgupta/tracepermit/issues/126#issuecomment-6444912592);
+no active test, lease cap or coverage gate is weakened.

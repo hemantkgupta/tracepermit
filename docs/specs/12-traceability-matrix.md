@@ -21,6 +21,15 @@ integrity evidence, not a demonstrated request/authority bypass or complete
 qualification. Admission/legacy actor coercion remains a separate unproved
 source-review item; no broader behavior is changed.
 
+The unchanged production guard passed a fresh9case focused run (six principal
+cases/three engines plus three PG lifecycle outcomes). The final fixture adds a
+textual wrong owner independent of type rejection and retains all controls; its
+affected6case verification recorded4pass/2fail before metadata mutation
+(MariaDB10.6 lease expired, PG storage unavailable). The human accepted PR128
+publication with these tests active and missing aggregate94/75 coverage recorded
+in [issue126](https://github.com/hemantkgupta/tracepermit/issues/126#issuecomment-6444912592).
+The final6case result and hosted status are not promoted to passing qualification.
+
 ## Installed bounded durable AgentCore HTTP session
 
 Requirements: FR-002/003/008/010/011/012;

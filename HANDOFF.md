@@ -3,39 +3,55 @@
 GitHub is authoritative. Keep credentials, raw claims and private operator/customer
 planning outside Git. Historical receipts below are not fresh qualification.
 
-## PR128 identity repair — resumed from preserved failed checkpoint
+## PR128 identity guard — human-authorized known-failure publication
 
-The human released the external editing hold and assigned this writer only
-PR128. Exact public head de7c92d89d29a1be556da67e5cb93dc3fbf7885d already contains
-main02a7f27e36f674c008124b2b77b2bc5e030171bd through normal mergeaeba870.
-Local provenance9537b94364c6ebf72dfacb67d11a4f8965fabeb2 preserves the earlier
-failed staged treed3e3b5521c033c9c7b92a35d516eac8cbb4699d9 without reset/discard.
-A normal ancestry integration retains the external documentation/status/spacing
-work, the one-line V7 textual-principal guard and its meaningful regression.
-Other A/B/C runtime, legacy migration/default V2, grants, deadlines and CI remain
-unchanged. This checkpoint is local/unpublished and not verified.
+The human explicitly authorized publishing the production identity guard that
+passed9/9, keeping every final test active, recording remaining failures in
+[issue126](https://github.com/hemantkgupta/tracepermit/issues/126#issuecomment-6444912592),
+and leaving the separate final merge to root. This is a PR128-only disposition,
+not green qualification or an exception for future work. This writer never
+merges, marks ready, changes rules or reruns hosted jobs.
 
-The preceding one-shot focused run recorded18cases:15pass/3fail/0errors/0skips,
-18fresh tasks in36m20. Both MariaDB six-case suites passed. PostgreSQL UNKNOWN
-failed OPERATION_STORAGE_UNAVAILABLE in review evaluation before delivery; both
-new principal cases exceeded the unchanged120s timeout despite reaching safe
-control assertions. Those phase receipts do not make a test pass. Exact XML,
-stacks, hashes and the stopped candidate remain preserved in the
-[stopped handoff](https://github.com/hemantkgupta/tracepermit/pull/128#issuecomment-6442882333).
-The bounded next diagnostic measures duplicate fixture reset time and safe JDBC
-phase/error categories, with no production diagnostic hook or new trust policy.
-Only an evidence-established fixture repair and genuinely passing fresh focused
-three-engine identity verification permit publication. No blind retry is allowed.
+The exact publication inputs are publicde7c92d89d29a1be556da67e5cb93dc3fbf7885d
+and main02a7f27e36f674c008124b2b77b2bc5e030171bd. Local provenance9537b94
+preserves failed staged treed3e3b5521c033c9c7b92a35d516eac8cbb4699d9;
+normal integration67d2c6666db7f88a8ebd2e763428af0c87457dcb has ordered parents
+[9537b94364c6ebf72dfacb67d11a4f8965fabeb2,de7c92d89d29a1be556da67e5cb93dc3fbf7885d].
+All external documentation/history and earlier failed/stopped evidence remain.
+The final full public handoff records exact pushed head/tree/parents, initial CI,
+clean state and write release; old receipts below qualify only their own trees.
 
-The original bounded diagnostic demonstrated coherently rehashed numeric/boolean
-V7 metadata acceptance for legitimate String owners; typed-review/wrong-owner/
-hash controls refused, target0. This is privileged stored-metadata integrity,
-not a demonstrated request/cross-owner/execution-authority bypass. Admission and
-legacy actor asText patterns remain unproved source-review observations.
-Historical local/core failures, skips and missing aggregate94/75 coverage stay
-unqualified. Root alone owns the separate final merge disposition; this writer
-never merges, changes rules or claims green from an exception. Exact new results,
-refs, ownership and limits belong to the next full public handoff.
+Production changes only principalId.isTextual before exact V7 owner comparison.
+The production blob is byte-identical to the real9/9 passing run. Subsequent Java
+changes are fixture/control-only: select the intended String owner once in
+BeforeEach, use one concrete reader with fresh per-call writer/MVCC/history
+validation, and retain an additional textual wrong owner independent of type
+rejection. Other A/B/C runtime/build/CI/schema/legacy/default V2/grant bytes stay
+unchanged. Review, permit, admission, lease/start and every mutation/assertion
+remain active inside the unchanged120s test; max30s lease and authority caps,
+workloads, concurrency, cleanup and coverage thresholds are not relaxed.
+
+One actual PostgreSQL diagnostic passed3/3 in6m17; duplicate fixture setup cost
+4.350s/8.813s. It did not reproduce the earlier timeouts/review UNKNOWN error,
+and does not establish their full causes. The first fresh verification passed
+9/9 in14m19: six principal cases on all3engines plus all3PG lifecycle outcomes.
+The final affected fixture ran6cases in10m19:4pass/2fail/0errors/0skips.
+MariaDB10.6 numeric failed the expected dispatch Crash barrier with
+OPERATION_DELIVERY_LEASE_EXPIRED; PGboolean failed there with
+OPERATION_STORAGE_UNAVAILABLE, before metadata mutations. The final tests remain
+active. Earlier9PASS and phase receipts do not turn final6 into PASS; underlying
+latency/JDBC causes remain unestablished. No additional diagnostic/retry follows.
+
+The original unmodified-production diagnostic proved coherently rehashed scalar
+V7 principal acceptance matching legitimate String owners, with typed-review,
+wrong-owner/hash controls refused and target0. This is privileged stored-metadata
+integrity, not a demonstrated request/cross-owner/execution-authority bypass.
+Admission/legacy actor notes remain unproved and unchanged. Historical core/local
+failures, skips and missing aggregate94/75 coverage remain explicit in issue126;
+no full repository/module/archive rerun or requirement-wide promotion is claimed.
+
+The following human-authored documentation-integration snapshot and producer
+receipts are retained verbatim as historical records.
 
 ## PR128 status after documentation conflict resolution
 

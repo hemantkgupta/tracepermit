@@ -95,3 +95,23 @@ Focused evidence and current CI belong to the exact-head public handoff; origina
 local/hosted failures, skips and unestablished aggregate coverage remain disclosed.
 The human authorized this scoped repair and known-failure checkpoint; root owns
 the separate final-merge disposition, with no green or check-bypass claim.
+
+## Explicit PR128 publication disposition and retained failures
+
+The production textual-principal guard is byte-identical to the version exercised
+by a real9/9 passing focused run: six principal cases on all3exact engines and
+three PostgreSQL lifecycle outcomes. The fixture prepares its intended owner
+once and uses a concrete reader whose every call still validates writer/history
+state. A textual wrong owner exercises owner comparison after type validation.
+No test/assertion/workload requirement,120s deadline,30s lease, authority cap,
+grant, cleanup, coverage threshold or runtime/legacy migration policy is relaxed.
+
+The final affected6case run recorded4pass/2fail: MariaDB10.6 numeric returned
+OPERATION_DELIVERY_LEASE_EXPIRED and PostgreSQLboolean returned
+OPERATION_STORAGE_UNAVAILABLE instead of the expected post-start crash barrier,
+before metadata mutation. Their underlying causes remain unestablished. The
+human explicitly accepted this PR128 publication with these tests active and
+missing aggregate coverage recorded in
+[issue126](https://github.com/hemantkgupta/tracepermit/issues/126#issuecomment-6444912592).
+This does not relabel final6 green, transfer old CI qualification, authorize a
+future exception or let this writer perform the final merge/ruleset operation.
