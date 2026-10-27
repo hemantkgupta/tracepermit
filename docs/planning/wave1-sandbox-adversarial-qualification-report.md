@@ -1,182 +1,188 @@
-# Wave 1 Customer-Sandbox Foundations: Independent Adversarial Qualification Report
+# Sandbox qualification: evidence boundaries and independent repair
 
-## Executive Summary & Baseline
+## Scope and pinned provenance
 
-- **Qualification Scope**: Independent qualification of customer-sandbox foundations, operation registration and withdrawal lifecycle, exact GitHub target binding, target preflight, MariaDB authority transaction design, and GitHub App installation credential provider.
-- **Repository**: `https://github.com/hemantkgupta/tracepermit`
-- **Frozen Baseline**: Commit `0bc6b618aa9eac7df3bacf7a6d4bcafe2a824c4f` (`origin/main`)
-- **Audit Branch**: `codex/sandbox-adversarial-qualification`
-- **Audit Date**: 2026-10-25
-- **Evaluator**: Independent qualification lane (Antigravity subscription-backed, zero billed API fallback)
-- **External Dependency Reviews**:
-  - **PR #101** (commit `6b7de90` / ADR 0072): `JdbcBusinessOperationLifecycleRepository` (merged into baseline `0bc6b618aa9eac7df3bacf7a6d4bcafe2a824c4f`).
-  - **PR #104** (commit `1650c4b` / ADR 0075): `GitHubBusinessOperationBinding` (merged into baseline `0bc6b618aa9eac7df3bacf7a6d4bcafe2a824c4f`).
-  - **PR #105** (head `9405c0ee476b28322a5930a5a88a2d5032abc6b3` / ADR 0076): `GitHubInstallationCredentialProvider` (`codex/github-app-installation-credentials`).
-  - **PR #107** (head `ddaefdbe573d9083d3d16a80a31aca9e7e96a584` / ADR 0077): `docs/design/mariadb-authority-transaction.md` (`codex/mariadb-authority-transaction-design`).
+This report corrects the evidence claims in PR110 producer
+`0963e8423e7d57a8c98c7aaf281a45317d7a3566`. Its runtime is unchanged from
+planning main `0bc6b618aa9eac7df3bacf7a6d4bcafe2a824c4f`.
+Cloud 1's tests/docs-only repair is isolated on
+`codex/sandbox-qualification-evidence-repair`, stacked on the producer branch
+in [PR112](https://github.com/hemantkgupta/tracepermit/pull/112).
+The producer branch has no published writer release and is not claimed or changed.
+PR105 and other lanes' source are untouched. Review date: 25 October 2026
+(Asia/Calcutta); final source head and writer release belong to PR112's handoff.
 
-> [!CAUTION]
-> **Production Boundary Disclaimer**: Static code inspections, schema verifications, in-memory simulations, and mock-transport suites (`MockWebServer`) do **NOT** constitute live target, customer-network, or production qualification. No live GitHub API calls, AWS infrastructure, or customer pilot sandboxes were accessed. Real target pilot operations require isolated, operator-supervised sandbox testing under production network conditions.
+Requirements considered: FR-002/003/007/009/010/012;
+SEC-001/002/003/005/006/009/012; REL-001/002/003/004/005/008;
+DATA-001; OPS-002/004. These are scoped observations, with no whole-ID promotion.
 
----
+| Source                                                                                                                                                                         | Exact reviewed revision                                                                  | Extent of evidence                                                                                                                                    |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Merged PR101/PR104 foundations                                                                                                                                                 | `0bc6b618aa9eac7df3bacf7a6d4bcafe2a824c4f`, also present unchanged in producer `0963e84` | Binding, adapter, permit, pending-only withdrawal and relevant JDBC test/source inspection; local gates below                                         |
+| [PR105](https://github.com/hemantkgupta/tracepermit/pull/105)                                                                                                                  | `c52ba244463ff7d363d8e30a21b76dd2a50892e4`                                               | Separately published credential-provider review and test-only composition, not installed or exercised by this suite                                   |
+| [PR107 design](https://github.com/hemantkgupta/tracepermit/blob/ddaefdbe573d9083d3d16a80a31aca9e7e96a584/docs/design/mariadb-authority-transaction.md)                         | `ddaefdbe573d9083d3d16a80a31aca9e7e96a584`                                               | Read-only review of proposal status and clock/lock boundaries; no transaction engine is implemented by that design                                    |
+| [PR109 ADR0078](https://github.com/hemantkgupta/tracepermit/blob/bc2486a18558dc14998db840187024fd2a2faac9/docs/architecture/0078-agentcore-execution-disabled-registration.md) | `bc2486a18558dc14998db840187024fd2a2faac9`                                               | Published ingress boundary/qualification record reviewed; no new ingress code audit, adapter execution or ingress/JDBC integration qualification here |
 
-## Phase A: Adversarial Boundary Analysis
+PR105's old `9405c0e` receipt is historical, not its reviewed current head.
+The separate [PR105 handoff](https://github.com/hemantkgupta/tracepermit/pull/105#issuecomment-6389275902)
+and [PR109 qualification record](https://github.com/hemantkgupta/tracepermit/pull/109)
+retain their own results and limitations. No claim is made about a later head.
+PR108/application authority work is outside this review. ADR0077 belongs to the
+Mac authority lane; it is not the decision record for the PR107 proposal.
 
-Ten core adversarial threat vectors were evaluated across the integration perimeter:
+## What the ten focused probes establish
 
-### 1. Scope and Rehashed Request Substitution
+[SandboxAdversarialQualificationTest](../../java/adapters-remote/src/test/java/io/tracepermit/adapters/remote/github/SandboxAdversarialQualificationTest.java)
+uses pure binding/proposal objects, supplied withdrawal contexts and times,
+a real permit verifier with a process-local consumption store, an in-memory
+execution ledger, stub credentials and numeric-loopback fake target responses.
+It does not instantiate a JDBC repository or concrete App-installation provider.
+Constructing an authenticated-looking fixture context is not token verification,
+and an in-memory result is not durable authority.
 
-- **Threat**: An attacker or rogue workload submits a registration or execution permit using altered action arguments (e.g. changing PR title, base branch, or target repository) while re-using an existing client request key or hash, attempting to execute an unauthorized payload under an approved key.
-- **Enforcement**:
-  - `GitHubBusinessOperationBinding` computes an immutable `operationSnapshotHash` incorporating exact canonical target parameters (owner, repository, base, head, title, draft status).
-  - Any parameter variation yields a disjoint `operationSnapshotHash`.
-  - Re-submitting an altered operation under an existing client request key triggers `OPERATION_REQUEST_KEY_CONFLICT`.
-  - Submitting an execution permit with a mismatched snapshot hash triggers `ExecutionPermitException: permit_request_hash_mismatch`.
+| Probe method                                                                 | Direct assertion and boundary                                                                                                                                                                                                                                                                                        |
+| ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `scopeAndRehashedActionsAreBoundWithoutGrantingExecution`                    | Pure scope/profile mismatches reject; rehashed changed content has different bound digests. The permit-negative action preserves the original event ID and changes only its title, yielding `PERMIT_ACTION_MISMATCH` before network access. This is not request-key registration conflict evidence.                  |
+| `callerAuthoredLabelsBindAsDataButDoNotSupplyATargetPermit`                  | Structurally valid proposed approval labels remain bound data; separately, missing/blank target permits yield `MISSING_PERMIT`. No proposed label is committed to a database.                                                                                                                                        |
+| `staleExpectedProfilesFailAtPureBindingBoundary`                             | Supplied generation, policy version/content hash and artifact mismatches yield `GITHUB_OPERATION_BINDING_INVALID`. This is not the JDBC whole-state `OPERATION_STATE_STALE` path.                                                                                                                                    |
+| `suppliedStoreTimeExpiryRejectsEqualityAndLaterInstants`                     | Direct calls to `requireAuthorizedAt` accept a supplied pre-expiry instant and reject equality/later/null with the expiry boundary. No lock wait or database clock is involved.                                                                                                                                      |
+| `samePermitReplayIsRejectedAndFreshPermitUsesCachedSuccess`                  | The exact consumed token rejects with `EXECUTION_PERMIT_REPLAYED`, with no further target request. A newly issued permit for the same action separately returns cached success, still with one total POST and no additional requests.                                                                                |
+| `incompletePostDispatchConfirmationStaysUnknownAndCannotPostAgain`           | Valid JSON missing required confirmation fields yields `TARGET_PREFLIGHT_OR_IDENTITY_REJECTED` after one POST. The ledger is exactly `unknown`; a new permit then yields `EXECUTION_OUTCOME_UNKNOWN`, with no second POST or further target request. This is not a database rollback test or a truncated-JSON probe. |
+| `changedExpectedRefOrCommitShaBreaksPureBinding`                             | Changing supplied expected refs/SHAs rejects pure binding, with zero HTTP calls. This probe does not observe a remote ref changing.                                                                                                                                                                                  |
+| `uncertainTargetOutcomeBlocksSecondPostAndReconciliationNeverAssumesAbsence` | A fake POST500 yields `OUTCOME_UNCERTAIN` and process-local `unknown`. A later invocation cannot POST again. Empty/duplicate lookups remain `LOOKUP_AMBIGUOUS_OR_ABSENT`; one exact match is a positive observation, not a committed ledger transition.                                                              |
+| `withdrawalContextAuthorizationAndPermitAudienceAreSeparateBoundaries`       | Constructor checks reject supplied wrong tenant/subject/authentication/role/scope contexts. A separately wrong permit audience yields `WRONG_PERMIT_AUDIENCE` before network access. No workload-to-human delegation or executor enrollment proof is tested.                                                         |
+| `selectedErrorsAndDiagnosticStringsOmitCanaryButSnapshotIsSensitive`         | Selected binding/storage exception and binding/profile/withdrawal string forms omit a synthetic canary. The bound snapshot deliberately retains its body; it is sensitive internal data, not a redacted export. No private-key custody or universal evidence/log redaction audit occurs here.                        |
 
-### 2. Caller-Authored Approval and State Labels
+The original changed-title permit probe generated two different event IDs.
+It could fail first on event mismatch and did not isolate the claimed action-hash
+guard. Preserving the event and asserting the exact code repairs that evidence.
+The producer's replay probe used a fresh permit; the repair adds an explicit
+same-token rejection before the fresh-permit positive. The original incomplete
+confirmation check asserted only “not succeeded”; the repair requires exact
+unknown state, one POST and refusal of another dispatch.
 
-- **Threat**: The caller injects synthetic approval state (`"state": "approved"`, `"evaluation": "permitted"`, `"approvedBy": "operator@domain.com"`) into the submitted request body or operation document.
-- **Enforcement**:
-  - Stored operation documents in `JdbcBusinessOperationLifecycleRepository` treat all payload fields as untrusted client data.
-  - Lifecycle state transitions are driven strictly by trusted adapter contexts and verified database rows (`storeTime`, row versioning, and explicit state transitions).
-  - Preflight and binding logic in `GitHubBusinessOperationBinding` ignores caller-provided state fields and validates only the raw schema and target profile.
+## Separately existing JDBC and target evidence
 
-### 3. Stale Recovery Generation, Policy Version, and Snapshot Mismatch
+The [shared operation repository contract](../../java/persistence-operations/src/test/java/io/tracepermit/persistence/operations/OperationRepositoryContract.java)
+contains actual disposable-database cases, distinct from these ten probes:
 
-- **Threat**: An operator rolls back or invalidates a policy generation, but a pending operation attempt claims validity against an older generation or a stale snapshot hash.
-- **Enforcement**:
-  - `BusinessOperationTransitionPlanner` produces an explicit `StateToken` containing `recoveryGeneration`, `lastSequence`, and `snapshotHash`.
-  - Transition operations (`withdraw`, `claim`, `execute`) require the token to match current database state under row lock (`FOR UPDATE`).
-  - Any generation disparity or hash divergence immediately aborts the transaction with `OPERATION_STATE_STALE` without writing partial state.
+- `changedSemanticResourceAdapterOrRecoveryGenerationConflictsWithoutWriting`
+  calls the registration repository and checks `OPERATION_REQUEST_KEY_CONFLICT`.
+- `authenticationDeadlineIsRecheckedAfterAnActualHeadRowLockWait` holds a real
+  head-row lock, waits for a contender, releases after the authority deadline,
+  and checks expiry with zero lifecycle writes.
+- `commitOrCleanupAcknowledgementLossIsUnknownRegardlessOfActualCommit`
+  injects JDBC acknowledgement faults and checks `OPERATION_COMMIT_UNKNOWN`.
+- `withdrawalIsAtomicDurableAndNeverReplacesOriginalRegistrationOrOtherDimensions`
+  and the concurrent/read-integrity cases cover the existing pending-only
+  withdrawal journal, not an operations claim/execute transaction.
 
-### 4. Expiry After Lock Waits Evaluated at Store Time
+[JdbcBusinessOperationLifecycleRepository](../../java/persistence-operations/src/main/java/io/tracepermit/persistence/operations/JdbcBusinessOperationLifecycleRepository.java)
+reads/locks the current head before sampling store time and calling
+`requireAuthorizedAt`. The command itself does not sample a database clock.
+[ADR0072](../architecture/0072-durable-pending-operation-withdrawal.md) exposes
+`findCurrent` and pending-only `withdraw`; proposed `claimed`/`executing`
+labels are not durable claim/execute APIs. The existing contract is inherited
+by the exact PostgreSQL16.4/MariaDB11.4.13/MariaDB10.6.25 fixtures. Any fresh
+execution is reported separately below, never as part of the mock suite.
 
-- **Threat**: A client submits a request with 1 second remaining before token expiry; database lock contention delays processing by 2 seconds. The server attempts to commit the operation using the submission timestamp rather than the lock-acquisition timestamp.
-- **Enforcement**:
-  - `BusinessOperationWithdrawal.requireAuthorizedAt(storeTime)` strictly re-samples the authoritative database clock (`storeTime`) **after** acquiring the row lock.
-  - If `storeTime.isAfter(authorityExpiresAt)` or `storeTime.equals(authorityExpiresAt)`, the transaction fails closed with `OPERATION_AUTHENTICATION_EXPIRED`.
-  - Exact boundary equality (`storeTime.equals(authorityExpiresAt)`) is treated as expired, preventing zero-second race windows.
+[GitHubDraftPullRequestAdapterTest](../../java/adapters-remote/src/test/java/io/tracepermit/adapters/remote/github/GitHubDraftPullRequestAdapterTest.java)
+separately tests fake remote preflight responses, typed confirmations and unknown
+outcomes. The adapter's GET preflight is observational, not an atomic remote
+compare-and-swap. No suite here establishes restart-safe target dispatch.
 
-### 5. Duplicate Admission, Single-Use Permits, and Replay Rejection
+## Confirmed behavior and untested boundaries
 
-- **Threat**: A valid execution permit is replayed against the target adapter to trigger a second pull request creation.
-- **Enforcement**:
-  - `ExecutionPermitAuthority` and `InMemoryPermitConsumptionStore` enforce single-use consumption. A consumed permit token cannot be consumed again (`ExecutionPermitException: The single-use execution permit has already been consumed`).
-  - When replaying with a freshly issued permit for the same idempotent action, `InMemoryExecutionLedger` matches the idempotency key and returns the cached outcome with zero network calls dispatched.
+No new runtime bypass is substantiated by this review. The repaired defects are
+in test specificity and report attribution.
 
-### 6. Partial Transactional Failure and Malformed Confirmations
+- Equality at the authority deadline is **intended expiry**, not a Medium defect.
+- The fixed `main` base, draft-only action and exact repository allowlist are
+  deliberate pilot limits in the action/binding source, not defects to relax.
+- `ExecutionPermitAuthority` signs `audience`, subject/event/action hash and
+  policy metadata. It does not add the report's claimed `tenantId` or authorized
+  executor-principal claims. Consumption derives its tenant namespace from the
+  verified action; this suite does not qualify a separate caller/delegation join.
+- `BoundOperationData.toString()` is redacted; no
+  `BoundOperationData.redactedRepresentation()` method exists.
+  `snapshot()` returns the full defensive copy, including sensitive arguments.
+- PR107 is a proposed composition contract. Its design clock/lock discussion is
+  not an implemented transaction engine or a measured clock-drift vulnerability.
+- PR105's per-invocation exchange/no-cache choice is documented. No rate-limit
+  incident, endpoint-specific quota or safe cache design was established here.
+  Clock skew and provider capacity remain operational qualification questions,
+  not severity-ranked code findings or permission to change runtime policy.
 
-- **Threat**: Target returns truncated, unparseable, or schema-violating confirmation payloads during PR creation, or network disconnection occurs during response parsing.
-- **Enforcement**:
-  - `GitHubDraftPullRequestAdapter` parses target responses through strict Jackson mapping requiring non-null PR number, HTML URL, and node ID.
-  - Any truncated or malformed payload fails closed, transition to `FAILED` with code `TARGET_PREFLIGHT_OR_IDENTITY_REJECTED` or `INVALID_TARGET_CONFIRMATION`, and records diagnostic evidence without publishing an execution success.
+Live provider/target/customer-network, AWS/RDS, signing-key installation,
+human/workload delegation, composed ingress-to-JDBC, durable operation-to-target
+authority, failover/backup fencing and production readiness remain untested by
+this repair. Passing source checks or merging a proposal cannot close them.
 
-### 7. Changed Remote Ref or Commit SHA Preflight Invalidation
+## Repair verification record
 
-- **Threat**: A branch ref (`refs/heads/feature-branch`) is updated or deleted on the remote repository between the time the operation is approved and the time execution is attempted.
-- **Enforcement**:
-  - `GitHubPilotTargetPreflight` resolves head ref existence and expected commit SHA prior to dispatch.
-  - If the commit SHA changed or the ref does not exist, preflight aborts with `TARGET_PREFLIGHT_OR_IDENTITY_REJECTED` and prevents dispatch.
+The producer report claimed all gates green and ten focused passes; those are
+producer statements until independently rerun. Cloud 1's verified prepared
+environment uses the saved Java/javac21.0.8 selector, Node24.19.0, pnpm11.25.0,
+Gradle8.14.3 and managed Unix Docker28.4.0. Two preflights and nine setup tests
+passed without environment reconfiguration. The producer's unchanged focused
+suite passed fresh:10 cases, zero failures/errors/skips, all17 Gradle tasks
+executed with no build/configuration cache.
 
-### 8. Uncertain Target Outcome Fencing (Reconcile by Lookup, Never Re-POST)
+- Restored repair: all ten focused cases passed within a fresh complete remote
+  run of412 cases/13 suites, zero failures/errors/skips; all17 Gradle tasks
+  executed without build/configuration cache in43s. Fresh XML was recorded.
+- Replay guard-removal control: replace only the test fixture's consumption
+  store with an always-accepting implementation. The one selected permanent
+  same-token case failed exactly once, with no errors/skips. The fixture was
+  restored byte-for-byte before the passing412 run. No runtime file or assertion
+  was changed for this control.
+- One full `pnpm check` passed:124 React tests;1,835 recorded Java cases/146
+  suites, zero failures/errors and one existing installed-archive/native-PTY
+  skip. Gradle4m: five tasks executed, four from cache,56 up-to-date. These are
+  not all fresh executions. Coverage94.4404% line/78.375% branch passed unchanged
+  thresholds. The skip is archive-absent, not merely a noninteractive terminal.
+- Separately forced real operation fixtures passed245 cases:78 each on
+  PostgreSQL16.4/MariaDB11.4.13/MariaDB10.6.25 plus11 strict-reader cases, zero
+  failures/errors/skips; all14 tasks executed without cache in1m14s. Fresh XML
+  confirms the actual lock-wait, acknowledgement-loss and changed-content
+  registration cases ran on each engine. They remain JDBC evidence, not new
+  remote-suite transactions or integration with the target adapter.
+- Separately forced standalone MariaDB qualification passed17 cases including
+  both exact MariaDB versions, zero failures/errors/skips; all10 tasks executed
+  without cache in21s. Fresh XML/times were captured after each successful
+  database runner; all three fixture image IDs matched the prepared manifest.
+- Frozen install passed. An initial format check flagged the rewritten Markdown
+  tables; scoped Prettier formatting repaired them. Final format, local link,
+  flow/drift and whitespace checks are repeated after these evidence-only edits.
 
-- **Threat**: Target server returns HTTP 500 or network connection resets after receiving the POST request. A retry attempt issues a duplicate POST, creating duplicate PRs.
-- **Enforcement**:
-  - On timeout or HTTP 500, `GitHubDraftPullRequestAdapter` records the attempt as `dispatched = true` and `state = unknown` (`EXECUTION_OUTCOME_UNKNOWN`).
-  - Subsequent execution calls for that attempt are blocked immediately with zero network requests.
-  - `GitHubPullRequestOutcomeResolver.lookup()` inspects open pull requests. If zero or multiple matches are found, it returns `unknown("LOOKUP_AMBIGUOUS_OR_ABSENT")`, refusing to assume absence and strictly forbidding a second POST.
+Reproduce with the saved selector; bound Gradle workers, never internal test
+concurrency, deadlines, assertions or coverage thresholds:
 
-### 9. Unrelated Workload Identity and Audience Mismatch
+```bash
+export TRACEPERMIT_JAVA_HOME=/workspace/.local/jdk-21
+export XDG_DATA_HOME=/workspace/.local/share XDG_CACHE_HOME=/workspace/.cache
+source scripts/configure-java-environment.sh
+/usr/local/bin/docker-init -s -- java/gradlew -p java :adapters-remote:test \
+  --offline --no-daemon --max-workers=2 --no-build-cache \
+  --no-configuration-cache --rerun-tasks --console=plain
+GRADLE_OPTS="${GRADLE_OPTS:-} -Dorg.gradle.workers.max=2" \
+  /usr/local/bin/docker-init -s -- pnpm check
+/usr/local/bin/docker-init -s -- bash scripts/run-java-operation-tests.sh \
+  --no-daemon --max-workers=2 --no-build-cache --no-configuration-cache --rerun-tasks
+/usr/local/bin/docker-init -s -- bash scripts/run-java-mariadb-tests.sh \
+  --no-daemon --max-workers=2 --no-build-cache --no-configuration-cache --rerun-tasks
+pnpm format:check
+pnpm docs:links
+pnpm docs:flows:check
+git diff --check
+```
 
-- **Threat**: A valid permit issued for workload `service-a` in tenant `tenant-1` is presented by workload `service-b` or under tenant `tenant-2`.
-- **Enforcement**:
-  - Permit tokens encode audience (`aud`), tenant (`tenantId`), and authorized executor principal.
-  - Target adapter verifies caller context against permit claims. Any audience or executor mismatch throws `ExecutionPermitException: permit_audience_mismatch` or `permit_executor_mismatch`.
+Exact-final-head hosted results and writer release are authoritative in PR112's
+final TRACEPERMIT HANDOFF, not an earlier producer/base CI receipt. Historical
+PR105 native cleanup failures remain in its separate record; a pass here does
+not relabel them. No live/provider/installed-production qualification is claimed.
 
-### 10. Credential and Sensitive Argument Redaction in Evidence and Diagnostics
-
-- **Threat**: Private keys, GitHub App installation tokens, authorization headers, or sensitive operation arguments leak into log files, exception messages, or evidence records.
-- **Enforcement**:
-  - `GitHubAppCredentials` and `GitHubInstallationCredentialProvider` redact installation tokens in `toString()` (`[REDACTED]`).
-  - Private key files are strictly checked for POSIX permissions (`0600`/`0400`) and never output to diagnostic streams.
-  - `BoundOperationData.redactedRepresentation()` strips sensitive parameter blocks, leaving only cryptographic digests and safe metadata.
-
----
-
-## Phase B: Permanent Deterministic Test Suite
-
-To ensure regression prevention across all 10 threat vectors, the deterministic qualification test suite was added to the test suite:
-
-- **Test Class**: `io.tracepermit.adapters.remote.github.SandboxAdversarialQualificationTest`
-- **Location**: `java/adapters-remote/src/test/java/io/tracepermit/adapters/remote/github/SandboxAdversarialQualificationTest.java`
-- **Line Count**: 934 lines
-- **Status**: 10/10 passed (0 skipped, 0 failed, 100% deterministic, zero `Thread.sleep`)
-
-### Suite Summary
-
-| Test Method                                                                      | Vector Covered | Expected Behavior                                                 | Actual Behavior                                                   | Result |
-| :------------------------------------------------------------------------------- | :------------- | :---------------------------------------------------------------- | :---------------------------------------------------------------- | :----- |
-| `scopeAndRehashedRequestSubstitutionCannotBypassExactProfileOrImpersonateTenant` | 1              | Disjoint snapshot hashes; cross-tenant substitution rejected      | Hash mismatch, `ExecutionPermitException` thrown                  | PASS   |
-| `callerAuthoredApprovalOrExecutionLabelsRemainDataAndNeverConveyAuthority`       | 2              | Caller JSON labels treated as passive data; unapproved by default | Binding maintains unverified state, zero authority conveyed       | PASS   |
-| `staleRecoveryGenerationPolicyVersionAndContentHashFailClosed`                   | 3              | Stale recovery generation or policy version aborts transition     | Rejection with `OPERATION_STATE_STALE`                            | PASS   |
-| `authorityExpiryEvaluatedAtStoreTimeFailsClosedEvenOnExactEquality`              | 4              | Expiry evaluated against storeTime; equality treated as expired   | `OPERATION_AUTHENTICATION_EXPIRED` thrown on exact equality       | PASS   |
-| `succeededAttemptReplaysCachedResultWithoutSecondNetworkDispatch`                | 5              | Consumed permit rejects reuse; fresh permit reuses cached ledger  | Single permit reuse fails closed; duplicate returns cached result | PASS   |
-| `truncatedOrMalformedTargetConfirmationFailsClosedAndRecordsFailure`             | 6              | Malformed target JSON fails closed and records attempt failure    | Fails closed with target rejection error code                     | PASS   |
-| `changedRemoteRefOrCommitShaBreaksPreconditionBinding`                           | 7              | Changed commit SHA fails preflight verification                   | Dispatch prevented; preflight rejected                            | PASS   |
-| `uncertainTargetOutcomeBlocksSecondPostAndReconciliationNeverAssumesAbsence`     | 8              | 500 error blocks second POST; lookup never infers absence         | Dispatched blocked; `LOOKUP_AMBIGUOUS_OR_ABSENT`                  | PASS   |
-| `unrelatedWorkloadOrAudienceMismatchRejectsDelegation`                           | 9              | Cross-tenant or foreign executor permit rejected                  | Rejection with `permit_audience_mismatch`                         | PASS   |
-| `sensitiveArgumentsAndCredentialsNeverEscapeThroughErrorsOrStringForms`          | 10             | Credentials and private keys redacted in string and error outputs | Output contains `[REDACTED]`; zero secret leakage                 | PASS   |
-
----
-
-## Phase C: Evidence Table & Severity-Ranked Findings
-
-### Boundary Evidence Matrix
-
-| Boundary Area                       | Subsystem                                  | In-Memory / Mock Qualification | Real Docker / DB Qualification | Live Target / Cloud Qualification |
-| :---------------------------------- | :----------------------------------------- | :----------------------------: | :----------------------------: | :-------------------------------: |
-| Operation Registration & Withdrawal | `JdbcBusinessOperationLifecycleRepository` |             Tested             | Tested (PostgreSQL Container)  |    Untested (Customer AWS RDS)    |
-| Snapshot & Profile Binding          | `GitHubBusinessOperationBinding`           |             Tested             |             Tested             | Untested (Live Enterprise Tenant) |
-| Installation Credential Provider    | `GitHubInstallationCredentialProvider`     |    Tested (`MockWebServer`)    |            Untested            |  Untested (Live GitHub App API)   |
-| Target Preflight & Dispatch         | `GitHubDraftPullRequestAdapter`            |    Tested (`MockWebServer`)    |            Untested            |  Untested (Live GitHub REST API)  |
-| MariaDB Authority Transaction       | ADR 0077 Design Specification              |        Design Reviewed         |  Untested (Writer PR Pending)  |   Untested (AWS Aurora MariaDB)   |
-
-### Severity-Ranked Substantiated Findings
-
-#### 1. [Medium] Finding PR101-1: Boundary Equality in Store-Time Expiry Check
-
-- **Component**: `BusinessOperationWithdrawal.requireAuthorizedAt(storeTime)` (`java/application`)
-- **Observation**: `requireAuthorizedAt` evaluates `if (!storeTime.isBefore(authorityExpiresAt)) throw new BusinessOperationStorageException(OPERATION_AUTHENTICATION_EXPIRED)`. This means `storeTime == authorityExpiresAt` is treated as expired.
-- **Risk Assessment**: Low operational risk, highly safe fail-closed behavior. Ensures that any transaction landing exactly on the expiration second is rejected rather than granted a race window.
-- **Status**: Substantiated and verified by `authorityExpiryEvaluatedAtStoreTimeFailsClosedEvenOnExactEquality`.
-
-#### 2. [Medium] Finding PR107-1: Database Time vs. Application Clock Divergence in MariaDB
-
-- **Component**: ADR 0077 (`docs/design/mariadb-authority-transaction.md`)
-- **Observation**: The proposal specifies Tier 2 lock acquisition (`FOR UPDATE`) followed by database-time verification (`NOW(6)`). If the database host clock drifts from the application server clock, authority permits could expire prematurely or linger unexpectedly.
-- **Mitigation Requirement**: Deployment runbooks must mandate NTP synchronization and enforce bounded clock skew checks (< 1000ms) between application nodes and database clusters.
-- **Status**: Verified in design specification; implementation must assert bounded clock divergence.
-
-#### 3. [Low] Finding PR105-1: Single-Exchange Installation Token Rate Limit Exposure
-
-- **Component**: `GitHubInstallationCredentialProvider` (`java/adapters-remote`)
-- **Observation**: ADR 0076 deliberately excludes background token caching and renewal to eliminate cross-request credential retention. Every PR creation triggers an ephemeral token exchange.
-- **Risk Assessment**: Under high transaction volume, frequent token exchanges against `https://api.github.com/app/installations/{id}/access_tokens` could encounter GitHub App rate limits (typically 5,000 requests/hour per installation).
-- **Mitigation Requirement**: Acceptable for pilot sandbox volumes. Wave 2 production architectures should consider a bounded in-memory token cache scoped strictly to the short-lived token validity window (e.g. 50 minutes) without persistent storage.
-- **Status**: Documented as intended design trade-off for sandbox simplicity.
-
-#### 4. [Low] Finding PR104-1: Target Profile Base Branch Fixed to `main`
-
-- **Component**: `GitHubDraftPullRequestProfile`
-- **Observation**: The pilot target profile enforces `base == "main"` and `draft == true`. Targeting an alternate release branch (e.g. `develop` or `release/v1.0`) is rejected at binding time.
-- **Risk Assessment**: Intended constraint for Wave 1 customer sandbox.
-- **Status**: Verified by test suite.
-
----
-
-## Conclusion & Operational Recommendations
-
-1. **Deterministic Quality Gates**: The addition of `SandboxAdversarialQualificationTest` permanently hardens the remote adapter and operation binding against replay, identity substitution, and leak regressions.
-2. **Readiness for Sandbox**: The repository foundations in `0bc6b618aa9eac7df3bacf7a6d4bcafe2a824c4f` safely enforce the central invariant: every simulated side effect is strictly evaluated before execution.
-3. **Pre-Production Prerequisites**: Live customer pilots must not proceed until:
-   - PR #105 (credential provider) and PR #107 (MariaDB transaction engine) are fully implemented and merged.
-   - Dedicated AWS infrastructure with MariaDB/RDS and private GitHub App installations are provisioned and tested end-to-end under genuine network conditions.
+Only this test and report may change in the repair. Runtime, migration, identity,
+application authority, persistence and CI bytes remain identical to the producer.
+No private planning file, live provider/target action, key installation, public
+listener/tunnel, paid fallback, weakened gate, history rewrite or merge is authorized.
