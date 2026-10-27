@@ -1,5 +1,39 @@
 # Requirements traceability matrix
 
+## Source-free closed operation lifecycle command
+
+Requirements: FR-003/008/011/012; SEC-001/003/006/009/012;
+REL-001/002/004; OPS-002/004. Partial evidence only; no whole-ID promotion.
+
+`agentcore-operation-lifecycle-cli` packages one Java21 source-free command over
+the existing V7 review, permit, admission, delivery and reconciliation stores.
+`LifecycleProtocol`/`LifecycleOperatorConfig` enforce exact bounded pipe frames,
+EOF, offline closed configuration and no request-body authority.
+`LifecycleIdentityAdapter` derives trusted contexts only from pinned real RS256
+verification, exact requester enrollment and an independent human roster.
+`LifecycleRuntime` accepts the Ed25519 private key only through the delivery
+frame, proves it against current authority and calls only the concrete
+repositories plus fixed synthetic target. `JdbcGitHubOperationInspector`
+requires current authority and returns a rollback-only defensive observation.
+
+`InstalledLifecycleContract` exercises separate installed processes, real signed
+identity, full lifecycle/restart, wrong-key/signature/EOF rejection, durable
+confirmed rejection and unknown, no-repeat reconciliation and eight-process
+admission contention on PostgreSQL 16.4, MariaDB 11.4.13 and MariaDB 10.6.25.
+`ArchiveBoundaryTest`, `SupervisorBoundaryTest`, `LifecycleProtocolBoundaryTest`,
+`LaunchBoundaryTest` and the PostgreSQL same-worker mirror cover source-free
+inventory, bounded supervision, fail-closed receipts/frames and measurable
+worker branches without weakening installed `Runtime.halt` boundaries. The
+fresh module result is 25 tests with zero failures/errors/skips; the unchanged
+aggregate gate passes at 94.0049% lines and 77.0553% branches. Underlying V7
+commit-loss/crash
+qualification remains dependency evidence, not a new installed transport claim.
+See [ADR0093](../architecture/0093-source-free-operation-lifecycle.md), the
+[runbook](../runbooks/source-free-operation-lifecycle.md) and the
+[synthetic-success note](../learning/synthetic-lifecycle-success-is-not-live-execution.md).
+No live provider, credential custody, public listener, real target, failover/
+restore fence, target-side exactly-once or production-readiness claim follows.
+
 ## Track A V7 closed synthetic delivery — qualification in progress
 
 Partial FR-007/008/009/010/012, SEC-001/002/003/004/005/006/009/012,

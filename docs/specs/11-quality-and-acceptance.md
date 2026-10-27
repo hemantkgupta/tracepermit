@@ -92,6 +92,24 @@ shutdown must stop children and remove the local endpoint key and session.
 
 ## Behavior acceptance
 
+Source-free operation-lifecycle acceptance (FR-003/008/011/012;
+SEC-001/003/006/009/012; REL-001/002/004; OPS-002/004) requires the extracted
+archive outside every checkout, Java 8 bootstrap/Java 21 runtime, strict anonymous
+framing/EOF, offline configuration, real signed requester/reviewer identities,
+independent human roster, pinned Ed25519 private-key proof, restricted V7 grants,
+separate-process lifecycle/reconciliation, durable rejection/unknown outcomes,
+concurrent delivery admission and worker-death cleanup on exact PostgreSQL 16.4,
+MariaDB 11.4.13 and MariaDB 10.6.25. Archive inventory must contain no source,
+test, build or repository metadata. A same-worker in-process mirror may provide
+coverage but never replaces the extracted installed-process assertions.
+
+Every failure preserves zero unauthorized target calls and a fixed redacted
+receipt. Reconciliation is read-only and unknown never authorizes retry. Keep
+focused evidence distinct from dependency V7 commit/crash qualification and the
+fresh aggregate 94% line/75% branch gate. No live provider, credential custody,
+public edge, real target or production claim follows. See the
+[qualification runbook](../runbooks/source-free-operation-lifecycle.md).
+
 GitHub target-preflight acceptance (FR-008/009/012/015; SEC-001/002/003/012/015/019;
 REL-001/003/004/005/008/009; OPS-002/004) uses only numeric-loopback fake peers and
 runtime-generated keys. The focused remote adapter suite must prove zero POST

@@ -1,12 +1,39 @@
 # Current-state capability matrix
 
-**As of:** 2026-10-25
+**As of:** 2026-10-27
 **Scope:** public Java-backend/React-console proof of concept
 
 This is the authoritative boundary between running POC behavior and product
 design. A passing test proves the named composition, not deployment to an
 enterprise network or control over arbitrary agent tools. The detailed
 requirement-to-test mapping is in the [traceability matrix](12-traceability-matrix.md).
+
+## Source-free closed operation lifecycle
+
+The separate `agentcore-operation-lifecycle-cli` Java21 distribution composes
+the existing V7 current-authority, evaluation/review, permit, admission,
+delivery and reconciliation libraries. It exposes only `check-config`,
+`inspect`, `evaluate`, `review`, `deliver-synthetic` and `reconcile` through
+strict bounded anonymous-pipe frames. Operator configuration pins numeric
+loopback JDBC, exact scope/target/policy/artifacts, current authority, offline
+RS256 providers, exact requester enrollment, an independent human roster and
+one Ed25519 permit public key. The private key is accepted only for delivery
+through its own bounded frame and must match that pin.
+
+Each non-check command freshly authenticates the required identity. Delivery
+can invoke only the deterministic in-memory synthetic target after durable
+evaluation, review, admission and `dispatch_started`. Reconciliation is
+read-only and cannot issue, admit, claim, invoke or retry. Receipts are fixed,
+redacted and always state `executionEnabled:false` and
+`automaticRetryAllowed:false`. Focused extracted-archive tests pass on exact
+PostgreSQL 16.4, MariaDB 11.4.13 and MariaDB 10.6.25. The final fresh module
+gate passed 25 tests with zero failures/errors/skips, and the unchanged
+aggregate gate passed at 94.0049% lines and 77.0553% branches. See
+[ADR0093](../architecture/0093-source-free-operation-lifecycle.md)
+and the [qualification runbook](../runbooks/source-free-operation-lifecycle.md).
+This is not live IdP or target interoperability, credential custody, public
+ingress, failover/restore fencing, target-side exactly-once or production
+readiness.
 
 ## Opt-in closed synthetic delivery — Track A in progress
 
