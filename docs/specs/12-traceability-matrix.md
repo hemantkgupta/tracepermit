@@ -1400,3 +1400,21 @@ unimplemented by this lane. No other requirement status or lane claim changes.
 See [ADR0088](../architecture/0088-selective-ci-and-complete-coverage.md) and the
 [learning note](../learning/ci-selection-is-not-qualification.md). No existing
 requirement status or simulator-only boundary is promoted.
+
+## Issue126 process-test reliability — local Mac lane
+
+SEC-012 and REL-002/005/009 receive scoped test-harness evidence from
+`InstalledWorkerProcessesTest`, `InstalledHttpArchiveReliabilityTest` and
+`BootstrapTestProcessesTest`, alongside the unchanged installed/durable/bootstrap
+business cases. Production authority, transport/protocol, CI and database schemas
+are unchanged. Tests for wrong worker selection, failed-start/group cleanup,
+interruption and bounded redacted diagnostics are separate from hosted failures
+and aggregate coverage; no requirement status is promoted. See the
+[qualification record](../runbooks/issue126-process-test-reliability.md).
+
+SEC-007/008 and OPS-005 remain deployment-specific acceptance work in the
+[org sandbox plan](../runbooks/org-sandbox-acceptance-plan.md). Its manifest,
+credential isolation, bypass controls and go/no-go ledger remain proposed and
+unexecuted. The human selected EKS/Okta/GitHub draft PR as the direction; exact
+deployment/resource bindings remain pending. No real resource or credential is
+authorized by that plan.

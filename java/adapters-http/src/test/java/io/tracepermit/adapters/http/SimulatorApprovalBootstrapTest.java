@@ -136,31 +136,31 @@ final class SimulatorApprovalBootstrapTest {
     Path output = directory.resolve("child-output.txt");
     Process check = launch("--check", output);
     try {
-      assertThat(check.waitFor(15, TimeUnit.SECONDS)).isTrue();
+      assertThat(check.waitFor(15, TimeUnit.SECONDS)).as(BootstrapTestProcesses.state(check, "check", output)).isTrue();
       assertThat(check.exitValue()).isZero();
       assertThat(Files.readString(output)).contains("APPROVAL_CONFIGURATION_VALID").doesNotContain("jdbc:");
-    } finally { if (check.isAlive()) check.destroyForcibly().waitFor(); }
+    } finally { BootstrapTestProcesses.stop(check); }
     fixture.json.withObject("/postgres").put("port", postgres.getMappedPort(5432)); fixture.save();
     Process emptyRun = launch("--run", output);
     try {
-      assertThat(emptyRun.waitFor(15, TimeUnit.SECONDS)).isTrue();
+      assertThat(emptyRun.waitFor(15, TimeUnit.SECONDS)).as(BootstrapTestProcesses.state(emptyRun, "emptyRun", output)).isTrue();
       assertThat(emptyRun.exitValue()).isEqualTo(2);
       assertThat(Files.readString(output)).contains("APPROVAL_STARTUP_FAILED").doesNotContain("API listening", "jdbc:");
-    } finally { if (emptyRun.isAlive()) emptyRun.destroyForcibly().waitFor(); }
+    } finally { BootstrapTestProcesses.stop(emptyRun); }
     assertEmptyDatabaseAndNoListener();
     Process initialize = launch("--init-db", output);
     try {
-      assertThat(initialize.waitFor(20, TimeUnit.SECONDS)).isTrue();
+      assertThat(initialize.waitFor(20, TimeUnit.SECONDS)).as(BootstrapTestProcesses.state(initialize, "initialize", output)).isTrue();
       assertThat(initialize.exitValue()).isZero();
       assertThat(Files.readString(output)).contains("APPROVAL_DATABASE_INITIALIZED")
           .doesNotContain("API listening", "jdbc:", fixture.config.toString(), "synthetic-local-test-password");
-    } finally { if (initialize.isAlive()) initialize.destroyForcibly().waitFor(); }
+    } finally { BootstrapTestProcesses.stop(initialize); }
     Process repeated = launch("--init-db", output);
     try {
-      assertThat(repeated.waitFor(15, TimeUnit.SECONDS)).isTrue();
+      assertThat(repeated.waitFor(15, TimeUnit.SECONDS)).as(BootstrapTestProcesses.state(repeated, "repeated", output)).isTrue();
       assertThat(repeated.exitValue()).isEqualTo(2);
       assertThat(Files.readString(output)).contains("APPROVAL_STARTUP_FAILED").doesNotContain("jdbc:");
-    } finally { if (repeated.isAlive()) repeated.destroyForcibly().waitFor(); }
+    } finally { BootstrapTestProcesses.stop(repeated); }
     Process runtime = launch("--run", output);
     try {
       long deadline = System.nanoTime() + Duration.ofSeconds(20).toNanos();
@@ -173,20 +173,20 @@ final class SimulatorApprovalBootstrapTest {
           .timeout(Duration.ofSeconds(5)).GET().build(), HttpResponse.BodyHandlers.ofString());
       assertThat(response.statusCode()).isEqualTo(401);
       runtime.destroy(); // SIGTERM on the supported macOS/Linux hosts
-      assertThat(runtime.waitFor(10, TimeUnit.SECONDS)).isTrue();
+      assertThat(runtime.waitFor(10, TimeUnit.SECONDS)).as(BootstrapTestProcesses.state(runtime, "runtime", output)).isTrue();
       try (var rebound = new ServerSocket(port, 1, java.net.InetAddress.getByName("127.0.0.1"))) {
         assertThat(rebound.isBound()).isTrue();
       }
-    } finally { if (runtime.isAlive()) runtime.destroyForcibly().waitFor(); }
+    } finally { BootstrapTestProcesses.stop(runtime); }
     for (String command : new String[] {"--recovery-status", "--quarantine-db", "--quarantine-db", "--recovery-status", "--run"}) {
       Process child = launch(command, output);
       try {
-        assertThat(child.waitFor(20, TimeUnit.SECONDS)).isTrue();
+        assertThat(child.waitFor(20, TimeUnit.SECONDS)).as(BootstrapTestProcesses.state(child, "child", output)).isTrue();
         assertThat(child.exitValue()).isEqualTo(command.equals("--run") ? 2 : 0);
         assertThat(Files.readString(output)).doesNotContain("API listening", "jdbc:",
             "synthetic-local-test-password", fixture.config.toString(), "Exception");
         if (command.equals("--run")) assertThat(Files.readString(output)).contains("APPROVAL_STARTUP_FAILED");
-      } finally { if (child.isAlive()) child.destroyForcibly().waitFor(); }
+      } finally { BootstrapTestProcesses.stop(child); }
     }
     assertThat(PostgresRecoveryQuarantine.status(fixture.load().database()).mode()).isEqualTo("quarantined");
   }
@@ -227,11 +227,11 @@ final class SimulatorApprovalBootstrapTest {
     Path output = directory.resolve("failed-child.txt");
     Process child = launch("--run", output);
     try {
-      assertThat(child.waitFor(15, TimeUnit.SECONDS)).isTrue();
+      assertThat(child.waitFor(15, TimeUnit.SECONDS)).as(BootstrapTestProcesses.state(child, "child", output)).isTrue();
       assertThat(child.exitValue()).isEqualTo(2);
       assertThat(Files.readString(output)).contains("APPROVAL_STARTUP_FAILED")
           .doesNotContain("synthetic-local-test-password", fixture.config.toString(), "alice", "Exception");
-    } finally { if (child.isAlive()) child.destroyForcibly().waitFor(); }
+    } finally { BootstrapTestProcesses.stop(child); }
   }
 
   @Test void ownerInspectionEmitsOnlyCountsAndNeverStartsListenerOrTarget() throws Exception {
@@ -241,7 +241,7 @@ final class SimulatorApprovalBootstrapTest {
     Path output = directory.resolve("inspection-child.txt");
     Process child = launch("--recovery-inspect", output);
     try {
-      assertThat(child.waitFor(15, TimeUnit.SECONDS)).isTrue();
+      assertThat(child.waitFor(15, TimeUnit.SECONDS)).as(BootstrapTestProcesses.state(child, "child", output)).isTrue();
       assertThat(child.exitValue()).isZero();
       String text = Files.readString(output);
       assertThat(text).contains("APPROVAL_RECOVERY_SNAPSHOT", "INSPECTION_ONLY", "\"recoveryMode\":\"quarantined\"")
@@ -254,7 +254,7 @@ final class SimulatorApprovalBootstrapTest {
       assertThat(report.path("reconciliationQueued").longValue()).isZero();
       try (var rebound = new ServerSocket(fixture.json.path("port").intValue(), 1,
           java.net.InetAddress.getByName("127.0.0.1"))) { assertThat(rebound.isBound()).isTrue(); }
-    } finally { if (child.isAlive()) child.destroyForcibly().waitFor(); }
+    } finally { BootstrapTestProcesses.stop(child); }
   }
 
   @Test void failedInspectionEmitsNoPartialReportOrListenerAndRedactsConfiguration() throws Exception {
@@ -262,12 +262,12 @@ final class SimulatorApprovalBootstrapTest {
     // Empty database: inspection must not initialize/migrate it or contact the configured .invalid IdP.
     Process child = launch("--recovery-inspect", output);
     try {
-      assertThat(child.waitFor(15, TimeUnit.SECONDS)).isTrue();
+      assertThat(child.waitFor(15, TimeUnit.SECONDS)).as(BootstrapTestProcesses.state(child, "child", output)).isTrue();
       assertThat(child.exitValue()).isEqualTo(2);
       assertThat(Files.readString(output)).contains("APPROVAL_STARTUP_FAILED")
           .doesNotContain("APPROVAL_RECOVERY_SNAPSHOT", "INSPECTION_ONLY", "API listening", "synthetic-local-test-password", fixture.config.toString(), "jdbc:", "Exception");
       assertEmptyDatabaseAndNoListener();
-    } finally { if (child.isAlive()) child.destroyForcibly().waitFor(); }
+    } finally { BootstrapTestProcesses.stop(child); }
   }
 
   @Test void explicitUpgradeCommandUsesPredecessorOnlyAndNeverCallsRuntimeRunner() throws Exception {

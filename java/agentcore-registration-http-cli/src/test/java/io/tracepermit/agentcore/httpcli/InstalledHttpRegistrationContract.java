@@ -279,25 +279,13 @@ abstract class InstalledHttpRegistrationContract {
     var session = installed.serve(database, 10_000);
     try {
       long deadline = System.nanoTime() + java.time.Duration.ofSeconds(5).toNanos();
-      List<ProcessHandle> workers = List.of();
-      while (workers.isEmpty() && System.nanoTime() < deadline) {
-        workers =
-            session.process.descendants()
-                .filter(
-                    process ->
-                        process
-                            .info()
-                            .arguments()
-                            .map(
-                                arguments ->
-                                    java.util.Arrays.asList(arguments)
-                                        .contains(InstalledHttpWorker.class.getName()))
-                            .orElse(false))
-                .toList();
-        if (workers.isEmpty()) Thread.sleep(10);
+      var discovery = InstalledWorkerProcesses.find(session.process, InstalledHttpWorker.class.getName());
+      while (discovery.matches().isEmpty() && System.nanoTime() < deadline) {
+        Thread.sleep(10);
+        discovery = InstalledWorkerProcesses.find(session.process, InstalledHttpWorker.class.getName());
       }
-      assertThat(workers).hasSize(1);
-      ProcessHandle worker = workers.get(0);
+      assertThat(discovery.matches()).as(discovery.summary()).hasSize(1);
+      ProcessHandle worker = discovery.matches().get(0);
       assertThat(worker.destroyForcibly()).isTrue();
       SessionReceipt result = session.finish();
       assertThat(result.outcome()).isEqualTo("UNKNOWN");
@@ -377,11 +365,7 @@ abstract class InstalledHttpRegistrationContract {
   }
 
   private static void finish(List<InstalledHttpArchive.RunningSession> sessions) throws Exception {
-    for (var session : sessions) {
-      SessionReceipt result = session.finish();
-      assertThat(result.outcome()).isEqualTo("SESSION_ENDED");
-      assertThat(result.port()).isEqualTo(session.ready.port());
-    }
+    InstalledHttpArchive.finishAll(sessions);
   }
 
   private record Call(
