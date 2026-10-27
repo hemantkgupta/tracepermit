@@ -160,6 +160,7 @@ public final class JdbcBusinessOperationLifecycleRepository implements BusinessO
       var admission = OperationAdmissionJournal.read(connection, id);
       boolean evaluationSeen = false;
       boolean admissionSeen = false;
+      JsonNode admitted = null;
       try (var statement = prepare(connection, """
           SELECT sequence_number, previous_snapshot_hash, result_snapshot_hash,
                  fact_json, actor_hash, actor_json FROM tp_operation_lifecycle_facts
@@ -180,6 +181,9 @@ public final class JdbcBusinessOperationLifecycleRepository implements BusinessO
               admissionSeen = true;
               replay = OperationAdmissionJournal.replay(connection, scope, replay, fact, actor,
                   admission.orElse(null), binding.orElse(null));
+              admitted = replay;
+            } else if (OperationDeliveryJournal.FORMAT.equals(actor.path("journalFormat").asText())) {
+              replay = OperationDeliveryJournal.replay(connection, scope, replay, fact, actor);
             } else if (actor.has("journalFormat")) {
               if ("evaluation".equals(actor.path("kind").asText())) {
                 if (evaluationSeen) throw error(OPERATION_STORAGE_CORRUPT);
@@ -210,6 +214,7 @@ public final class JdbcBusinessOperationLifecycleRepository implements BusinessO
       if (binding.isPresent() != evaluationSeen) throw error(OPERATION_STORAGE_CORRUPT);
       if (admission.isPresent() != admissionSeen) throw error(OPERATION_STORAGE_CORRUPT);
       if (!admissionSeen) OperationAdmissionJournal.requireNoOutbox(connection, id);
+      OperationDeliveryJournal.requireHistory(connection, scope, admitted, head, admission.orElse(null));
       // JSON integer node width changes across JDBC serialization; compare the frozen canonical
       // representation, not Jackson IntNode-vs-LongNode object identity.
       if (!CanonicalJson.canonicalize(replay).equals(CanonicalJson.canonicalize(head))) {

@@ -1,5 +1,35 @@
 # Requirements traceability matrix
 
+## Track A V7 closed synthetic delivery — qualification in progress
+
+Partial FR-007/008/009/010/012, SEC-001/002/003/004/005/006/009/012,
+REL-001/002/004/005 and DATA-001/004 evidence is being developed in the
+`persistence-operations` V7 journal/reader/synthetic sender and three-engine
+`OperationDeliveryContract`. [ADR0090](../architecture/0090-closed-durable-synthetic-delivery.md)
+and its [runbook](../runbooks/closed-synthetic-operation-delivery.md) define capped
+writer-time leases, exact fencing, acknowledged-start/no-resend and read-only
+reconciliation. No whole requirement status, passing qualification, live target,
+endpoint/default runtime or final merge readiness is promoted.
+
+For SEC-001/003/009 and DATA-001/004, the V7 reader requires textual principal
+metadata before exact owner comparison. A bounded privileged-fixture diagnostic
+accepted coherently linked numeric/boolean principals whose text matched valid
+String owners; wrong-owner/hash and typed-review controls refused, with zero
+target invocations. The smallest V7 guard and three-engine regression preserve
+valid String owners and reject scalar lease/start identities. This is metadata
+integrity evidence, not a demonstrated request/authority bypass or complete
+qualification. Admission/legacy actor coercion remains a separate unproved
+source-review item; no broader behavior is changed.
+
+The unchanged production guard passed a fresh9case focused run (six principal
+cases/three engines plus three PG lifecycle outcomes). The final fixture adds a
+textual wrong owner independent of type rejection and retains all controls; its
+affected6case verification recorded4pass/2fail before metadata mutation
+(MariaDB10.6 lease expired, PG storage unavailable). The human accepted PR128
+publication with these tests active and missing aggregate94/75 coverage recorded
+in [issue126](https://github.com/hemantkgupta/tracepermit/issues/126#issuecomment-6444912592).
+The final6case result and hosted status are not promoted to passing qualification.
+
 ## Installed bounded durable AgentCore HTTP session
 
 Requirements: FR-002/003/008/010/011/012;

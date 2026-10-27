@@ -18,6 +18,15 @@ public final class OperationAuthorityControl {
   private OperationAuthorityControl() {}
 
   public static void requireCurrent(Connection connection, BusinessOperationAuthorityProfile expected) {
+    requireCurrent(connection, expected, false);
+  }
+
+  /** V7 claim contention refuses immediately; success retains the SAME caller-owned control lock. */
+  static void requireCurrentForDeliveryClaim(Connection connection, BusinessOperationAuthorityProfile expected) {
+    requireCurrent(connection, expected, true);
+  }
+
+  private static void requireCurrent(Connection connection, BusinessOperationAuthorityProfile expected, boolean noWait) {
     try {
       if (connection == null || expected == null || connection.getAutoCommit() || connection.isReadOnly()
           || connection.getTransactionIsolation() != Connection.TRANSACTION_READ_COMMITTED) {
@@ -27,7 +36,7 @@ public final class OperationAuthorityControl {
       try (var statement = prepare(connection, """
           SELECT profile_hash, recovery_generation, control_state
             FROM tp_operation_authority_controls WHERE scope_hash = ? FOR UPDATE
-          """)) {
+          """ + (noWait ? " NOWAIT" : ""))) {
         statement.setString(1, expected.scope().fingerprint());
         try (var rows = statement.executeQuery()) {
           if (!rows.next()) throw error(OPERATION_AUTHORITY_NOT_READY);
@@ -42,7 +51,13 @@ public final class OperationAuthorityControl {
       }
     } catch (BusinessOperationStorageException failure) {
       throw error(failure.code());
-    } catch (SQLException | RuntimeException failure) {
+    } catch (SQLException failure) {
+      if (noWait && ("55P03".equals(failure.getSQLState())
+          || ("HY000".equals(failure.getSQLState()) && failure.getErrorCode() == 1205))) {
+        throw error(OPERATION_DELIVERY_LEASE_BUSY);
+      }
+      throw error(OPERATION_STORAGE_UNAVAILABLE);
+    } catch (RuntimeException failure) {
       throw error(OPERATION_STORAGE_UNAVAILABLE);
     }
   }

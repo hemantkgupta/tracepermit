@@ -3,6 +3,21 @@
 **Status:** Current interfaces plus target extensions  
 **Applies to:** MCP, internal HTTP, control plane, and signed artifacts
 
+## Closed synthetic delivery internal boundary — in progress
+
+`JdbcGitHubOperationDeliveryRepository` is an explicit V7 Java library, not an
+endpoint/body model. Claim requires the actual signed permit, fresh trusted owner
+identity and locked loaded state. Commit AND cleanup must acknowledge before a
+private lease returns. Dispatch repeats signature/bindings/current pins/deadlines/
+fence checks and acknowledges durable dispatch_started before invoking the
+deterministic synthetic target, with no DB connection held during invocation.
+Results distinguish succeeded/failed/unknown; reconcile only reads metadata.
+V7 requires stopped-writer opt-in. V1–V6 SQL/default V2 remain unchanged.
+Stored V7 lease/start identities require a JSON String principal exactly matching
+the scoped owner; numeric/boolean coercion is refused even with coherent hashes.
+See [ADR0090](../architecture/0090-closed-durable-synthetic-delivery.md) for
+qualification status and the paused-worker limitation.
+
 ## Installed bounded durable registration HTTP session
 
 `agentcore-registration-http-cli` packages only `check-session` and
