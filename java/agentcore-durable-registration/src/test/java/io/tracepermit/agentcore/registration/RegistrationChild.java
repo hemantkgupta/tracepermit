@@ -17,6 +17,7 @@ import io.tracepermit.persistence.operations.JdbcBusinessOperationRepository;
 
 /** Test-only child protocol: secrets/configuration use inherited anonymous pipes, never argv/files/logs. */
 public final class RegistrationChild {
+  private static final java.util.concurrent.atomic.AtomicInteger CALLS = new java.util.concurrent.atomic.AtomicInteger();
   private RegistrationChild() {}
 
   static String call(RegistrationDatabases db, String token, byte[] body, boolean nonDurableControl) throws Exception {
@@ -30,6 +31,7 @@ public final class RegistrationChild {
   private static String call(
       RegistrationDatabases db, String token, byte[] body, boolean nonDurableControl, boolean http)
       throws Exception {
+    int ordinal = CALLS.incrementAndGet();
     String classpath = System.getProperty("tracepermit.registration.childClasspath");
     if (classpath == null) throw new AssertionError("SYNTHETIC_CHILD_CLASSPATH_MISSING");
     Process child = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
@@ -50,12 +52,17 @@ public final class RegistrationChild {
         return null;
       });
       input.get(10, TimeUnit.SECONDS);
-      if (!child.waitFor(30, TimeUnit.SECONDS)) throw new AssertionError("SYNTHETIC_CHILD_TIMEOUT");
+      if (!child.waitFor(30, TimeUnit.SECONDS)) throw new AssertionError(
+          "SYNTHETIC_CHILD_TIMEOUT[call=" + ordinal + ",mode=" + (http ? "HTTP" : "DIRECT") + "]");
       byte[] receipt = output.get(5, TimeUnit.SECONDS);
-      if (child.exitValue() != 0 || receipt.length > 256) throw new AssertionError("SYNTHETIC_CHILD_FAILED");
+      if (child.exitValue() != 0 || receipt.length > 256) throw new AssertionError(
+          "SYNTHETIC_CHILD_FAILED[call=" + ordinal + ",mode=" + (http ? "HTTP" : "DIRECT")
+              + ",exit=" + child.exitValue() + ",bytes=" + receipt.length + ",phase="
+              + failurePhase(receipt) + "]");
       String result = new String(receipt, StandardCharsets.UTF_8).strip();
       if (!java.util.Set.of("CREATED", "EXISTING", "REPLAY_REJECTED").contains(result)) {
-        throw new AssertionError("SYNTHETIC_CHILD_RECEIPT_INVALID");
+        throw new AssertionError("SYNTHETIC_CHILD_RECEIPT_INVALID[call=" + ordinal
+            + ",mode=" + (http ? "HTTP" : "DIRECT") + ",bytes=" + receipt.length + "]");
       }
       return result;
     } finally {
@@ -70,6 +77,8 @@ public final class RegistrationChild {
   }
 
   public static void main(String[] args) {
+    String phase = "INPUT";
+    int status = 0;
     try (var pipe = new DataInputStream(System.in)) {
       if (args.length != 0) throw new IOException();
       String[] configuration = new String[6];
@@ -85,11 +94,15 @@ public final class RegistrationChild {
       AgentCoreRegistrationIngress.Receipt receipt;
       try {
         if (http) {
+          phase = "HTTP_START";
           try (var server = DurableAgentCoreRegistrationHttpServer.create(
               verifier, RegistrationIdentity.enrollment(), RegistrationIdentity.CLOCK,
               replay, operations, 128, Duration.ofSeconds(2), 0,
               io.tracepermit.agentcore.http.AgentCoreRegistrationHttpServer.Limits.defaults())) {
+            phase = "HTTP_SEND";
             var response = RegistrationHttpTestClient.send(server.port(), token, body);
+            phase = "HTTP_STATUS";
+            status = response.status();
             if (response.status() == 201) System.out.println("CREATED");
             else if (response.status() == 200) System.out.println("EXISTING");
             else if (response.status() == 409
@@ -99,11 +112,13 @@ public final class RegistrationChild {
           }
           return;
         } else if (nonDurable) {
+          phase = "CONTROL_REGISTER";
           // Deliberately wrong TEST control, absent from the production factory/API.
           receipt = new AgentCoreRegistrationIngress(verifier,new InMemoryWorkloadIdentityReplayStore(),
               new JdbcBusinessOperationRepository(operations),RegistrationIdentity.CLOCK,RegistrationIdentity.enrollment())
               .register(token,null,body);
         } else {
+          phase = "DIRECT_REGISTER";
           receipt = DurableAgentCoreRegistration.create(verifier,RegistrationIdentity.enrollment(),RegistrationIdentity.CLOCK,
               replay,operations,128,Duration.ofSeconds(2)).register(token,null,body);
         }
@@ -115,8 +130,20 @@ public final class RegistrationChild {
       }
     } catch (Throwable failed) {
       // Never render the exception, stdin, configuration, key, body or token.
-      System.out.println("SYNTHETIC_CHILD_FAILED"); System.exit(2);
+      System.out.println("SYNTHETIC_CHILD_FAILED:" + phase + ":" + status); System.exit(2);
     }
+  }
+
+  private static String failurePhase(byte[] receipt) {
+    String text = new String(receipt, StandardCharsets.UTF_8).strip();
+    String prefix = "SYNTHETIC_CHILD_FAILED:";
+    if (!text.startsWith(prefix)) return "UNOBSERVED";
+    String[] fields = text.substring(prefix.length()).split(":", -1);
+    if (fields.length != 2 || !java.util.Set.of("INPUT", "HTTP_START", "HTTP_SEND", "HTTP_STATUS",
+        "CONTROL_REGISTER", "DIRECT_REGISTER").contains(fields[0]) || !fields[1].matches("[0-9]{1,3}")) {
+      return "UNOBSERVED";
+    }
+    return fields[0] + ":" + fields[1];
   }
 
   private static void write(DataOutputStream output, byte[] bytes) throws IOException {
