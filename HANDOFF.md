@@ -3,6 +3,32 @@
 GitHub is authoritative. Keep credentials, raw claims and private operator/customer
 planning outside Git. Historical receipts below are not fresh qualification.
 
+## Current Track B durable registration HTTP composition
+
+Mac Air owns only `codex/track-b-durable-agentcore-composition`, based on human-
+accepted main `8d5a5d784fdb9adce632e2d418c702940c13d2a0` (tree
+`84f9f0b6b84f437d11521c38743d53cd20223fd9`). The branch adds the closed
+`DurableAgentCoreRegistrationHttpServer` wrapper inside the existing durable
+module plus B-only tests, ADR0091, runbook, learning and additive specification
+entries. Existing verifier, ingress, replay, repository, HTTP transport,
+contracts, migrations, CI and operation/admission authority remain unchanged.
+
+The composition binds only numeric loopback, validates separate initialized
+stores, consumes shared replay before separate durable registration and returns
+only execution-disabled metadata. No request-derived role/assurance, human/OBO,
+approval, permit, admission, target credential or execution path exists. Initial
+development evidence passed 36 fresh three-engine composition cases with zero
+failures/errors/skips and all 25 tasks executed. The final fresh combined module
+gate passed 164 HTTP plus 141 durable cases, zero failures/errors/skips and all 27
+tasks executed in 3m32s. One complete `pnpm check` passed 124 console and 3,458
+Java tests across 206 suites, zero failures/errors and one existing opt-in
+absent-archive native-PTY skip; coverage passed at 94.5667% LINE/78.0458% BRANCH.
+Gradle used 45 executed/20 cached/27 up-to-date tasks, including reuse of the
+immediately preceding fresh Track B outputs. Final formatting, 1,335-link and 13
+flow/drift gates passed; exact-pushed-head hosted receipts remain pending. This
+writer retains ownership until the draft PR final handoff explicitly releases
+it. All PRs remain unmerged.
+
 ## Current PR95 reconciliation
 
 Mac has claimed exclusive writer ownership to finish PR95 at clean published head

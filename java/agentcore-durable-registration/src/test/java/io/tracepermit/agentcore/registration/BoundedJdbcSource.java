@@ -22,12 +22,24 @@ import javax.sql.DataSource;
 /** Test-only real JDBC forwarding. Configuration/credentials never enter diagnostics. */
 final class BoundedJdbcSource implements DataSource, AutoCloseable {
   static final String CANARY = "SYNTHETIC_PRIVATE_JDBC_DIAGNOSTIC";
-  enum Fault { NONE, SECOND_FACT, AFTER_COMMIT, CLOSE_COMMIT, LATE_COMMIT, LATE_CLOSE, UNCHECKED_BORROW }
+  enum Fault {
+    NONE,
+    FIRST_WRITE,
+    BLOCK_FIRST_WRITE,
+    SECOND_FACT,
+    AFTER_COMMIT,
+    CLOSE_COMMIT,
+    LATE_COMMIT,
+    LATE_CLOSE,
+    UNCHECKED_BORROW
+  }
   final String url;
   final String user;
   final String password;
   volatile Fault fault = Fault.NONE;
   volatile CountDownLatch counterEntered;
+  volatile CountDownLatch writeEntered;
+  volatile CountDownLatch releaseWrite;
   final AtomicInteger opens = new AtomicInteger();
   final AtomicInteger closes = new AtomicInteger();
   final AtomicInteger writes = new AtomicInteger();
@@ -45,7 +57,8 @@ final class BoundedJdbcSource implements DataSource, AutoCloseable {
   BoundedJdbcSource fresh() { return new BoundedJdbcSource(url, user, password); }
 
   void reset() {
-    fault = Fault.NONE; counterEntered = null; opens.set(0); closes.set(0);
+    fault = Fault.NONE; counterEntered = null; writeEntered = null; releaseWrite = null;
+    opens.set(0); closes.set(0);
     writes.set(0); commits.set(0); denied.set(0); delayReached.set(false); tablesWritten.clear();
   }
 
@@ -102,8 +115,10 @@ final class BoundedJdbcSource implements DataSource, AutoCloseable {
                     throw failure;
                   }
                   if (dml) {
-                    wrote.set(true); writes.incrementAndGet();
+                    wrote.set(true); int writeNumber = writes.incrementAndGet();
                     tablesWritten.add(sql.stripLeading().split("\\s+")[sql.stripLeading().startsWith("INSERT") ? 2 : 1]);
+                    if (writeNumber == 1 && selected == Fault.FIRST_WRITE) throw diagnostic();
+                    if (writeNumber == 1 && selected == Fault.BLOCK_FIRST_WRITE) blockFirstWrite();
                     if (sql.contains("INSERT INTO tp_business_operation_facts") && facts.incrementAndGet() == 2
                         && selected == Fault.SECOND_FACT) throw diagnostic();
                   }
@@ -121,6 +136,23 @@ final class BoundedJdbcSource implements DataSource, AutoCloseable {
     try { TimeUnit.NANOSECONDS.sleep(remaining + Duration.ofMillis(150).toNanos()); }
     catch (InterruptedException interrupted) {
       Thread.currentThread().interrupt(); throw diagnostic();
+    }
+  }
+
+  private void blockFirstWrite() throws SQLException {
+    CountDownLatch entered = writeEntered;
+    CountDownLatch release = releaseWrite;
+    if (entered == null || release == null) throw new AssertionError("SYNTHETIC_BLOCK_GATE_MISSING");
+    entered.countDown();
+    long deadline = System.nanoTime() + Duration.ofSeconds(10).toNanos();
+    while (release.getCount() != 0) {
+      long remaining = deadline - System.nanoTime();
+      if (remaining <= 0) throw new AssertionError("SYNTHETIC_BLOCK_GATE_TIMEOUT");
+      try {
+        release.await(remaining, TimeUnit.NANOSECONDS);
+      } catch (InterruptedException ignored) {
+        // Deliberate TEST dependency: ignore transport cancellation until the owner releases it.
+      }
     }
   }
 

@@ -41,6 +41,10 @@ public final class DurableAgentCoreRegistration {
     return ingress.register(authorization, humanAuthorization, body);
   }
 
+  AgentCoreRegistrationIngress ingress() {
+    return ingress;
+  }
+
   public static final class InitializationException extends RuntimeException {
     private static final long serialVersionUID = 1L;
 

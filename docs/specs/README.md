@@ -4,6 +4,15 @@ These documents describe the Java/React POC and distinguish implemented
 controls from target enterprise requirements. Source and tests determine what
 actually runs; a target requirement is not an implementation claim.
 
+[ADR0091](../architecture/0091-durable-agentcore-registration-http-composition.md)
+adds the closed trusted-operator composition of the existing numeric-loopback
+HTTP server and existing durable AgentCore registration factory. Its
+[runbook](../runbooks/durable-agentcore-registration-http.md) covers actual
+HTTP/JWKS/signed-token/shared-replay/durable-registration evidence across the
+three exact database engines. It remains execution-disabled, synthetic and
+unwired; no live provider, human delegation, approval, admission or target is
+enabled.
+
 [ADR0089](../architecture/0089-source-free-synthetic-registration-cli.md) adds
 the independent source-free local synthetic registration command. Its
 [runbook](../runbooks/source-free-synthetic-registration-cli.md) defines closed
