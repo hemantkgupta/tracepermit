@@ -430,3 +430,12 @@ harness cases failed and a PostgreSQL socket read later hung until the run was
 interrupted. Database-engine, crash, concurrency, coverage, installed and
 three-engine qualification therefore remain required. No hosted CI, deployment,
 login, live-provider token minting or live target call was executed.
+
+The unexecuted `OrgSandboxLifecycleContract` adds the focused organization-profile
+three-engine matrix without changing production code, grants, assertions,
+deadlines, workloads or aggregate thresholds. Its PostgreSQL16.4,
+MariaDB11.4.13 and MariaDB10.6.25 wrappers must pass separately with fresh
+runtime-generated keys/tokens and private stdout/stderr/exit capture before any
+repository or coverage gate. The exact human-run order and stop conditions are
+in the
+[organization-profile qualification runbook](../runbooks/org-sandbox-three-engine-qualification.md).

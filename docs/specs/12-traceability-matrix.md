@@ -1329,6 +1329,17 @@ qualification remains incomplete.
 | SEC-006/019; REL-002/005/008            | V4–V7 repositories accept only the sealed profile; permit codec pins the trusted composition's adapter ID; synthetic delivery remains no-retry/read-only reconciliation                                                      | Focused `OperationPermitCodecTest` cross-adapter refusal and unchanged Track E-byte cases passed. Aggregate durable suites did not complete because of database/process failures and a PostgreSQL socket-read hang. Real organization dispatch/reconciliation remains unwired. |
 | SEC-007/008/019; FR-015; OPS-005        | Explicit stop before credential/key source, ingress, live target or deployment                                                                                                                                               | [Composition contract](../design/okta-github-org-sandbox-composition.md) records the four new approvals. EKS containment, custody, bypass proof and live qualification remain external gates.                                                                                  |
 
+`OrgSandboxLifecycleContract` plus `PostgresOrgSandboxLifecycleTest`,
+`MariaDb114OrgSandboxLifecycleTest` and `MariaDb106OrgSandboxLifecycleTest` add
+unexecuted three-engine source coverage for FR-001/008/009/012/015,
+SEC-001/002/003/006/012/019 and REL-002/005/008. The contract composes verified
+Okta enrollment/independent review, exact organization binding, durable review,
+permit/admission, synthetic delivery and read-only no-resend reconciliation under
+restricted grants. It includes profile/target substitutions, adapter pinning,
+eight-way contention, real row-lock expiry and legacy Track E compatibility.
+This is not a requirement-status promotion; see the
+[human-run command contract](../runbooks/org-sandbox-three-engine-qualification.md).
+
 ## Proposed pending-request cancellation and upgrade gate
 
 FR-003/007/008/009/010; SEC-001/002/003/005/006/009/012;
