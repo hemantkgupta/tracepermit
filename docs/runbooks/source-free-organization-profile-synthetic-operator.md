@@ -31,7 +31,18 @@ fail-closed `UNKNOWN` receipt was rejected before worker launch. The current
 source candidate is `040a4882a2ee46017836aca4580ad1f746e3a367`, tree
 `55abed077aaefa9a7a146aceea39bf755a670e29`, parent `de19b75`. It narrows the
 usage guard so `UNKNOWN` remains a valid fail-closed fallback without admitting
-`USAGE` for a known command. Validation remains pending.
+`USAGE` for a known command.
+
+Focused validation then passed all 16 cases with zero failures, errors or skips.
+The first repository attempt at preparation HEAD `2791b1f` passed the console
+build/typecheck/124 tests and 152 Java-environment scenarios, then stopped in
+the durable-registration module. Its PostgreSQL16.4 and MariaDB11.4.13 suites
+each failed only the legacy public-surface assertion because the approved
+additive `organization` factory was absent from its exact name set. The current
+source candidate is `34a2bd66896829805b9b406148be2655fa43751f`, tree
+`2a7b5cc01627e7201541e4f55524e001fe379b1a`, parent `2791b1f`. Its test-only
+repair requires exactly `create`, `organization` and `register`; repository
+validation remains pending.
 
 The source/documentation implementation checkpoint is
 `a9270e4651d39d4825b2ef3efcaccce684760aa7`, tree
@@ -40,7 +51,7 @@ sole parent. Its parent is the earlier accepted-main/qualification merge
 `5da2b6d48ba592537f1b9cf23dae753ddb604feb`; later normal merges preserve it.
 This is an unvalidated local checkpoint, not a qualification receipt or
 publication. The current candidate's relevant source manifest is
-`c8dc1b983b8dafbafaad34f4831d147e3104f638214231cb57a21cca338e686b`.
+`22b50fc0bdfd2eb0fc090cd0e29456b95f031849b54c9e003fa3bc3cdc6226f6`.
 
 This lane owns the new executable module, its tests/docs and the additive durable
 organization factory. It does not own EKS, installed COMMIT-loss injection,
