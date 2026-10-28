@@ -16,6 +16,9 @@ readonly TRACEPERMIT_QUALIFICATION_HISTORY="8108598a658121735dbd59d5a44053b3ff22
 readonly TRACEPERMIT_QUALIFICATION_TREE="8597529c2854945be6eede63dc06e6a2931cf6f0"
 readonly TRACEPERMIT_SOURCE_MANIFEST="7c69e49ffa6819568ab1bca55fc863809bb0041b3a52d9aa5906fa7db30839fd"
 readonly TRACEPERMIT_JENV="/opt/homebrew/bin/jenv"
+readonly TRACEPERMIT_DOCKER="/Applications/Docker.app/Contents/Resources/bin/docker"
+readonly TRACEPERMIT_POSTGRES_IMAGE_ID="sha256:5660c2cbfea50c7a9127d17dc4e48543eedd3d7a41a595a2dfa572471e37e64c"
+readonly TRACEPERMIT_MARIADB_IMAGE_ID="sha256:250e1609e93c0e6aecf64bfbab2d84d5e89d2481540fe77447ff6c855c3b1873"
 readonly TRACEPERMIT_JAVA_HOME="/Users/hemantkgupta/.jenv/versions/21"
 readonly TRACEPERMIT_JAVA_REAL_HOME="/opt/homebrew/Cellar/openjdk@21/21.0.13.0.2/libexec/openjdk.jdk/Contents/Home"
 readonly TRACEPERMIT_GRADLE_HOME="$TRACEPERMIT_CHECKOUT/.cache/gradle"
@@ -70,7 +73,7 @@ mkdir -m 700 "$TRACEPERMIT_RUN_DIR"
 export JENV_VERSION=21
 export TRACEPERMIT_JAVA_HOME
 export JAVA_HOME="$TRACEPERMIT_JAVA_HOME"
-export PATH="$JAVA_HOME/bin:$PATH"
+export PATH="$JAVA_HOME/bin:${TRACEPERMIT_DOCKER%/docker}:$PATH"
 export TRACEPERMIT_CACHE_DIR="$TRACEPERMIT_CHECKOUT/.cache"
 export TRACEPERMIT_GRADLE_USER_HOME="$TRACEPERMIT_GRADLE_HOME"
 export GRADLE_USER_HOME="$TRACEPERMIT_GRADLE_HOME"
@@ -151,6 +154,7 @@ tracepermit_runtime_guards() {
   local tracepermit_java_version
   [[ -x /usr/bin/caffeinate ]]
   [[ -x "$TRACEPERMIT_JENV" ]]
+  [[ -x "$TRACEPERMIT_DOCKER" ]]
   [[ "$($TRACEPERMIT_JENV --version)" == "jenv 0.6.0" ]]
   [[ "$(cd -P "$TRACEPERMIT_JAVA_HOME" && pwd)" == "$TRACEPERMIT_JAVA_REAL_HOME" ]]
   tracepermit_java_version="$("$TRACEPERMIT_JAVA_HOME/bin/java" -version 2>&1)"
@@ -174,11 +178,15 @@ tracepermit_runtime_guards() {
   "$TRACEPERMIT_GRADLE_DIST/bin/gradle" --version | grep -F 'Gradle 8.14.3'
   [[ -d "$TRACEPERMIT_GRADLE_HOME/caches/modules-2/files-2.1" ]]
 
-  docker version --format 'client={{.Client.Version}} server={{.Server.Version}}'
-  docker image inspect postgres:16.4-alpine \
+  "$TRACEPERMIT_DOCKER" version --format 'client={{.Client.Version}} server={{.Server.Version}}'
+  [[ "$("$TRACEPERMIT_DOCKER" image inspect postgres:16.4-alpine --format '{{.Id}}')" == \
+    "$TRACEPERMIT_POSTGRES_IMAGE_ID" ]]
+  "$TRACEPERMIT_DOCKER" image inspect postgres:16.4-alpine \
     --format 'postgres16.4={{.Id}} digests={{join .RepoDigests ","}}'
   if [[ "$TRACEPERMIT_MODE" == repo ]]; then
-    docker image inspect mariadb:11.4.13 \
+    [[ "$("$TRACEPERMIT_DOCKER" image inspect mariadb:11.4.13 --format '{{.Id}}')" == \
+      "$TRACEPERMIT_MARIADB_IMAGE_ID" ]]
+    "$TRACEPERMIT_DOCKER" image inspect mariadb:11.4.13 \
       --format 'mariadb11.4.13={{.Id}} digests={{join .RepoDigests ","}}'
   fi
 }
