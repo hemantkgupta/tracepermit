@@ -35,6 +35,7 @@ final class BootstrapTestProcessesTest {
     try {
       assertThat(BootstrapTestProcesses.state(child, "CHECK", output))
           .contains("phase=CHECK", "alive=true", "marker=APPROVAL_STARTUP_FAILED")
+          .containsPattern("cpu=(UNDER_1S|AT_LEAST_1S|UNAVAILABLE)")
           .doesNotContain(secret, output.toString(), "jdbc:");
     } finally { BootstrapTestProcesses.stop(child); }
   }

@@ -57,6 +57,10 @@ final class LifecycleIdentityAdapter {
   ReviewAuthority reviewer(String token) {
     AuthenticatedConnector connector =
         verify(configuration.reviewerProvider(), token, "operations.decide");
+    // Principal aliases and different clients must not make one verified subject independent.
+    if (connector.subjectId().equals(configuration.requesterEnrollment().verifiedSubjectId())) {
+      throw new LifecycleFailure("REJECTED");
+    }
     LifecycleMemberships.Resolved resolved =
         configuration.memberships().resolve(connector, configuration.scope().workspaceId());
     LifecycleMemberships.Entry entry = resolved.entry();

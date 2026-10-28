@@ -46,8 +46,10 @@ final class RegistrationHttpTestClient {
       socket.getOutputStream().write(wire);
       socket.getOutputStream().flush();
       return read(socket);
-    } catch (SocketTimeoutException | java.net.SocketException closed) {
-      return new Reply(0, "", "");
+    } catch (SocketTimeoutException timeout) {
+      return new Reply(0, "", "", Outcome.TIMEOUT);
+    } catch (java.net.SocketException closed) {
+      return new Reply(0, "", "", Outcome.SOCKET_CLOSED);
     }
   }
 
@@ -69,7 +71,7 @@ final class RegistrationHttpTestClient {
       }
     }
     String raw = output.toString(StandardCharsets.UTF_8);
-    if (raw.isEmpty()) return new Reply(0, "", "");
+    if (raw.isEmpty()) return new Reply(0, "", "", Outcome.EMPTY_RESPONSE);
     int split = raw.indexOf("\r\n\r\n");
     if (split <= 0 || raw.length() < 12) {
       throw new AssertionError("SYNTHETIC_HTTP_RESPONSE_INVALID");
@@ -77,10 +79,12 @@ final class RegistrationHttpTestClient {
     return new Reply(
         Integer.parseInt(raw.substring(9, 12)),
         raw.substring(split + 4),
-        raw.substring(0, split));
+        raw.substring(0, split), Outcome.RESPONSE);
   }
 
-  record Reply(int status, String body, String headers) {
+  enum Outcome { RESPONSE, TIMEOUT, SOCKET_CLOSED, EMPTY_RESPONSE }
+
+  record Reply(int status, String body, String headers, Outcome outcome) {
     @Override
     public String toString() {
       return "RegistrationHttpTestReply[status=" + status + "]";
