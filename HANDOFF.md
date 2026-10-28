@@ -3,6 +3,51 @@
 GitHub is authoritative. Keep credentials, raw claims and private operator/customer
 planning outside Git. Historical receipts below are not fresh qualification.
 
+## Organization-profile synthetic operator — implemented; validation pending
+
+Branch `codex/source-free-organization-operator` preserves accepted main
+`dbb6e05930827633d7326240551ddeb73657c5a7` and published organization
+qualification `8108598a658121735dbd59d5a44053b3ff22da7a` through normal merge
+`5da2b6d48ba592537f1b9cf23dae753ddb604feb` (tree
+`59f9a6b40bb29b1f0a28268098be0f5954d0be37`, ordered parents main then
+qualification). Neither history was rebased, cherry-picked, reset or rewritten.
+
+Implemented scope is the separate
+`agentcore-organization-lifecycle-cli`/`tracepermit-synthetic-organization-operator`
+profile with exact commands `check-config`, `register`, `inspect`, `evaluate`,
+`review`, `deliver-synthetic`, `reconcile`; strict anonymous framed input and
+receipts; PostgreSQL16.4-only closed configuration; actual Okta authority/roster;
+exact organization target; durable registration/review/permit/admission/start;
+only the concrete synthetic target; and read-only no-resend reconciliation. The
+only shared-library addition is
+`DurableAgentCoreRegistration.organization(...)`, which validates and composes
+existing stores without DDL, migration, activation, grants or repair. Track E
+constructors, protocols, launchers and permit bytes are unchanged.
+
+New source tests cover offline strict framing/EOF, exact receipt/exit unions,
+bootstrap/archive source exclusion, enrollment/role/membership/self-review/key
+substitutions, restricted grants, separate-process valid/denied/unknown flows,
+no resend and eight contenders. No test, build, coverage, container, CI,
+deployment, login, token minting, provider call or worker message was executed
+for this implementation; validation is explicitly pending. The exact focused
+then repository commands, private log/exit capture, source manifest, bounds and
+stop conditions are in
+[the operator runbook](docs/runbooks/source-free-organization-profile-synthetic-operator.md).
+
+The historical organization-library receipt is corrected to 27/27 focused
+cases and a fresh 3,807-case/one-inherited-skip aggregate at 94.089457% line and
+76.854231% branch for published Java commit `8108598a...`. Earlier failures
+remain historical; later documentation bytes and this new operator are not
+covered by that receipt. No hosted CI was present. MariaDB10.6 retirement is not
+on the accepted base, so the historical 9/9 library receipt is retained and no
+new installed 10.6 launcher was added.
+
+No provider credential, live target, listener, remote ingress, mTLS, EKS file,
+deployment or default enablement is present. EKS, installed COMMIT-loss,
+artifact/identity verification and custody corrections remain with their named
+owners. Work is local and unpublished; do not push, open a PR or merge until the
+manual results are supplied and the human gives a publication instruction.
+
 ## PR130 worker-discovery harness — implemented; validation pending
 
 Local Mac owns the human-authorized test-only repair from published

@@ -548,27 +548,28 @@ permit defaults are retained. Registration and V4–V7 lifecycle code can accept
 only the two sealed profiles; the organization path currently reaches only the
 deterministic synthetic delivery target.
 
-This source is not fully qualified evidence yet. On 2026-10-28 the focused
-generated/offline organization binding, registration, Okta authority and permit
-codec fixtures passed, as did the console build/typecheck/test slice, Java
-environment selection, documentation links and formatting checks. The aggregate
-Java check encountered existing database/process harness failures and then a
-PostgreSQL socket-read hang, so it was interrupted and is not a green
-qualification result. No hosted CI, login, live-provider token mint, deployment
-or live provider/target call was run for this change.
+The published Java candidate at
+`8108598a658121735dbd59d5a44053b3ff22da7a` passed all 27 focused organization
+lifecycle cases (nine per exact engine). Its subsequent fresh repository receipt
+recorded 3,807 cases with one inherited skip and aggregate coverage of
+94.089457% line/76.854231% branch. Earlier failed aggregate attempts remain
+historical failures and are not rewritten by the later pass. These receipts
+qualify the tested Java bytes only; later documentation-only edits and the
+separate installed operator below are not included. No hosted CI, login,
+live-provider token mint, deployment or live provider/target call was run.
 GitHub App and Ed25519 private-key custody, authenticated ingress/sender binding,
 exact organization inputs, EKS containment, real durable dispatch and live
 read-only reconciliation remain absent. See the
 [composition contract](../design/okta-github-org-sandbox-composition.md).
 
-An additive `OrgSandboxLifecycleContract` and exact PostgreSQL16.4,
-MariaDB11.4.13 and MariaDB10.6.25 wrappers now compose the existing organization
-libraries with restricted runtime grants, generated signed identities/keys,
-durable synthetic delivery, real review contention and writer-time expiry after
-a row-lock wait. This test source has not been executed and is not qualification
-evidence. It changes no production, EKS, installed COMMIT-loss or artifact
-verification path; see its
-[human-run qualification contract](../runbooks/org-sandbox-three-engine-qualification.md).
+`OrgSandboxLifecycleContract` and exact PostgreSQL16.4, MariaDB11.4.13 and
+MariaDB10.6.25 wrappers compose the existing organization libraries with
+restricted runtime grants, generated signed identities/keys, durable synthetic
+delivery, real review contention and writer-time expiry after a row-lock wait.
+All 27 cases passed in the published receipt above. The separate
+`agentcore-organization-lifecycle-cli` candidate composes the same accepted
+types into an installed PostgreSQL-only command and remains validation pending;
+see its [manual runbook](../runbooks/source-free-organization-profile-synthetic-operator.md).
 
 ## Controls not yet established
 

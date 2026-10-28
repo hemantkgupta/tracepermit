@@ -36,6 +36,34 @@ public final class DurableAgentCoreRegistration {
     }
   }
 
+  /**
+   * Validate existing dedicated organization stores only. Supplied datasources remain caller-owned.
+   */
+  public static DurableAgentCoreRegistration organization(
+      OidcAccessTokenVerifier verifier,
+      AgentCoreRegistrationIngress.OrganizationEnrollment enrollment,
+      Clock clock,
+      DataSource replaySource,
+      DataSource operationSource,
+      long replayCapacity,
+      Duration replayDmlBudget) {
+    try {
+      Objects.requireNonNull(verifier);
+      Objects.requireNonNull(enrollment);
+      Objects.requireNonNull(clock);
+      var replay =
+          new JdbcWorkloadIdentityReplayStore(
+              Objects.requireNonNull(replaySource), replayCapacity, replayDmlBudget);
+      var operations =
+          new JdbcBusinessOperationRepository(Objects.requireNonNull(operationSource));
+      return new DurableAgentCoreRegistration(
+          AgentCoreRegistrationIngress.organization(
+              verifier, replay, operations, clock, enrollment));
+    } catch (RuntimeException invalid) {
+      throw new InitializationException();
+    }
+  }
+
   public AgentCoreRegistrationIngress.Receipt register(
       String authorization, String humanAuthorization, byte[] body) {
     return ingress.register(authorization, humanAuthorization, body);

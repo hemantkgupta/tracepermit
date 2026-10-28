@@ -47,6 +47,10 @@ or authoritative replacement for the maintained flow catalog.
   human-run PostgreSQL/MariaDB durable synthetic lifecycle coverage for that
   library composition.
 
+- [Source-free organization-profile synthetic operator](../runbooks/source-free-organization-profile-synthetic-operator.md):
+  manual PostgreSQL16.4 installed-process qualification for the separate closed
+  registration/lifecycle executable; no live provider or target.
+
 - [Pending approval cancellation](pending-approval-cancellation.md): owner-only,
   pending-to-cancelled withdrawal, race/evidence semantics and the prerequisite
   explicit database upgrade. The proposal itself is design only;

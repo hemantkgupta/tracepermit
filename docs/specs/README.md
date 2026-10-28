@@ -5,14 +5,21 @@ controls from target enterprise requirements. Source and tests determine what
 actually runs; a target requirement is not an implementation claim.
 
 The [Okta/GitHub organization sandbox composition](../design/okta-github-org-sandbox-composition.md)
-is a library-only implementation candidate. It adds sealed exact-target binding,
-verified-role-plus-enrollment authority and source-compatible durable lifecycle
-types, but no credential/key source, ingress, real dispatch, live reconciliation
-or deployment. Its focused generated/offline fixture cases passed locally on
-2026-10-28; aggregate database/process and three-engine qualification remains
-incomplete and no live-provider result is claimed. A new human-run
-[three-engine contract](../runbooks/org-sandbox-three-engine-qualification.md)
-is implemented but unexecuted.
+adds sealed exact-target binding, verified-role-plus-enrollment authority and
+source-compatible durable lifecycle types. Its published Java candidate at
+`8108598a658121735dbd59d5a44053b3ff22da7a` passed 27/27 focused engine cases;
+the fresh repository receipt recorded 3,807 cases with one inherited skip and
+94.089457% line/76.854231% branch coverage. Those are local receipts for those
+Java bytes, not hosted CI or live-provider evidence. Later documentation edits
+do not change or requalify the published Java tree.
+
+[ADR0096](../architecture/0096-source-free-organization-profile-synthetic-operator.md)
+adds a separate, execution-disabled source-free organization-profile operator
+with registration and the closed synthetic lifecycle. Its
+[manual runbook](../runbooks/source-free-organization-profile-synthetic-operator.md)
+keeps validation pending and separates PostgreSQL installed-process evidence
+from repository/coverage gates. It adds no GitHub credential, listener, remote
+ingress, live reconciliation or deployment.
 
 [ADR0093](../architecture/0093-source-free-operation-lifecycle.md) adds a
 separate source-free Java21 command that composes the closed V7 operation

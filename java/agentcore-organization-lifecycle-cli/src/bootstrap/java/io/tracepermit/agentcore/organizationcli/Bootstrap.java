@@ -1,0 +1,41 @@
+package io.tracepermit.agentcore.organizationcli;
+
+/** Java 8 bytecode entry point that refuses unsupported runtimes before loading Java 21 code. */
+public final class Bootstrap {
+  private Bootstrap() {}
+
+  public static void main(String[] args) {
+    if (!"21".equals(System.getProperty("java.specification.version"))) {
+      fail("JAVA_21_REQUIRED");
+      return;
+    }
+    try {
+      Class.forName("io.tracepermit.agentcore.organizationcli.OrganizationOperatorCli")
+          .getMethod("main", String[].class)
+          .invoke(null, (Object) args);
+    } catch (Throwable failure) {
+      fail("UNKNOWN");
+    }
+  }
+
+  private static void fail(final String code) {
+    Thread writer =
+        new Thread(
+            new Runnable() {
+              @Override
+              public void run() {
+                System.out.print(code + "\n");
+                System.out.flush();
+              }
+            },
+            "organization-operator-launch-diagnostic");
+    writer.setDaemon(true);
+    writer.start();
+    try {
+      writer.join(1_000);
+    } catch (InterruptedException interrupted) {
+      Thread.currentThread().interrupt();
+    }
+    Runtime.getRuntime().halt(64);
+  }
+}
