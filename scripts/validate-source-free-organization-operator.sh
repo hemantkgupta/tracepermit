@@ -44,6 +44,7 @@ if [[ ! "${TRACEPERMIT_EXPECTED_HEAD:-}" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 readonly TRACEPERMIT_VALIDATION_HEAD="$TRACEPERMIT_EXPECTED_HEAD"
 readonly TRACEPERMIT_LOG_ROOT="${TRACEPERMIT_PRIVATE_LOG_DIR:-/private/tmp/tracepermit-org-operator-$TRACEPERMIT_VALIDATION_HEAD}"
+readonly TRACEPERMIT_REUSE_REPOSITORY_RECEIPT="${TRACEPERMIT_REUSE_REPOSITORY_RECEIPT:-}"
 
 case "$TRACEPERMIT_LOG_ROOT" in
   /private/tmp/*) ;;
@@ -107,6 +108,16 @@ tracepermit_source_manifest_inventory() {
     | LC_ALL=C sort
 }
 
+tracepermit_allowed_preparation_path() {
+  case "$1" in
+    HANDOFF.md) return 0 ;;
+    docs/runbooks/source-free-organization-profile-synthetic-operator.md) return 0 ;;
+    docs/specs/12-traceability-matrix.md) return 0 ;;
+    scripts/validate-source-free-organization-operator.sh) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 tracepermit_source_guards() {
   cd "$TRACEPERMIT_CHECKOUT"
   [[ "$(pwd -P)" == "$TRACEPERMIT_CHECKOUT" ]]
@@ -126,11 +137,10 @@ tracepermit_source_guards() {
 
   local tracepermit_path
   while IFS= read -r tracepermit_path; do
-    case "$tracepermit_path" in
-      docs/runbooks/source-free-organization-profile-synthetic-operator.md) ;;
-      scripts/validate-source-free-organization-operator.sh) ;;
-      *) echo "Unexpected post-candidate path: $tracepermit_path" >&2; return 1 ;;
-    esac
+    if ! tracepermit_allowed_preparation_path "$tracepermit_path"; then
+      echo "Unexpected post-candidate path: $tracepermit_path" >&2
+      return 1
+    fi
   done < <(git diff --name-only "$TRACEPERMIT_CANDIDATE" "$TRACEPERMIT_VALIDATION_HEAD")
 
   tracepermit_source_manifest_inventory >"$TRACEPERMIT_RUN_DIR/source-manifest.inventory"
@@ -298,6 +308,53 @@ tracepermit_require_focused_receipt() {
   [[ "$(cat "$TRACEPERMIT_LOG_ROOT/focused/source-manifest.sha256")" == "$TRACEPERMIT_SOURCE_MANIFEST" ]]
 }
 
+tracepermit_reuse_repository_receipt() {
+  local tracepermit_prior="$TRACEPERMIT_REUSE_REPOSITORY_RECEIPT"
+  local tracepermit_prior_head
+  local tracepermit_path
+  [[ -n "$tracepermit_prior" ]]
+  case "$tracepermit_prior" in
+    /private/tmp/*/repo) ;;
+    *) echo "Prior repository receipt must be a private repo receipt." >&2; return 1 ;;
+  esac
+  [[ -d "$tracepermit_prior" ]]
+  for tracepermit_path in \
+    00-source-guards \
+    01-runtime-guards \
+    02-focused-receipt \
+    10-preserve-build-evidence \
+    11-repository-check \
+    12-aggregate-coverage-receipt; do
+    [[ "$(cat "$tracepermit_prior/$tracepermit_path.exit")" == 0 ]]
+  done
+  [[ "$(cat "$tracepermit_prior/source-manifest.sha256")" == "$TRACEPERMIT_SOURCE_MANIFEST" ]]
+  [[ "$(cat "$tracepermit_prior/branch")" == "$TRACEPERMIT_BRANCH" ]]
+  grep -Fx "commit=$TRACEPERMIT_CANDIDATE" "$tracepermit_prior/candidate.provenance"
+  tracepermit_prior_head="$(cat "$tracepermit_prior/validation-head")"
+  [[ "$tracepermit_prior_head" =~ ^[0-9a-f]{40}$ ]]
+  git merge-base --is-ancestor "$TRACEPERMIT_CANDIDATE" "$tracepermit_prior_head"
+  git merge-base --is-ancestor "$tracepermit_prior_head" "$TRACEPERMIT_VALIDATION_HEAD"
+  while IFS= read -r tracepermit_path; do
+    if ! tracepermit_allowed_preparation_path "$tracepermit_path"; then
+      echo "Prior receipt cannot cross changed path: $tracepermit_path" >&2
+      return 1
+    fi
+  done < <(git diff --name-only "$tracepermit_prior_head" "$TRACEPERMIT_VALIDATION_HEAD")
+  [[ -f "$tracepermit_prior/jacocoAggregateReport.xml" ]]
+  [[ "$(shasum -a 256 "$tracepermit_prior/jacocoAggregateReport.xml" | awk '{print $1}')" == \
+    "$(awk '{print $1}' "$tracepermit_prior/jacocoAggregateReport.sha256")" ]]
+
+  for tracepermit_path in 11-repository-check 12-aggregate-coverage-receipt; do
+    cp "$tracepermit_prior/$tracepermit_path.stdout" "$TRACEPERMIT_RUN_DIR/$tracepermit_path.stdout"
+    cp "$tracepermit_prior/$tracepermit_path.stderr" "$TRACEPERMIT_RUN_DIR/$tracepermit_path.stderr"
+    cp "$tracepermit_prior/$tracepermit_path.exit" "$TRACEPERMIT_RUN_DIR/$tracepermit_path.exit"
+  done
+  cp "$tracepermit_prior/jacocoAggregateReport.xml" "$TRACEPERMIT_RUN_DIR/jacocoAggregateReport.xml"
+  cp "$tracepermit_prior/jacocoAggregateReport.sha256" \
+    "$TRACEPERMIT_RUN_DIR/jacocoAggregateReport.sha256"
+  printf '%s\n' "$tracepermit_prior_head" >"$TRACEPERMIT_RUN_DIR/reused-repository-head"
+}
+
 tracepermit_preserve_build_evidence() {
   local tracepermit_build
   local tracepermit_relative
@@ -377,9 +434,13 @@ if [[ "$TRACEPERMIT_MODE" == focused ]]; then
   tracepermit_run_stage 12-focused-results tracepermit_capture_focused_results
 else
   tracepermit_run_stage 02-focused-receipt tracepermit_require_focused_receipt
-  tracepermit_run_stage 10-preserve-build-evidence tracepermit_preserve_build_evidence
-  tracepermit_run_stage 11-repository-check tracepermit_repository_check
-  tracepermit_run_stage 12-aggregate-coverage-receipt tracepermit_capture_coverage
+  if [[ -n "$TRACEPERMIT_REUSE_REPOSITORY_RECEIPT" ]]; then
+    tracepermit_run_stage 10-reuse-repository-receipt tracepermit_reuse_repository_receipt
+  else
+    tracepermit_run_stage 10-preserve-build-evidence tracepermit_preserve_build_evidence
+    tracepermit_run_stage 11-repository-check tracepermit_repository_check
+    tracepermit_run_stage 12-aggregate-coverage-receipt tracepermit_capture_coverage
+  fi
   tracepermit_run_stage 13-format-check bash -c \
     'cd "$1" && corepack pnpm format:check' _ "$TRACEPERMIT_CHECKOUT"
   tracepermit_run_stage 14-documentation-links bash -c \

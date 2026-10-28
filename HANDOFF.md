@@ -53,6 +53,7 @@ deployment or default enablement is present. EKS, installed COMMIT-loss,
 artifact/identity verification and custody corrections remain with their named
 owners. Work is local and unpublished; do not push, open a PR or merge until the
 manual results are supplied and the human gives a publication instruction.
+
 ## MariaDB 10.x qualification retirement — implemented; validation pending
 
 On `codex/ci-mariadb-11-only` based on `dbb6e05`, default Java tests exclude

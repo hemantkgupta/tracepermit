@@ -58,7 +58,14 @@ additional covered production line was required. The current source candidate is
 `3fa2bd18dc4a7ea0db4f24bd7528f97cbf2eca2c`, parent `87aee36`. Its existing
 boundary case now invokes `OrganizationFailure.initCause` and asserts that the
 redacted failure retains no private cause. Counts, thresholds and production
-behavior remain unchanged; validation remains pending.
+behavior remain unchanged. That candidate's focused 24/24 cases then passed and
+the repository check passed at 94.012006% line/76.588884% branch. Formatting
+stopped on three Markdown files: one missing heading separator and two table
+alignments. The repository formatter changed no prose. Because those files and
+the runner do not alter the pinned source manifest, repo mode may reuse this
+exact green repository/coverage receipt after a fresh focused receipt; it
+refuses reuse across any other path, candidate or manifest. Remaining
+documentation and diff validation is pending.
 
 The source/documentation implementation checkpoint is
 `a9270e4651d39d4825b2ef3efcaccce684760aa7`, tree
@@ -82,13 +89,13 @@ The executable is `bin/tracepermit-synthetic-organization-operator`; the profile
 is `tracepermit-installed-github-org-synthetic-operator-v1`. Input is big-endian
 length-prefixed frames followed by EOF:
 
-| Command | Frames in exact order |
-| --- | --- |
-| `check-config` | configuration |
-| `register` | configuration, requester compact JWT, registration request |
-| `inspect`, `evaluate`, `reconcile` | configuration, requester compact JWT, operation command |
-| `review` | configuration, reviewer compact JWT, operation command |
-| `deliver-synthetic` | configuration, requester compact JWT, Ed25519 PKCS8, operation command |
+| Command                            | Frames in exact order                                                  |
+| ---------------------------------- | ---------------------------------------------------------------------- |
+| `check-config`                     | configuration                                                          |
+| `register`                         | configuration, requester compact JWT, registration request             |
+| `inspect`, `evaluate`, `reconcile` | configuration, requester compact JWT, operation command                |
+| `review`                           | configuration, reviewer compact JWT, operation command                 |
+| `deliver-synthetic`                | configuration, requester compact JWT, Ed25519 PKCS8, operation command |
 
 The root configuration has exactly `schemaVersion`, `profile`, `replay`,
 `operations`, `replayCapacity`, `replayDmlMillis`, `scope`,
@@ -149,6 +156,15 @@ Separate stages then run `pnpm format:check`, documentation link/helpers,
 13-flow/drift checks, the four accepted CI-policy helper suites and committed,
 working-tree and index diff checks. PR134's five coverage shards remain policy
 evidence; this runner does not start hosted CI.
+
+After a later documentation-only preparation commit, the optional
+`TRACEPERMIT_REUSE_REPOSITORY_RECEIPT` may identify a prior private `repo`
+receipt. Reuse succeeds only when repository check and aggregate coverage both
+passed, candidate and source-manifest provenance match, the stored coverage XML
+matches its SHA256, and every intervening path is the runner, this runbook,
+`HANDOFF.md` or the traceability matrix. The runner copies those immutable
+receipts into the new private directory and continues at formatting; otherwise
+it stops before accepting the prior result.
 
 Keep 94% line and 75% branch coverage floors, every assertion, timeout, grant and
 workload active. Preserve and diagnose the first failure before any new command.
