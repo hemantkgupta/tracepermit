@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.tracepermit.persistence.identity.WorkloadIdentityReplayDatabase;
 import io.tracepermit.persistence.operations.OperationAuthorityAdministration;
 import io.tracepermit.persistence.operations.OperationDatabase;
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.PrintWriter;
 import java.net.InetAddress;
@@ -225,6 +226,123 @@ final class PostgresInstalledOrganizationOperatorTest {
   }
 
   @Test
+  void inProcessRuntimeCompletesTheSameBoundLifecycle() {
+    OrganizationOperatorReceipt registered =
+        direct(
+            "register",
+            requester("operations.register"),
+            fixture.registrationBytes("direct-valid-lifecycle"));
+    assertThat(registered.outcome()).isEqualTo("CREATED");
+    String operationId = registered.operationId();
+    assertThat(
+            direct(
+                    "inspect",
+                    requester("operations.execute"),
+                    command(operationId, "inspect", null))
+                .outcome())
+        .isEqualTo("OBSERVED");
+    assertThat(
+            direct(
+                    "evaluate",
+                    requester("operations.evaluate"),
+                    command(operationId, "evaluate", null))
+                .outcome())
+        .isEqualTo("EVALUATED");
+    assertThat(
+            direct("review", reviewer(), command(operationId, "review", "APPROVE")).outcome())
+        .isEqualTo("REVIEW_APPROVED");
+    assertThat(
+            direct(
+                    "deliver-synthetic",
+                    requester("operations.execute"),
+                    fixture.privateKey(),
+                    command(operationId, "deliver-synthetic", "CONFIRMED_SUCCESS"))
+                .outcome())
+        .isEqualTo("DELIVERY_SUCCEEDED");
+    OrganizationOperatorReceipt reconciled =
+        direct(
+            "reconcile",
+            requester("operations.execute"),
+            command(operationId, "reconcile", null));
+    assertThat(reconciled.outcome()).isEqualTo("RECONCILED");
+    assertThat(reconciled.dispatchStarted()).isTrue();
+  }
+
+  @Test
+  void inProcessDenialAndUnknownRemainFailClosedWithoutResend() {
+    OrganizationOperatorReceipt deniedRegistration =
+        direct(
+            "register",
+            requester("operations.register"),
+            fixture.registrationBytes("direct-denied-lifecycle"));
+    String denied = deniedRegistration.operationId();
+    assertThat(
+            direct(
+                    "deliver-synthetic",
+                    requester("operations.execute"),
+                    fixture.privateKey(),
+                    command(denied, "deliver-synthetic", "CONFIRMED_SUCCESS"))
+                .outcome())
+        .isEqualTo("REJECTED");
+    assertThat(
+            direct(
+                    "evaluate",
+                    requester("operations.evaluate"),
+                    command(denied, "evaluate", null))
+                .outcome())
+        .isEqualTo("EVALUATED");
+    assertThat(direct("review", reviewer(), command(denied, "review", "DENY")).outcome())
+        .isEqualTo("REVIEW_DENIED");
+    assertThat(
+            direct(
+                    "deliver-synthetic",
+                    requester("operations.execute"),
+                    fixture.privateKey(),
+                    command(denied, "deliver-synthetic", "CONFIRMED_SUCCESS"))
+                .outcome())
+        .isEqualTo("REJECTED");
+
+    OrganizationOperatorReceipt unknownRegistration =
+        direct(
+            "register",
+            requester("operations.register"),
+            fixture.registrationBytes("direct-unknown-lifecycle"));
+    String unknown = unknownRegistration.operationId();
+    assertThat(
+            direct(
+                    "evaluate",
+                    requester("operations.evaluate"),
+                    command(unknown, "evaluate", null))
+                .outcome())
+        .isEqualTo("EVALUATED");
+    assertThat(direct("review", reviewer(), command(unknown, "review", "APPROVE")).outcome())
+        .isEqualTo("REVIEW_APPROVED");
+    assertThat(
+            direct(
+                    "deliver-synthetic",
+                    requester("operations.execute"),
+                    fixture.privateKey(),
+                    command(unknown, "deliver-synthetic", "UNKNOWN"))
+                .outcome())
+        .isEqualTo("DELIVERY_UNKNOWN");
+    OrganizationOperatorReceipt reconciled =
+        direct(
+            "reconcile",
+            requester("operations.execute"),
+            command(unknown, "reconcile", null));
+    assertThat(reconciled.outcome()).isEqualTo("RECONCILED");
+    assertThat(reconciled.dispatchStarted()).isTrue();
+    assertThat(
+            direct(
+                    "deliver-synthetic",
+                    requester("operations.execute"),
+                    fixture.privateKey(),
+                    command(unknown, "deliver-synthetic", "CONFIRMED_SUCCESS"))
+                .outcome())
+        .isEqualTo("REJECTED");
+  }
+
+  @Test
   void installedCheckConfigIsOfflineWithAnApparentlyReadyLoopbackPort() throws Exception {
     try (var sentinel = new ServerSocket(0, 8, InetAddress.getByName("127.0.0.1"))) {
       sentinel.setSoTimeout(200);
@@ -397,6 +515,14 @@ final class PostgresInstalledOrganizationOperatorTest {
       process.toHandle().destroyForcibly();
       process.waitFor(5, TimeUnit.SECONDS);
     }
+  }
+
+  private OrganizationOperatorReceipt direct(String command, byte[]... frames) {
+    byte[][] all = new byte[frames.length + 1][];
+    all[0] = fixture.configBytes();
+    System.arraycopy(frames, 0, all, 1, frames.length);
+    return OrganizationOperatorWorker.execute(
+        new ByteArrayInputStream(OrganizationOperatorFixture.frames(all)), command);
   }
 
   private Thread capture(java.io.InputStream source, ByteArrayOutputStream target) {
