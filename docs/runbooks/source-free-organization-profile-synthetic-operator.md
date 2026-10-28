@@ -51,7 +51,14 @@ is `2bcfd4a2c7b249df77101c2e6d7d17ee47141d78`, tree
 in-process equivalents for valid, denied, UNKNOWN, reconciliation and no-resend
 runtime paths plus protocol, receipt, entrypoint and finite-supervisor boundary
 tests. No production exclusion, threshold, instrumentation hook or runtime
-behavior changed. Validation remains pending.
+behavior changed. The next complete aggregate passed every test task and reached
+19,104/20,324 covered lines (93.997245%) with 76.588884% branch coverage: one
+additional covered production line was required. The current source candidate is
+`42f2f811a5a8e175d6447d2f4402d79d29ab4ac1`, tree
+`3fa2bd18dc4a7ea0db4f24bd7528f97cbf2eca2c`, parent `87aee36`. Its existing
+boundary case now invokes `OrganizationFailure.initCause` and asserts that the
+redacted failure retains no private cause. Counts, thresholds and production
+behavior remain unchanged; validation remains pending.
 
 The source/documentation implementation checkpoint is
 `a9270e4651d39d4825b2ef3efcaccce684760aa7`, tree
@@ -60,7 +67,7 @@ sole parent. Its parent is the earlier accepted-main/qualification merge
 `5da2b6d48ba592537f1b9cf23dae753ddb604feb`; later normal merges preserve it.
 This is an unvalidated local checkpoint, not a qualification receipt or
 publication. The current candidate's relevant source manifest is
-`9ad9090e1dbf4448284de7b169209c0a173e6e665187bbd30d81f536a15b8cb9`.
+`0b79088a8cff701db3e389767a1ca5588de86209a03ff9fdf5c35a029eb6a482`.
 
 This lane owns the new executable module, its tests/docs and the additive durable
 organization factory. It does not own EKS, installed COMMIT-loss injection,
