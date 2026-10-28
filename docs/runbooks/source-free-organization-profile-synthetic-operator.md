@@ -7,25 +7,31 @@ REL-001/002/004/005/008; OPS-002/004/005. This is local synthetic evidence only.
 
 ## Candidate and ownership
 
-The working branch is `codex/source-free-organization-operator`. It normally
-merged published qualification commit
-`8108598a658121735dbd59d5a44053b3ff22da7a` into accepted main
-`dbb6e05930827633d7326240551ddeb73657c5a7`; the integration merge is
-`5da2b6d48ba592537f1b9cf23dae753ddb604feb`, tree
-`59f9a6b40bb29b1f0a28268098be0f5954d0be37`, with those ordered parents. Do not
-rebase, cherry-pick, reset or force-update this history.
+The working branch is `codex/source-free-organization-operator`. It preserves
+published qualification commit `8108598a658121735dbd59d5a44053b3ff22da7a`
+and the implementation checkpoint below. Accepted main through PR133 and PR134
+is `dfb7b3b11ed7af3b4d0230fae9adf6e514289ba5`, tree
+`0a9012fdedb7a2db72aba37de93e2adc891df48b`. The normal integration merge is
+`878013d68e90815fde57d792cf239f86338ae505`, tree
+`b228fd7a12e9a63f9c1b912751e8d7e79c098e4d`, with ordered parents
+`317e333d17b79ae5c64a11efcea366ab9ade9b0e` then accepted main. Do not rebase,
+cherry-pick, reset or force-update this history.
 
 The source/documentation implementation checkpoint is
 `a9270e4651d39d4825b2ef3efcaccce684760aa7`, tree
 `f3ad45469efddf2f6edf6b4fdd65622db2219651`, with the integration merge as its
-sole parent. This is an unvalidated local checkpoint, not a qualification receipt
-or publication.
+sole parent. Its parent is the earlier accepted-main/qualification merge
+`5da2b6d48ba592537f1b9cf23dae753ddb604feb`; later normal merges preserve it.
+This is an unvalidated local checkpoint, not a qualification receipt or
+publication. The reconciled candidate's relevant source manifest is
+`7c69e49ffa6819568ab1bca55fc863809bb0041b3a52d9aa5906fa7db30839fd`.
 
 This lane owns the new executable module, its tests/docs and the additive durable
 organization factory. It does not own EKS, installed COMMIT-loss injection,
-artifact/identity verification or credential-custody corrections. MariaDB10.6
-retirement is not present in the accepted base; retain its historical 9/9
-library receipt and do not add an installed 10.6 launcher.
+artifact/identity verification or credential-custody corrections. PR134 owns
+ADR0094 and retires MariaDB10.x integration qualification. Retain its historical
+9/9 library receipt as history, preserve PostgreSQL16.4 and MariaDB11.4.13, and
+do not add an installed 10.6 launcher or another exclusion.
 
 ## Closed installed contract
 
@@ -59,83 +65,26 @@ contenders.
 
 ## Focused manual validation
 
-Do not run these commands automatically. A human runs one command at a time,
-keeps private stdout/stderr/exit files and stops at the first non-zero exit. Use
-the existing JDK/cache/dependencies and cached PostgreSQL16.4 image only; do not
-install, download, restart/prune Docker or clean another owner's processes.
+Do not run the runner automatically or syntax-check it as part of preparation.
+The human runs
+`/Users/hemantkgupta/code-all-air/tracepermit/scripts/validate-source-free-organization-operator.sh`
+first with mode `focused`, then with mode `repo`, using the exact preparation
+HEAD supplied in the current handoff. The runner creates mode-separated private
+logs beneath `/private/tmp`, writes numeric exit files for every stage and stops
+on the first non-zero exit. It refuses a dirty or different checkout, source
+drift, missing prepared caches/images, a reused receipt directory or repository
+mode without a passing focused receipt.
 
-```bash
-set -euo pipefail
-cd /Users/hemantkgupta/code-all-air/tracepermit
-test "$(git branch --show-current)" = codex/source-free-organization-operator
-test "$(git show -s --format='%P' 5da2b6d48ba592537f1b9cf23dae753ddb604feb)" = \
-  "dbb6e05930827633d7326240551ddeb73657c5a7 8108598a658121735dbd59d5a44053b3ff22da7a"
-test "$(git show -s --format='%T' 5da2b6d48ba592537f1b9cf23dae753ddb604feb)" = \
-  59f9a6b40bb29b1f0a28268098be0f5954d0be37
-test "$(git rev-parse a9270e4651d39d4825b2ef3efcaccce684760aa7^{tree})" = \
-  f3ad45469efddf2f6edf6b4fdd65622db2219651
-git merge-base --is-ancestor a9270e4651d39d4825b2ef3efcaccce684760aa7 HEAD
-
-export JENV_VERSION=21
-export TRACEPERMIT_GRADLE_USER_HOME="$PWD/.cache/gradle"
-export GRADLE_USER_HOME="$TRACEPERMIT_GRADLE_USER_HOME"
-export COREPACK_ENABLE_NETWORK=0
-export PNPM_CONFIG_OFFLINE=true
-export GRADLE_OPTS="${GRADLE_OPTS:-} -Dorg.gradle.offline=true"
-
-TRACEPERMIT_PRIVATE_LOG_DIR="$(mktemp -d /private/tmp/tracepermit-org-operator.XXXXXX)"
-chmod 700 "$TRACEPERMIT_PRIVATE_LOG_DIR"
-git rev-parse HEAD >"$TRACEPERMIT_PRIVATE_LOG_DIR/head"
-git rev-parse HEAD^{tree} >"$TRACEPERMIT_PRIVATE_LOG_DIR/tree"
-git status --porcelain=v1 >"$TRACEPERMIT_PRIVATE_LOG_DIR/status"
-git diff --binary >"$TRACEPERMIT_PRIVATE_LOG_DIR/uncommitted.patch"
-{
-  git diff --name-only
-  git ls-files --others --exclude-standard
-} | LC_ALL=C sort -u >"$TRACEPERMIT_PRIVATE_LOG_DIR/uncommitted.paths"
-while IFS= read -r tracepermit_path; do
-  test -n "$tracepermit_path" || continue
-  shasum -a 256 -- "$tracepermit_path"
-done <"$TRACEPERMIT_PRIVATE_LOG_DIR/uncommitted.paths" \
-  >"$TRACEPERMIT_PRIVATE_LOG_DIR/uncommitted.sha256"
-
-run_private() {
-  tracepermit_label="$1"
-  shift
-  set +e
-  "$@" >"$TRACEPERMIT_PRIVATE_LOG_DIR/$tracepermit_label.stdout" \
-    2>"$TRACEPERMIT_PRIVATE_LOG_DIR/$tracepermit_label.stderr"
-  tracepermit_status=$?
-  set -e
-  printf '%s\n' "$tracepermit_status" \
-    >"$TRACEPERMIT_PRIVATE_LOG_DIR/$tracepermit_label.exit"
-  test "$tracepermit_status" -eq 0
-}
-
-run_private organization-protocol \
-  caffeinate -i /opt/homebrew/bin/jenv exec java/gradlew -p java \
-  :agentcore-organization-lifecycle-cli:test \
-  --tests io.tracepermit.agentcore.organizationcli.OrganizationOperatorProtocolTest \
-  --tests io.tracepermit.agentcore.organizationcli.OrganizationOperatorReceiptTest \
-  --tests io.tracepermit.agentcore.organizationcli.OrganizationOperatorIdentityTest \
-  --tests io.tracepermit.agentcore.organizationcli.OrganizationOperatorArchiveTest \
-  --offline --rerun-tasks --no-build-cache --no-configuration-cache \
-  --no-daemon --max-workers=1
-
-run_private organization-postgresql-installed \
-  caffeinate -i /opt/homebrew/bin/jenv exec java/gradlew -p java \
-  :agentcore-organization-lifecycle-cli:test \
-  --tests io.tracepermit.agentcore.organizationcli.PostgresInstalledOrganizationOperatorTest \
-  --offline --rerun-tasks --no-build-cache --no-configuration-cache \
-  --no-daemon --max-workers=1
-
-TRACEPERMIT_ORGANIZATION_ARCHIVE="$PWD/java/agentcore-organization-lifecycle-cli/build/distributions/tracepermit-synthetic-organization-operator-0.1.0-SNAPSHOT.tar"
-test -f "$TRACEPERMIT_ORGANIZATION_ARCHIVE"
-shasum -a 256 "$TRACEPERMIT_ORGANIZATION_ARCHIVE" \
-  >"$TRACEPERMIT_PRIVATE_LOG_DIR/archive.sha256"
-/usr/bin/tar -tf "$TRACEPERMIT_ORGANIZATION_ARCHIVE" \
-  >"$TRACEPERMIT_PRIVATE_LOG_DIR/archive.inventory"
-```
+Focused mode executes one cache-disabled, forced Gradle invocation with one
+Gradle worker and five exact selectors: four protocol, two receipt, four
+identity, two archive and four installed PostgreSQL cases (16 total). It does
+not alter test-internal concurrency, deadlines, grants, workloads or cleanup.
+The installed selector retains denial, independent review, substitutions,
+UNKNOWN/restart/no-resend behavior and eight contenders. The actual archive
+used by that invocation is immediately copied into the private receipt; its
+SHA256, tar inventory, outside-checkout extraction path, extracted inventory
+and unique production class origins are captured before any repository stage.
+No database fact is relabeled as an externally observed target invocation.
 
 The installed contract uses a tar extracted outside all checkouts, a Java-only
 `PATH`, production class origins, runtime-generated RSA/Ed25519 material,
@@ -146,23 +95,16 @@ missing receipts as an observed target invocation count.
 
 ## Separate repository and coverage gates
 
-Run only after both focused commands pass. `pnpm check` already includes the
-Java aggregate; do not automatically follow it with a duplicate `checkAll`.
-Run a separate aggregate only when the human explicitly wants a distinct fresh
-coverage receipt.
-
-```bash
-run_private repository-check caffeinate -i corepack pnpm check
-run_private format-check corepack pnpm format:check
-run_private documentation-links corepack pnpm docs:links
-run_private documentation-flows corepack pnpm docs:flows:check
-
-# Human-directed separate coverage receipt only; not an automatic retry.
-run_private aggregate-coverage \
-  caffeinate -i /opt/homebrew/bin/jenv exec java/gradlew -p java checkAll \
-  --offline --rerun-tasks --no-build-cache --no-configuration-cache \
-  --no-daemon --max-workers=1
-```
+Repository mode preserves all pre-existing Java build outputs in the private
+receipt before removing them from the checkout. With no Java outputs and Gradle
+build/configuration caches disabled, unchanged `pnpm check` performs the single
+fresh complete aggregate and enforces the unchanged 94% line/75% branch floors.
+There is no second `checkAll` invocation. The runner records the newly generated
+aggregate XML and requires its timestamp to follow repository-check start.
+Separate stages then run `pnpm format:check`, documentation link/helpers,
+13-flow/drift checks, the four accepted CI-policy helper suites and committed,
+working-tree and index diff checks. PR134's five coverage shards remain policy
+evidence; this runner does not start hosted CI.
 
 Keep 94% line and 75% branch coverage floors, every assertion, timeout, grant and
 workload active. Preserve and diagnose the first failure before any new command.
