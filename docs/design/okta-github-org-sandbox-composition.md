@@ -1,6 +1,6 @@
 # Okta/GitHub organization sandbox composition
 
-Status: **implementation candidate; fixture review pending; no live authority or target access**.
+Status: **library candidate with unexecuted three-engine contract; no live authority or target access**.
 
 Requirements: FR-001/008/009/012/015; SEC-001/002/003/006/007/008/012/019;
 REL-002/005/008; OPS-005. This candidate promotes no whole requirement.
@@ -176,6 +176,16 @@ Database-engine, crash, concurrency, coverage, installed, three-engine and
 live-provider cases remain qualification work; this source change does not claim
 their results. No hosted CI, deployment, login, live-provider token minting or
 live target call was executed.
+
+The additive
+[organization-profile three-engine contract](../runbooks/org-sandbox-three-engine-qualification.md)
+now composes the accepted libraries on PostgreSQL16.4, MariaDB11.4.13 and
+MariaDB10.6.25 with restricted runtime grants and runtime-generated RSA/Ed25519
+material. It covers the exact organization lifecycle, negative authority/profile
+matrix, eight-way contention, writer-time expiry after a real row-lock wait,
+durable unknown/no-resend reconciliation and the retained Track E compatibility
+surface. The contract has not been executed; no database or coverage result is
+claimed.
 
 ## Genuinely new approvals still required
 

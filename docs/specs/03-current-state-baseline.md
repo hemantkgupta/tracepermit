@@ -561,6 +561,15 @@ exact organization inputs, EKS containment, real durable dispatch and live
 read-only reconciliation remain absent. See the
 [composition contract](../design/okta-github-org-sandbox-composition.md).
 
+An additive `OrgSandboxLifecycleContract` and exact PostgreSQL16.4,
+MariaDB11.4.13 and MariaDB10.6.25 wrappers now compose the existing organization
+libraries with restricted runtime grants, generated signed identities/keys,
+durable synthetic delivery, real review contention and writer-time expiry after
+a row-lock wait. This test source has not been executed and is not qualification
+evidence. It changes no production, EKS, installed COMMIT-loss or artifact
+verification path; see its
+[human-run qualification contract](../runbooks/org-sandbox-three-engine-qualification.md).
+
 ## Controls not yet established
 
 The repository is a security-control POC, **not** a deployable enterprise

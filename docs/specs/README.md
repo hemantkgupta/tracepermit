@@ -10,7 +10,9 @@ verified-role-plus-enrollment authority and source-compatible durable lifecycle
 types, but no credential/key source, ingress, real dispatch, live reconciliation
 or deployment. Its focused generated/offline fixture cases passed locally on
 2026-10-28; aggregate database/process and three-engine qualification remains
-incomplete and no live-provider result is claimed.
+incomplete and no live-provider result is claimed. A new human-run
+[three-engine contract](../runbooks/org-sandbox-three-engine-qualification.md)
+is implemented but unexecuted.
 
 [ADR0093](../architecture/0093-source-free-operation-lifecycle.md) adds a
 separate source-free Java21 command that composes the closed V7 operation
