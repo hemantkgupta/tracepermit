@@ -84,4 +84,21 @@ test("new modules join core automatically and missing execution evidence fails",
   assert.throws(() => validateCoverage(root, destination, sha, run));
   assert.throws(() => exportCoverage(root, destination, "core", sha, run));
   assert.throws(() => modulesFor("unknown", root));
+  assert.throws(() => modulesFor("operations-mariadb106", root));
+});
+
+test("an obsolete MariaDB 10 coverage shard is not accepted", (t) => {
+  const { root, destination } = fixture(t);
+  mkdirSync(join(destination, "operations-mariadb106"));
+  assert.throws(() => validateCoverage(root, destination, sha, run));
+});
+
+test("coverage requires exactly the five active Java lanes", () => {
+  assert.deepEqual(lanes, [
+    "core",
+    "postgres",
+    "mariadb",
+    "operations-postgres",
+    "operations-mariadb114",
+  ]);
 });

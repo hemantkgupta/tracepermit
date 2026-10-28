@@ -89,12 +89,13 @@ CI selects checks from the complete PR diff using the base branch's policy:
 The final `verify` check requires successful change detection and every selected
 job. It accepts a skipped job only when that known plan makes it optional;
 failed, cancelled, missing or unknown results cannot pass. CI uses separate
-runners for core/common tests, PostgreSQL, MariaDB and three operation-engine
+runners for core/common tests, PostgreSQL, MariaDB 11.4 and two operation-engine
 shards. Their complete coverage is bound to the same commit and workflow run,
 then checked against the unchanged 94% line / 75% branch floors. Database tests
 always execute fresh, once per lane; the former repeated qualification passes
-are consolidated into these mandatory shards. Local `pnpm check` remains the
-complete suite.
+are consolidated into these mandatory shards. Local `pnpm check` runs the same
+active engine scope. MariaDB 10.x integration qualification is retired; its
+runtime compatibility remains as historical, unrefreshed evidence.
 
 A newer update to the same PR cancels its older CI run. Different PRs and pushes
 to `main` keep their own runs. Per-job Gradle caches refresh after successful

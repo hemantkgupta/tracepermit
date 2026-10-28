@@ -5,6 +5,10 @@ contract after [V6 admission](closed-operation-admission.md). Qualification is
 incomplete; human-authorized draft publication retains known failures and unrun
 gates. No passing candidate or final merge readiness is claimed.
 
+Current automated engine scope is PostgreSQL 16.4 and MariaDB 11.4.13. Earlier
+MariaDB 10.6.25 results and failures remain historical under
+[ADR0094](../architecture/0094-mariadb-10-qualification-retirement.md).
+
 ## Operator boundary
 
 This is an unwired Java library and a deterministic in-memory target. No HTTP/MCP

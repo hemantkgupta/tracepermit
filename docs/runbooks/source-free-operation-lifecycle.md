@@ -3,6 +3,10 @@
 Status: implemented candidate. Historical local qualification and the pending
 PR130 worker-discovery repair validation are recorded separately below.
 
+Current automated engine scope is PostgreSQL 16.4 and MariaDB 11.4.13. Earlier
+MariaDB 10.6.25 receipts remain historical under
+[ADR0094](../architecture/0094-mariadb-10-qualification-retirement.md).
+
 Requirements: FR-003/008/011/012; SEC-001/003/006/009/012;
 REL-001/002/004; OPS-002/004. This is partial evidence only.
 
@@ -89,7 +93,7 @@ restricted database principals, exact V7 stores and only synthetic targets.
 | Result uncertainty     | Confirmed rejection and unknown stay durable; repeat delivery refuses; reconciliation observes without retry                                   |
 | Contention             | Eight installed delivery contenders create one admission and at most one synthetic dispatch; no automatic retry                                |
 | Supervisor             | Worker death before input returns fixed unknown with empty stderr and no effect; malformed/hostile child output fails closed                   |
-| Three exact engines    | Equivalent installed lifecycle cases on PostgreSQL 16.4, MariaDB 11.4.13 and MariaDB 10.6.25                                                   |
+| Active exact engines   | Equivalent installed lifecycle cases on PostgreSQL 16.4 and MariaDB 11.4.13; MariaDB 10.6.25 results are historical under ADR0094              |
 | Coverage mirror        | PostgreSQL in-process execution of the identical closed worker makes deliberately halted installed paths measurable without weakening them     |
 
 The final fresh module gate passed 25 tests with zero failures, errors or skips:
