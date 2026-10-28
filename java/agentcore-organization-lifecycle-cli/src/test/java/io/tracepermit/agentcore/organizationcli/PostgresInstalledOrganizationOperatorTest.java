@@ -435,8 +435,19 @@ final class PostgresInstalledOrganizationOperatorTest {
               .filter(value -> value.outcome().equals("DELIVERY_SUCCEEDED"))
               .count();
       assertThat(successes).isBetween(0L, 1L);
-      assertThat(receipts.stream().filter(value -> value.outcome().equals("REJECTED")))
-          .hasSize(8 - (int) successes);
+      assertThat(
+              receipts.stream()
+                  .filter(value -> !value.outcome().equals("DELIVERY_SUCCEEDED")))
+          .hasSize(8 - (int) successes)
+          .allSatisfy(
+              value -> {
+                // A concurrent pre-effect admission write may be conservatively UNKNOWN rather
+                // than REJECTED. Both outcomes are non-authorizing and forbid automatic retry.
+                assertThat(value.outcome()).isIn("REJECTED", "UNKNOWN");
+                assertThat(value.exitCode()).isEqualTo(1);
+                assertThat(value.operationId()).isNull();
+                assertThat(value.dispatchStarted()).isNull();
+              });
     }
     OrganizationOperatorReceipt reconciled =
         call(
