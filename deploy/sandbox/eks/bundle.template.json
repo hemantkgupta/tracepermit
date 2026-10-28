@@ -1,0 +1,668 @@
+{
+  "apiVersion": "v1",
+  "kind": "List",
+  "items": [
+    {
+      "apiVersion": "v1",
+      "kind": "Namespace",
+      "metadata": {
+        "name": "${agentNamespace}",
+        "annotations": {
+          "tracepermit.dev/profile": "tracepermit-eks-synthetic-sandbox-v1",
+          "tracepermit.dev/stage": "P1_SYNTHETIC_ONLY",
+          "tracepermit.dev/cluster-arn": "${clusterArn}",
+          "tracepermit.dev/source-commit": "${sourceCommit}",
+          "tracepermit.dev/archive-sha256": "${archiveSha256}",
+          "tracepermit.dev/configuration-sha256": "${configurationFingerprint}",
+          "tracepermit.dev/cni-version": "${cniVersion}",
+          "tracepermit.dev/policy-mode": "strict",
+          "tracepermit.dev/database-pvc-uid": "${databasePvcUid}",
+          "tracepermit.dev/database-access-mode": "ReadWriteOncePod"
+        },
+        "labels": {
+          "pod-security.kubernetes.io/enforce": "restricted",
+          "pod-security.kubernetes.io/enforce-version": "${policyVersion}",
+          "pod-security.kubernetes.io/audit": "restricted",
+          "pod-security.kubernetes.io/audit-version": "${policyVersion}",
+          "pod-security.kubernetes.io/warn": "restricted",
+          "pod-security.kubernetes.io/warn-version": "${policyVersion}"
+        }
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "ServiceAccount",
+      "metadata": {
+        "name": "tp-agent",
+        "annotations": {
+          "tracepermit.dev/profile": "tracepermit-eks-synthetic-sandbox-v1",
+          "tracepermit.dev/stage": "P1_SYNTHETIC_ONLY",
+          "tracepermit.dev/cluster-arn": "${clusterArn}",
+          "tracepermit.dev/source-commit": "${sourceCommit}",
+          "tracepermit.dev/archive-sha256": "${archiveSha256}",
+          "tracepermit.dev/configuration-sha256": "${configurationFingerprint}",
+          "tracepermit.dev/cni-version": "${cniVersion}",
+          "tracepermit.dev/policy-mode": "strict",
+          "tracepermit.dev/database-pvc-uid": "${databasePvcUid}",
+          "tracepermit.dev/database-access-mode": "ReadWriteOncePod"
+        },
+        "namespace": "${agentNamespace}"
+      },
+      "automountServiceAccountToken": false
+    },
+    {
+      "apiVersion": "networking.k8s.io/v1",
+      "kind": "NetworkPolicy",
+      "metadata": {
+        "name": "tp-default-deny",
+        "annotations": {
+          "tracepermit.dev/profile": "tracepermit-eks-synthetic-sandbox-v1",
+          "tracepermit.dev/stage": "P1_SYNTHETIC_ONLY",
+          "tracepermit.dev/cluster-arn": "${clusterArn}",
+          "tracepermit.dev/source-commit": "${sourceCommit}",
+          "tracepermit.dev/archive-sha256": "${archiveSha256}",
+          "tracepermit.dev/configuration-sha256": "${configurationFingerprint}",
+          "tracepermit.dev/cni-version": "${cniVersion}",
+          "tracepermit.dev/policy-mode": "strict",
+          "tracepermit.dev/database-pvc-uid": "${databasePvcUid}",
+          "tracepermit.dev/database-access-mode": "ReadWriteOncePod"
+        },
+        "namespace": "${agentNamespace}"
+      },
+      "spec": {
+        "podSelector": {},
+        "policyTypes": ["Ingress", "Egress"],
+        "ingress": [],
+        "egress": []
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "ResourceQuota",
+      "metadata": {
+        "name": "tp-rehearsal-quota",
+        "annotations": {
+          "tracepermit.dev/profile": "tracepermit-eks-synthetic-sandbox-v1",
+          "tracepermit.dev/stage": "P1_SYNTHETIC_ONLY",
+          "tracepermit.dev/cluster-arn": "${clusterArn}",
+          "tracepermit.dev/source-commit": "${sourceCommit}",
+          "tracepermit.dev/archive-sha256": "${archiveSha256}",
+          "tracepermit.dev/configuration-sha256": "${configurationFingerprint}",
+          "tracepermit.dev/cni-version": "${cniVersion}",
+          "tracepermit.dev/policy-mode": "strict",
+          "tracepermit.dev/database-pvc-uid": "${databasePvcUid}",
+          "tracepermit.dev/database-access-mode": "ReadWriteOncePod"
+        },
+        "namespace": "${agentNamespace}"
+      },
+      "spec": {
+        "hard": {
+          "pods": "3",
+          "requests.cpu": "1",
+          "limits.cpu": "2",
+          "requests.memory": "512Mi",
+          "limits.memory": "1Gi",
+          "secrets": "0",
+          "services": "0",
+          "persistentvolumeclaims": "0",
+          "count/jobs.batch": "1"
+        }
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "LimitRange",
+      "metadata": {
+        "name": "tp-rehearsal-limits",
+        "annotations": {
+          "tracepermit.dev/profile": "tracepermit-eks-synthetic-sandbox-v1",
+          "tracepermit.dev/stage": "P1_SYNTHETIC_ONLY",
+          "tracepermit.dev/cluster-arn": "${clusterArn}",
+          "tracepermit.dev/source-commit": "${sourceCommit}",
+          "tracepermit.dev/archive-sha256": "${archiveSha256}",
+          "tracepermit.dev/configuration-sha256": "${configurationFingerprint}",
+          "tracepermit.dev/cni-version": "${cniVersion}",
+          "tracepermit.dev/policy-mode": "strict",
+          "tracepermit.dev/database-pvc-uid": "${databasePvcUid}",
+          "tracepermit.dev/database-access-mode": "ReadWriteOncePod"
+        },
+        "namespace": "${agentNamespace}"
+      },
+      "spec": {
+        "limits": [
+          {
+            "type": "Container",
+            "default": {
+              "cpu": "500m",
+              "memory": "256Mi"
+            },
+            "defaultRequest": {
+              "cpu": "100m",
+              "memory": "128Mi"
+            },
+            "max": {
+              "cpu": "1",
+              "memory": "512Mi"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Namespace",
+      "metadata": {
+        "name": "${trustedNamespace}",
+        "annotations": {
+          "tracepermit.dev/profile": "tracepermit-eks-synthetic-sandbox-v1",
+          "tracepermit.dev/stage": "P1_SYNTHETIC_ONLY",
+          "tracepermit.dev/cluster-arn": "${clusterArn}",
+          "tracepermit.dev/source-commit": "${sourceCommit}",
+          "tracepermit.dev/archive-sha256": "${archiveSha256}",
+          "tracepermit.dev/configuration-sha256": "${configurationFingerprint}",
+          "tracepermit.dev/cni-version": "${cniVersion}",
+          "tracepermit.dev/policy-mode": "strict",
+          "tracepermit.dev/database-pvc-uid": "${databasePvcUid}",
+          "tracepermit.dev/database-access-mode": "ReadWriteOncePod"
+        },
+        "labels": {
+          "pod-security.kubernetes.io/enforce": "restricted",
+          "pod-security.kubernetes.io/enforce-version": "${policyVersion}",
+          "pod-security.kubernetes.io/audit": "restricted",
+          "pod-security.kubernetes.io/audit-version": "${policyVersion}",
+          "pod-security.kubernetes.io/warn": "restricted",
+          "pod-security.kubernetes.io/warn-version": "${policyVersion}"
+        }
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "ServiceAccount",
+      "metadata": {
+        "name": "tp-trusted",
+        "annotations": {
+          "tracepermit.dev/profile": "tracepermit-eks-synthetic-sandbox-v1",
+          "tracepermit.dev/stage": "P1_SYNTHETIC_ONLY",
+          "tracepermit.dev/cluster-arn": "${clusterArn}",
+          "tracepermit.dev/source-commit": "${sourceCommit}",
+          "tracepermit.dev/archive-sha256": "${archiveSha256}",
+          "tracepermit.dev/configuration-sha256": "${configurationFingerprint}",
+          "tracepermit.dev/cni-version": "${cniVersion}",
+          "tracepermit.dev/policy-mode": "strict",
+          "tracepermit.dev/database-pvc-uid": "${databasePvcUid}",
+          "tracepermit.dev/database-access-mode": "ReadWriteOncePod"
+        },
+        "namespace": "${trustedNamespace}"
+      },
+      "automountServiceAccountToken": false
+    },
+    {
+      "apiVersion": "networking.k8s.io/v1",
+      "kind": "NetworkPolicy",
+      "metadata": {
+        "name": "tp-default-deny",
+        "annotations": {
+          "tracepermit.dev/profile": "tracepermit-eks-synthetic-sandbox-v1",
+          "tracepermit.dev/stage": "P1_SYNTHETIC_ONLY",
+          "tracepermit.dev/cluster-arn": "${clusterArn}",
+          "tracepermit.dev/source-commit": "${sourceCommit}",
+          "tracepermit.dev/archive-sha256": "${archiveSha256}",
+          "tracepermit.dev/configuration-sha256": "${configurationFingerprint}",
+          "tracepermit.dev/cni-version": "${cniVersion}",
+          "tracepermit.dev/policy-mode": "strict",
+          "tracepermit.dev/database-pvc-uid": "${databasePvcUid}",
+          "tracepermit.dev/database-access-mode": "ReadWriteOncePod"
+        },
+        "namespace": "${trustedNamespace}"
+      },
+      "spec": {
+        "podSelector": {},
+        "policyTypes": ["Ingress", "Egress"],
+        "ingress": [],
+        "egress": []
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "ResourceQuota",
+      "metadata": {
+        "name": "tp-rehearsal-quota",
+        "annotations": {
+          "tracepermit.dev/profile": "tracepermit-eks-synthetic-sandbox-v1",
+          "tracepermit.dev/stage": "P1_SYNTHETIC_ONLY",
+          "tracepermit.dev/cluster-arn": "${clusterArn}",
+          "tracepermit.dev/source-commit": "${sourceCommit}",
+          "tracepermit.dev/archive-sha256": "${archiveSha256}",
+          "tracepermit.dev/configuration-sha256": "${configurationFingerprint}",
+          "tracepermit.dev/cni-version": "${cniVersion}",
+          "tracepermit.dev/policy-mode": "strict",
+          "tracepermit.dev/database-pvc-uid": "${databasePvcUid}",
+          "tracepermit.dev/database-access-mode": "ReadWriteOncePod"
+        },
+        "namespace": "${trustedNamespace}"
+      },
+      "spec": {
+        "hard": {
+          "pods": "3",
+          "requests.cpu": "1",
+          "limits.cpu": "2",
+          "requests.memory": "512Mi",
+          "limits.memory": "1Gi",
+          "secrets": "0",
+          "services": "0",
+          "persistentvolumeclaims": "1",
+          "count/jobs.batch": "1"
+        }
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "LimitRange",
+      "metadata": {
+        "name": "tp-rehearsal-limits",
+        "annotations": {
+          "tracepermit.dev/profile": "tracepermit-eks-synthetic-sandbox-v1",
+          "tracepermit.dev/stage": "P1_SYNTHETIC_ONLY",
+          "tracepermit.dev/cluster-arn": "${clusterArn}",
+          "tracepermit.dev/source-commit": "${sourceCommit}",
+          "tracepermit.dev/archive-sha256": "${archiveSha256}",
+          "tracepermit.dev/configuration-sha256": "${configurationFingerprint}",
+          "tracepermit.dev/cni-version": "${cniVersion}",
+          "tracepermit.dev/policy-mode": "strict",
+          "tracepermit.dev/database-pvc-uid": "${databasePvcUid}",
+          "tracepermit.dev/database-access-mode": "ReadWriteOncePod"
+        },
+        "namespace": "${trustedNamespace}"
+      },
+      "spec": {
+        "limits": [
+          {
+            "type": "Container",
+            "default": {
+              "cpu": "500m",
+              "memory": "256Mi"
+            },
+            "defaultRequest": {
+              "cpu": "100m",
+              "memory": "128Mi"
+            },
+            "max": {
+              "cpu": "1",
+              "memory": "512Mi"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "networking.k8s.io/v1",
+      "kind": "NetworkPolicy",
+      "metadata": {
+        "name": "tp-probe-positive-control",
+        "annotations": {
+          "tracepermit.dev/profile": "tracepermit-eks-synthetic-sandbox-v1",
+          "tracepermit.dev/stage": "P1_SYNTHETIC_ONLY",
+          "tracepermit.dev/cluster-arn": "${clusterArn}",
+          "tracepermit.dev/source-commit": "${sourceCommit}",
+          "tracepermit.dev/archive-sha256": "${archiveSha256}",
+          "tracepermit.dev/configuration-sha256": "${configurationFingerprint}",
+          "tracepermit.dev/cni-version": "${cniVersion}",
+          "tracepermit.dev/policy-mode": "strict",
+          "tracepermit.dev/database-pvc-uid": "${databasePvcUid}",
+          "tracepermit.dev/database-access-mode": "ReadWriteOncePod"
+        },
+        "namespace": "${agentNamespace}"
+      },
+      "spec": {
+        "podSelector": {
+          "matchLabels": {
+            "app": "tp-agent-probe"
+          }
+        },
+        "policyTypes": ["Egress"],
+        "egress": [
+          {
+            "to": [
+              {
+                "ipBlock": {
+                  "cidr": "${controlCidr}"
+                }
+              }
+            ],
+            "ports": [
+              {
+                "protocol": "TCP",
+                "port": 18080
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "apiVersion": "batch/v1",
+      "kind": "Job",
+      "metadata": {
+        "name": "${jobName}",
+        "annotations": {
+          "tracepermit.dev/profile": "tracepermit-eks-synthetic-sandbox-v1",
+          "tracepermit.dev/stage": "P1_SYNTHETIC_ONLY",
+          "tracepermit.dev/cluster-arn": "${clusterArn}",
+          "tracepermit.dev/source-commit": "${sourceCommit}",
+          "tracepermit.dev/archive-sha256": "${archiveSha256}",
+          "tracepermit.dev/configuration-sha256": "${configurationFingerprint}",
+          "tracepermit.dev/cni-version": "${cniVersion}",
+          "tracepermit.dev/policy-mode": "strict",
+          "tracepermit.dev/database-pvc-uid": "${databasePvcUid}",
+          "tracepermit.dev/database-access-mode": "ReadWriteOncePod"
+        },
+        "namespace": "${trustedNamespace}"
+      },
+      "spec": {
+        "suspend": true,
+        "backoffLimit": 0,
+        "completions": 1,
+        "parallelism": 1,
+        "activeDeadlineSeconds": 120,
+        "template": {
+          "metadata": {
+            "labels": {
+              "app": "tp-lifecycle"
+            }
+          },
+          "spec": {
+            "serviceAccountName": "tp-trusted",
+            "automountServiceAccountToken": false,
+            "restartPolicy": "Never",
+            "hostNetwork": false,
+            "hostPID": false,
+            "hostIPC": false,
+            "shareProcessNamespace": false,
+            "enableServiceLinks": false,
+            "terminationGracePeriodSeconds": 10,
+            "dnsPolicy": "None",
+            "dnsConfig": {
+              "nameservers": ["127.0.0.1"]
+            },
+            "nodeSelector": {
+              "kubernetes.io/os": "linux",
+              "tracepermit.node-restriction.kubernetes.io/pool": "${trustedNodePool}",
+              "kubernetes.io/arch": "${architecture}"
+            },
+            "tolerations": [
+              {
+                "key": "tracepermit.dev/pool",
+                "operator": "Equal",
+                "value": "${trustedNodePool}",
+                "effect": "NoSchedule"
+              }
+            ],
+            "securityContext": {
+              "runAsNonRoot": true,
+              "runAsUser": 10001,
+              "runAsGroup": 10001,
+              "fsGroup": 70,
+              "seccompProfile": {
+                "type": "RuntimeDefault"
+              }
+            },
+            "initContainers": [
+              {
+                "name": "postgres-loopback",
+                "image": "${databaseImage}",
+                "imagePullPolicy": "Never",
+                "restartPolicy": "Always",
+                "command": [
+                  "postgres",
+                  "-D",
+                  "/var/lib/postgresql/data/pgdata",
+                  "-c",
+                  "listen_addresses=127.0.0.1",
+                  "-c",
+                  "unix_socket_directories=/tmp"
+                ],
+                "securityContext": {
+                  "runAsNonRoot": true,
+                  "runAsUser": 70,
+                  "runAsGroup": 70,
+                  "allowPrivilegeEscalation": false,
+                  "readOnlyRootFilesystem": true,
+                  "capabilities": {
+                    "drop": ["ALL"]
+                  },
+                  "seccompProfile": {
+                    "type": "RuntimeDefault"
+                  }
+                },
+                "resources": {
+                  "requests": {
+                    "cpu": "100m",
+                    "memory": "128Mi"
+                  },
+                  "limits": {
+                    "cpu": "500m",
+                    "memory": "256Mi"
+                  }
+                },
+                "startupProbe": {
+                  "exec": {
+                    "command": ["pg_isready", "-h", "127.0.0.1", "-p", "5432"]
+                  },
+                  "periodSeconds": 2,
+                  "timeoutSeconds": 1,
+                  "failureThreshold": 10
+                },
+                "volumeMounts": [
+                  {
+                    "name": "database",
+                    "mountPath": "/var/lib/postgresql/data"
+                  },
+                  {
+                    "name": "postgres-tmp",
+                    "mountPath": "/tmp"
+                  }
+                ]
+              }
+            ],
+            "containers": [
+              {
+                "name": "lifecycle",
+                "image": "${runtimeImage}",
+                "imagePullPolicy": "Never",
+                "command": [
+                  "/opt/tracepermit/bin/tracepermit-synthetic-operation-lifecycle"
+                ],
+                "args": ["${command}"],
+                "stdin": true,
+                "stdinOnce": true,
+                "tty": false,
+                "securityContext": {
+                  "runAsNonRoot": true,
+                  "runAsUser": 10001,
+                  "runAsGroup": 10001,
+                  "allowPrivilegeEscalation": false,
+                  "readOnlyRootFilesystem": true,
+                  "capabilities": {
+                    "drop": ["ALL"]
+                  },
+                  "seccompProfile": {
+                    "type": "RuntimeDefault"
+                  }
+                },
+                "terminationMessagePolicy": "File",
+                "resources": {
+                  "requests": {
+                    "cpu": "100m",
+                    "memory": "128Mi"
+                  },
+                  "limits": {
+                    "cpu": "500m",
+                    "memory": "256Mi"
+                  }
+                },
+                "volumeMounts": [
+                  {
+                    "name": "lifecycle-tmp",
+                    "mountPath": "/tmp"
+                  }
+                ]
+              }
+            ],
+            "volumes": [
+              {
+                "name": "database",
+                "persistentVolumeClaim": {
+                  "claimName": "${databasePvc}",
+                  "readOnly": false
+                }
+              },
+              {
+                "name": "postgres-tmp",
+                "emptyDir": {
+                  "medium": "Memory",
+                  "sizeLimit": "32Mi"
+                }
+              },
+              {
+                "name": "lifecycle-tmp",
+                "emptyDir": {
+                  "medium": "Memory",
+                  "sizeLimit": "32Mi"
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "batch/v1",
+      "kind": "Job",
+      "metadata": {
+        "name": "${probeName}",
+        "annotations": {
+          "tracepermit.dev/profile": "tracepermit-eks-synthetic-sandbox-v1",
+          "tracepermit.dev/stage": "P1_SYNTHETIC_ONLY",
+          "tracepermit.dev/cluster-arn": "${clusterArn}",
+          "tracepermit.dev/source-commit": "${sourceCommit}",
+          "tracepermit.dev/archive-sha256": "${archiveSha256}",
+          "tracepermit.dev/configuration-sha256": "${configurationFingerprint}",
+          "tracepermit.dev/cni-version": "${cniVersion}",
+          "tracepermit.dev/policy-mode": "strict",
+          "tracepermit.dev/database-pvc-uid": "${databasePvcUid}",
+          "tracepermit.dev/database-access-mode": "ReadWriteOncePod"
+        },
+        "namespace": "${agentNamespace}"
+      },
+      "spec": {
+        "suspend": true,
+        "backoffLimit": 0,
+        "completions": 1,
+        "parallelism": 1,
+        "activeDeadlineSeconds": 30,
+        "template": {
+          "metadata": {
+            "labels": {
+              "app": "tp-agent-probe"
+            }
+          },
+          "spec": {
+            "serviceAccountName": "tp-agent",
+            "automountServiceAccountToken": false,
+            "restartPolicy": "Never",
+            "hostNetwork": false,
+            "hostPID": false,
+            "hostIPC": false,
+            "shareProcessNamespace": false,
+            "enableServiceLinks": false,
+            "terminationGracePeriodSeconds": 10,
+            "dnsPolicy": "None",
+            "dnsConfig": {
+              "nameservers": ["127.0.0.1"]
+            },
+            "nodeSelector": {
+              "kubernetes.io/os": "linux",
+              "tracepermit.node-restriction.kubernetes.io/pool": "${agentNodePool}",
+              "kubernetes.io/arch": "${architecture}"
+            },
+            "tolerations": [
+              {
+                "key": "tracepermit.dev/pool",
+                "operator": "Equal",
+                "value": "${agentNodePool}",
+                "effect": "NoSchedule"
+              }
+            ],
+            "securityContext": {
+              "runAsNonRoot": true,
+              "runAsUser": 10001,
+              "runAsGroup": 10001,
+              "fsGroup": 10001,
+              "seccompProfile": {
+                "type": "RuntimeDefault"
+              }
+            },
+            "containers": [
+              {
+                "name": "probe",
+                "image": "${runtimeImage}",
+                "imagePullPolicy": "Never",
+                "command": [
+                  "/opt/java/openjdk/bin/java",
+                  "-Xms16m",
+                  "-Xmx64m",
+                  "-XX:ActiveProcessorCount=2",
+                  "-cp",
+                  "/opt/sandbox/lib/*",
+                  "io.tracepermit.sandbox.eks.EksNetworkProbe",
+                  "${controlIPv4}",
+                  "${kubernetesApiIPv4}",
+                  "${protectedTargetIPv4}"
+                ],
+                "securityContext": {
+                  "runAsNonRoot": true,
+                  "runAsUser": 10001,
+                  "runAsGroup": 10001,
+                  "allowPrivilegeEscalation": false,
+                  "readOnlyRootFilesystem": true,
+                  "capabilities": {
+                    "drop": ["ALL"]
+                  },
+                  "seccompProfile": {
+                    "type": "RuntimeDefault"
+                  }
+                },
+                "terminationMessagePolicy": "File",
+                "resources": {
+                  "requests": {
+                    "cpu": "100m",
+                    "memory": "128Mi"
+                  },
+                  "limits": {
+                    "cpu": "500m",
+                    "memory": "256Mi"
+                  }
+                },
+                "volumeMounts": [
+                  {
+                    "name": "probe-tmp",
+                    "mountPath": "/tmp"
+                  }
+                ]
+              }
+            ],
+            "volumes": [
+              {
+                "name": "probe-tmp",
+                "emptyDir": {
+                  "medium": "Memory",
+                  "sizeLimit": "16Mi"
+                }
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

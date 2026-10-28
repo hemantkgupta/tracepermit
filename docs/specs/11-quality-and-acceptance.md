@@ -1,5 +1,23 @@
 # Quality and acceptance
 
+## Offline EKS bundle candidate — manual evidence pending
+
+The separate `:eks-sandbox-bundle:test` gate covers the fixed suspended manifest
+contract, explicit configuration, negative security mutations, safe/redacted
+private file handling, renderer offline-effect tripwires, numeric probe result
+classification and an extracted archive outside the checkout. Run it manually
+before the complete unchanged repository and94% LINE/75% BRANCH gates. The
+writer has not run these checks. Passing offline checks must not be presented
+as deployed CNI/RBAC/admission/credential or real-provider acceptance. See the
+[P1 runbook](../runbooks/eks-synthetic-sandbox-bundle.md).
+
+The retained PR130-base human result passed 10 EKS cases and the repository
+gate, with 94.083611% LINE/77.338933% BRANCH and explicit cached/up-to-date reuse.
+It does not qualify the refreshed PR133/134 composition. The new manual stages
+retain all active PostgreSQL16.4/MariaDB11.4.13 cases, accepted 10.x retirement,
+complete coverage and unchanged 94/75 floors. Image and deployed-boundary gates
+remain unrun and separate.
+
 **Status:** Current POC gates and separate production targets
 
 Security invariants need executable positive and negative tests. A passing

@@ -1,5 +1,29 @@
 # Requirements traceability matrix
 
+## Offline EKS synthetic rehearsal bundle — validation pending
+
+Partial SEC-003/007/008/012, REL-002/005 and OPS-005 preparation is implemented
+in `eks-sandbox-bundle` and `deploy/sandbox/eks/`: exact private configuration,
+digest/source/cluster binding declarations, suspended restricted Jobs, distinct
+non-automount identities, fixed default-deny policy, no public/provider route,
+and a bounded TCP observation tool. No whole-ID status changes.
+
+`EksSandboxBundleTest` adds independent field assertions, weakened-manifest
+mutation controls, strict config/parser/private-file/redaction tests, offline
+network/process/listener tripwires and source-free distribution checks. Tests
+are written but not run by the implementation writer. The rendered artifact
+does not verify actual CNI/RBAC/admission/image/PVC/custody properties. Cluster,
+image, credential and live-provider acceptance remain separate gates. See
+[ADR0097](../architecture/0097-offline-eks-sandbox-bundle.md), its
+[runbook](../runbooks/eks-synthetic-sandbox-bundle.md) and the
+[learning note](../learning/rendered-policy-is-not-deployed-isolation.md).
+
+The initial human-run feature passed 10 focused EKS cases and a repository gate
+at 94.083611% LINE/77.338933% BRANCH with recorded reused results. Those receipts
+belong to the PR130-base feature. The normally refreshed PR133/134 composition
+requires new manual focused/repository evidence; no cluster or requirement-wide
+acceptance follows from that earlier pass.
+
 **Current scope update, validation pending:** MariaDB 10.x integration
 qualification is retired under
 [ADR0094](../architecture/0094-mariadb-10-qualification-retirement.md).

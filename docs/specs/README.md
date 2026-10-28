@@ -1,5 +1,12 @@
 # TracePermit specifications
 
+[ADR0097](../architecture/0097-offline-eks-sandbox-bundle.md) adds an offline
+EKS synthetic rehearsal renderer/checker and a separately invoked bounded TCP
+probe. Its [runbook](../runbooks/eks-synthetic-sandbox-bundle.md) distinguishes
+suspended restricted manifests, operator-preinitialized loopback storage and
+manual qualification from actual cluster isolation. Validation is pending;
+no deployment or provider access is authorized.
+
 These documents describe the Java/React POC and distinguish implemented
 controls from target enterprise requirements. Source and tests determine what
 actually runs; a target requirement is not an implementation claim.
