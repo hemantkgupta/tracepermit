@@ -5,6 +5,7 @@ import static io.tracepermit.persistence.operations.JdbcBusinessOperationReposit
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.tracepermit.adapters.remote.github.GitHubBusinessOperationBinding;
+import io.tracepermit.adapters.remote.github.GitHubOperationProfile;
 import io.tracepermit.application.BusinessOperationAuthorityProfile;
 import io.tracepermit.application.BusinessOperationExecution;
 import io.tracepermit.application.BusinessOperationStorageException;
@@ -23,16 +24,25 @@ import javax.sql.DataSource;
 public final class JdbcGitHubOperationPermitIssuer {
   private final DataSource source;
   private final BusinessOperationAuthorityProfile profile;
-  private final GitHubBusinessOperationBinding.ExpectedProfile target;
+  private final GitHubOperationProfile target;
   private final OperationPermitCodec codec;
 
+  /** Original Track E descriptor retained for compiled and source compatibility. */
+  public JdbcGitHubOperationPermitIssuer(
+      DataSource source,
+      BusinessOperationAuthorityProfile profile,
+      GitHubBusinessOperationBinding.ExpectedProfile target,
+      PrivateKey privateKey) {
+    this(source, profile, (GitHubOperationProfile) target, privateKey);
+  }
+
   public JdbcGitHubOperationPermitIssuer(DataSource source, BusinessOperationAuthorityProfile profile,
-      GitHubBusinessOperationBinding.ExpectedProfile target, PrivateKey privateKey) {
+      GitHubOperationProfile target, PrivateKey privateKey) {
     if (source == null || profile == null || target == null || privateKey == null) throw error(OPERATION_COMMAND_INVALID);
     this.source = source;
     this.profile = profile;
     this.target = target;
-    this.codec = new OperationPermitCodec(profile.admissionSettings(), privateKey);
+    this.codec = new OperationPermitCodec(profile.admissionSettings(), privateKey, target.adapterId());
     OperationDatabase.validateReviewExisting(source);
   }
 

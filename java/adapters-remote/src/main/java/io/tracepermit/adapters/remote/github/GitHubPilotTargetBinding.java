@@ -3,7 +3,7 @@ package io.tracepermit.adapters.remote.github;
 /** Trusted operator input, never constructed from a public action or provider response. */
 public record GitHubPilotTargetBinding(
     long installationId, long repositoryId, long ownerId, String repository,
-    String head, String base, String headSha, String baseSha) {
+    String head, String base, String headSha, String baseSha) implements GitHubTargetBinding {
   // Frozen canonical JSON v1 converts numbers through double; identifiers must remain exact.
   private static final long MAXIMUM_EXACT_ID = 9_007_199_254_740_991L;
 
@@ -27,11 +27,8 @@ public record GitHubPilotTargetBinding(
     return true;
   }
 
-  void requireAction(GitHubDraftPullRequestAction action) {
-    require(repository.equals(action.repository()) && head.equals(action.head()) && base.equals(action.base()));
-  }
-
-  String fingerprint() {
+  @Override
+  public String fingerprint() {
     return io.tracepermit.contracts.CanonicalJson.sha256(io.tracepermit.contracts.JsonSupport.MAPPER.createObjectNode()
         .put("installationId", installationId).put("repositoryId", repositoryId).put("ownerId", ownerId)
         .put("repository", repository).put("head", head).put("base", base).put("headSha", headSha).put("baseSha", baseSha));

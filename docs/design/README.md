@@ -37,6 +37,12 @@ or authoritative replacement for the maintained flow catalog.
 
 ## Proposed product contracts
 
+- [Okta/GitHub organization sandbox composition](okta-github-org-sandbox-composition.md):
+  a sealed library-only candidate for exact verified Okta requester/reviewer
+  authority and an organization-owned GitHub draft-PR profile. Credential
+  custody, ingress and real target/reconciliation wiring remain explicitly
+  unapproved and absent.
+
 - [Pending approval cancellation](pending-approval-cancellation.md): owner-only,
   pending-to-cancelled withdrawal, race/evidence semantics and the prerequisite
   explicit database upgrade. The proposal itself is design only;

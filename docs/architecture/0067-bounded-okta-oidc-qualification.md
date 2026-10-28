@@ -97,3 +97,22 @@ accept `JWT` or alternate claim names; treating org-server tokens as an API
 contract; deriving tenant from email/domain; obtaining keys from a request;
 silently falling back on missing group/issuer/ID-token facts; using a client
 secret in an installable client; and calling synthetic fixtures a live pass.
+
+## Operation-lifecycle authority addendum
+
+The organization sandbox candidate reuses the verified custom-server grammar in
+a library-only `OktaOperationAuthority`. Requester and reviewer verifiers remain
+separate trusted constructor inputs. A verified mapped `REQUESTER` role can only
+attenuate one exact requester enrollment and one of
+`operations.register`/`operations.evaluate`/`operations.execute`. A verified
+mapped `REVIEWER` role can only attenuate `operations.decide` plus an exact human
+row in `OktaOperationReviewerRoster`. The canonical roster recipe and five-minute
+membership cap are unchanged from ADR0093. Self-review, client/tenant/workspace/
+subject substitution, sender constraints and request-body authority fail closed.
+
+The execution-disabled registration ingress now applies the same Okta requester
+role attenuation after ordinary token verification; standard-profile behavior is
+unchanged. These types open no listener and perform no discovery, login, token
+minting, administration or live provider calls. Public/remote ingress, sender
+constraint mapping and instantaneous revocation remain unapproved. See the
+[organization composition contract](../design/okta-github-org-sandbox-composition.md).

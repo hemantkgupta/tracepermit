@@ -5,7 +5,7 @@ import static io.tracepermit.persistence.operations.JdbcBusinessOperationReposit
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import io.tracepermit.adapters.remote.github.GitHubBusinessOperationBinding;
+import io.tracepermit.adapters.remote.github.BoundGitHubOperation;
 import io.tracepermit.application.BusinessOperationAuthorityProfile;
 import io.tracepermit.application.BusinessOperationEvaluation;
 import io.tracepermit.application.BusinessOperationReview;
@@ -47,7 +47,7 @@ final class OperationReviewJournal {
   }
 
   static Binding create(BusinessOperationScope scope, JsonNode before,
-      BusinessOperationAuthorityProfile profile, GitHubBusinessOperationBinding.BoundOperationData target,
+      BusinessOperationAuthorityProfile profile, BoundGitHubOperation target,
       String outcome, String reason, Instant now) {
     var settings = profile.reviewSettings();
     ObjectNode json = JsonSupport.MAPPER.createObjectNode()

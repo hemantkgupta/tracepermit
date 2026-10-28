@@ -4,6 +4,8 @@ import static io.tracepermit.application.BusinessOperationStorageException.Code.
 import static org.assertj.core.api.Assertions.*;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.tracepermit.adapters.remote.github.GitHubBusinessOperationBinding;
+import io.tracepermit.adapters.remote.github.GitHubOrganizationOperationBinding;
 import io.tracepermit.application.BusinessOperationAdmissionSettings;
 import io.tracepermit.application.BusinessOperationStorageException;
 import io.tracepermit.contracts.CanonicalJson;
@@ -135,6 +137,34 @@ final class OperationPermitCodecTest {
     invalid(() -> verifier.verify(raw(key, header(), CanonicalJson.canonicalize(wrongIssuer).getBytes(StandardCharsets.UTF_8))));
     var wrongAudience = claims(settings); wrongAudience.put("audience", 7);
     invalid(() -> verifier.verify(raw(key, header(), CanonicalJson.canonicalize(wrongAudience).getBytes(StandardCharsets.UTF_8))));
+  }
+
+  @Test
+  void trustedCompositionPinsTheExactAdapterWithoutChangingTrackEPermitBytes() throws Exception {
+    var key = keys();
+    var settings = settings(key);
+    ObjectNode legacyClaims = claims(settings);
+    String legacy = new OperationPermitCodec(settings, key.getPrivate()).sign(legacyClaims);
+    String explicitlyLegacy =
+        new OperationPermitCodec(
+                settings, key.getPrivate(), GitHubBusinessOperationBinding.ADAPTER_ID)
+            .sign(legacyClaims);
+    assertThat(explicitlyLegacy).isEqualTo(legacy);
+
+    ObjectNode organizationClaims = claims(settings);
+    organizationClaims.put("adapterId", GitHubOrganizationOperationBinding.ADAPTER_ID);
+    var organization =
+        new OperationPermitCodec(
+            settings, key.getPrivate(), GitHubOrganizationOperationBinding.ADAPTER_ID);
+    String organizationPermit = organization.sign(organizationClaims);
+    assertThat(organization.verify(organizationPermit).claims())
+        .isEqualTo(organizationClaims);
+    invalid(() -> new OperationPermitCodec(settings, null).verify(organizationPermit));
+    invalid(
+        () ->
+            new OperationPermitCodec(
+                    settings, null, GitHubOrganizationOperationBinding.ADAPTER_ID)
+                .verify(legacy));
   }
 
   private static KeyPair keys() throws Exception { return KeyPairGenerator.getInstance("Ed25519").generateKeyPair(); }
