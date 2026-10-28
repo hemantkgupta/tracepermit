@@ -42,7 +42,16 @@ additive `organization` factory was absent from its exact name set. The current
 source candidate is `34a2bd66896829805b9b406148be2655fa43751f`, tree
 `2a7b5cc01627e7201541e4f55524e001fe379b1a`, parent `2791b1f`. Its test-only
 repair requires exactly `create`, `organization` and `register`; repository
-validation remains pending.
+validation then reached the complete aggregate with every test task passing.
+The unchanged coverage gate stopped it at 92% line versus the required 94%.
+Installed child JVMs prove the extracted contract but do not contribute their
+instructions to the Gradle test JVM's JaCoCo data. The current source candidate
+is `2bcfd4a2c7b249df77101c2e6d7d17ee47141d78`, tree
+`82cd525a6506117c3ebba1f1ec8017bd1eb7166a`, parent `5296583`. It adds
+in-process equivalents for valid, denied, UNKNOWN, reconciliation and no-resend
+runtime paths plus protocol, receipt, entrypoint and finite-supervisor boundary
+tests. No production exclusion, threshold, instrumentation hook or runtime
+behavior changed. Validation remains pending.
 
 The source/documentation implementation checkpoint is
 `a9270e4651d39d4825b2ef3efcaccce684760aa7`, tree
@@ -51,7 +60,7 @@ sole parent. Its parent is the earlier accepted-main/qualification merge
 `5da2b6d48ba592537f1b9cf23dae753ddb604feb`; later normal merges preserve it.
 This is an unvalidated local checkpoint, not a qualification receipt or
 publication. The current candidate's relevant source manifest is
-`22b50fc0bdfd2eb0fc090cd0e29456b95f031849b54c9e003fa3bc3cdc6226f6`.
+`9ad9090e1dbf4448284de7b169209c0a173e6e665187bbd30d81f536a15b8cb9`.
 
 This lane owns the new executable module, its tests/docs and the additive durable
 organization factory. It does not own EKS, installed COMMIT-loss injection,
@@ -103,9 +112,10 @@ drift, missing prepared caches/images, a reused receipt directory or repository
 mode without a passing focused receipt.
 
 Focused mode executes one cache-disabled, forced Gradle invocation with one
-Gradle worker and five exact selectors: four protocol, two receipt, four
-identity, two archive and four installed PostgreSQL cases (16 total). It does
-not alter test-internal concurrency, deadlines, grants, workloads or cleanup.
+Gradle worker and seven exact selectors: four protocol, two receipt, four
+identity, two archive, four boundary, two supervisor and six PostgreSQL cases
+(24 total). It does not alter test-internal concurrency, deadlines, grants,
+workloads or cleanup.
 The installed selector retains denial, independent review, substitutions,
 UNKNOWN/restart/no-resend behavior and eight contenders. The actual archive
 used by that invocation is immediately copied into the private receipt; its

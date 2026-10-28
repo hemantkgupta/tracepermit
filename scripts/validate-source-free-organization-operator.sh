@@ -5,16 +5,16 @@ umask 077
 
 readonly TRACEPERMIT_CHECKOUT="/Users/hemantkgupta/code-all-air/tracepermit"
 readonly TRACEPERMIT_BRANCH="codex/source-free-organization-operator"
-readonly TRACEPERMIT_CANDIDATE="34a2bd66896829805b9b406148be2655fa43751f"
-readonly TRACEPERMIT_CANDIDATE_TREE="2a7b5cc01627e7201541e4f55524e001fe379b1a"
-readonly TRACEPERMIT_CANDIDATE_PARENTS="2791b1f75b599aa1af54f4826fd33822a4e116cd"
+readonly TRACEPERMIT_CANDIDATE="2bcfd4a2c7b249df77101c2e6d7d17ee47141d78"
+readonly TRACEPERMIT_CANDIDATE_TREE="82cd525a6506117c3ebba1f1ec8017bd1eb7166a"
+readonly TRACEPERMIT_CANDIDATE_PARENTS="529658343e36aeed78dc0d42318a6720b351c5e9"
 readonly TRACEPERMIT_ACCEPTED_MAIN="dfb7b3b11ed7af3b4d0230fae9adf6e514289ba5"
 readonly TRACEPERMIT_ACCEPTED_MAIN_TREE="0a9012fdedb7a2db72aba37de93e2adc891df48b"
 readonly TRACEPERMIT_IMPLEMENTATION_CHECKPOINT="a9270e4651d39d4825b2ef3efcaccce684760aa7"
 readonly TRACEPERMIT_IMPLEMENTATION_TREE="f3ad45469efddf2f6edf6b4fdd65622db2219651"
 readonly TRACEPERMIT_QUALIFICATION_HISTORY="8108598a658121735dbd59d5a44053b3ff22da7a"
 readonly TRACEPERMIT_QUALIFICATION_TREE="8597529c2854945be6eede63dc06e6a2931cf6f0"
-readonly TRACEPERMIT_SOURCE_MANIFEST="22b50fc0bdfd2eb0fc090cd0e29456b95f031849b54c9e003fa3bc3cdc6226f6"
+readonly TRACEPERMIT_SOURCE_MANIFEST="9ad9090e1dbf4448284de7b169209c0a173e6e665187bbd30d81f536a15b8cb9"
 readonly TRACEPERMIT_JENV="/opt/homebrew/bin/jenv"
 readonly TRACEPERMIT_DOCKER="/Applications/Docker.app/Contents/Resources/bin/docker"
 readonly TRACEPERMIT_POSTGRES_IMAGE_ID="sha256:5660c2cbfea50c7a9127d17dc4e48543eedd3d7a41a595a2dfa572471e37e64c"
@@ -147,7 +147,9 @@ tracepermit_source_guards() {
   [[ "$(grep -Ec '^[[:space:]]*@Test[[:space:]]*$' java/agentcore-organization-lifecycle-cli/src/test/java/io/tracepermit/agentcore/organizationcli/OrganizationOperatorReceiptTest.java)" == 2 ]]
   [[ "$(grep -Ec '^[[:space:]]*@Test[[:space:]]*$' java/agentcore-organization-lifecycle-cli/src/test/java/io/tracepermit/agentcore/organizationcli/OrganizationOperatorIdentityTest.java)" == 4 ]]
   [[ "$(grep -Ec '^[[:space:]]*@Test[[:space:]]*$' java/agentcore-organization-lifecycle-cli/src/test/java/io/tracepermit/agentcore/organizationcli/OrganizationOperatorArchiveTest.java)" == 2 ]]
-  [[ "$(grep -Ec '^[[:space:]]*@Test[[:space:]]*$' java/agentcore-organization-lifecycle-cli/src/test/java/io/tracepermit/agentcore/organizationcli/PostgresInstalledOrganizationOperatorTest.java)" == 4 ]]
+  [[ "$(grep -Ec '^[[:space:]]*@Test[[:space:]]*$' java/agentcore-organization-lifecycle-cli/src/test/java/io/tracepermit/agentcore/organizationcli/OrganizationOperatorBoundaryTest.java)" == 4 ]]
+  [[ "$(grep -Ec '^[[:space:]]*@Test[[:space:]]*$' java/agentcore-organization-lifecycle-cli/src/test/java/io/tracepermit/agentcore/organizationcli/OrganizationOperatorSupervisorTest.java)" == 2 ]]
+  [[ "$(grep -Ec '^[[:space:]]*@Test[[:space:]]*$' java/agentcore-organization-lifecycle-cli/src/test/java/io/tracepermit/agentcore/organizationcli/PostgresInstalledOrganizationOperatorTest.java)" == 6 ]]
 }
 
 tracepermit_runtime_guards() {
@@ -199,6 +201,8 @@ tracepermit_focused_validation() {
     --tests io.tracepermit.agentcore.organizationcli.OrganizationOperatorReceiptTest \
     --tests io.tracepermit.agentcore.organizationcli.OrganizationOperatorIdentityTest \
     --tests io.tracepermit.agentcore.organizationcli.OrganizationOperatorArchiveTest \
+    --tests io.tracepermit.agentcore.organizationcli.OrganizationOperatorBoundaryTest \
+    --tests io.tracepermit.agentcore.organizationcli.OrganizationOperatorSupervisorTest \
     --tests io.tracepermit.agentcore.organizationcli.PostgresInstalledOrganizationOperatorTest \
     --offline --rerun-tasks --no-build-cache --no-configuration-cache \
     --no-daemon --max-workers=1
@@ -259,7 +263,7 @@ tracepermit_capture_focused_results() {
   cp -R "$TRACEPERMIT_RESULTS" "$TRACEPERMIT_RUN_DIR/test-results"
   find "$TRACEPERMIT_RUN_DIR/test-results" -type f -name 'TEST-*.xml' -print \
     | LC_ALL=C sort >"$TRACEPERMIT_RUN_DIR/test-result-files"
-  [[ "$(wc -l <"$TRACEPERMIT_RUN_DIR/test-result-files" | tr -d ' ')" == 5 ]]
+  [[ "$(wc -l <"$TRACEPERMIT_RUN_DIR/test-result-files" | tr -d ' ')" == 7 ]]
   node --input-type=commonjs - "$TRACEPERMIT_RUN_DIR/test-results" <<'NODE'
 const fs = require("node:fs");
 const path = require("node:path");
@@ -280,7 +284,7 @@ for (const file of files) {
   skipped += value("skipped");
 }
 console.log(JSON.stringify({ selectors: files.length, tests, failures, errors, skipped }));
-if (files.length !== 5 || tests !== 16 || failures !== 0 || errors !== 0 || skipped !== 0) process.exit(1);
+if (files.length !== 7 || tests !== 24 || failures !== 0 || errors !== 0 || skipped !== 0) process.exit(1);
 NODE
 }
 
