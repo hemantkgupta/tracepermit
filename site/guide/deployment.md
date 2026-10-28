@@ -94,6 +94,20 @@ Managed ingress / TLS / sender constraint / abuse controls
              governed enterprise targets
 ```
 
+### Fail-Closed Security Readiness vs. Process Liveness
+
+To guarantee resilience without compromising security, TracePermit strictly bifurcates health probing:
+
+1. **Process Liveness (`GET /health`):**
+   - Returns `200 OK` as long as the JVM process is alive and accepting connections.
+2. **Security Readiness (`GET /ready`):**
+   - Continuously evaluates a strict `SecurityReadiness` snapshot checking the 5 mandatory security dependencies:
+     `authentication`, `policy`, `permit_signer`, `replay_store`, and `evidence_store`.
+   - If PostgreSQL or the JWKS cache drops, `/ready` returns `503 Service Unavailable`, causing load balancers to immediately remove the node from traffic rotation.
+3. **In-Process Fail-Closed Gating:**
+   - Even if an in-flight request reaches a degraded instance, the execution core (`SecureExecutionService`) checks `readiness.get().ready()` prior to authorization.
+   - If degraded, it immediately throws `SECURITY_DEPENDENCY_UNAVAILABLE`. Under no circumstances does TracePermit "fail open" or skip audit logging during an infrastructure outage.
+
 Before real targets or public ingress, the design needs managed key custody
 and rotation, endpoint enrollment, production OAuth and client qualification,
 shared rate/replay state, secret handling, anti-bypass egress, independently
