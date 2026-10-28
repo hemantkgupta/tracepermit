@@ -1,5 +1,28 @@
 # TracePermit implementation handoff
 
+## EKS synthetic sandbox bundle — implemented; manual validation pending
+
+Local Mac owns `codex/eks-sandbox-bundle` from accepted main
+`35a791ffeba1a6b0b10e3e072e97f1085d80eed3`. The new Java renderer/checker,
+fixed deployment template, separately invoked TCP probe, packaging recipe,
+ADR0094 and EKS-specific tests/docs do not modify Track E runtime, provider
+integration or existing process helpers. Shared settings/specification entries
+are additive. Mac Air is not messaged or polled; the human coordinates its lane.
+
+The first closed profile requires explicit Linux EC2/IPv4/VPC-CNI strict-mode
+and Kubernetes1.33–1.36 declarations, separate namespace/node-pool identities,
+digest-pinned preloaded images and an operator-preinitialized restricted V7
+PostgreSQL16.4-alpine ReadWriteOncePod claim/UID. Both Jobs are suspended; no
+cloud client, deploy/apply mode, RoleBinding, Secret, public route, migration,
+credential acquisition or application retry is added. Existing lifecycle
+60s/5s/1s budgets and all authority/no-resend behavior stay unchanged.
+
+Validation is manual. Focused tests, full repository/coverage, image builds
+and actual cluster qualification remain unrun for this candidate. Exact
+source/runtime/cache commands with private log and exit capture are supplied
+outside Git. No agent-run validation, CI retry, deployment, provider call,
+push/merge or readiness claim accompanies this implementation checkpoint.
+
 GitHub is authoritative. Keep credentials, raw claims and private operator/customer
 planning outside Git. Historical receipts below are not fresh qualification.
 
