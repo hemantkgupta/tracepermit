@@ -43,6 +43,26 @@ pnpm demo:scenario:qualification
 pnpm test:approval-api --rerun-tasks
 ```
 
+On Linux, `pnpm java:check` and the CI lane script launch Gradle under
+`scripts/owned-test-reaper.pl`. This invocation-owned subreaper requires Perl's
+`syscall.ph` and readable Linux `/proc/PID/stat`; it does not replace or change
+PID 1. It reaps orphaned fixture descendants while the test JVM is alive, so
+strict `ProcessHandle.isAlive()` cleanup assertions also work in containers
+whose PID 1 does not reap. It preserves the command's streams and exit status,
+never selects processes by name, and checks kernel parent/start identity before
+signaling adopted children. A successful command that leaves live descendants
+cannot become a passing check merely because the launcher later cleans them.
+Interruption and post-command cleanup have a five-second reserve. Unsupported
+prerequisites fail closed; non-Linux test launch remains unchanged.
+
+The four `owned-test-reaper.test.mjs` controls cover live orphan reaping,
+nonzero-exit/stream preservation, TERM-resistant cleanup, and preservation of
+an unrelated process. They use existing Python3 only for synthetic fixtures.
+The registration child/supervisor fixtures use the installed worker's existing
+16/64 MiB heap and two-processor envelope. Request counts, race contenders,
+timeouts, grants and cleanup assertions are unchanged. This is test-process
+ownership, not a production sandbox, egress policy or live-target qualification.
+
 The Java implementation is the supported local POC backend, not a production
 service. Its default runnable main binds only to loopback and composes ephemeral
 development credentials and the simulator. The separate `pnpm dev:approvals`

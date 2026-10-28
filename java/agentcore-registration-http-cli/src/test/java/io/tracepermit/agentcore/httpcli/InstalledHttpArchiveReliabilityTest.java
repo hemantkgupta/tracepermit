@@ -20,6 +20,7 @@ final class InstalledHttpArchiveReliabilityTest {
   @Test
   void finalInsteadOfReadyStillCleansTheStartedProcessAndReader() throws Exception {
     Process process = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+        "-Xms16m", "-Xmx64m", "-XX:ActiveProcessorCount=2",
         "-cp", System.getProperty("tracepermit.httpcli.testClasspath"), RefusingChild.class.getName()).start();
     try {
       assertThatThrownBy(() -> InstalledHttpArchive.awaitReady(process, new byte[] {1}))
@@ -34,6 +35,7 @@ final class InstalledHttpArchiveReliabilityTest {
   @Test
   void failedStartupReapsAnOwnedWorkerEvenWhenItsParentExitsPromptly() throws Exception {
     Process parent = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+        "-Xms16m", "-Xmx64m", "-XX:ActiveProcessorCount=2",
         "-cp", System.getProperty("tracepermit.httpcli.testClasspath"), RefusingParent.class.getName()).start();
     ProcessHandle worker = null;
     try {
@@ -91,6 +93,7 @@ final class InstalledHttpArchiveReliabilityTest {
     private RefusingParent() {}
     public static void main(String[] args) throws Exception {
       new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+          "-Xms16m", "-Xmx64m", "-XX:ActiveProcessorCount=2",
           "-cp", System.getProperty("java.class.path"), SleepingWorker.class.getName()).start();
       RefusingChild.main(args);
     }
