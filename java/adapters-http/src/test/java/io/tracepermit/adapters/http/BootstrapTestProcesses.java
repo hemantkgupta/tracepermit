@@ -18,7 +18,14 @@ final class BootstrapTestProcesses {
         if (text.contains(known)) { marker = known; break; }
       }
     } catch (Exception unavailable) { /* absence is an observation, never raw exception text */ }
-    return "BOOTSTRAP_CHILD_EXIT[phase=" + phase + ",alive=" + child.isAlive() + ",marker=" + marker + "]";
+    String cpu = "UNAVAILABLE";
+    try {
+      var duration = child.info().totalCpuDuration();
+      if (duration.isPresent()) cpu = duration.orElseThrow().compareTo(java.time.Duration.ofSeconds(1)) < 0
+          ? "UNDER_1S" : "AT_LEAST_1S";
+    } catch (SecurityException unavailable) { /* fixed diagnostic only */ }
+    return "BOOTSTRAP_CHILD_EXIT[phase=" + phase + ",alive=" + child.isAlive()
+        + ",marker=" + marker + ",cpu=" + cpu + "]";
   }
 
   static void stop(Process child) {

@@ -103,7 +103,12 @@ public final class RegistrationChild {
               io.tracepermit.agentcore.http.AgentCoreRegistrationHttpServer.Limits.defaults())) {
             phase = "HTTP_SEND";
             var response = RegistrationHttpTestClient.send(server.port(), token, body);
-            phase = "HTTP_STATUS";
+            phase = switch (response.outcome()) {
+              case RESPONSE -> "HTTP_STATUS";
+              case TIMEOUT -> "HTTP_TIMEOUT";
+              case SOCKET_CLOSED -> "HTTP_SOCKET_CLOSED";
+              case EMPTY_RESPONSE -> "HTTP_EMPTY_RESPONSE";
+            };
             status = response.status();
             if (response.status() == 201) System.out.println("CREATED");
             else if (response.status() == 200) System.out.println("EXISTING");
@@ -136,12 +141,13 @@ public final class RegistrationChild {
     }
   }
 
-  private static String failurePhase(byte[] receipt) {
+  static String failurePhase(byte[] receipt) {
     String text = new String(receipt, StandardCharsets.UTF_8).strip();
     String prefix = "SYNTHETIC_CHILD_FAILED:";
     if (!text.startsWith(prefix)) return "UNOBSERVED";
     String[] fields = text.substring(prefix.length()).split(":", -1);
     if (fields.length != 2 || !java.util.Set.of("INPUT", "HTTP_START", "HTTP_SEND", "HTTP_STATUS",
+        "HTTP_TIMEOUT", "HTTP_SOCKET_CLOSED", "HTTP_EMPTY_RESPONSE",
         "CONTROL_REGISTER", "DIRECT_REGISTER").contains(fields[0]) || !fields[1].matches("[0-9]{1,3}")) {
       return "UNOBSERVED";
     }
