@@ -43,6 +43,13 @@ transport, PVC, CNI/RBAC/admission or cluster isolation. Those gates remain open
 The organization-profile installed operator is separate work and is not enabled
 by this bundle or acceptance-plan refresh.
 
+The subsequent [container/private-input rehearsal](eks-container-private-input.md)
+adds explicit local OCI qualification fixtures under
+[ADR0098](../architecture/0098-container-private-input-qualification.md).
+Their compilation and manual gates are pending. They do not replace EKS
+attach/audit custody, native-sidecar/PVC, CNI/RBAC/admission or live-provider
+acceptance, and do not authorize deployment.
+
 PR128's accepted qualification exception does not waive any sandbox gate or
 future PR. Track E's three contract decisions are already approved; they do not
 authorize an organization deployment or real provider credentials. No passing

@@ -1,5 +1,24 @@
 # TracePermit implementation handoff
 
+## EKS container/private-input rehearsal — implemented; validation pending
+
+Local Mac owns `codex/eks-container-private-input` from accepted PR135 main
+`3ad4f01de9c1b753df1ed58e3ddad1da1500a539`. Test-only EKS fixtures add a closed
+owned-container profile, bounded attach I/O, actual descriptor negatives,
+offline image assembly and two PG16.4 lifecycle cases. Default EKS tests gain
+eight offline harness cases;12 transport and2 PG cases are explicit human-run
+gates with no skipped-case fallback. The installed CLI, descriptor/trust code,
+SQL/grants, production classes, Dockerfile, suspended List and CI are unchanged.
+
+[ADR0098](docs/architecture/0098-container-private-input-qualification.md), the
+[runbook](docs/runbooks/eks-container-private-input.md) and
+[learning note](docs/learning/attached-stdin-is-not-secret-custody.md) distinguish
+local plumbing from daemon/host and EKS custody. A failed first provenance gate
+stops before private frames; no alternate pipe, file/key input or caller flag is
+accepted. Air, Cloud1/2 and Gemini files remain untouched. No tests, compilation,
+container/image action, CI, deployment or worker message ran for this candidate.
+Private source-pinned commands and finite stop conditions are handed to the human.
+
 ## EKS synthetic sandbox bundle — implemented; manual validation pending
 
 Local Mac owns `codex/eks-sandbox-bundle`, normally refreshed with accepted main
