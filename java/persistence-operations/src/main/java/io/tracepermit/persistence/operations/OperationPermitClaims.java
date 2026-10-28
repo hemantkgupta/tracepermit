@@ -5,7 +5,10 @@ import static io.tracepermit.persistence.operations.JdbcBusinessOperationReposit
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.tracepermit.adapters.remote.github.BoundGitHubOperation;
 import io.tracepermit.adapters.remote.github.GitHubBusinessOperationBinding;
+import io.tracepermit.adapters.remote.github.GitHubOperationProfile;
+import io.tracepermit.adapters.remote.github.GitHubOrganizationOperationBinding;
 import io.tracepermit.application.*;
 import io.tracepermit.contracts.CanonicalJson;
 import io.tracepermit.contracts.JsonSupport;
@@ -32,20 +35,20 @@ final class OperationPermitClaims {
   private OperationPermitClaims() {}
 
   static ObjectNode capture(Connection connection, JsonNode initial, JsonNode approved,
-      BusinessOperationAuthorityProfile profile, GitHubBusinessOperationBinding.ExpectedProfile target,
+      BusinessOperationAuthorityProfile profile, GitHubOperationProfile target,
       BusinessOperationExecution command, Instant now) throws SQLException {
     return capture(connection, initial, approved, profile, target, command, now, true);
   }
 
   /** Delivery already compared the command with the locked claimed head; recapture APPROVED anchors. */
   static ObjectNode recaptureForDelivery(Connection connection, JsonNode initial, JsonNode approved,
-      BusinessOperationAuthorityProfile profile, GitHubBusinessOperationBinding.ExpectedProfile target,
+      BusinessOperationAuthorityProfile profile, GitHubOperationProfile target,
       BusinessOperationExecution command, Instant now) throws SQLException {
     return capture(connection, initial, approved, profile, target, command, now, false);
   }
 
   private static ObjectNode capture(Connection connection, JsonNode initial, JsonNode approved,
-      BusinessOperationAuthorityProfile profile, GitHubBusinessOperationBinding.ExpectedProfile target,
+      BusinessOperationAuthorityProfile profile, GitHubOperationProfile target,
       BusinessOperationExecution command, Instant now, boolean compareApproved) throws SQLException {
     command.requireAuthorizedAt(profile, now);
     var scope = command.scope();
@@ -57,10 +60,10 @@ final class OperationPermitClaims {
         || !"not_started".equals(approved.path("execution").path("status").asText())) throw error(OPERATION_NOT_APPROVED);
     if (now.isBefore(Instant.parse(approved.path("updatedAt").asText()))) throw error(OPERATION_CLOCK_REGRESSION);
     var binding = OperationReviewJournal.read(connection, command.operationId()).orElseThrow(() -> error(OPERATION_STORAGE_CORRUPT));
-    GitHubBusinessOperationBinding.BoundOperationData actual;
+    BoundGitHubOperation actual;
     try {
-      actual = GitHubBusinessOperationBinding.bind(scope, approved, target);
-      var original = GitHubBusinessOperationBinding.bind(scope, initial, target);
+      actual = target.bind(scope, approved);
+      var original = target.bind(scope, initial);
       var policy = profile.evaluate(initial);
       profile.evaluate(approved);
       var reconstructed = OperationReviewJournal.create(scope, initial, profile, original, policy.outcome(),
@@ -115,17 +118,24 @@ final class OperationPermitClaims {
         .put("evidenceVersion", observed.evidenceVersion()).put("snapshotHash", observed.snapshotHash()));
     claims.set("identityBounds", bounds);
     claims.set("executeIdentity", command.actor());
-    return checked(claims, settings);
+    return checked(claims, settings, target.adapterId());
   }
 
   /** Closed syntax/intrinsic bindings only: not current DB state or permission to execute. */
   static ObjectNode checked(JsonNode claims, BusinessOperationAdmissionSettings settings) {
+    return checked(claims, settings, GitHubBusinessOperationBinding.ADAPTER_ID);
+  }
+
+  /** Exact adapter pin is supplied by trusted composition, never inferred from signed claims. */
+  static ObjectNode checked(
+      JsonNode claims, BusinessOperationAdmissionSettings settings, String expectedAdapterId) {
     ObjectNode result = historical(claims);
     Instant issue = OperationReviewJournal.time(result.path("issuedAt"));
     if (!settings.issuer().equals(result.path("issuer").asText())
         || !settings.audience().equals(result.path("audience").asText())
         || !settings.publicKeyFingerprint().equals(result.path("publicKeyFingerprint").asText())
         || !CanonicalJson.sha256(settings.pins()).equals(result.path("admissionSettingsHash").asText())
+        || !expectedAdapterId.equals(result.path("adapterId").asText())
         || OperationReviewJournal.time(result.path("expiresAt")).isAfter(issue.plus(settings.lifetime()))) throw invalid();
     return result;
   }
@@ -141,7 +151,10 @@ final class OperationPermitClaims {
           || !claims.path("issuer").asText().matches("[A-Za-z0-9][A-Za-z0-9._:@/+\\-]{0,511}")
           || claims.path("audience").asText().isBlank() || claims.path("audience").asText().length() > 256
           || !FORMAT.equals(claims.path("format").asText())
-          || !GitHubBusinessOperationBinding.ADAPTER_ID.equals(claims.path("adapterId").asText())) throw invalid();
+          || !Set.of(
+                  GitHubBusinessOperationBinding.ADAPTER_ID,
+                  GitHubOrganizationOperationBinding.ADAPTER_ID)
+              .contains(claims.path("adapterId").asText())) throw invalid();
       for (String key : HASHES) hash(claims.path(key));
       for (String key : Set.of("permitId", "attemptId", "operationId")) {
         JsonNode value = claims.path(key);

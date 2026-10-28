@@ -8,6 +8,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.tracepermit.adapters.remote.github.GitHubBusinessOperationBinding;
+import io.tracepermit.adapters.remote.github.GitHubOperationProfile;
+import io.tracepermit.adapters.remote.github.GitHubOrganizationOperationBinding;
 import io.tracepermit.application.BusinessOperationRegistration;
 import io.tracepermit.application.BusinessOperationRepository;
 import io.tracepermit.application.BusinessOperationScope;
@@ -19,6 +21,7 @@ import io.tracepermit.contracts.JsonSupport;
 import io.tracepermit.identity.AuthenticatedConnector;
 import io.tracepermit.identity.ConnectorScope;
 import io.tracepermit.identity.OidcAccessTokenVerifier;
+import io.tracepermit.identity.OidcTokenProfile;
 import io.tracepermit.identity.WorkloadIdentityReplayStore;
 import java.nio.ByteBuffer;
 import java.nio.charset.CodingErrorAction;
@@ -53,7 +56,23 @@ public final class AgentCoreRegistrationIngress {
                   .build())
           .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
 
-  /** One exact operator-owned identity/scope/target enrollment per instance; never body-derived. */
+  private sealed interface EnrollmentContract permits Enrollment, OrganizationEnrollment {
+    String issuer();
+
+    String verifiedSubjectId();
+
+    String clientId();
+
+    BusinessOperationScope scope();
+
+    GitHubOperationProfile targetProfile();
+
+    String retentionPolicyId();
+
+    Duration retention();
+  }
+
+  /** Original Track E enrollment. Its public record and constructor descriptors remain unchanged. */
   public record Enrollment(
       String issuer,
       String verifiedSubjectId,
@@ -61,22 +80,49 @@ public final class AgentCoreRegistrationIngress {
       BusinessOperationScope scope,
       GitHubBusinessOperationBinding.ExpectedProfile targetProfile,
       String retentionPolicyId,
-      Duration retention) {
+      Duration retention)
+      implements EnrollmentContract {
     public Enrollment {
-      require(issuer != null && issuer.length() <= 512 && issuer.startsWith("https://"));
-      require(verifiedSubjectId != null && verifiedSubjectId.length() <= 1_024);
-      require(verifiedSubjectId.startsWith(issuer + "#") && verifiedSubjectId.length() > issuer.length() + 1);
-      require(clientId != null && clientId.matches("[A-Za-z0-9][A-Za-z0-9._:@/+=-]{0,255}"));
-      Objects.requireNonNull(scope);
-      Objects.requireNonNull(targetProfile);
-      require(retentionPolicyId != null && retentionPolicyId.matches("[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}"));
-      require(retention != null && retention.compareTo(Duration.ofSeconds(1)) >= 0
-          && retention.compareTo(Duration.ofDays(365)) <= 0);
+      validateEnrollment(
+          issuer,
+          verifiedSubjectId,
+          clientId,
+          scope,
+          targetProfile,
+          retentionPolicyId,
+          retention);
     }
 
     @Override
     public String toString() {
       return "AgentCoreEnrollment[redacted; workload registration only]";
+    }
+  }
+
+  /** Closed organization-profile enrollment; never deserialize this record from a request. */
+  public record OrganizationEnrollment(
+      String issuer,
+      String verifiedSubjectId,
+      String clientId,
+      BusinessOperationScope scope,
+      GitHubOrganizationOperationBinding.ExpectedProfile targetProfile,
+      String retentionPolicyId,
+      Duration retention)
+      implements EnrollmentContract {
+    public OrganizationEnrollment {
+      validateEnrollment(
+          issuer,
+          verifiedSubjectId,
+          clientId,
+          scope,
+          targetProfile,
+          retentionPolicyId,
+          retention);
+    }
+
+    @Override
+    public String toString() {
+      return "AgentCoreOrganizationEnrollment[redacted; workload registration only]";
     }
   }
 
@@ -104,7 +150,7 @@ public final class AgentCoreRegistrationIngress {
   private final WorkloadIdentityReplayStore replay;
   private final BusinessOperationRepository repository;
   private final Clock clock;
-  private final Enrollment enrollment;
+  private final EnrollmentContract enrollment;
 
   public AgentCoreRegistrationIngress(
       OidcAccessTokenVerifier verifier,
@@ -112,11 +158,56 @@ public final class AgentCoreRegistrationIngress {
       BusinessOperationRepository repository,
       Clock clock,
       Enrollment enrollment) {
+    this(verifier, replay, repository, clock, (EnrollmentContract) enrollment);
+  }
+
+  /** Adds the organization profile without changing or overloading the Track E constructor. */
+  public static AgentCoreRegistrationIngress organization(
+      OidcAccessTokenVerifier verifier,
+      WorkloadIdentityReplayStore replay,
+      BusinessOperationRepository repository,
+      Clock clock,
+      OrganizationEnrollment enrollment) {
+    return new AgentCoreRegistrationIngress(
+        verifier, replay, repository, clock, (EnrollmentContract) enrollment);
+  }
+
+  private AgentCoreRegistrationIngress(
+      OidcAccessTokenVerifier verifier,
+      WorkloadIdentityReplayStore replay,
+      BusinessOperationRepository repository,
+      Clock clock,
+      EnrollmentContract enrollment) {
     this.verifier = Objects.requireNonNull(verifier);
     this.replay = Objects.requireNonNull(replay);
     this.repository = Objects.requireNonNull(repository);
     this.clock = Objects.requireNonNull(clock);
     this.enrollment = Objects.requireNonNull(enrollment);
+  }
+
+  private static void validateEnrollment(
+      String issuer,
+      String verifiedSubjectId,
+      String clientId,
+      BusinessOperationScope scope,
+      GitHubOperationProfile targetProfile,
+      String retentionPolicyId,
+      Duration retention) {
+    require(issuer != null && issuer.length() <= 512 && issuer.startsWith("https://"));
+    require(verifiedSubjectId != null && verifiedSubjectId.length() <= 1_024);
+    require(
+        verifiedSubjectId.startsWith(issuer + "#")
+            && verifiedSubjectId.length() > issuer.length() + 1);
+    require(clientId != null && clientId.matches("[A-Za-z0-9][A-Za-z0-9._:@/+=-]{0,255}"));
+    Objects.requireNonNull(scope);
+    Objects.requireNonNull(targetProfile);
+    require(
+        retentionPolicyId != null
+            && retentionPolicyId.matches("[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}"));
+    require(
+        retention != null
+            && retention.compareTo(Duration.ofSeconds(1)) >= 0
+            && retention.compareTo(Duration.ofDays(365)) <= 0);
   }
 
   /**
@@ -136,7 +227,12 @@ public final class AgentCoreRegistrationIngress {
           && enrollment.clientId().equals(identity.clientId())
           && enrollment.scope().tenantId().equals(identity.organizationId())
           && identity.hasScope(REQUIRED_SCOPE)
-          && identity.senderConstraint().isEmpty());
+          && identity.senderConstraint().isEmpty()
+          && (enrollment instanceof OrganizationEnrollment
+              ? OidcTokenProfile.OKTA.equals(identity.authenticationProfile())
+                  && identity.mappedRole().filter("REQUESTER"::equals).isPresent()
+              : !OidcTokenProfile.OKTA.equals(identity.authenticationProfile())
+                  || identity.mappedRole().filter("REQUESTER"::equals).isPresent()));
     } catch (RuntimeException rejected) {
       throw failure("AGENTCORE_IDENTITY_REJECTED");
     }
@@ -146,7 +242,7 @@ public final class AgentCoreRegistrationIngress {
       require(!identity.verifiedAt().isAfter(now) && identity.expiresAt().isAfter(now));
       operation = operation(request, identity, now);
       // Reuse the exact merged target/profile contract without acquiring credentials or authority.
-      GitHubBusinessOperationBinding.bind(enrollment.scope(), operation, enrollment.targetProfile());
+      enrollment.targetProfile().bind(enrollment.scope(), operation);
       require(replay.consume(enrollment.scope().tenantId(), identity.issuer(),
           identity.credentialFingerprint().value(), identity.expiresAt(), clock.instant()));
     } catch (RuntimeException rejected) {

@@ -113,3 +113,27 @@ and advertise durable-operation enforcement. The future executor must join those
 boundaries without redispatching an uncertain side effect or calling a target
 under a database lock. Rollback removes this unused library/vector/docs only;
 there is no migration or stored-data deletion.
+
+## Organization sandbox profile addendum
+
+The organization sandbox candidate adds a second closed profile without changing
+the original `tracepermit-github-draft-pr-binding-v1` recipe, adapter ID, hashes or
+constructors. `GitHubOperationProfile`, `GitHubTargetBinding` and
+`BoundGitHubOperation` are sealed and permit only the original Track E types and
+the new organization types. Registration and the V4–V7 durable lifecycle depend
+on those sealed contracts; request data cannot supply another implementation.
+
+`GitHubOrganizationTargetBinding` additionally pins App ID and the exact minimum
+permission map (`metadata:read`, `contents:read`, `pull_requests:write`) alongside
+installation/repository/organization-owner IDs, exact repository, refs and SHAs.
+`GitHubOrganizationOperationBinding` uses adapter `github-org-draft-pr-v1` and
+profile `tracepermit-github-org-draft-pr-binding-v1`. It retains only explicit
+`dev`/`test`/`staging`, draft-only composition and exact action equality. Permit
+codecs now receive the expected adapter from trusted composition; their legacy
+constructor still pins `github-draft-pr-v1` and preserves existing bytes.
+
+This is a library-only candidate. It does not authorize the existing process-local
+adapter for the organization profile or add a real durable target. Exact credential
+custody, permit-key custody, ingress/sender identity, organization inputs and EKS
+containment remain approval gates in the
+[composition contract](../design/okta-github-org-sandbox-composition.md).

@@ -1112,3 +1112,34 @@ token still trusts GitHub's authenticated installation-specific minting contract
 no independent token introspection is claimed. The response is time-bounded and
 redacted; no cache/refresh/retry or automatic target dispatch. See
 [ADR0076](../architecture/0076-github-installation-credential-provider.md).
+
+## 12. Okta/GitHub organization sandbox library contract
+
+There is no network route for this candidate. Trusted composition constructs
+`OktaOperationAuthority` with separate pinned requester/reviewer verifiers,
+`BusinessOperationScope`, exact requester enrollment, canonical offline reviewer
+roster, current `BusinessOperationAuthorityProfile`, reviewer client ID and
+clock. Public results are existing `TrustedRequesterContext`,
+`TrustedOperationEvaluatorContext` and a paired reviewer/membership record.
+Failures are fixed `OKTA_AUTHORITY_CONFIGURATION_INVALID` or
+`OKTA_AUTHORITY_REJECTED`, without cause, suppression or stack storage.
+The closed organization registration factory accepts only the verified Okta
+profile with mapped role `REQUESTER`; the original Track E enrollment and its
+standard-profile behavior are unchanged.
+
+The exact target type is `GitHubOrganizationTargetBinding(appId,
+installationId, repositoryId, ownerId, repository, head, base, headSha, baseSha,
+permissions)`. Permissions must equal `metadata:read`, `contents:read`,
+`pull_requests:write`. `GitHubOrganizationOperationBinding.ExpectedProfile`
+requires adapter `github-org-draft-pr-v1`, environment `dev`/`test`/`staging`,
+positive safe recovery generation, policy release, nonempty artifact pins and
+that target. The profile, target and bound-data interfaces are sealed to the
+organization and original Track E types.
+
+JDBC review, permit, admission and synthetic delivery constructors receive the
+sealed profile from trusted composition. The permit codec checks that profile's
+exact adapter ID; its legacy constructor continues to select
+`github-draft-pr-v1`. None of these interfaces accepts a credential source,
+target URL, target response, request-selected authority implementation or live
+dispatch port. The complete inputs and unresolved custody/ingress choices are in
+the [composition contract](../design/okta-github-org-sandbox-composition.md).

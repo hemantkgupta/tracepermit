@@ -2,6 +2,7 @@ package io.tracepermit.persistence.operations;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import io.tracepermit.adapters.remote.github.GitHubBusinessOperationBinding;
+import io.tracepermit.adapters.remote.github.GitHubOperationProfile;
 import io.tracepermit.application.BusinessOperationScope;
 import io.tracepermit.application.BusinessOperationStorageException;
 import io.tracepermit.contracts.CanonicalJson;
@@ -12,20 +13,26 @@ import java.util.concurrent.atomic.AtomicInteger;
 /** Deterministic in-memory simulation ONLY. No transport, credentials, provider or extensible port. */
 public final class SyntheticGitHubDeliveryTarget {
   public enum Outcome { CONFIRMED_SUCCESS, CONFIRMED_REJECTION, UNKNOWN }
-  private final GitHubBusinessOperationBinding.ExpectedProfile expected;
+  private final GitHubOperationProfile expected;
   private final Outcome outcome;
   private final ConcurrentHashMap<String, AtomicInteger> calls = new ConcurrentHashMap<>();
   private final ConcurrentHashMap<String, String> observations = new ConcurrentHashMap<>();
 
+  /** Original Track E descriptor retained for compiled and source compatibility. */
+  public SyntheticGitHubDeliveryTarget(
+      GitHubBusinessOperationBinding.ExpectedProfile expected, Outcome outcome) {
+    this((GitHubOperationProfile) expected, outcome);
+  }
+
   /** Explicit operator-owned synthetic scenario; never a public request or selectable provider. */
-  public SyntheticGitHubDeliveryTarget(GitHubBusinessOperationBinding.ExpectedProfile expected, Outcome outcome) {
+  public SyntheticGitHubDeliveryTarget(GitHubOperationProfile expected, Outcome outcome) {
     if (expected == null || outcome == null) throw new IllegalArgumentException("SYNTHETIC_TARGET_CONFIGURATION_INVALID");
     this.expected = expected; this.outcome = outcome;
   }
 
   void requirePreconditions(BusinessOperationScope scope, JsonNode admitted, String expectedProfile) {
     try {
-      var bound = GitHubBusinessOperationBinding.bind(scope, admitted, expected);
+      var bound = expected.bind(scope, admitted);
       if (!bound.profileFingerprint().equals(expectedProfile)) throw new IllegalArgumentException();
     } catch (RuntimeException failure) {
       throw new BusinessOperationStorageException(BusinessOperationStorageException.Code.OPERATION_TARGET_PRECONDITION_FAILED);

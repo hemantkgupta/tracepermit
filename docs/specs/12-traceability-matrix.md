@@ -1315,6 +1315,20 @@ corresponding row when status or evidence changes. “Implemented” requires a
 linked enforcement point and a test capable of failing when the behavior is
 removed.
 
+## Okta/GitHub organization sandbox implementation candidate
+
+This is source plus focused generated/offline fixture coverage, not full
+qualification evidence or a requirement-status promotion. The focused fixtures
+passed locally on 2026-10-28; aggregate database/process and three-engine
+qualification remains incomplete.
+
+| Requirements                            | Candidate enforcement point                                                                                                                                                                                                  | Fixture evidence and remaining boundary                                                                                                                                                                                                                                        |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| FR-001/008/009/012; SEC-001/002/003/012 | `GitHubOrganizationTargetBinding`, `GitHubOrganizationOperationBinding`, sealed `GitHubOperationProfile`/`GitHubTargetBinding`/`BoundGitHubOperation`; closed organization registration factory; exact action parser binding | `GitHubOrganizationOperationBindingTest` and `AgentCoreRegistrationIngressTest` passed locally for registration/rebinding, exact profile, substitutions, invalid environment/ref/ID/permissions and Track E compatibility. No real target/transport.                           |
+| SEC-001/002/003/006; FR-008/009/012     | `OktaOperationAuthority`, `OktaOperationReviewerRoster`; Okta `REQUESTER` attenuation in `AgentCoreRegistrationIngress`                                                                                                      | `OktaOperationAuthorityTest` passed locally with generated RS256 fixtures for role/scope/enrollment/independence/five-minute cap. No live Okta, ingress or revocation.                                                                                                         |
+| SEC-006/019; REL-002/005/008            | V4–V7 repositories accept only the sealed profile; permit codec pins the trusted composition's adapter ID; synthetic delivery remains no-retry/read-only reconciliation                                                      | Focused `OperationPermitCodecTest` cross-adapter refusal and unchanged Track E-byte cases passed. Aggregate durable suites did not complete because of database/process failures and a PostgreSQL socket-read hang. Real organization dispatch/reconciliation remains unwired. |
+| SEC-007/008/019; FR-015; OPS-005        | Explicit stop before credential/key source, ingress, live target or deployment                                                                                                                                               | [Composition contract](../design/okta-github-org-sandbox-composition.md) records the four new approvals. EKS containment, custody, bypass proof and live qualification remain external gates.                                                                                  |
+
 ## Proposed pending-request cancellation and upgrade gate
 
 FR-003/007/008/009/010; SEC-001/002/003/005/006/009/012;

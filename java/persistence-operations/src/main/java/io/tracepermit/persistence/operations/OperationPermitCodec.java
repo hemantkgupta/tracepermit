@@ -21,13 +21,22 @@ final class OperationPermitCodec {
   static final String TYPE = "tracepermit-business-operation-permit-v1+jws";
   private final BusinessOperationAdmissionSettings settings;
   private final PrivateKey privateKey;
+  private final String adapterId;
   private final String encodedHeader;
 
   OperationPermitCodec(BusinessOperationAdmissionSettings settings, PrivateKey privateKey) {
+    this(settings, privateKey, io.tracepermit.adapters.remote.github.GitHubBusinessOperationBinding.ADAPTER_ID);
+  }
+
+  OperationPermitCodec(
+      BusinessOperationAdmissionSettings settings, PrivateKey privateKey, String adapterId) {
     try {
-      if (settings == null) throw invalid();
+      if (settings == null
+          || adapterId == null
+          || !adapterId.matches("[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")) throw invalid();
       this.settings = settings;
       this.privateKey = privateKey;
+      this.adapterId = adapterId;
       this.encodedHeader = encode(CanonicalJson.canonicalize(JsonSupport.MAPPER.createObjectNode()
           .put("alg", "EdDSA").put("kid", settings.keyId()).put("typ", TYPE)).getBytes(StandardCharsets.UTF_8));
       if (privateKey != null) {
@@ -43,7 +52,8 @@ final class OperationPermitCodec {
   String sign(JsonNode claims) {
     try {
       if (privateKey == null) throw invalid();
-      String json = CanonicalJson.canonicalize(OperationPermitClaims.checked(claims, settings));
+      String json =
+          CanonicalJson.canonicalize(OperationPermitClaims.checked(claims, settings, adapterId));
       if (json.getBytes(StandardCharsets.UTF_8).length > 8192) throw invalid();
       String body = encodedHeader + "." + encode(json.getBytes(StandardCharsets.UTF_8));
       Signature signer = Signature.getInstance("Ed25519"); signer.initSign(privateKey);
@@ -67,7 +77,7 @@ final class OperationPermitCodec {
           .onUnmappableCharacter(CodingErrorAction.REPORT).decode(ByteBuffer.wrap(payload)).toString();
       JsonNode claims = StoredOperationJson.read(json, 8192);
       if (!CanonicalJson.canonicalize(claims).equals(json)) throw invalid();
-      return new Checked(OperationPermitClaims.checked(claims, settings));
+      return new Checked(OperationPermitClaims.checked(claims, settings, adapterId));
     } catch (Exception failure) { throw invalid(); }
   }
 
