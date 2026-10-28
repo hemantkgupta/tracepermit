@@ -96,3 +96,23 @@ claim to detect every prompt injection or secure arbitrary external tools:
   implementation code**. Registered handlers remain part of the trusted
   computing base; TracePermit is not an implementation-integrity guarantee for
   third-party MCP servers.
+
+### 4. Discovery Allowed vs. Invocation Denied (Least-Privilege Scoping)
+
+- _The Threat:_ An agent holding an advisory or read-only token queries the catalog and attempts to call tools beyond its granted execution scope.
+- _The Defense:_ Discovery is explicitly advisory. A token with discovery scope (`aws.logs.discover`) can query `tools/list` to populate model context. However, calling `tools/call` strictly requires invocation scope (`aws.logs.read`). If missing, the gateway throws `AUTHORIZATION_DENIED` at the transport boundary before constructing canonical actions or evaluating policy.
+
+---
+
+## Hardened Remote Edge Controls
+
+For remote network profiles, TracePermit's edge layer introduces strict protocol-level defenses before requests reach the execution core:
+
+1. **Sender-Constrained mTLS (`cnf` Certificate Binding):**
+   - Implements RFC 8705: OAuth access tokens embed an X.509 certificate confirmation claim (`cnf.x5t#S256`).
+   - The edge validates that the presented client TLS certificate matches the token's confirmation fingerprint in constant time **before parsing JSON request bodies**. Stolen tokens without the private TLS key are rejected with `401 INVALID_SENDER_CONSTRAINT`.
+2. **Pre-Dispatch Telemetry Gating:**
+   - In hardened deployments, observability is an active barrier (**no audit, no dispatch**).
+   - Before dispatching an MCP tool call, the edge must commit a `REMOTE_EDGE_AUTHORIZED` event to the security telemetry stream. If telemetry is down or buffer is exhausted, the edge drops the request with `503 SECURITY_TELEMETRY_UNAVAILABLE`.
+3. **Two-Tier Rate Limiting:**
+   - Evaluates direct peer IP quotas before token validation, followed by verified-principal quotas after authentication, mitigating denial-of-service and noisy-neighbor exhaustion.
