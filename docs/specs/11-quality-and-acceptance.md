@@ -11,6 +11,13 @@ writer has not run these checks. Passing offline checks must not be presented
 as deployed CNI/RBAC/admission/credential or real-provider acceptance. See the
 [P1 runbook](../runbooks/eks-synthetic-sandbox-bundle.md).
 
+The retained PR130-base human result passed 10 EKS cases and the repository
+gate, with 94.083611% LINE/77.338933% BRANCH and explicit cached/up-to-date reuse.
+It does not qualify the refreshed PR133/134 composition. The new manual stages
+retain all active PostgreSQL16.4/MariaDB11.4.13 cases, accepted 10.x retirement,
+complete coverage and unchanged 94/75 floors. Image and deployed-boundary gates
+remain unrun and separate.
+
 **Status:** Current POC gates and separate production targets
 
 Security invariants need executable positive and negative tests. A passing
@@ -46,10 +53,12 @@ existing `verify` check always evaluates the plan and fails on failed, cancelled
 missing, unknown or unexpectedly skipped dependencies.
 
 Full CI partitions Java into core/common operation tests, PostgreSQL state,
-MariaDB standalone consumption (both qualified versions), and three operation
-engine lanes. Database test tasks disable cached/up-to-date success. Each test
-executes in one lane, replacing duplicate aggregate/forced execution. A separate
-coverage gate requires all six manifests and every expected module's nonempty,
+MariaDB 11.4 standalone consumption, and two operation engine lanes. MariaDB
+10.x integration qualification is retired under
+[ADR0094](../architecture/0094-mariadb-10-qualification-retirement.md).
+Database test tasks disable cached/up-to-date success. Each active test executes
+in one lane, replacing duplicate aggregate/forced execution. A separate
+coverage gate requires all five manifests and every expected module's nonempty,
 hash-matched execution data for the same source SHA/workflow run before enforcing
 the existing 94% line and 75% branch thresholds. Missing shards cannot reduce the
 coverage denominator or produce a green gate. Reports retain the complete set
@@ -65,8 +74,9 @@ production qualification changes.
 
 PostgreSQL and the unwired MariaDB permit-consumption integration tests use
 disposable Testcontainers; Docker is needed for those checks. The MariaDB gate
-runs the same bounded replay cases on exact 10.6.25 and 11.4.13 images; it does
-not qualify RDS, replication or the PostgreSQL approval/evidence composition.
+runs the bounded replay cases on the exact 11.4.13 image. Historical 10.6.25
+results do not qualify the current tree. These tests do not qualify RDS,
+replication or the PostgreSQL approval/evidence composition.
 Runtime-affecting changes also need the closest numbered
 simulator scenario or an equivalent protocol smoke test.
 
@@ -109,8 +119,8 @@ archive outside every checkout, Java 8 bootstrap/Java 21 runtime, strict anonymo
 framing/EOF, offline configuration, real signed requester/reviewer identities,
 independent human roster, pinned Ed25519 private-key proof, restricted V7 grants,
 separate-process lifecycle/reconciliation, durable rejection/unknown outcomes,
-concurrent delivery admission and worker-death cleanup on exact PostgreSQL 16.4,
-MariaDB 11.4.13 and MariaDB 10.6.25. Archive inventory must contain no source,
+concurrent delivery admission and worker-death cleanup on exact PostgreSQL 16.4
+and MariaDB 11.4.13. Archive inventory must contain no source,
 test, build or repository metadata. A same-worker in-process mirror may provide
 coverage but never replaces the extracted installed-process assertions.
 

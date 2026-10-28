@@ -2,10 +2,12 @@
 
 ## EKS synthetic sandbox bundle — implemented; manual validation pending
 
-Local Mac owns `codex/eks-sandbox-bundle` from accepted main
+Local Mac owns `codex/eks-sandbox-bundle`, normally refreshed with accepted main
+`dfb7b3b11ed7af3b4d0230fae9adf6e514289ba5` (PR133 and PR134 included).
+The original feature and human-run evidence remain attached to base
 `35a791ffeba1a6b0b10e3e072e97f1085d80eed3`. The new Java renderer/checker,
 fixed deployment template, separately invoked TCP probe, packaging recipe,
-ADR0094 and EKS-specific tests/docs do not modify Track E runtime, provider
+ADR0097 and EKS-specific tests/docs do not modify Track E runtime, provider
 integration or existing process helpers. Shared settings/specification entries
 are additive. Mac Air is not messaged or polled; the human coordinates its lane.
 
@@ -17,14 +19,36 @@ cloud client, deploy/apply mode, RoleBinding, Secret, public route, migration,
 credential acquisition or application retry is added. Existing lifecycle
 60s/5s/1s budgets and all authority/no-resend behavior stay unchanged.
 
-Validation is manual. Focused tests, full repository/coverage, image builds
-and actual cluster qualification remain unrun for this candidate. Exact
-source/runtime/cache commands with private log and exit capture are supplied
-outside Git. No agent-run validation, CI retry, deployment, provider call,
-push/merge or readiness claim accompanies this implementation checkpoint.
+The original human-run feature gate passed 10 EKS cases, followed by a repository
+run with 3,761 recorded Java cases, zero failures/errors and one inherited skip;
+coverage was 94.083611% LINE and 77.338933% BRANCH with recorded cache/up-to-date
+reuse. Those receipts do not qualify this refreshed composition. Its focused,
+repository and aggregate coverage checks remain manual and pending. Image and
+actual cluster qualification remain unrun. New source/runtime/cache commands
+with private log and exit capture are supplied outside Git. The accepted PR134
+qualification policy retains PostgreSQL16.4 and MariaDB11.4.13 and historical
+10.x runtime recognition; no superseded local runtime-rejection draft is imported.
+No agent-run validation, CI retry, deployment, provider call, push or readiness
+claim accompanies this local integration checkpoint.
 
 GitHub is authoritative. Keep credentials, raw claims and private operator/customer
 planning outside Git. Historical receipts below are not fresh qualification.
+
+## MariaDB 10.x qualification retirement — implemented; validation pending
+
+On `codex/ci-mariadb-11-only` based on `dbb6e05`, default Java tests exclude
+MariaDB 10.x integration classes across modules; the replay-repair and
+standalone-consumption parameterized fixtures no longer start 10.6 containers.
+CI removes the 10.6 operation shard and requires five complete coverage manifests.
+PostgreSQL 16.4 and MariaDB 11.4.13 cases, security assertions, deadlines and
+94%/75% aggregate coverage floors remain. The production runtime still recognizes
+10.6; its prior test receipts below are historical, not current qualification.
+Scope/fixture/coverage regressions are provided in `scripts/ci-*.test.mjs`.
+
+No agent-run validation or hosted CI was started. The human must run the focused
+tests, full `pnpm check` and `pnpm format:check` against this exact working tree.
+The expected timing improvement is unmeasured. See
+[ADR0094](docs/architecture/0094-mariadb-10-qualification-retirement.md).
 
 ## PR130 worker-discovery harness — implemented; validation pending
 

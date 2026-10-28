@@ -1,6 +1,6 @@
 # TracePermit specifications
 
-[ADR0094](../architecture/0094-offline-eks-sandbox-bundle.md) adds an offline
+[ADR0097](../architecture/0097-offline-eks-sandbox-bundle.md) adds an offline
 EKS synthetic rehearsal renderer/checker and a separately invoked bounded TCP
 probe. Its [runbook](../runbooks/eks-synthetic-sandbox-bundle.md) distinguishes
 suspended restricted manifests, operator-preinitialized loopback storage and
@@ -10,6 +10,11 @@ no deployment or provider access is authorized.
 These documents describe the Java/React POC and distinguish implemented
 controls from target enterprise requirements. Source and tests determine what
 actually runs; a target requirement is not an implementation claim.
+
+The current proposed qualification scope retires MariaDB 10.x integration
+runs; PostgreSQL 16.4 and MariaDB 11.4.13 remain active. Older three-engine
+results below are historical and do not qualify the current tree. See
+[ADR0094](../architecture/0094-mariadb-10-qualification-retirement.md).
 
 The [Okta/GitHub organization sandbox composition](../design/okta-github-org-sandbox-composition.md)
 is a library-only implementation candidate. It adds sealed exact-target binding,

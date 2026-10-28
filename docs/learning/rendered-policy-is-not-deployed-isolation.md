@@ -23,5 +23,5 @@ The existing evaluated-before-effect, exact permit, acknowledged start and
 read-only no-resend rules still decide what the application may do.
 
 See the [runbook](../runbooks/eks-synthetic-sandbox-bundle.md) and
-[ADR0094](../architecture/0094-offline-eks-sandbox-bundle.md). The implementation
+[ADR0097](../architecture/0097-offline-eks-sandbox-bundle.md). The implementation
 and tests are a candidate awaiting manual evidence, not deployment acceptance.

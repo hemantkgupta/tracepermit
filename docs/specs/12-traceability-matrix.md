@@ -14,9 +14,28 @@ network/process/listener tripwires and source-free distribution checks. Tests
 are written but not run by the implementation writer. The rendered artifact
 does not verify actual CNI/RBAC/admission/image/PVC/custody properties. Cluster,
 image, credential and live-provider acceptance remain separate gates. See
-[ADR0094](../architecture/0094-offline-eks-sandbox-bundle.md), its
+[ADR0097](../architecture/0097-offline-eks-sandbox-bundle.md), its
 [runbook](../runbooks/eks-synthetic-sandbox-bundle.md) and the
 [learning note](../learning/rendered-policy-is-not-deployed-isolation.md).
+
+The initial human-run feature passed 10 focused EKS cases and a repository gate
+at 94.083611% LINE/77.338933% BRANCH with recorded reused results. Those receipts
+belong to the PR130-base feature. The normally refreshed PR133/134 composition
+requires new manual focused/repository evidence; no cluster or requirement-wide
+acceptance follows from that earlier pass.
+
+**Current scope update, validation pending:** MariaDB 10.x integration
+qualification is retired under
+[ADR0094](../architecture/0094-mariadb-10-qualification-retirement.md).
+References to 10.6 below record earlier source trees and do not provide fresh
+10.x evidence. PostgreSQL 16.4 and MariaDB 11.4.13 remain active.
+
+Requirements FR-008; SEC-005/006/009; REL-001/004/009; DATA-001; OPS-002/004
+retain their existing security assertions on the active engines. The five-lane
+coverage inventory and source-test exclusion guard are in
+`scripts/ci-coverage.test.mjs`, `scripts/ci-workflow.test.mjs` and
+`scripts/ci-mariadb-scope.test.mjs`. Exact-tree human validation is pending;
+no requirement status or production claim is promoted.
 
 ## Source-free closed operation lifecycle command
 
@@ -29,6 +48,13 @@ the existing V7 review, permit, admission, delivery and reconciliation stores.
 EOF, offline closed configuration and no request-body authority.
 `LifecycleIdentityAdapter` derives trusted contexts only from pinned real RS256
 verification, exact requester enrollment and an independent human roster.
+For FR-003 and SEC-001/009, reviewer derivation additionally rejects the enrolled
+requester's verified issuer-qualified subject across client IDs and principal
+aliases, while retaining principal-ID inequality. The offline
+`LifecycleIdentityIndependenceDiagnosticTest` covers both rejection paths,
+distinct-subject/different-issuer positive controls and scope/enrollment/roster
+controls without JDBC or network effects. No existing IDs/history are rewritten;
+existing approvals, live revocation and EKS qualification are outside this check.
 `LifecycleRuntime` accepts the Ed25519 private key only through the delivery
 frame, proves it against current authority and calls only the concrete
 repositories plus fixed synthetic target. `JdbcGitHubOperationInspector`
@@ -516,9 +542,11 @@ Requirements: FR-008; SEC-005/006/009; REL-004; OPS-002; DATA-001. The unwired
 `persistence-mariadb` foundation retains exact engine/schema/Flyway validation,
 explicit empty initialization, tenant-bound duplicate1062-only replay handling
 and fail-closed commit/close uncertainty. `MariaDbPermitConsumptionStoreTest`
-runs all seven store cases on both 10.6.25 and 11.4.13, including non-empty/schema
-adoption and transaction-fault cases; three engine-profile unit cases complete
-the seventeen-invocation matrix. See [ADR0066](../architecture/0066-mariadb-permit-consumption-foundation.md)
+runs all seven store cases on 11.4.13, including non-empty/schema adoption and
+transaction-fault cases; three engine-profile unit cases remain. The former
+10.6.25 integration cases are historical and excluded under
+[ADR0094](../architecture/0094-mariadb-10-qualification-retirement.md).
+See [ADR0066](../architecture/0066-mariadb-permit-consumption-foundation.md)
 and the [qualification runbook](../runbooks/mariadb-permit-consumption-qualification.md).
 Store reconstruction is not database crash/restart or failover proof; synthetic
 faults do not qualify external diagnostic redaction. No whole-requirement status,

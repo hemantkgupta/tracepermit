@@ -10,9 +10,9 @@ plugins {
 }
 
 // CI partitions execution, then checks the same aggregate coverage over every shard.
-// Local checkAll remains the complete suite with the original coverage thresholds.
+// Local checkAll retains the complete active-engine suite and original coverage thresholds.
 val ciLane = providers.gradleProperty("tracepermitCiLane").orNull
-val ciLanes = setOf("core", "postgres", "mariadb", "operations-postgres", "operations-mariadb106", "operations-mariadb114")
+val ciLanes = setOf("core", "postgres", "mariadb", "operations-postgres", "operations-mariadb114")
 require(ciLane == null || ciLane in ciLanes) { "Unknown TracePermit CI lane" }
 val ciCoverageDir = providers.gradleProperty("tracepermitCiCoverageDir").orNull
 val databaseModules = setOf("persistence-postgres", "persistence-mariadb", "persistence-operations")
@@ -51,6 +51,8 @@ subprojects {
 
   tasks.withType<Test>().configureEach {
     useJUnitPlatform()
+    // MariaDB 10.x integration qualification is retired; PostgreSQL and 11.4 remain.
+    exclude("**/*Maria*10*Test.class")
     systemProperty("tracepermit.repositoryRoot", rootDir.parentFile.absolutePath)
     testLogging {
       events("failed", "skipped")
@@ -64,7 +66,6 @@ subprojects {
       when (ciLane) {
         "core" -> exclude("**/Postgres*Test.class", "**/MariaDb106*Test.class", "**/MariaDb114*Test.class")
         "operations-postgres" -> include("**/Postgres*Test.class")
-        "operations-mariadb106" -> include("**/MariaDb106*Test.class")
         "operations-mariadb114" -> include("**/MariaDb114*Test.class")
         else -> throw GradleException("Operation tests requested from an unrelated CI lane")
       }

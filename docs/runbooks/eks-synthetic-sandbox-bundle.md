@@ -2,7 +2,7 @@
 
 Status: **implemented; manual validation pending; not deployed or cluster-qualified**.
 Requirements: SEC-003/007/008/012; REL-002/005; OPS-005, partial preparation only.
-See [ADR0094](../architecture/0094-offline-eks-sandbox-bundle.md) and the
+See [ADR0097](../architecture/0097-offline-eks-sandbox-bundle.md) and the
 [organization acceptance plan](org-sandbox-acceptance-plan.md).
 
 ## What is included
@@ -143,6 +143,28 @@ five observations. See [EKS network-policy considerations](https://docs.aws.amaz
 
 ## Manual qualification
 
+### Retained results and current composition
+
+The initial human-run feature used base
+`35a791ffeba1a6b0b10e3e072e97f1085d80eed3` plus the exact EKS source snapshot.
+Its focused gate passed 10 cases with no failures/errors/skips. Its repository
+run recorded 3,761 Java cases across 234 suites, zero failures/errors and one
+inherited installed-archive/native-PTY skip; coverage was 94.083611% LINE and
+77.338933% BRANCH. Of 113 Gradle tasks, 24 executed, seven came from cache and
+82 were up-to-date; eight Java Test tasks executed and 16 were up-to-date.
+These are retained results with reuse limits, not a fresh execution of every case.
+
+This branch now normally integrates accepted main
+`dfb7b3b11ed7af3b4d0230fae9adf6e514289ba5`, including PR133's identity/process
+changes and PR134's qualification policy. Current integration engines are
+PostgreSQL16.4 and MariaDB11.4.13. Historical MariaDB10.x recognition and receipts
+are retained, without fresh 10.x integration qualification. EKS Java, tests,
+template and image recipe retain their original feature bytes. The refreshed
+composition has not been validated; its exact candidate is pinned by the new
+private manual runner. Do not reuse the old base-pinned command or promote its
+results to this composition. No installed organization operator is substituted
+for the unchanged lifecycle CLI by this EKS refresh.
+
 The implementation writer has run no tests, builds, image builds, cluster probes
 or CI actions. Exact source/runtime/cache commands and private log/exit capture
 are handed to the human for this local checkout. Run these stages separately:
@@ -162,6 +184,7 @@ are handed to the human for this local checkout. Run these stages separately:
    a separately approved P1 rehearsal may run. Keep every failure and cache/skip
    limit; no automatic CI retries, deployments or ongoing polling.
 
-The feature remains **validation pending** until actual human results are
-returned. Existing passing PR130/issue126 results do not qualify this new module,
-image or cluster composition. Okta/GitHub integration remains a separate lane.
+The refreshed feature remains **validation pending** until its actual human
+results are returned. Neither the retained feature result nor passing
+PR130/issue126 results qualify this composition, image or cluster. Okta/GitHub
+integration remains a separate lane.

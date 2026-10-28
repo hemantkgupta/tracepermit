@@ -3,6 +3,10 @@
 Status: implemented candidate. Historical local qualification and the pending
 PR130 worker-discovery repair validation are recorded separately below.
 
+Current automated engine scope is PostgreSQL 16.4 and MariaDB 11.4.13. Earlier
+MariaDB 10.6.25 receipts remain historical under
+[ADR0094](../architecture/0094-mariadb-10-qualification-retirement.md).
+
 Requirements: FR-003/008/011/012; SEC-001/003/006/009/012;
 REL-001/002/004; OPS-002/004. This is partial evidence only.
 
@@ -46,6 +50,16 @@ authority, permit public key and lifetimes, requester/reviewer RS256 public
 keys/providers, exact requester enrollment and independent human roster.
 `check-config` is offline. It does not open JDBC, resolve DNS, sign or dispatch.
 
+Review rejects a verified issuer-qualified subject equal to requester enrollment,
+even under a different authorized client or requester principal alias. Principal
+IDs and stored history are unchanged, and the existing principal-ID check still
+applies. Equal raw subjects from different issuers remain distinct. This check
+does not revoke existing approvals or infer a person across different accounts.
+`LifecycleIdentityIndependenceDiagnosticTest` covers these boundaries with real
+offline parsing, generated signatures and zero network/process/JDBC attempts.
+Its focused result must be recorded separately from the historical module and
+aggregate qualification below; it does not qualify live Okta, GitHub or EKS.
+
 Every non-check command object contains exactly `schemaVersion:1.0`, the same
 profile and one canonical UUID `operationId`. Review additionally requires
 `decision` equal to `APPROVE` or `DENY`. Delivery additionally requires
@@ -77,6 +91,13 @@ verified owner token; it performs a read-only observation.
 
 ## Focused qualification matrix
 
+Linux repository and CI-lane checks use an invocation-owned subreaper to reap
+orphaned test descendants without changing PID 1 or treating zombies as exited.
+See the [Java test prerequisites](../../java/README.md). This does not change the
+installed launcher, workload, concurrency assertions or any request/session
+deadline. Recorded earlier failures remain failures; focused process controls
+and subsequent full qualification must be reported separately.
+
 Tests use runtime-generated RSA and Ed25519 keys, real signed OIDC access tokens,
 restricted database principals, exact V7 stores and only synthetic targets.
 
@@ -89,7 +110,7 @@ restricted database principals, exact V7 stores and only synthetic targets.
 | Result uncertainty     | Confirmed rejection and unknown stay durable; repeat delivery refuses; reconciliation observes without retry                                   |
 | Contention             | Eight installed delivery contenders create one admission and at most one synthetic dispatch; no automatic retry                                |
 | Supervisor             | Worker death before input returns fixed unknown with empty stderr and no effect; malformed/hostile child output fails closed                   |
-| Three exact engines    | Equivalent installed lifecycle cases on PostgreSQL 16.4, MariaDB 11.4.13 and MariaDB 10.6.25                                                   |
+| Active exact engines   | Equivalent installed lifecycle cases on PostgreSQL 16.4 and MariaDB 11.4.13; MariaDB 10.6.25 results are historical under ADR0094              |
 | Coverage mirror        | PostgreSQL in-process execution of the identical closed worker makes deliberately halted installed paths measurable without weakening them     |
 
 The final fresh module gate passed 25 tests with zero failures, errors or skips:

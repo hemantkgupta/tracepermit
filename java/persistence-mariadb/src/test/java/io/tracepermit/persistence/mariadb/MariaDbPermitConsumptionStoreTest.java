@@ -35,7 +35,6 @@ final class MariaDbPermitConsumptionStoreTest {
   private static final TenantPartition OTHER = new TenantPartition("other");
 
   private final List<QualifiedDatabase> databases = List.of(
-      new QualifiedDatabase("10.6.25", new MariaDBContainer<>("mariadb:10.6.25")),
       new QualifiedDatabase("11.4.13", new MariaDBContainer<>("mariadb:11.4.13")));
 
   @BeforeAll

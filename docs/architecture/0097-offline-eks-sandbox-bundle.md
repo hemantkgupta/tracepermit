@@ -1,8 +1,12 @@
-# ADR0094: offline, suspended EKS synthetic rehearsal bundle
+# ADR0097: offline, suspended EKS synthetic rehearsal bundle
 
 - Status: implemented candidate; manual validation and cluster qualification pending
 - Date: 2026-10-28
 - Requirements: SEC-003/007/008/012; REL-002/005; OPS-005; partial evidence only
+
+This EKS decision was renumbered from its unpublished ADR0094 draft after
+accepted PR134 allocated ADR0094 to MariaDB10.x qualification retirement.
+Its renderer, probe, manifest and security contract are unchanged.
 
 ## Decision
 
@@ -86,3 +90,8 @@ integration require their own owner-approved work.
 Tests, archive checks and manual stages are described in the
 [runbook](../runbooks/eks-synthetic-sandbox-bundle.md). No tests, builds, cluster
 probes or CI actions have been executed by the implementation writer.
+The runbook retains the initial human-run pass and its reused-result limits;
+normal integration of PR133/134 is a new, manually unvalidated composition.
+This decision imports neither runtime rejection of MariaDB10.x nor another
+operator's unpublished implementation. Current PostgreSQL16.4/MariaDB11.4.13
+qualification policy comes from accepted ADR0094, without relaxing 94/75 floors.

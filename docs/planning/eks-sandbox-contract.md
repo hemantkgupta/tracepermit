@@ -15,7 +15,7 @@ from accepted PR130 merge `35a791ffeba1a6b0b10e3e072e97f1085d80eed3`, tree
 `070cc28f3662b272d6747a6dfd407c3c78d7af3a`. Earlier source/PR receipts below
 are historical, not current unmerged status.
 
-[ADR0094](../architecture/0094-offline-eks-sandbox-bundle.md) and its
+[ADR0097](../architecture/0097-offline-eks-sandbox-bundle.md) and its
 [runbook](../runbooks/eks-synthetic-sandbox-bundle.md) record the candidate
 renderer/checker, suspended manifests, native loopback PostgreSQL sidecar,
 separately invoked probe and validation-pending limits. The first closed profile

@@ -25,14 +25,16 @@ missing results and unknown statuses fail the gate. Workflow file edits remain
 review-sensitive; this policy is not protection against an authorized reviewer
 deliberately changing the workflow or required checks themselves.
 
-The full Java suite runs once across six lanes: core plus common operation
-tests, PostgreSQL state, standalone MariaDB consumption on both supported
-versions, and operation transactions on PostgreSQL / MariaDB10.6 / MariaDB11.4.
+The active Java suite runs once across five lanes: core plus common operation
+tests, PostgreSQL state, standalone MariaDB 11.4 consumption, and operation
+transactions on PostgreSQL / MariaDB11.4. MariaDB 10.x integration qualification
+is retired under [ADR0094](0094-mariadb-10-qualification-retirement.md).
 All other/new operation test classes remain in core. New Java modules join core
 automatically. Database tasks disable up-to-date and build-cache success.
 The former aggregate-plus-forced repetitions are replaced by mandatory fresh
-execution, not removed qualification. Matrix fail-fast is disabled so one engine
-cannot suppress the others' evidence. Local `pnpm check` remains complete.
+execution for the retained engines. Matrix fail-fast is disabled so one engine
+cannot suppress the others' evidence. Local `pnpm check` remains complete for
+the retained engine scope.
 
 Each lane publishes only JaCoCo execution files and a manifest of their hashes,
 module names, lane, source SHA and workflow-run ID. The coverage job downloads
