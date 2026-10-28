@@ -37,7 +37,7 @@ record OrganizationOperatorReceipt(
             || SUCCESSES.getOrDefault(command, Set.of()).contains(outcome))) {
       throw invalid();
     }
-    if (outcome.equals("USAGE") != command.equals("UNKNOWN")
+    if ((outcome.equals("USAGE") && !command.equals("UNKNOWN"))
         || (command.equals("UNKNOWN") && !Set.of("USAGE", "UNKNOWN").contains(outcome))) {
       throw invalid();
     }
