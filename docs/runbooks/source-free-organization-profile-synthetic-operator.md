@@ -15,6 +15,12 @@ merged published qualification commit
 `59f9a6b40bb29b1f0a28268098be0f5954d0be37`, with those ordered parents. Do not
 rebase, cherry-pick, reset or force-update this history.
 
+The source/documentation implementation checkpoint is
+`a9270e4651d39d4825b2ef3efcaccce684760aa7`, tree
+`f3ad45469efddf2f6edf6b4fdd65622db2219651`, with the integration merge as its
+sole parent. This is an unvalidated local checkpoint, not a qualification receipt
+or publication.
+
 This lane owns the new executable module, its tests/docs and the additive durable
 organization factory. It does not own EKS, installed COMMIT-loss injection,
 artifact/identity verification or credential-custody corrections. MariaDB10.6
@@ -66,6 +72,9 @@ test "$(git show -s --format='%P' 5da2b6d48ba592537f1b9cf23dae753ddb604feb)" = \
   "dbb6e05930827633d7326240551ddeb73657c5a7 8108598a658121735dbd59d5a44053b3ff22da7a"
 test "$(git show -s --format='%T' 5da2b6d48ba592537f1b9cf23dae753ddb604feb)" = \
   59f9a6b40bb29b1f0a28268098be0f5954d0be37
+test "$(git rev-parse a9270e4651d39d4825b2ef3efcaccce684760aa7^{tree})" = \
+  f3ad45469efddf2f6edf6b4fdd65622db2219651
+git merge-base --is-ancestor a9270e4651d39d4825b2ef3efcaccce684760aa7 HEAD
 
 export JENV_VERSION=21
 export TRACEPERMIT_GRADLE_USER_HOME="$PWD/.cache/gradle"

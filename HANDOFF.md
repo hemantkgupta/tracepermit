@@ -11,6 +11,10 @@ qualification `8108598a658121735dbd59d5a44053b3ff22da7a` through normal merge
 `5da2b6d48ba592537f1b9cf23dae753ddb604feb` (tree
 `59f9a6b40bb29b1f0a28268098be0f5954d0be37`, ordered parents main then
 qualification). Neither history was rebased, cherry-picked, reset or rewritten.
+The implementation checkpoint is
+`a9270e4651d39d4825b2ef3efcaccce684760aa7`, tree
+`f3ad45469efddf2f6edf6b4fdd65622db2219651`, with the integration merge as its
+sole parent. It is local only and has not been pushed.
 
 Implemented scope is the separate
 `agentcore-organization-lifecycle-cli`/`tracepermit-synthetic-organization-operator`
