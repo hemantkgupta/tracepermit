@@ -4,7 +4,9 @@ import static io.tracepermit.application.BusinessOperationStorageException.Code.
 import static io.tracepermit.persistence.operations.JdbcBusinessOperationRepository.*;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import io.tracepermit.adapters.remote.github.BoundGitHubOperation;
 import io.tracepermit.adapters.remote.github.GitHubBusinessOperationBinding;
+import io.tracepermit.adapters.remote.github.GitHubOperationProfile;
 import io.tracepermit.application.BusinessOperationAuthorityProfile;
 import io.tracepermit.application.BusinessOperationEvaluation;
 import io.tracepermit.application.BusinessOperationReview;
@@ -31,10 +33,18 @@ public final class JdbcGitHubOperationReviewRepository {
   private static final BusinessOperationTransitionPlanner PLANNER = new BusinessOperationTransitionPlanner();
   private final DataSource source;
   private final BusinessOperationAuthorityProfile profile;
-  private final GitHubBusinessOperationBinding.ExpectedProfile target;
+  private final GitHubOperationProfile target;
+
+  /** Original Track E descriptor retained for compiled and source compatibility. */
+  public JdbcGitHubOperationReviewRepository(
+      DataSource source,
+      BusinessOperationAuthorityProfile profile,
+      GitHubBusinessOperationBinding.ExpectedProfile target) {
+    this(source, profile, (GitHubOperationProfile) target);
+  }
 
   public JdbcGitHubOperationReviewRepository(DataSource source, BusinessOperationAuthorityProfile profile,
-      GitHubBusinessOperationBinding.ExpectedProfile target) {
+      GitHubOperationProfile target) {
     if (source == null || profile == null || target == null) throw error(OPERATION_COMMAND_INVALID);
     profile.reviewSettings();
     this.source = source;
@@ -161,9 +171,9 @@ public final class JdbcGitHubOperationReviewRepository {
     return result.deepCopy();
   }
 
-  private GitHubBusinessOperationBinding.BoundOperationData bind(BusinessOperationScope scope, JsonNode actual) {
+  private BoundGitHubOperation bind(BusinessOperationScope scope, JsonNode actual) {
     try {
-      return GitHubBusinessOperationBinding.bind(scope, actual, target);
+      return target.bind(scope, actual);
     } catch (RuntimeException rejected) {
       throw error(OPERATION_PROFILE_MISMATCH);
     }

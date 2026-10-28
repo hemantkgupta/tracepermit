@@ -537,6 +537,30 @@ store code is separate from the unchanged durable PostgreSQL coordinator. See
 [ADR 0054](../architecture/0054-bounded-local-replay-stores.md) and the
 [qualification runbook](../runbooks/bounded-local-replay-stores.md).
 
+## Okta/GitHub organization sandbox candidate
+
+The Java source contains a sealed organization GitHub profile and a library-only
+Okta operation authority candidate. Exact App/installation/organization/repository
+identity, minimum permissions, refs/SHAs, verified requester/reviewer role,
+offline enrollment, independent review and five-minute roster freshness are
+represented as trusted constructor contracts. The existing Track E profile and
+permit defaults are retained. Registration and V4–V7 lifecycle code can accept
+only the two sealed profiles; the organization path currently reaches only the
+deterministic synthetic delivery target.
+
+This source is not fully qualified evidence yet. On 2026-10-28 the focused
+generated/offline organization binding, registration, Okta authority and permit
+codec fixtures passed, as did the console build/typecheck/test slice, Java
+environment selection, documentation links and formatting checks. The aggregate
+Java check encountered existing database/process harness failures and then a
+PostgreSQL socket-read hang, so it was interrupted and is not a green
+qualification result. No hosted CI, login, live-provider token mint, deployment
+or live provider/target call was run for this change.
+GitHub App and Ed25519 private-key custody, authenticated ingress/sender binding,
+exact organization inputs, EKS containment, real durable dispatch and live
+read-only reconciliation remain absent. See the
+[composition contract](../design/okta-github-org-sandbox-composition.md).
+
 ## Controls not yet established
 
 The repository is a security-control POC, **not** a deployable enterprise

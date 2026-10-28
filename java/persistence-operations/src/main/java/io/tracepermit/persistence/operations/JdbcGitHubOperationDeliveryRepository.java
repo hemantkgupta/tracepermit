@@ -6,6 +6,7 @@ import static io.tracepermit.persistence.operations.JdbcBusinessOperationReposit
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.tracepermit.adapters.remote.github.GitHubBusinessOperationBinding;
+import io.tracepermit.adapters.remote.github.GitHubOperationProfile;
 import io.tracepermit.application.BusinessOperationAuthorityProfile;
 import io.tracepermit.application.BusinessOperationExecution;
 import io.tracepermit.application.BusinessOperationScope;
@@ -23,7 +24,7 @@ import javax.sql.DataSource;
 public final class JdbcGitHubOperationDeliveryRepository {
   private final DataSource source;
   private final BusinessOperationAuthorityProfile profile;
-  private final GitHubBusinessOperationBinding.ExpectedProfile expectedTarget;
+  private final GitHubOperationProfile expectedTarget;
   private final SyntheticGitHubDeliveryTarget target;
   private final OperationPermitCodec codec;
   // Package-internal observation-only crash seam. Never supplies time, identity, claims or decisions.
@@ -45,17 +46,35 @@ public final class JdbcGitHubOperationDeliveryRepository {
   }
   public record Reconciliation(String durableState, boolean dispatchStarted, String syntheticObservation, int syntheticInvocations) {}
 
+  /** Original Track E descriptor retained for compiled and source compatibility. */
+  public JdbcGitHubOperationDeliveryRepository(
+      DataSource source,
+      BusinessOperationAuthorityProfile profile,
+      GitHubBusinessOperationBinding.ExpectedProfile expectedTarget,
+      SyntheticGitHubDeliveryTarget target) {
+    this(source, profile, (GitHubOperationProfile) expectedTarget, target);
+  }
+
   public JdbcGitHubOperationDeliveryRepository(DataSource source, BusinessOperationAuthorityProfile profile,
-      GitHubBusinessOperationBinding.ExpectedProfile expectedTarget, SyntheticGitHubDeliveryTarget target) {
+      GitHubOperationProfile expectedTarget, SyntheticGitHubDeliveryTarget target) {
     this(source, profile, expectedTarget, target, phase -> {});
   }
 
+  JdbcGitHubOperationDeliveryRepository(
+      DataSource source,
+      BusinessOperationAuthorityProfile profile,
+      GitHubBusinessOperationBinding.ExpectedProfile expectedTarget,
+      SyntheticGitHubDeliveryTarget target,
+      Barriers barriers) {
+    this(source, profile, (GitHubOperationProfile) expectedTarget, target, barriers);
+  }
+
   JdbcGitHubOperationDeliveryRepository(DataSource source, BusinessOperationAuthorityProfile profile,
-      GitHubBusinessOperationBinding.ExpectedProfile expectedTarget, SyntheticGitHubDeliveryTarget target, Barriers barriers) {
+      GitHubOperationProfile expectedTarget, SyntheticGitHubDeliveryTarget target, Barriers barriers) {
     if (source == null || profile == null || expectedTarget == null || target == null) throw error(OPERATION_COMMAND_INVALID);
     this.source = source; this.profile = profile; this.expectedTarget = expectedTarget; this.target = target;
     this.barriers = java.util.Objects.requireNonNull(barriers);
-    codec = new OperationPermitCodec(profile.admissionSettings(), null);
+    codec = new OperationPermitCodec(profile.admissionSettings(), null, expectedTarget.adapterId());
     OperationDatabase.validateDeliveryExisting(source);
   }
 
@@ -246,7 +265,7 @@ public final class JdbcGitHubOperationDeliveryRepository {
     requirePresentation(loaded, command, signed, serialized, now);
     JsonNode actual = OperationPermitClaims.recaptureForDelivery(connection, loaded.initial(), loaded.approved(), profile, expectedTarget, command, now);
     if (!CanonicalJson.sha256(stable(actual)).equals(CanonicalJson.sha256(stable(signed)))) throw error(OPERATION_PERMIT_INVALID);
-    GitHubBusinessOperationBinding.bind(command.scope(), loaded.head(), expectedTarget);
+    expectedTarget.bind(command.scope(), loaded.head());
   }
   private void requirePresentation(Loaded loaded, BusinessOperationExecution command, JsonNode signed, String serialized, Instant now) {
     if (!"claimed".equals(loaded.head().path("execution").path("status").asText())) throw error(OPERATION_NOT_APPROVED);

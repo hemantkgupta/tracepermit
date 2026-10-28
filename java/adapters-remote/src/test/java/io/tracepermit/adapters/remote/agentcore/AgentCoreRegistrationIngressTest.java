@@ -6,6 +6,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.tracepermit.adapters.remote.github.GitHubBusinessOperationBinding;
+import io.tracepermit.adapters.remote.github.GitHubOrganizationOperationBinding;
+import io.tracepermit.adapters.remote.github.GitHubOrganizationTargetBinding;
 import io.tracepermit.adapters.remote.github.GitHubPilotTargetBinding;
 import io.tracepermit.application.BusinessOperationRegistration;
 import io.tracepermit.application.BusinessOperationRepository;
@@ -18,6 +20,7 @@ import io.tracepermit.identity.ConnectorOrigin;
 import io.tracepermit.identity.InMemoryWorkloadIdentityReplayStore;
 import io.tracepermit.identity.OidcAccessTokenVerifier;
 import io.tracepermit.identity.OidcProviderConfiguration;
+import io.tracepermit.identity.OidcTokenProfile;
 import io.tracepermit.identity.WorkloadIdentityReplayStore;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -68,7 +71,7 @@ final class AgentCoreRegistrationIngressTest {
     assertThat(receipt.executionEnabled()).isFalse();
     JsonNode operation = repository.latest;
     assertThat(BusinessOperationValidator.validate(operation)).isEqualTo(operation);
-    var bound = GitHubBusinessOperationBinding.bind(SCOPE, operation, enrollment.targetProfile());
+    var bound = enrollment.targetProfile().bind(SCOPE, operation);
     assertThat(bound.targetBinding()).isEqualTo(enrollment.targetProfile().targetBinding());
     assertThat(operation.path("trustedContext")).isEqualTo(SCOPE.trustedContext());
     // Independently calculated with Python hashlib + sorted compact UTF-8 JSON, not this builder.
@@ -170,6 +173,72 @@ final class AgentCoreRegistrationIngressTest {
     var substituted = new BusinessOperationScope("other-tenant", SCOPE.workspaceId(), SCOPE.requesterPrincipalId());
     rejected(() -> ingress(enrollment(substituted), new InMemoryWorkloadIdentityReplayStore())
         .register(token(claims -> {}), null, body()), "AGENTCORE_IDENTITY_REJECTED");
+    assertThat(repository.calls.get()).isZero();
+  }
+
+  @Test
+  void oktaRegistrationRequiresVerifiedRequesterRoleInAdditionToExactEnrollmentAndScope()
+      throws Exception {
+    var enrollment = enrollment(SCOPE);
+    var accepted =
+        new AgentCoreRegistrationIngress(
+            oktaVerifier(),
+            new InMemoryWorkloadIdentityReplayStore(),
+            repository,
+            clock,
+            enrollment);
+    accepted.register(oktaToken("pilot-requesters", "requester-token"), null, body());
+    assertThat(repository.calls.get()).isEqualTo(1);
+
+    var refused =
+        new AgentCoreRegistrationIngress(
+            oktaVerifier(),
+            new InMemoryWorkloadIdentityReplayStore(),
+            repository,
+            clock,
+            enrollment);
+    rejected(
+        () -> refused.register(oktaToken("pilot-reviewers", "reviewer-token"), null, body()),
+        "AGENTCORE_IDENTITY_REJECTED");
+    assertThat(repository.calls.get()).isEqualTo(1);
+  }
+
+  @Test
+  void closedOrganizationFactoryRegistersAndRebindsTheExactOrganizationProfile()
+      throws Exception {
+    var enrollment = organizationEnrollment(SCOPE);
+    var ingress =
+        AgentCoreRegistrationIngress.organization(
+            oktaVerifier(),
+            new InMemoryWorkloadIdentityReplayStore(),
+            repository,
+            clock,
+            enrollment);
+
+    var receipt =
+        ingress.register(
+            oktaToken("pilot-requesters", "organization-requester-token"), null, body());
+
+    assertThat(receipt.created()).isTrue();
+    assertThat(repository.latest.path("adapterId").asText())
+        .isEqualTo(GitHubOrganizationOperationBinding.ADAPTER_ID);
+    assertThat(enrollment.targetProfile().bind(SCOPE, repository.latest).targetBinding())
+        .isEqualTo(enrollment.targetProfile().targetBinding());
+  }
+
+  @Test
+  void organizationEnrollmentRejectsTheLegacyStandardOidcProfile() throws Exception {
+    var ingress =
+        AgentCoreRegistrationIngress.organization(
+            verifier(),
+            new InMemoryWorkloadIdentityReplayStore(),
+            repository,
+            clock,
+            organizationEnrollment(SCOPE));
+
+    rejected(
+        () -> ingress.register(token(claims -> {}), null, body()),
+        "AGENTCORE_IDENTITY_REJECTED");
     assertThat(repository.calls.get()).isZero();
   }
 
@@ -333,11 +402,22 @@ final class AgentCoreRegistrationIngressTest {
   }
 
   @Test
-  void noExecutionCredentialOrTransportDependencyCanBeSupplied() {
-    assertThat(AgentCoreRegistrationIngress.class.getDeclaredConstructors()).hasSize(1);
-    assertThat(AgentCoreRegistrationIngress.class.getDeclaredConstructors()[0].getParameterTypes())
+  void noExecutionCredentialOrTransportDependencyCanBeSupplied() throws Exception {
+    var publicConstructors =
+        java.util.Arrays.stream(AgentCoreRegistrationIngress.class.getDeclaredConstructors())
+            .filter(constructor -> java.lang.reflect.Modifier.isPublic(constructor.getModifiers()))
+            .toList();
+    assertThat(publicConstructors).hasSize(1);
+    assertThat(publicConstructors.getFirst().getParameterTypes())
         .containsExactly(OidcAccessTokenVerifier.class, WorkloadIdentityReplayStore.class,
             BusinessOperationRepository.class, Clock.class, AgentCoreRegistrationIngress.Enrollment.class);
+    var organization = AgentCoreRegistrationIngress.class.getDeclaredMethod(
+        "organization", OidcAccessTokenVerifier.class, WorkloadIdentityReplayStore.class,
+        BusinessOperationRepository.class, Clock.class,
+        AgentCoreRegistrationIngress.OrganizationEnrollment.class);
+    assertThat(java.lang.reflect.Modifier.isPublic(organization.getModifiers())).isTrue();
+    assertThat(java.lang.reflect.Modifier.isStatic(organization.getModifiers())).isTrue();
+    assertThat(organization.getReturnType()).isEqualTo(AgentCoreRegistrationIngress.class);
     assertThat(java.util.Arrays.stream(AgentCoreRegistrationIngress.class.getDeclaredMethods())
         .map(java.lang.reflect.Method::getName)).doesNotContain("execute", "dispatch", "credentials");
   }
@@ -397,6 +477,40 @@ final class AgentCoreRegistrationIngressTest {
         }, clock);
   }
 
+  private OidcAccessTokenVerifier oktaVerifier() {
+    var provider =
+        new OidcProviderConfiguration(
+            URI.create(ISSUER),
+            AUDIENCE,
+            URI.create(ISSUER + "/jwks"),
+            URI.create(AUDIENCE + "/metadata"),
+            List.of(URI.create(ISSUER)),
+            "Synthetic registration",
+            Map.of("synthetic-client", "Synthetic client"),
+            "tracepermit_tenant",
+            Map.of("synthetic-org", SCOPE.tenantId()),
+            Set.of(AgentCoreRegistrationIngress.REQUIRED_SCOPE),
+            ConnectorOrigin.CLI,
+            Duration.ofMinutes(5),
+            Duration.ofMinutes(1),
+            Duration.ofSeconds(30),
+            OidcTokenProfile.okta(
+                "groups",
+                Map.of(
+                    "pilot-requesters", "REQUESTER",
+                    "pilot-reviewers", "REVIEWER")));
+    return new OidcAccessTokenVerifier(
+        issuer -> ISSUER.equals(issuer) ? Optional.of(provider) : Optional.empty(),
+        (config, id, algorithm, now) -> {
+          keyCalls.incrementAndGet();
+          if (!"synthetic-key".equals(id) || !"RS256".equals(algorithm)) {
+            throw new IllegalStateException("Untrusted key");
+          }
+          return (RSAPublicKey) KEY.getPublic();
+        },
+        clock);
+  }
+
   private static AgentCoreRegistrationIngress.Enrollment enrollment(BusinessOperationScope scope) {
     var target = new GitHubPilotTargetBinding(71, 101, 201, "tracepermit/agentcore-pr-pilot", "synthetic-change", "main", "a".repeat(40), "b".repeat(40));
     var profile = new GitHubBusinessOperationBinding.ExpectedProfile("github-draft-pr-v1", "test", 1,
@@ -404,6 +518,39 @@ final class AgentCoreRegistrationIngressTest {
         Map.of("adapter_release", "sha256:" + "7".repeat(64)), target);
     return new AgentCoreRegistrationIngress.Enrollment(ISSUER, ISSUER + "#workload:synthetic", "synthetic-client",
         scope, profile, "synthetic-retention", Duration.ofDays(30));
+  }
+
+  private static AgentCoreRegistrationIngress.OrganizationEnrollment organizationEnrollment(
+      BusinessOperationScope scope) {
+    var target =
+        new GitHubOrganizationTargetBinding(
+            61,
+            71,
+            101,
+            201,
+            "example-sandbox/tracepermit-change-control",
+            "tracepermit/synthetic-change",
+            "main",
+            "a".repeat(40),
+            "b".repeat(40),
+            GitHubOrganizationTargetBinding.requiredPermissions());
+    var profile =
+        new GitHubOrganizationOperationBinding.ExpectedProfile(
+            GitHubOrganizationOperationBinding.ADAPTER_ID,
+            "test",
+            1,
+            new GitHubBusinessOperationBinding.PolicyRelease(
+                "synthetic-policy", 1, "sha256:" + "5".repeat(64)),
+            Map.of("adapter_release", "sha256:" + "7".repeat(64)),
+            target);
+    return new AgentCoreRegistrationIngress.OrganizationEnrollment(
+        ISSUER,
+        ISSUER + "#workload:synthetic",
+        "synthetic-client",
+        scope,
+        profile,
+        "synthetic-retention",
+        Duration.ofDays(30));
   }
 
   private static byte[] body() { return request().toString().getBytes(StandardCharsets.UTF_8); }
@@ -428,6 +575,37 @@ final class AgentCoreRegistrationIngressTest {
     String input = encoder.encodeToString(header.toString().getBytes(StandardCharsets.UTF_8)) + "."
         + encoder.encodeToString(claims.toString().getBytes(StandardCharsets.UTF_8));
     Signature signer = Signature.getInstance("SHA256withRSA"); signer.initSign(KEY.getPrivate());
+    signer.update(input.getBytes(StandardCharsets.US_ASCII));
+    return "Bearer " + input + "." + encoder.encodeToString(signer.sign());
+  }
+
+  private static String oktaToken(String group, String tokenId) throws Exception {
+    ObjectNode header =
+        JsonSupport.MAPPER
+            .createObjectNode()
+            .put("alg", "RS256")
+            .put("typ", "JWT")
+            .put("kid", "synthetic-key");
+    ObjectNode claims =
+        JsonSupport.MAPPER
+            .createObjectNode()
+            .put("iss", ISSUER)
+            .put("aud", AUDIENCE)
+            .put("sub", "workload:synthetic")
+            .put("cid", "synthetic-client")
+            .put("tracepermit_tenant", "synthetic-org")
+            .put("iat", NOW.minusSeconds(30).getEpochSecond())
+            .put("exp", NOW.plusSeconds(270).getEpochSecond())
+            .put("jti", tokenId);
+    claims.putArray("scp").add("operations.register");
+    claims.putArray("groups").add(group);
+    var encoder = Base64.getUrlEncoder().withoutPadding();
+    String input =
+        encoder.encodeToString(header.toString().getBytes(StandardCharsets.UTF_8))
+            + "."
+            + encoder.encodeToString(claims.toString().getBytes(StandardCharsets.UTF_8));
+    Signature signer = Signature.getInstance("SHA256withRSA");
+    signer.initSign(KEY.getPrivate());
     signer.update(input.getBytes(StandardCharsets.US_ASCII));
     return "Bearer " + input + "." + encoder.encodeToString(signer.sign());
   }

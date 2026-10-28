@@ -1,7 +1,8 @@
 # Organization sandbox acceptance plan
 
 Status: **proposed acceptance contract; no deployment or real-target authorization**.
-Prepared 2026-10-27 from accepted main `3c89887f8e2398eab557091d27d97e9aa238035c`.
+Prepared 2026-10-27 and updated 2026-10-28 from accepted main
+`35a791ffeba1a6b0b10e3e072e97f1085d80eed3`.
 
 This plan defines the evidence needed to move the installed synthetic pilot into
 one organization-owned non-production sandbox. It does not select an organization,
@@ -22,14 +23,14 @@ remain binding. This plan changes no requirement status.
 
 ## 1. Current evidence and open gates
 
-| Area                                                                       | Actual evidence                                                                                                                                | Still required                                                                                      |
-| -------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| Registration, review, permit/admission and synthetic delivery              | Accepted library slices through PR128; registration remains execution-disabled                                                                 | A reviewed installed composition; acceptance in the selected deployment                             |
-| Permanent component lifecycle contract                                     | Mac Air reports 15/15 on PostgreSQL16.4, MariaDB11.4.13 and MariaDB10.6.25 after refreshing accepted main                                      | Publication and final-composition broad qualification; this is not installed E evidence             |
-| Track E installed lifecycle operator                                       | Mac Air reports Java21 compilation; installed and database tests are being added                                                               | Strict protocol, authority, extracted archive, uncertainty, restart and full qualification evidence |
-| Reliability                                                                | [Issue126](https://github.com/hemantkgupta/tracepermit/issues/126) preserves failures; local process-harness repairs are a separate workstream | Passing unchanged tests and complete aggregate coverage on the release candidate                    |
-| Org identity, protected credentials, enforced routing and audit deployment | Deployment requirements/design only                                                                                                            | The exact organization-owned composition and negative-control evidence below                        |
-| Non-production provider action                                             | Existing narrow adapter foundations are synthetically qualified only                                                                           | Separate adapter/topology review and explicit live non-production approval                          |
+| Area                                                                       | Actual evidence                                                                                                                                    | Still required                                                                          |
+| -------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Registration, review, permit/admission and synthetic delivery              | Accepted library slices through PR128; registration remains execution-disabled                                                                     | A reviewed installed composition; acceptance in the selected deployment                 |
+| Permanent component lifecycle contract                                     | Mac Air reports 15/15 on PostgreSQL16.4, MariaDB11.4.13 and MariaDB10.6.25 after refreshing accepted main                                          | Publication and final-composition broad qualification; this is not installed E evidence |
+| Track E installed lifecycle operator                                       | PR130 is merged at accepted main `35a791ffeba1a6b0b10e3e072e97f1085d80eed3`; its retained qualification evidence and exceptions remain controlling | Organization-specific composition and fresh exact-candidate qualification               |
+| Reliability                                                                | [Issue126](https://github.com/hemantkgupta/tracepermit/issues/126) preserves failures; local process-harness repairs are a separate workstream     | Passing unchanged tests and complete aggregate coverage on the release candidate        |
+| Org identity, protected credentials, enforced routing and audit deployment | Deployment requirements/design only                                                                                                                | The exact organization-owned composition and negative-control evidence below            |
+| Non-production provider action                                             | Existing narrow adapter foundations are synthetically qualified only                                                                               | Separate adapter/topology review and explicit live non-production approval              |
 
 PR128's accepted qualification exception does not waive any sandbox gate or
 future PR. Track E's three contract decisions are already approved; they do not
@@ -94,6 +95,9 @@ current implementations are integrated:
   join the accepted lifecycle to the existing fixed GitHub draft-PR adapter and
   read-only reconciliation. Review executor-only App installation credentials,
   exact repository/ref preflight, no automatic POST retry and uncertainty limits.
+  The [library-only implementation candidate](../design/okta-github-org-sandbox-composition.md)
+  now pins the Java authority/profile seams and stops before the unresolved
+  custody, ingress, organization manifest and live-target boundaries.
 
 The Track E per-delivery Ed25519 permit-signing key is distinct from the GitHub
 App provider credential. The approved E pipe contract does not approve a new

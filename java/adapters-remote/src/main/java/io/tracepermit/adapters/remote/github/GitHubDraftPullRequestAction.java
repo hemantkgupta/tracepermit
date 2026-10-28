@@ -47,6 +47,20 @@ public record GitHubDraftPullRequestAction(
   }
 
   public static GitHubDraftPullRequestAction fromCanonical(JsonNode event) {
+    return fromCanonical(event, ALLOWED_REPOSITORY, ALLOWED_BASE_BRANCH, false);
+  }
+
+  static GitHubDraftPullRequestAction fromCanonical(
+      JsonNode event, GitHubTargetBinding binding) {
+    Objects.requireNonNull(binding, "binding must not be null");
+    GitHubDraftPullRequestAction action =
+        fromCanonical(event, binding.repository(), binding.base(), true);
+    binding.requireAction(action);
+    return action;
+  }
+
+  private static GitHubDraftPullRequestAction fromCanonical(
+      JsonNode event, String allowedRepository, String allowedBase, boolean exactRepository) {
     Objects.requireNonNull(event, "event must not be null");
 
     // Fail closed on raw input before normalizer can silently drop unknown fields
@@ -101,7 +115,9 @@ public record GitHubDraftPullRequestAction(
 
     // Repository extraction & allowlisting
     String repository = resolveRepository(argumentsNode, targetNode);
-    if (!ALLOWED_REPOSITORY.equalsIgnoreCase(repository)) {
+    if (!(exactRepository
+        ? allowedRepository.equals(repository)
+        : allowedRepository.equalsIgnoreCase(repository))) {
       throw new GitHubPullRequestException(
           "REPOSITORY_NOT_ALLOWLISTED",
           "PILOT_BOUNDARY_VIOLATION",
@@ -115,11 +131,13 @@ public record GitHubDraftPullRequestAction(
           "MISSING_BASE_BRANCH", "MALFORMED_INPUT", "A non-empty base branch argument is required.");
     }
     String base = baseNode.asText().trim();
-    if (!ALLOWED_BASE_BRANCH.equals(base)) {
+    if (!allowedBase.equals(base)) {
       throw new GitHubPullRequestException(
           "BASE_BRANCH_NOT_ALLOWLISTED",
           "PILOT_BOUNDARY_VIOLATION",
-          "Base branch must strictly be '" + ALLOWED_BASE_BRANCH + "'; received: " + base);
+          exactRepository
+              ? "Base branch does not match the operator binding."
+              : "Base branch must strictly be '" + ALLOWED_BASE_BRANCH + "'; received: " + base);
     }
 
     // Draft=true enforcement (invariant: draft must always be true)
@@ -146,7 +164,7 @@ public record GitHubDraftPullRequestAction(
       throw new GitHubPullRequestException(
           "INVALID_HEAD_BRANCH", "MALFORMED_INPUT", "Head branch format is invalid.");
     }
-    if (ALLOWED_BASE_BRANCH.equals(head)) {
+    if (allowedBase.equals(head)) {
       throw new GitHubPullRequestException(
           "HEAD_EQUALS_BASE", "PILOT_BOUNDARY_VIOLATION", "Head branch cannot equal base branch.");
     }
@@ -181,7 +199,7 @@ public record GitHubDraftPullRequestAction(
     return new GitHubDraftPullRequestAction(
         eventId,
         toolName,
-        repository.toLowerCase(Locale.ROOT),
+        exactRepository ? repository : repository.toLowerCase(Locale.ROOT),
         title,
         head,
         base,

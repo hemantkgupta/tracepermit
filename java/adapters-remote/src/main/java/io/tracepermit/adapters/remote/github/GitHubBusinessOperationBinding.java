@@ -35,7 +35,7 @@ public final class GitHubBusinessOperationBinding {
       long recoveryGeneration,
       PolicyRelease policyRelease,
       Map<String, String> artifactDigests,
-      GitHubPilotTargetBinding targetBinding) {
+      GitHubPilotTargetBinding targetBinding) implements GitHubOperationProfile {
     public ExpectedProfile {
       require(ADAPTER_ID.equals(adapterId));
       require(Set.of("dev", "test", "staging").contains(environment == null ? "" : environment));
@@ -84,6 +84,12 @@ public final class GitHubBusinessOperationBinding {
     }
 
     @Override
+    public BoundOperationData bind(
+        BusinessOperationScope trustedScope, JsonNode storedOperation) {
+      return GitHubBusinessOperationBinding.bind(trustedScope, storedOperation, this);
+    }
+
+    @Override
     public String toString() {
       return "GitHubExpectedOperationProfile[redacted]";
     }
@@ -117,7 +123,7 @@ public final class GitHubBusinessOperationBinding {
   }
 
   /** Data only. Even an approved/succeeded label in this snapshot conveys no authority. */
-  public static final class BoundOperationData {
+  public static final class BoundOperationData implements BoundGitHubOperation {
     private final JsonNode snapshot;
     private final GitHubPilotTargetBinding targetBinding;
     private final String profileFingerprint;
@@ -182,7 +188,7 @@ public final class GitHubBusinessOperationBinding {
   public static final class BindingException extends RuntimeException {
     private static final long serialVersionUID = 1L;
 
-    private BindingException() {
+    BindingException() {
       super("GITHUB_OPERATION_BINDING_INVALID", null, false, false);
     }
 

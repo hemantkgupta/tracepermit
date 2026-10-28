@@ -402,3 +402,31 @@ evidence and unresolved limits; the [learning note](../learning/optional-process
 explains why process metadata is not authority. The
 [org sandbox acceptance plan](../runbooks/org-sandbox-acceptance-plan.md) remains
 a proposed deployment contract, not OPS-005 or real-target qualification.
+
+## Okta/GitHub organization sandbox candidate acceptance
+
+FR-001/008/009/012/015; SEC-001/002/003/006/007/008/012/019;
+REL-002/005/008; OPS-005 remain partial or target requirements. Before this
+candidate can advance, run its generated/offline fixture suites and all unchanged
+repository checks, then the existing three-engine lifecycle, aggregate coverage
+and installed qualification on the exact candidate. Preserve existing assertions,
+timeouts, grants, workloads and 94% line/75% branch gates.
+
+Required cases are exact profile success; App/installation/owner/repository/
+permission/ref/SHA substitution; role/scope/client/tenant/subject/workspace/roster
+substitution; self-review; five-minute membership cap; adapter-crossed permits;
+legacy Track E fingerprint/permit compatibility; and deterministic synthetic
+durable delivery/reconciliation. No live Okta login, token mint, GitHub call or
+EKS action is an automated prerequisite. Any later live stage requires the exact
+approved custody, ingress, manifest and EKS contracts plus G0–G6 in the
+[organization sandbox plan](../runbooks/org-sandbox-acceptance-plan.md).
+
+The manual-validation restriction was lifted on 2026-10-28. The focused
+generated/offline organization binding, registration, Okta authority and permit
+codec fixtures passed; the console build, typecheck and 124-test suite, the
+152-scenario Java environment check, formatting and documentation-link checks
+also passed. The aggregate Java check is not green: existing database/process
+harness cases failed and a PostgreSQL socket read later hung until the run was
+interrupted. Database-engine, crash, concurrency, coverage, installed and
+three-engine qualification therefore remain required. No hosted CI, deployment,
+login, live-provider token minting or live target call was executed.
