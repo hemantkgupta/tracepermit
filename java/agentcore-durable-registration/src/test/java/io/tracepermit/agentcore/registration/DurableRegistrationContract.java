@@ -69,7 +69,8 @@ abstract class DurableRegistrationContract {
     assertThat(DurableAgentCoreRegistration.class.getConstructors()).isEmpty();
     assertThat(java.util.Arrays.stream(DurableAgentCoreRegistration.class.getDeclaredMethods())
         .filter(method -> java.lang.reflect.Modifier.isPublic(method.getModifiers()))
-        .map(java.lang.reflect.Method::getName)).containsExactlyInAnyOrder("create", "register");
+        .map(java.lang.reflect.Method::getName))
+        .containsExactlyInAnyOrder("create", "organization", "register");
     assertThat(java.util.Arrays.stream(AgentCoreRegistrationIngress.Receipt.class.getRecordComponents())
         .map(java.lang.reflect.RecordComponent::getName)).containsExactly("created", "operationId");
     counts(0, 0);
