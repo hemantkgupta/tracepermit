@@ -75,6 +75,11 @@ class OrganizationOperatorBoundaryTest {
 
   @Test
   void receiptDecoderAndUnionFailClosedOnEveryBoundaryMismatch() {
+    var redactedFailure = new OrganizationFailure("REJECTED");
+    assertThat(redactedFailure.initCause(new RuntimeException("private")))
+        .isSameAs(redactedFailure);
+    assertThat(redactedFailure.getCause()).isNull();
+
     OrganizationOperatorReceipt fallback =
         OrganizationOperatorReceipt.failure("not-a-command", "UNKNOWN");
     assertThat(fallback.command()).isEqualTo("UNKNOWN");
