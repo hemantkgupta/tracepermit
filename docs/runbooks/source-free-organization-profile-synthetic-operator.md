@@ -82,6 +82,20 @@ dispatch metadata. Production behavior, process deadlines and contention remain
 unchanged. Because Java test bytes changed, the earlier repository/coverage
 receipt cannot be reused; focused and full repository validation are pending.
 
+Focused validation at preparation HEAD `95a3bfe` then passed all 24 cases. Its
+repository run passed the console and Java-environment stages before the
+pre-existing MariaDB11.4 installed operation-lifecycle contention case rejected
+three conservative `UNKNOWN` losers. The human explicitly approved the narrow
+test-only lifecycle fixture correction. The current repository candidate is
+`288058c3bdc2221995181391b39e20722bea0c95`, tree
+`4e09f57f440fc8f5c03985c2e7e557773384abd0`, parent `95a3bfe`. It preserves
+the maximum-one-success, nonzero-loser, one-admission, delivery-event and
+reconciliation assertions while allowing each redacted non-success receipt to
+be only `REJECTED` or conservative `UNKNOWN`. No production behavior, workload,
+deadline, grant or target-call assertion changed. Because repository test bytes
+changed, validation must restart from focused mode and perform a fresh complete
+repository run; both are pending for this candidate.
+
 The source/documentation implementation checkpoint is
 `a9270e4651d39d4825b2ef3efcaccce684760aa7`, tree
 `f3ad45469efddf2f6edf6b4fdd65622db2219651`, with the integration merge as its
@@ -89,7 +103,7 @@ sole parent. Its parent is the earlier accepted-main/qualification merge
 `5da2b6d48ba592537f1b9cf23dae753ddb604feb`; later normal merges preserve it.
 This is an unvalidated local checkpoint, not a qualification receipt or
 publication. The current candidate's relevant source manifest is
-`eb96e459b04a0ce50357cee97a38a39fdf99a01ebeb27b1299faf2415d581b75`.
+`e5bfaf67d9b98fad39a2ec25760fb271dd061ebee5bcf9fe00311af8fed40312`.
 
 This lane owns the new executable module, its tests/docs and the additive durable
 organization factory. It does not own EKS, installed COMMIT-loss injection,

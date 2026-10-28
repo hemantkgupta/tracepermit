@@ -40,6 +40,10 @@ requires current authority and returns a rollback-only defensive observation.
 identity, full lifecycle/restart, wrong-key/signature/EOF rejection, durable
 confirmed rejection and unknown, no-repeat reconciliation and eight-process
 admission contention on PostgreSQL 16.4, MariaDB 11.4.13 and MariaDB 10.6.25.
+Contention retains at most one acknowledged success; every non-success must exit
+nonzero and may be only a redacted `REJECTED` or conservative `UNKNOWN`, while
+the one-admission, delivery-event and read-only reconciliation assertions remain
+active.
 `ArchiveBoundaryTest`, `SupervisorBoundaryTest`, `LifecycleProtocolBoundaryTest`,
 `LaunchBoundaryTest` and the PostgreSQL same-worker mirror cover source-free
 inventory, bounded supervision, fail-closed receipts/frames and measurable
