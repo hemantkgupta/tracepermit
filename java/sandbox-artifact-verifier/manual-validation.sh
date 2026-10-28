@@ -9,6 +9,7 @@ expected_branch=${EXPECTED_BRANCH:-codex/sandbox-artifact-verifier}
 stage=${1:-}
 log_dir=$(mktemp -d /tmp/tracepermit-sandbox-verifier.XXXXXX)
 printf 'Private evidence directory: %s\n' "$log_dir"
+exec >"$log_dir/runner.stdout" 2>"$log_dir/runner.stderr"
 trap 'result=$?; printf "%s\n" "$result" >"$log_dir/overall.exit"' EXIT
 [[ "$stage" == focused || "$stage" == repository ]] || { printf 'Specify focused or repository.\n' >&2; exit 2; }
 [[ ${EXPECTED_HEAD:-} =~ ^[0-9a-f]{40}$ && ${EXPECTED_TREE:-} =~ ^[0-9a-f]{40}$ ]] || {
