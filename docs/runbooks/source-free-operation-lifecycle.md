@@ -1,7 +1,7 @@
 # Source-free closed operation lifecycle qualification
 
-Status: implemented candidate with passing fresh three-engine installed evidence
-and unchanged aggregate repository coverage gates.
+Status: implemented candidate. Historical local qualification and the pending
+PR130 worker-discovery repair validation are recorded separately below.
 
 Requirements: FR-003/008/011/012; SEC-001/003/006/009/012;
 REL-001/002/004; OPS-002/004. This is partial evidence only.
@@ -110,6 +110,43 @@ injection. Preserve that distinction in handoffs and do not relabel dependency
 evidence as a new installed-process test.
 
 ## Exact local commands
+
+### PR130 worker-discovery repair — implemented; validation pending
+
+Hosted run40553025065 at `71aeccee76a890691b5cefc1c5a3113dd163e01f`
+failed `SupervisorBoundaryTest.workerDeathBeforeInputHasNoEffectAndReturnsFixedUnknown`
+at the worker-discovery cardinality assertion, before forced termination or the
+unknown-receipt checks. The log does not establish the actual child count or
+prove why discovery failed. The test's reliance on optional JVM argument
+metadata is a concrete portability weakness, also addressed separately by the
+PR129 installed-HTTP test harness. Preserve the failed receipt.
+
+The local test-only repair discovers live direct children of the owned launcher,
+requires the exact Java executable, VM/classpath/main/`inspect` launch shape and
+rechecks parent ownership and liveness after reading metadata. Only when optional
+argument metadata is absent on Linux may it read that child's `/proc` command
+record, capped at128KiB with a required final NUL, exact field count and strict
+UTF-8. Missing/unreadable/oversized/inexact data refuses selection. Diagnostics
+contain fixed counts only; no command line, classpath, private input or key is
+printed. No arbitrary-descendant or process-name fallback is allowed.
+
+New regressions exercise short and long classpaths with real owned JVMs, exact
+byte/field limits, malformed framing/UTF-8, wrong executable/main/command and a
+nested worker that must not be selected. Fixture cleanup reaps leaves before
+parents within one five-second reserve. Existing discovery8s, poll10ms,
+parent-exit10s, cleanup5s and JUnit30s limits are unchanged. The assertions for
+exactly one worker, actual force termination, fixed `UNKNOWN` and empty stderr
+remain active; production source, build/CI, protocol and coverage rules do not
+change. A Mac pass alone would not demonstrate Linux optional-metadata behavior.
+
+Run focused helper/supervisor tests first, then the complete repository gate on
+the same candidate. The human owns both stages and all CI retries. Record
+uncommitted source hashes, stdout/stderr and exit status in private logs, stop
+on any failure, and supply a separate next command after diagnosis. No repair
+test, build, coverage or hosted retry has been executed by this writer. The
+historical25-case/coverage receipt above does not qualify this repair.
+
+### Historical Air checkout commands
 
 Reuse the prepared JDK 21, pnpm 11.25 and Docker setup. Do not install/download,
 restart/prune Docker, stop unrelated processes or overlap a second heavy writer.

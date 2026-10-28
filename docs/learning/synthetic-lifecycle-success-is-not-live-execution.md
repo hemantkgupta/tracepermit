@@ -1,5 +1,14 @@
 # Synthetic lifecycle success is not live execution
 
+Test observations need the same care as lifecycle receipts. Optional JVM
+argument metadata can be absent while a child is still alive, especially with
+a long Linux command line. A failed worker-discovery assertion does not prove
+that a worker never started or that the subsequent kill/unknown checks passed.
+The test-only fallback must still prove a live direct owned child and exact
+bounded launch shape; a matching substring in another process is insufficient.
+Changing that observation mechanism grants no application authority and does
+not qualify a hosted failure until the human runs the repaired test.
+
 The installed lifecycle command can return `DELIVERY_SUCCEEDED` while also
 returning `executionEnabled:false`. Those fields answer different questions.
 The lifecycle result says that the closed V7 authority path evaluated, reviewed,

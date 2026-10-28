@@ -3,6 +3,28 @@
 GitHub is authoritative. Keep credentials, raw claims and private operator/customer
 planning outside Git. Historical receipts below are not fresh qualification.
 
+## PR130 worker-discovery harness — implemented; validation pending
+
+Local Mac owns the human-authorized test-only repair from published
+`71aeccee76a890691b5cefc1c5a3113dd163e01f` on
+`codex/pr130-worker-discovery`. Mac Air's released checkpoint and the separate
+uncommitted EKS contract are preserved. No other branch or worker is modified.
+
+The hosted supervisor test failed its exactly-one-worker assertion before the
+kill/UNKNOWN checks. Its optional-argument-only descendant scan is replaced
+with exact live direct-child discovery and a capped Linux command-record
+fallback when optional arguments are absent. New parser and real-process
+regressions include long classpaths, wrong-main/command decoys and a nested
+worker. The original8s discovery,10ms polling,10s parent-exit,5s cleanup and30s
+JUnit bounds and all force-kill/UNKNOWN/empty-stderr assertions remain active.
+Production, protocol, build, CI, grants and coverage bytes are unchanged.
+
+This writer has run no validation, CI retry or polling. The change remains
+uncommitted and unpublished pending human-run focused and repository checks
+with private stdout/stderr and exit-status capture. The original hosted
+failure and the earlier Air25-test/aggregate receipts remain distinct; no new
+pass, Linux qualification or repaired-root-cause claim is made.
+
 ## Track E source-free operation lifecycle — local qualification complete
 
 The user approved the closed Track E contract. Work is isolated on
