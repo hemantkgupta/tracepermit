@@ -99,6 +99,7 @@ final class SessionSupervisorReliabilityTest {
 
   private static ProcessBuilder child(String main) {
     var builder = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+        "-Xms16m", "-Xmx64m", "-XX:ActiveProcessorCount=2",
         "-cp", System.getProperty("tracepermit.httpcli.testClasspath"), main);
     builder.environment().clear(); return builder;
   }

@@ -92,9 +92,13 @@ final class SessionSupervisorTest {
   }
 
   private static ProcessBuilder child(String mode) {
+    // Match the installed worker envelope without changing any scenario deadline or workload.
     String java = Path.of(System.getProperty("java.home"), "bin", "java").toString();
     return new ProcessBuilder(
         java,
+        "-Xms16m",
+        "-Xmx64m",
+        "-XX:ActiveProcessorCount=2",
         "-cp",
         System.getProperty("tracepermit.httpcli.testClasspath"),
         HostileChild.class.getName(),
