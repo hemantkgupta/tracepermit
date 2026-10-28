@@ -24,4 +24,5 @@ include(
   "agentcore-operation-lifecycle-cli",
   "observability-otel",
   "conformance",
+  "sandbox-artifact-verifier",
 )

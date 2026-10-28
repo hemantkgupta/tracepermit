@@ -4,6 +4,11 @@ These documents describe the Java/React POC and distinguish implemented
 controls from target enterprise requirements. Source and tests determine what
 actually runs; a target requirement is not an implementation claim.
 
+The proposed [offline sandbox artifact verifier](../../java/sandbox-artifact-verifier/README.md)
+checks bounded archive integrity and the structure of supplied qualification
+assertions only. Tests and build integration require fresh validation; it does
+not prove provenance, execution, approval or deployment readiness.
+
 The current proposed qualification scope retires MariaDB 10.x integration
 runs; PostgreSQL 16.4 and MariaDB 11.4.13 remain active. Older three-engine
 results below are historical and do not qualify the current tree. See

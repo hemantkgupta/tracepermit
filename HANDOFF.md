@@ -3,6 +3,15 @@
 GitHub is authoritative. Keep credentials, raw claims and private operator/customer
 planning outside Git. Historical receipts below are not fresh qualification.
 
+## Offline sandbox artifact verifier — integration proposed, tests unrun
+
+The candidate module inventories only bounded POSIX ustar bytes and compares
+their digest with an independently supplied value. Its closed JSON checker
+labels all qualification/provenance/cleanup claims as supplied assertions.
+No provenance, human approval, actual test execution, deployment acceptance
+or security readiness is established. Review its module runbook and manual
+validation plan before integration; no fresh test or CI result is implied.
+
 ## MariaDB 10.x qualification retirement — implemented; validation pending
 
 On `codex/ci-mariadb-11-only` based on `dbb6e05`, default Java tests exclude
