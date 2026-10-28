@@ -1,0 +1,73 @@
+--- a/java/settings.gradle.kts
++++ b/java/settings.gradle.kts
+@@ -24,4 +24,5 @@
+   "agentcore-operation-lifecycle-cli",
+   "observability-otel",
+   "conformance",
++  "sandbox-artifact-verifier",
+ )
+--- a/docs/specs/README.md
++++ b/docs/specs/README.md
+@@ -3,6 +3,11 @@
+ These documents describe the Java/React POC and distinguish implemented
+ controls from target enterprise requirements. Source and tests determine what
+ actually runs; a target requirement is not an implementation claim.
++
++The proposed [offline sandbox artifact verifier](../../java/sandbox-artifact-verifier/README.md)
++checks bounded archive integrity and the structure of supplied qualification
++assertions only. Tests and build integration require fresh validation; it does
++not prove provenance, execution, approval or deployment readiness.
+ 
+ The current proposed qualification scope retires MariaDB 10.x integration
+ runs; PostgreSQL 16.4 and MariaDB 11.4.13 remain active. Older three-engine
+--- a/docs/specs/12-traceability-matrix.md
++++ b/docs/specs/12-traceability-matrix.md
+@@ -1,4 +1,12 @@
+ # Requirements traceability matrix
++
++## Offline sandbox artifact and evidence verifier — candidate
++
++Partial proposed evidence for SEC-009, REL-001 and OPS-002 only; no whole-ID
++promotion. A bounded offline reader checks the supplied artifact digest and
++the consistency of qualification-record assertions. It independently proves
++neither provenance nor execution of the recorded tests. All tests and
++integration remain unrun pending coordinator review.
+ 
+ **Current scope update, validation pending:** MariaDB 10.x integration
+ qualification is retired under
+--- a/HANDOFF.md
++++ b/HANDOFF.md
+@@ -2,6 +2,15 @@
+ 
+ GitHub is authoritative. Keep credentials, raw claims and private operator/customer
+ planning outside Git. Historical receipts below are not fresh qualification.
++
++## Offline sandbox artifact verifier — integration proposed, tests unrun
++
++The candidate module inventories only bounded POSIX ustar bytes and compares
++their digest with an independently supplied value. Its closed JSON checker
++labels all qualification/provenance/cleanup claims as supplied assertions.
++No provenance, human approval, actual test execution, deployment acceptance
++or security readiness is established. Review its module runbook and manual
++validation plan before integration; no fresh test or CI result is implied.
+ 
+ ## MariaDB 10.x qualification retirement — implemented; validation pending
+ 
+--- /dev/null
++++ b/docs/architecture/0095-offline-sandbox-artifact-verifier.md
+@@ -0,0 +1,15 @@
++# ADR0095: Offline sandbox artifact and supplied-evidence verifier
++
++- Status: proposed; number subject to coordinator collision check.
++
++A module-local offline Java verifier accepts only bounded POSIX ustar and
++checks an independently supplied digest plus a closed qualification record
++bound to candidate commit, tree and digest. Unknown/failed/skipped/unrun,
++cached or incomplete evidence cannot be marked complete as supplied. The
++aggregate record requires counters meeting 94% line and 75% branch floors.
++All test results, completeness, provenance and cleanup remain assertions made
++by the supplier, not verified execution, authentication or deployment consent.
++
++No extraction, archive execution, credential handling, provider/network/DB
++access, new signing authority, runtime wiring or other security claim follows.
++The module design and manual validation plan specify limits and unrun gates.
