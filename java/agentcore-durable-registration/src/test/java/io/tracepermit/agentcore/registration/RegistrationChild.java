@@ -34,7 +34,9 @@ public final class RegistrationChild {
     int ordinal = CALLS.incrementAndGet();
     String classpath = System.getProperty("tracepermit.registration.childClasspath");
     if (classpath == null) throw new AssertionError("SYNTHETIC_CHILD_CLASSPATH_MISSING");
+    // Same JVM envelope as the installed worker; request/child/cleanup deadlines stay unchanged.
     Process child = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+        "-Xms16m", "-Xmx64m", "-XX:ActiveProcessorCount=2",
         "-cp", classpath, RegistrationChild.class.getName())
         .redirectError(ProcessBuilder.Redirect.DISCARD).start();
     var reader = Executors.newFixedThreadPool(2);

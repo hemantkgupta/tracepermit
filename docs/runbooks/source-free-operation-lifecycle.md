@@ -87,6 +87,13 @@ verified owner token; it performs a read-only observation.
 
 ## Focused qualification matrix
 
+Linux repository and CI-lane checks use an invocation-owned subreaper to reap
+orphaned test descendants without changing PID 1 or treating zombies as exited.
+See the [Java test prerequisites](../../java/README.md). This does not change the
+installed launcher, workload, concurrency assertions or any request/session
+deadline. Recorded earlier failures remain failures; focused process controls
+and subsequent full qualification must be reported separately.
+
 Tests use runtime-generated RSA and Ed25519 keys, real signed OIDC access tokens,
 restricted database principals, exact V7 stores and only synthetic targets.
 
