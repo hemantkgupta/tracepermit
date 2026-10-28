@@ -31,7 +31,8 @@ class OrganizationOperatorProtocolTest {
   }
 
   @Test
-  void exactFramesRejectMalformedUtf8DuplicatesCoercionAndUnknownFields() {
+  void exactFramesRejectMalformedUtf8DuplicatesCoercionAndUnknownFields()
+      throws java.io.IOException {
     assertThatThrownBy(() -> OrganizationOperatorProtocol.frame(data(0), 4))
         .isInstanceOf(OrganizationFailure.class);
     assertThatThrownBy(() -> OrganizationOperatorProtocol.frame(data(5), 4))
