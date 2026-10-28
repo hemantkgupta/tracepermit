@@ -177,7 +177,6 @@ jobs:
       matrix:
         lane:
           - operations-postgres
-          - operations-mariadb106
           - operations-mariadb114
     env:
       CI_LANE: ${{ matrix.lane }}
@@ -321,7 +320,7 @@ jobs:
           pnpm test:gate-c
           pnpm demo:verify
       - name: Verify CI completion gate regressions
-        run: node --test scripts/ci-workflow.test.mjs scripts/ci-policy.test.mjs scripts/ci-coverage.test.mjs
+        run: node --test scripts/ci-workflow.test.mjs scripts/ci-policy.test.mjs scripts/ci-coverage.test.mjs scripts/ci-mariadb-scope.test.mjs
       - name: Check formatting
         run: pnpm format:check
       - name: Install and build static documentation site

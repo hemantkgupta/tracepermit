@@ -6,12 +6,14 @@ and renamed paths, and treats unknown changes as a full run. It does not ask an
 LLM whether a security test is relevant. A docs-only pass is evidence for its
 selected checks; it is not a new Java qualification. Pushes to `main` run all gates.
 
-Sharding moves work, not security coverage. The PostgreSQL and two MariaDB
-operation suites keep every concurrency/expiry/role/rollback assertion. Core
+The active PostgreSQL and MariaDB 11.4 operation suites keep every
+concurrency/expiry/role/rollback assertion. MariaDB 10.x integration runs are
+retired; historical results are not a fresh compatibility guarantee. Core
 keeps common tests and automatically includes new modules. Database results are
 fresh, and coverage combines every lane over the complete production class set.
 Missing or stale evidence fails rather than making the coverage percentage look
 better. The final `verify` gate accepts only explicitly planned skips.
+The complete 94%/75% production-class coverage floors remain unchanged.
 
 An interrupted caller also illustrates why retrying a failed security test is
 insufficient: a Future can finish before its caller checks interruption. The

@@ -3,6 +3,11 @@
 **As of:** 2026-10-27
 **Scope:** public Java-backend/React-console proof of concept
 
+**Qualification scope update:** automated MariaDB 10.x integration runs are
+retired by [ADR0094](../architecture/0094-mariadb-10-qualification-retirement.md).
+Earlier 10.6 results below are historical; they are not fresh evidence for the
+current tree. PostgreSQL 16.4 and MariaDB 11.4.13 remain the active test engines.
+
 This is the authoritative boundary between running POC behavior and product
 design. A passing test proves the named composition, not deployment to an
 enterprise network or control over arbitrary agent tools. The detailed

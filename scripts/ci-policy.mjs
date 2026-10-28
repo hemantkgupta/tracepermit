@@ -7,7 +7,6 @@ export const lanes = [
   "postgres",
   "mariadb",
   "operations-postgres",
-  "operations-mariadb106",
   "operations-mariadb114",
 ];
 

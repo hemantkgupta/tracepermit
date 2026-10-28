@@ -5,13 +5,15 @@ planning outside Git. Historical receipts below are not fresh qualification.
 
 ## Organization-profile synthetic operator — implemented; validation pending
 
-Branch `codex/source-free-organization-operator` preserves accepted main
-`dbb6e05930827633d7326240551ddeb73657c5a7` and published organization
-qualification `8108598a658121735dbd59d5a44053b3ff22da7a` through normal merge
+Branch `codex/source-free-organization-operator` preserves the earlier accepted
+main receipt `dbb6e05930827633d7326240551ddeb73657c5a7` and published
+organization qualification `8108598a658121735dbd59d5a44053b3ff22da7a`
+through normal merge
 `5da2b6d48ba592537f1b9cf23dae753ddb604feb` (tree
 `59f9a6b40bb29b1f0a28268098be0f5954d0be37`, ordered parents main then
-qualification). Neither history was rebased, cherry-picked, reset or rewritten.
-The implementation checkpoint is
+qualification). The containing merge integrates accepted main through PR134
+without replacing that history. Neither history was rebased, cherry-picked,
+reset or rewritten. The implementation checkpoint is
 `a9270e4651d39d4825b2ef3efcaccce684760aa7`, tree
 `f3ad45469efddf2f6edf6b4fdd65622db2219651`, with the integration merge as its
 sole parent. It is local only and has not been pushed.
@@ -42,15 +44,30 @@ The historical organization-library receipt is corrected to 27/27 focused
 cases and a fresh 3,807-case/one-inherited-skip aggregate at 94.089457% line and
 76.854231% branch for published Java commit `8108598a...`. Earlier failures
 remain historical; later documentation bytes and this new operator are not
-covered by that receipt. No hosted CI was present. MariaDB10.6 retirement is not
-on the accepted base, so the historical 9/9 library receipt is retained and no
-new installed 10.6 launcher was added.
+covered by that receipt. No hosted CI was present. MariaDB10.6 retirement is now
+the current qualification after PR134; its historical 9/9 library receipt remains
+historical evidence and no new installed 10.6 launcher was added.
 
 No provider credential, live target, listener, remote ingress, mTLS, EKS file,
 deployment or default enablement is present. EKS, installed COMMIT-loss,
 artifact/identity verification and custody corrections remain with their named
 owners. Work is local and unpublished; do not push, open a PR or merge until the
 manual results are supplied and the human gives a publication instruction.
+## MariaDB 10.x qualification retirement — implemented; validation pending
+
+On `codex/ci-mariadb-11-only` based on `dbb6e05`, default Java tests exclude
+MariaDB 10.x integration classes across modules; the replay-repair and
+standalone-consumption parameterized fixtures no longer start 10.6 containers.
+CI removes the 10.6 operation shard and requires five complete coverage manifests.
+PostgreSQL 16.4 and MariaDB 11.4.13 cases, security assertions, deadlines and
+94%/75% aggregate coverage floors remain. The production runtime still recognizes
+10.6; its prior test receipts below are historical, not current qualification.
+Scope/fixture/coverage regressions are provided in `scripts/ci-*.test.mjs`.
+
+No agent-run validation or hosted CI was started. The human must run the focused
+tests, full `pnpm check` and `pnpm format:check` against this exact working tree.
+The expected timing improvement is unmeasured. See
+[ADR0094](docs/architecture/0094-mariadb-10-qualification-retirement.md).
 
 ## PR130 worker-discovery harness — implemented; validation pending
 

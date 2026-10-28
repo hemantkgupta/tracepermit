@@ -4,14 +4,16 @@ This runbook qualifies the unwired MariaDB replay-store foundation from
 [ADR 0066](../architecture/0066-mariadb-permit-consumption-foundation.md). It
 does **not** install or switch the TracePermit approval runtime to MariaDB.
 
-## Qualified matrix
+## Current qualification matrix
 
-| Profile      | Exact engine version | Status                                  |
-| ------------ | -------------------- | --------------------------------------- |
-| Primary      | MariaDB 11.4.13      | Qualified by disposable container tests |
-| Transitional | MariaDB 10.6.25      | Qualified by disposable container tests |
+| Profile    | Exact engine version | Status                              |
+| ---------- | -------------------- | ----------------------------------- |
+| Primary    | MariaDB 11.4.13      | Active disposable-container tests   |
+| Historical | MariaDB 10.6.25      | Automated integration tests retired |
 
-Unknown patch versions fail closed until independently tested and recorded.
+Unknown patch versions fail closed in the existing runtime profile. The runtime
+still recognizes 10.6.25, but the current tree has no fresh 10.x integration
+qualification. See [ADR0094](../architecture/0094-mariadb-10-qualification-retirement.md).
 
 ## Local gate
 
@@ -24,15 +26,14 @@ pnpm install --frozen-lockfile
 pnpm test:java-mariadb --rerun-tasks
 ```
 
-The test starts disposable containers for both exact versions, initializes an
+The test starts a disposable container for MariaDB 11.4.13, initializes an
 empty dedicated database, validates the migration and executes the same
 concurrency, restart, isolation and failure-boundary cases. It must leave no
 container running.
 
-The matrix contains seven store cases per engine (fourteen total), plus three
+The active matrix contains seven store cases on 11.4.13, plus three
 engine-profile unit cases. Non-empty/schema adoption, commit/acknowledgement
-uncertainty and acquisition/close faults are parameterized across **both** exact
-images; none is inferred from the primary version alone. Store reconstruction
+uncertainty and acquisition/close faults remain active for that image. Store reconstruction
 uses the same running database: it is not a database restart, crash-recovery or
 failover test. Synthetic transaction faults do not qualify an external error
 redaction boundary or production driver diagnostics.
@@ -73,7 +74,7 @@ profile and sanitized pass/fail evidence.
 Stop without repair, retry or runtime wiring when:
 
 - the product is not MariaDB;
-- the version is not exactly 10.6.25 or 11.4.13;
+- the version under current qualification is not exactly 11.4.13;
 - the database is a system database or contains pre-existing objects;
 - the default or TracePermit table engine is not InnoDB;
 - the schema guard, object inventory or Flyway checksum differs;

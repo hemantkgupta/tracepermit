@@ -4,6 +4,11 @@ These documents describe the Java/React POC and distinguish implemented
 controls from target enterprise requirements. Source and tests determine what
 actually runs; a target requirement is not an implementation claim.
 
+The current proposed qualification scope retires MariaDB 10.x integration
+runs; PostgreSQL 16.4 and MariaDB 11.4.13 remain active. Older three-engine
+results below are historical and do not qualify the current tree. See
+[ADR0094](../architecture/0094-mariadb-10-qualification-retirement.md).
+
 The [Okta/GitHub organization sandbox composition](../design/okta-github-org-sandbox-composition.md)
 adds sealed exact-target binding, verified-role-plus-enrollment authority and
 source-compatible durable lifecycle types. Its published Java candidate at
