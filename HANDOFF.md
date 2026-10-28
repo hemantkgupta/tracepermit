@@ -3,6 +3,22 @@
 GitHub is authoritative. Keep credentials, raw claims and private operator/customer
 planning outside Git. Historical receipts below are not fresh qualification.
 
+## MariaDB 10.x qualification retirement — implemented; validation pending
+
+On `codex/ci-mariadb-11-only` based on `dbb6e05`, default Java tests exclude
+MariaDB 10.x integration classes across modules; the replay-repair and
+standalone-consumption parameterized fixtures no longer start 10.6 containers.
+CI removes the 10.6 operation shard and requires five complete coverage manifests.
+PostgreSQL 16.4 and MariaDB 11.4.13 cases, security assertions, deadlines and
+94%/75% aggregate coverage floors remain. The production runtime still recognizes
+10.6; its prior test receipts below are historical, not current qualification.
+Scope/fixture/coverage regressions are provided in `scripts/ci-*.test.mjs`.
+
+No agent-run validation or hosted CI was started. The human must run the focused
+tests, full `pnpm check` and `pnpm format:check` against this exact working tree.
+The expected timing improvement is unmeasured. See
+[ADR0094](docs/architecture/0094-mariadb-10-qualification-retirement.md).
+
 ## PR130 worker-discovery harness — implemented; validation pending
 
 Local Mac owns the human-authorized test-only repair from published

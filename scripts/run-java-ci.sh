@@ -16,11 +16,13 @@ tracepermit_ci_gradle() {
 }
 
 case "${1:-}" in
-  core|postgres|mariadb|operations-postgres|operations-mariadb106|operations-mariadb114)
+
+  core|postgres|mariadb|operations-postgres|operations-mariadb114)
     if [[ "$1" == core && "$(uname -s)" == Linux ]]; then
       node --test "$repo_root/scripts/owned-test-reaper.test.mjs"
     fi
     tracepermit_ci_gradle ciTest "-PtracepermitCiLane=$1"
+
     ;;
   coverage)
     node "$repo_root/scripts/ci-coverage.mjs" validate

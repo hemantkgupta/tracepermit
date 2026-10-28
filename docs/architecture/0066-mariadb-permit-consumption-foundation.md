@@ -4,6 +4,11 @@
 - Date: 2026-10-23
 - Requirements: FR-008; SEC-005/006/009; REL-004; OPS-002; DATA-001
 
+**Qualification scope update:** [ADR0094](0094-mariadb-10-qualification-retirement.md)
+retires automated MariaDB 10.x container qualification. The 10.6 results and
+decisions below are historical; existing version recognition remains in code,
+but it does not constitute fresh 10.x qualification. MariaDB 11.4 remains active.
+
 ## Context
 
 The durable TracePermit approval, execution, evidence, policy and recovery

@@ -41,8 +41,7 @@ final class ReplayRepairAcknowledgementTest {
 
   enum Profile {
     POSTGRES_16_4,
-    MARIA_11_4_13,
-    MARIA_10_6_25
+    MARIA_11_4_13
   }
 
   private enum Delay {
@@ -153,7 +152,6 @@ final class ReplayRepairAcknowledgementTest {
       database = switch (profile) {
         case POSTGRES_16_4 -> new PostgreSQLContainer<>("postgres:16.4-alpine");
         case MARIA_11_4_13 -> new MariaDBContainer<>("mariadb:11.4.13");
-        case MARIA_10_6_25 -> new MariaDBContainer<>("mariadb:10.6.25");
       };
       try {
         database.withPassword(UUID.randomUUID().toString());

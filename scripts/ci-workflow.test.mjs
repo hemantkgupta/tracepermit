@@ -50,12 +50,13 @@ test("database shards cannot be restored as cached successes, and coverage retai
   assert.match(coverage, /bash scripts\/run-java-ci.sh coverage/);
   assert.match(coverage, /merge-multiple: true/);
 });
-test("every current operation engine is selected once, with all other operation tests in core", () => {
+test("PostgreSQL and MariaDB 11 operation engines are selected once, and MariaDB 10 tests are excluded", () => {
+  assert.match(java, /exclude\("\*\*\/\*Maria\*10\*Test.class"\)/);
   assert.match(
     java,
     /"core" -> exclude\("\*\*\/Postgres\*Test.class", "\*\*\/MariaDb106\*Test.class", "\*\*\/MariaDb114\*Test.class"\)/,
   );
-  for (const engine of ["postgres", "mariadb106", "mariadb114"])
+  for (const engine of ["postgres", "mariadb114"])
     assert.equal(
       [
         ...jobs
@@ -65,6 +66,7 @@ test("every current operation engine is selected once, with all other operation 
       1,
     );
   assert.match(jobs.get("databases"), /- postgres\n\s+- mariadb/);
+  assert.doesNotMatch(jobs.get("operation-repository"), /operations-mariadb10/);
   assert.doesNotMatch(workflow, /pnpm check|--rerun-tasks/);
 });
 test("action versions stay immutable and duplicate Gradle cache managers are removed", () => {
