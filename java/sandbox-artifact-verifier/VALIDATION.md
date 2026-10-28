@@ -1,13 +1,13 @@
-# Manual validation plan — not yet runnable
+# Manual validation plan
 
-Every test, build, runner syntax check and CI gate is **UNRUN**. First the
-coordinator must review `proposed-shared-integration.patch`, choose/reserve an
-ADR number, apply the root settings/specification/ADR/HANDOFF integration,
-commit it on the authorized continuation branch, and supply that commit's
-exact HEAD and tree. Root `java/settings.gradle.kts` currently does not include
-this module: invoking any `:sandbox-artifact-verifier:*` task before that is a
-missing-build-integration failure, not validation. The patch must be reviewed
-against current main; its proposed ADR0095 name is not reserved by this work.
+The integration patch was applied locally at
+`07b6cfdec578391d59f106a3381147eea2eb2e16`. At that exact commit, 23 focused
+tests and the full Java check passed with one optional installed-archive skip;
+the final diff check failed on whitespace in the stored patch. Formatting and
+documentation gates passed. These receipts do not establish fresh results for a
+later commit. Hosted CI is unrun. The retained zero-context patch requires
+`git apply --unidiff-zero` if applied to a matching checkout; ADR0095 remains
+subject to coordinator collision review.
 
 The prepared Java 21 JDK and Gradle 8.14.3 distribution/cache must already be
 available at the locations guarded by the runner; it calls the installed Gradle

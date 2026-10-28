@@ -106,9 +106,10 @@ the identity of the submitter or actual tests.
 
 ## Owned files and integration
 
-All implementation, tests, this design/runbook, the proposed integration patch
-and the manual validation runner live exclusively under this directory. No
-shared settings, specifications, ADR, handoff, CI or runtime files are edited.
-The module is intentionally not discoverable by the root build until the
-coordinator reviews and applies `proposed-shared-integration.patch`. Therefore
-all tests, builds, syntax checks and CI are **UNRUN** by this writer.
+The implementation, tests, this design/runbook, the integration proposal and
+the manual validation runner live under this directory. The authorized proposal
+was integrated locally at commit `07b6cfdec578391d59f106a3381147eea2eb2e16`;
+its zero-context patch remains for review and requires `git apply
+--unidiff-zero` if applied to another matching checkout. The focused verifier
+and full Java checks passed at that commit, but the final diff check failed on
+whitespace inside the stored patch. These results do not qualify another tree.

@@ -5,8 +5,10 @@
 Partial proposed evidence for SEC-009, REL-001 and OPS-002 only; no whole-ID
 promotion. A bounded offline reader checks the supplied artifact digest and
 the consistency of qualification-record assertions. It independently proves
-neither provenance nor execution of the recorded tests. All tests and
-integration remain unrun pending coordinator review.
+neither provenance nor execution of the recorded tests. The local integrated
+commit `07b6cfd` passed focused and full Java checks, with one optional archive
+skip; its final diff check failed on stored patch whitespace. Those results do
+not qualify a later tree, hosted CI, deployment, or a whole requirement.
 
 **Current scope update, validation pending:** MariaDB 10.x integration
 qualification is retired under
