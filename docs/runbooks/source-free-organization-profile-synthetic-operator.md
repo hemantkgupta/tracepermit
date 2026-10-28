@@ -19,11 +19,19 @@ cherry-pick, reset or force-update this history.
 
 The first human focused attempt at preparation HEAD `e78cde9` stopped during
 test compilation, before tests or containers, because one direct frame assertion
-did not declare `IOException`. The repaired source candidate is
+did not declare `IOException`. The compilation-repaired candidate is
 `77b3b0f48e59c68f94d88125718f4084bab91407`, tree
 `d30e5a41e81633c7aeae267b31cfbbe170ec03c6`, parent `e78cde9`. Its only repair
-is the checked-exception declaration on that existing test method; validation
-remains pending.
+is the checked-exception declaration on that existing test method.
+
+The second focused attempt at preparation HEAD `de19b75` compiled and ran all
+16 selected cases; two receipt cases and all four installed-process cases failed.
+They exposed one shared invariant defect: the decoder/supervisor's required
+fail-closed `UNKNOWN` receipt was rejected before worker launch. The current
+source candidate is `040a4882a2ee46017836aca4580ad1f746e3a367`, tree
+`55abed077aaefa9a7a146aceea39bf755a670e29`, parent `de19b75`. It narrows the
+usage guard so `UNKNOWN` remains a valid fail-closed fallback without admitting
+`USAGE` for a known command. Validation remains pending.
 
 The source/documentation implementation checkpoint is
 `a9270e4651d39d4825b2ef3efcaccce684760aa7`, tree
@@ -31,8 +39,8 @@ The source/documentation implementation checkpoint is
 sole parent. Its parent is the earlier accepted-main/qualification merge
 `5da2b6d48ba592537f1b9cf23dae753ddb604feb`; later normal merges preserve it.
 This is an unvalidated local checkpoint, not a qualification receipt or
-publication. The repaired candidate's relevant source manifest is
-`3c59f0f53031ba38e73ef9274183fed398bcbcd5bc576c2eacf401d0acfd4369`.
+publication. The current candidate's relevant source manifest is
+`c8dc1b983b8dafbafaad34f4831d147e3104f638214231cb57a21cca338e686b`.
 
 This lane owns the new executable module, its tests/docs and the additive durable
 organization factory. It does not own EKS, installed COMMIT-loss injection,
