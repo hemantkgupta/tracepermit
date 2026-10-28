@@ -8,6 +8,39 @@ For a code/test map and synchronized public diagrams, see the
 qualification limits are explicit there; the diagrams below do not imply every
 foundation is composed into one running service.
 
+## 0. Installed closed operation lifecycle
+
+```mermaid
+sequenceDiagram
+  participant O as Local operator
+  participant P as Installed parent
+  participant W as Closed worker
+  participant I as Offline OIDC verification
+  participant D as V7 operation stores
+  participant T as Fixed synthetic target
+  O->>P: Exact private frames plus EOF
+  P->>W: Environment-cleared child; inherited pipe
+  W->>W: Validate framing/configuration before effects
+  W->>I: Verify requester or independent reviewer token
+  I-->>W: Trusted bounded identity
+  W->>D: Inspect/evaluate/review with current authority
+  W->>D: Issue permit, admit once, claim and commit dispatch_started
+  D-->>W: Acknowledged durable start
+  W->>T: Invoke configured synthetic outcome once
+  T-->>W: succeeded, rejected or unknown
+  W->>D: Append exact result when known
+  W-->>P: One fixed redacted receipt; no permit/key/token
+  P-->>O: Matching receipt/exit; retry always false
+```
+
+Every invocation is a new process and freshly verifies its required identity.
+The signing key appears only in the delivery pipe and must match the operator pin.
+An absent/ambiguous receipt, database acknowledgement or target result never
+causes a child restart, new permit, new attempt or resend. `reconcile` follows a
+separate read-only branch: fresh owner verification → durable reconciliation →
+current-authority inspection → observation receipt. See
+[ADR0093](../architecture/0093-source-free-operation-lifecycle.md).
+
 ## 1. Authenticated MCP allow and execution
 
 The separate [loopback approval API foundation](../runbooks/authenticated-approval-api-foundation.md)

@@ -3,6 +3,57 @@
 GitHub is authoritative. Keep credentials, raw claims and private operator/customer
 planning outside Git. Historical receipts below are not fresh qualification.
 
+## PR130 worker-discovery harness — implemented; validation pending
+
+Local Mac owns the human-authorized test-only repair from published
+`71aeccee76a890691b5cefc1c5a3113dd163e01f` on
+`codex/pr130-worker-discovery`. Mac Air's released checkpoint and the separate
+uncommitted EKS contract are preserved. No other branch or worker is modified.
+
+The hosted supervisor test failed its exactly-one-worker assertion before the
+kill/UNKNOWN checks. Its optional-argument-only descendant scan is replaced
+with exact live direct-child discovery and a capped Linux command-record
+fallback when optional arguments are absent. New parser and real-process
+regressions include long classpaths, wrong-main/command decoys and a nested
+worker. The original8s discovery,10ms polling,10s parent-exit,5s cleanup and30s
+JUnit bounds and all force-kill/UNKNOWN/empty-stderr assertions remain active.
+Production, protocol, build, CI, grants and coverage bytes are unchanged.
+
+This writer has run no validation, CI retry or polling. The change remains
+uncommitted and unpublished pending human-run focused and repository checks
+with private stdout/stderr and exit-status capture. The original hosted
+failure and the earlier Air25-test/aggregate receipts remain distinct; no new
+pass, Linux qualification or repaired-root-cause claim is made.
+
+## Track E source-free operation lifecycle — local qualification complete
+
+The user approved the closed Track E contract. Work is isolated on
+`codex/source-free-operation-lifecycle` from merge checkpoint
+`e307769dea09198bb7aaafe56f34bf125faa1c83`, which preserves the qualified D
+commit and the accepted-main merge. The new
+`agentcore-operation-lifecycle-cli` application, narrow installed-runtime
+facades, current-authority inspector, ADR0093, runbook, learning note and focused
+specification mappings are owned here. Issue126 process-harness repairs remain a
+separate owner/worktree and are not modified.
+
+The final fresh module gate passed 25 tests with zero failures/errors/skips:
+12 installed lifecycle cases across PostgreSQL 16.4, MariaDB 11.4.13 and
+MariaDB 10.6.25, six direct PostgreSQL cases and seven boundary cases. Tests cover
+real signed offline identity, independent human review, pinned Ed25519 signing,
+strict frames/EOF, separate-process full lifecycle, durable rejected/unknown
+outcomes, eight-process contention, archive inventory and pre-input worker death.
+Additional PostgreSQL in-process worker coverage and framing/receipt/supervisor
+boundary tests pass. The unchanged aggregate repository gate passes at
+17,860/18,999 lines (94.0049%) and 8,520/11,057 branches (77.0553%). The broad
+`pnpm check` completed console and Java test bodies but stopped at the earlier
+pre-repair 93.6681% line result; the bounded final module refresh and aggregate
+verification are the subsequent repair evidence. `pnpm format:check`, all 1,380
+local documentation links, all 13 flow checks and `git diff --check` pass. No
+production boundary, assertion, deadline, grant or coverage threshold was
+weakened. Commit/push, draft PR and exact final handoff remain pending. No live
+provider, listener, target credential or production action is enabled, and every
+PR remains unmerged.
+
 ## PR128 identity guard — human-authorized known-failure publication
 
 The human explicitly authorized publishing the production identity guard that

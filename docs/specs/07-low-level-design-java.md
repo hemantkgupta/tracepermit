@@ -3,6 +3,33 @@
 **Status:** Current POC design with explicit production gaps
 **Applies to:** Java 21 backend and simulator-only execution
 
+## Source-free closed operation lifecycle composition
+
+`agentcore-operation-lifecycle-cli` is a separate application module over the
+existing V7 libraries. `LifecycleProtocol` reads the exact closed anonymous-pipe
+frames and EOF before effects. `LifecycleOperatorConfig` constructs only pinned
+numeric-loopback operations storage, exact scope/target/authority, offline RS256
+providers, requester enrollment and the independent human roster.
+`LifecycleIdentityAdapter` converts only verified token results and operator
+enrollment into trusted requester/evaluator/reviewer contexts.
+
+`LifecycleRuntime` calls the concrete review, permit, admission and delivery
+repositories and one fixed `SyntheticGitHubDeliveryTarget`; it offers no generic
+repository, verifier, signer, clock or target injection. The permit private key
+is canonical Ed25519 PKCS8 from a separate private frame, proven against the
+configured public key and erased from temporary byte arrays. The added
+`JdbcGitHubOperationInspector` validates existing V7 storage and current
+authority, replays current state plus delivery-start observation in a rollback-
+only transaction and returns defensive copies. It performs no DDL.
+
+`LifecycleCli` supervises one environment-cleared `LifecycleWorker` within a
+60-second total budget and separate five-second cleanup reserve. Receipt bytes,
+stderr and exit must agree. Both layers require anonymous input. Deliberate
+`Runtime.halt` makes successful/failed receipt publication finite and prevents
+shutdown-hook substitution. Worker death, storage uncertainty or delivery
+uncertainty is fixed failure and creates no retry. See
+[ADR0093](../architecture/0093-source-free-operation-lifecycle.md).
+
 ## Optional local browser approval adapter
 
 `ApprovalBrowserAdapter` owns OIDC code exchange, one-use browser-bound login
@@ -19,22 +46,23 @@ No database migration or real target is introduced. See
 
 ## Module ownership
 
-| Module                   | Responsibility                                                                                                                      |
-| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `contracts`              | Canonical JSON, strict action/business-operation/signed-claim validation, bounded opt-in projection redaction (ADR 0043/0068)       |
-| `identity`               | Development token, source proof, workload/delegation, OAuth/OIDC verification                                                       |
-| `policy`                 | Deterministic classifier, sequence signals, strict policy schema validation, lifecycle staging/activation/rollback, and simulation  |
-| `security`               | Request-bound permit issue, verification, and consumption                                                                           |
-| `execution`              | Attempts, idempotency, unknown outcomes, evidence chain                                                                             |
-| `application`            | Fail-closed orchestration and trusted reviewer workflow                                                                             |
-| `simulator`              | Bounded, stateful AWS/Jira fakes; no real target SDK                                                                                |
-| `adapters-http`          | Loopback MCP, read-only projections, and separate authenticated approval/browser adapter                                            |
-| `adapters-remote`        | Authenticated MCP edge, SSRF-safe JWKS HTTPS, and bounded AgentCore GitHub draft pull request adapter with read-only reconciliation |
-| `endpoint-connector`     | MCP stdio origin observation and loopback forwarding                                                                                |
-| `persistence-postgres`   | Durable claims, approvals, policy revisions/lifecycle, evidence, outbox, reconciliation                                             |
-| `persistence-operations` | Isolated MariaDB/PostgreSQL operation registration, scoped-key uniqueness and immutable initial facts (ADR 0070)                    |
-| `observability-otel`     | Bounded telemetry projection                                                                                                        |
-| `conformance`            | Checked-in schema, vector, and invariant tests                                                                                      |
+| Module                              | Responsibility                                                                                                                      |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `contracts`                         | Canonical JSON, strict action/business-operation/signed-claim validation, bounded opt-in projection redaction (ADR 0043/0068)       |
+| `identity`                          | Development token, source proof, workload/delegation, OAuth/OIDC verification                                                       |
+| `policy`                            | Deterministic classifier, sequence signals, strict policy schema validation, lifecycle staging/activation/rollback, and simulation  |
+| `security`                          | Request-bound permit issue, verification, and consumption                                                                           |
+| `execution`                         | Attempts, idempotency, unknown outcomes, evidence chain                                                                             |
+| `application`                       | Fail-closed orchestration and trusted reviewer workflow                                                                             |
+| `simulator`                         | Bounded, stateful AWS/Jira fakes; no real target SDK                                                                                |
+| `adapters-http`                     | Loopback MCP, read-only projections, and separate authenticated approval/browser adapter                                            |
+| `adapters-remote`                   | Authenticated MCP edge, SSRF-safe JWKS HTTPS, and bounded AgentCore GitHub draft pull request adapter with read-only reconciliation |
+| `endpoint-connector`                | MCP stdio origin observation and loopback forwarding                                                                                |
+| `persistence-postgres`              | Durable claims, approvals, policy revisions/lifecycle, evidence, outbox, reconciliation                                             |
+| `persistence-operations`            | Isolated MariaDB/PostgreSQL operation registration, scoped-key uniqueness and immutable initial facts (ADR 0070)                    |
+| `agentcore-operation-lifecycle-cli` | Source-free installed composition of the closed V7 lifecycle with offline identity and synthetic delivery (ADR0093)                 |
+| `observability-otel`                | Bounded telemetry projection                                                                                                        |
+| `conformance`                       | Checked-in schema, vector, and invariant tests                                                                                      |
 
 Transport code stays in adapters. All origins converge on the canonical
 action contract before classification or policy. Application and domain code

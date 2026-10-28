@@ -3,6 +3,30 @@
 **Status:** Current interfaces plus target extensions  
 **Applies to:** MCP, internal HTTP, control plane, and signed artifacts
 
+## Source-free closed operation lifecycle command
+
+`tracepermit-synthetic-operation-lifecycle` accepts only `check-config`,
+`inspect`, `evaluate`, `review`, `deliver-synthetic` and `reconcile`. Every
+invocation begins with a configuration frame capped at 65,536 bytes. Non-check
+commands then receive a bearer frame capped at 16,384 bytes and a command frame
+capped at 1,024 bytes; delivery inserts one Ed25519 PKCS8 frame capped at 128 bytes
+before the command. Exact EOF precedes configuration parsing, authentication,
+JDBC, signing and delivery.
+
+The command schema always requires `schemaVersion:1.0`, profile
+`tracepermit-local-synthetic-operation-lifecycle-v1` and a canonical UUID.
+Review adds only `decision`; delivery adds only `syntheticOutcome`. Request body
+authentication, delegation, review membership, authority, permit and target
+fields are unknown and rejected.
+
+Output is exactly one strict newline-terminated JSON receipt no larger than 2,048
+bytes with fixed lifecycle fields, profile fingerprints,
+`executionEnabled:false` and `automaticRetryAllowed:false`; stderr is empty and
+exit must match. Total command, owned cleanup and receipt-write bounds are 60s,
+5s and 1s. `reconcile` is read-only. It cannot reconstruct authority or resend an
+uncertain effect. See [ADR0093](../architecture/0093-source-free-operation-lifecycle.md)
+and its [runbook](../runbooks/source-free-operation-lifecycle.md).
+
 ## Closed synthetic delivery internal boundary — in progress
 
 `JdbcGitHubOperationDeliveryRepository` is an explicit V7 Java library, not an

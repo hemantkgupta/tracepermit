@@ -4,6 +4,15 @@ These documents describe the Java/React POC and distinguish implemented
 controls from target enterprise requirements. Source and tests determine what
 actually runs; a target requirement is not an implementation claim.
 
+[ADR0093](../architecture/0093-source-free-operation-lifecycle.md) adds a
+separate source-free Java21 command that composes the closed V7 operation
+lifecycle with real offline OIDC verification, independent human review,
+pinned Ed25519 permit signing and only a deterministic synthetic target. Its
+[runbook](../runbooks/source-free-operation-lifecycle.md) defines exact private
+frames, fixed receipts, three-engine evidence and remaining gates. Success is
+still `executionEnabled:false`; uncertainty and reconciliation never authorize
+automatic target retry.
+
 [ADR0090](../architecture/0090-closed-durable-synthetic-delivery.md) reserves
 Track A's opt-in V7 closed synthetic delivery and read-only reconciliation.
 Its [runbook](../runbooks/closed-synthetic-operation-delivery.md) separates capped

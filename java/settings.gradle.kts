@@ -21,6 +21,7 @@ include(
   "agentcore-durable-registration",
   "agentcore-registration-cli",
   "agentcore-registration-http-cli",
+  "agentcore-operation-lifecycle-cli",
   "observability-otel",
   "conformance",
 )
