@@ -17,14 +17,22 @@ is `dfb7b3b11ed7af3b4d0230fae9adf6e514289ba5`, tree
 `317e333d17b79ae5c64a11efcea366ab9ade9b0e` then accepted main. Do not rebase,
 cherry-pick, reset or force-update this history.
 
+The first human focused attempt at preparation HEAD `e78cde9` stopped during
+test compilation, before tests or containers, because one direct frame assertion
+did not declare `IOException`. The repaired source candidate is
+`77b3b0f48e59c68f94d88125718f4084bab91407`, tree
+`d30e5a41e81633c7aeae267b31cfbbe170ec03c6`, parent `e78cde9`. Its only repair
+is the checked-exception declaration on that existing test method; validation
+remains pending.
+
 The source/documentation implementation checkpoint is
 `a9270e4651d39d4825b2ef3efcaccce684760aa7`, tree
 `f3ad45469efddf2f6edf6b4fdd65622db2219651`, with the integration merge as its
 sole parent. Its parent is the earlier accepted-main/qualification merge
 `5da2b6d48ba592537f1b9cf23dae753ddb604feb`; later normal merges preserve it.
 This is an unvalidated local checkpoint, not a qualification receipt or
-publication. The reconciled candidate's relevant source manifest is
-`7c69e49ffa6819568ab1bca55fc863809bb0041b3a52d9aa5906fa7db30839fd`.
+publication. The repaired candidate's relevant source manifest is
+`3c59f0f53031ba38e73ef9274183fed398bcbcd5bc576c2eacf401d0acfd4369`.
 
 This lane owns the new executable module, its tests/docs and the additive durable
 organization factory. It does not own EKS, installed COMMIT-loss injection,
