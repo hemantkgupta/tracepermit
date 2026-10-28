@@ -11,6 +11,13 @@ the existing V7 review, permit, admission, delivery and reconciliation stores.
 EOF, offline closed configuration and no request-body authority.
 `LifecycleIdentityAdapter` derives trusted contexts only from pinned real RS256
 verification, exact requester enrollment and an independent human roster.
+For FR-003 and SEC-001/009, reviewer derivation additionally rejects the enrolled
+requester's verified issuer-qualified subject across client IDs and principal
+aliases, while retaining principal-ID inequality. The offline
+`LifecycleIdentityIndependenceDiagnosticTest` covers both rejection paths,
+distinct-subject/different-issuer positive controls and scope/enrollment/roster
+controls without JDBC or network effects. No existing IDs/history are rewritten;
+existing approvals, live revocation and EKS qualification are outside this check.
 `LifecycleRuntime` accepts the Ed25519 private key only through the delivery
 frame, proves it against current authority and calls only the concrete
 repositories plus fixed synthetic target. `JdbcGitHubOperationInspector`

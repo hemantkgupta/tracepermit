@@ -46,6 +46,16 @@ authority, permit public key and lifetimes, requester/reviewer RS256 public
 keys/providers, exact requester enrollment and independent human roster.
 `check-config` is offline. It does not open JDBC, resolve DNS, sign or dispatch.
 
+Review rejects a verified issuer-qualified subject equal to requester enrollment,
+even under a different authorized client or requester principal alias. Principal
+IDs and stored history are unchanged, and the existing principal-ID check still
+applies. Equal raw subjects from different issuers remain distinct. This check
+does not revoke existing approvals or infer a person across different accounts.
+`LifecycleIdentityIndependenceDiagnosticTest` covers these boundaries with real
+offline parsing, generated signatures and zero network/process/JDBC attempts.
+Its focused result must be recorded separately from the historical module and
+aggregate qualification below; it does not qualify live Okta, GitHub or EKS.
+
 Every non-check command object contains exactly `schemaVersion:1.0`, the same
 profile and one canonical UUID `operationId`. Review additionally requires
 `decision` equal to `APPROVE` or `DENY`. Delivery additionally requires

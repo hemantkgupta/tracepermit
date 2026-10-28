@@ -55,6 +55,13 @@ accepts a private key only through the private pipe, parses canonical Ed25519
 PKCS8 and proves it matches the configured public key before permit issuance.
 Raw bearers, private keys and permits never enter receipts or evidence.
 
+Reviewer authentication also rejects the exact issuer-qualified subject enrolled
+as requester, independently of client ID or requester principal alias. The
+existing principal-ID inequality check remains. Existing scope/principal IDs
+are not normalized or migrated. Distinct issuers with the same raw `sub` remain
+distinct; this does not establish whether different accounts belong to one
+person, refresh offline membership, or invalidate already recorded approvals.
+
 The worker composes only the actual V7 stores:
 
 1. `inspect` verifies fresh owner execute scope and reads current authority,
