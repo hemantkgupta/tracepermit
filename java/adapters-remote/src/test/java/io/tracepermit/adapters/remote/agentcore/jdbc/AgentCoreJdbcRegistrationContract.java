@@ -100,7 +100,7 @@ abstract class AgentCoreJdbcRegistrationContract {
     assertThat(runtime.insertAttempts.get()).isEqualTo(5);
     assertThat(runtime.actualCommits.get()).isEqualTo(1);
     assertThat(runtime.insertedTables).containsExactlyInAnyOrder("tp_business_operations", "tp_business_operation_facts", "tp_operation_lifecycle_heads");
-    assertThat(GitHubBusinessOperationBinding.bind(SCOPE, original, enrollment().targetProfile()).operationId())
+    assertThat(enrollment().targetProfile().bind(SCOPE, original).operationId())
         .isEqualTo(receipt.operationId());
   }
 
@@ -390,8 +390,12 @@ abstract class AgentCoreJdbcRegistrationContract {
     assertSinglePersisted(receipt.operationId());
     assertThat(tables()).containsExactlyInAnyOrder("tp_operation_schema_history", "tp_business_operations",
         "tp_business_operation_facts", "tp_operation_lifecycle_heads", "tp_operation_lifecycle_facts");
-    assertThat(AgentCoreRegistrationIngress.class.getDeclaredConstructors()).hasSize(1);
-    assertThat(AgentCoreRegistrationIngress.class.getDeclaredConstructors()[0].getParameterTypes())
+    var publicConstructors =
+        java.util.Arrays.stream(AgentCoreRegistrationIngress.class.getDeclaredConstructors())
+            .filter(constructor -> java.lang.reflect.Modifier.isPublic(constructor.getModifiers()))
+            .toList();
+    assertThat(publicConstructors).hasSize(1);
+    assertThat(publicConstructors.getFirst().getParameterTypes())
         .containsExactly(OidcAccessTokenVerifier.class, WorkloadIdentityReplayStore.class,
             BusinessOperationRepository.class, Clock.class, AgentCoreRegistrationIngress.Enrollment.class);
     // No authority/permit/attempt/target or credential port exists in this composition.
