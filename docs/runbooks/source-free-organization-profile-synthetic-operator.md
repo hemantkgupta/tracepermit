@@ -67,6 +67,21 @@ exact green repository/coverage receipt after a fresh focused receipt; it
 refuses reuse across any other path, candidate or manifest. Remaining
 documentation and diff validation is pending.
 
+The next focused attempt at preparation HEAD `c63c917` again executed all 24
+cases. Its installed eight-contender case produced one acknowledged success,
+six explicit rejections and one conservative `UNKNOWN`. PostgreSQL may expose
+a concurrent pre-effect admission write as storage unavailable; the operator
+already maps that uncertainty to a nonzero, redacted, no-retry receipt. Requiring
+every loser to be `REJECTED` incorrectly excluded that fail-closed contract. The
+current test-only candidate is
+`aff6f73fd542e941a5e58b4349d5505445223c28`, tree
+`aefbe614e4394b55811c6b171101a909f7abe10c`, parent `c63c917`. It retains the
+maximum-one-success and exact receipt-count assertions while requiring every
+loser to be only `REJECTED` or `UNKNOWN`, exit nonzero and carry no operation or
+dispatch metadata. Production behavior, process deadlines and contention remain
+unchanged. Because Java test bytes changed, the earlier repository/coverage
+receipt cannot be reused; focused and full repository validation are pending.
+
 The source/documentation implementation checkpoint is
 `a9270e4651d39d4825b2ef3efcaccce684760aa7`, tree
 `f3ad45469efddf2f6edf6b4fdd65622db2219651`, with the integration merge as its
@@ -74,7 +89,7 @@ sole parent. Its parent is the earlier accepted-main/qualification merge
 `5da2b6d48ba592537f1b9cf23dae753ddb604feb`; later normal merges preserve it.
 This is an unvalidated local checkpoint, not a qualification receipt or
 publication. The current candidate's relevant source manifest is
-`0b79088a8cff701db3e389767a1ca5588de86209a03ff9fdf5c35a029eb6a482`.
+`eb96e459b04a0ce50357cee97a38a39fdf99a01ebeb27b1299faf2415d581b75`.
 
 This lane owns the new executable module, its tests/docs and the additive durable
 organization factory. It does not own EKS, installed COMMIT-loss injection,

@@ -1366,6 +1366,10 @@ maps the same IDs to `OrganizationOperatorProtocol`, `OrganizationOperatorConfig
 `DurableAgentCoreRegistration.organization(...)`; its installed PostgreSQL and
 boundary validation remains pending under
 [ADR0096](../architecture/0096-source-free-organization-profile-synthetic-operator.md).
+The installed eight-process boundary retains a maximum of one acknowledged
+success and requires every losing receipt to be an explicit non-authorizing
+`REJECTED` or conservative `UNKNOWN` with nonzero exit and no operation/dispatch
+metadata; it does not infer a target-call count from the process boundary.
 
 ## Proposed pending-request cancellation and upgrade gate
 
