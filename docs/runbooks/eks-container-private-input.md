@@ -1,6 +1,6 @@
 # Manual EKS container/private-input rehearsal
 
-Status: **implemented test fixtures; all new compilation and validation pending**.
+Status: **public-artifact permission repair implemented; refreshed validation pending**.
 No cluster deployment, provider access or real credential is authorized.
 See [ADR0098](../architecture/0098-container-private-input-qualification.md), the
 [offline bundle](eks-synthetic-sandbox-bundle.md) and the
@@ -19,6 +19,17 @@ and protection from privileged operators are not established.
 File/FIFO negatives contain a fixed public sentinel, not a real configuration
 or credential. The TTY negative is a descriptor-only probe with no private input.
 Actual application calls always use no TTY and the exact production receipt.
+
+At `6f35ba2`, human focused18/18 and local image assembly passed. Transport then
+reported6pass/1failure/1fail-fast skip, with4 planned cases unrun. The first
+application launch failed before a receipt; saved counts are exit1,0 stdout
+bytes and182 stderr bytes. All7 owned containers were observed removed. Archive
+inspection found the lifecycle JAR at0600; root ownership and write-bit removal
+left it unreadable to UID10001. Both image assembly paths now normalize only
+public installed artifacts to readable/traversable, immutable permissions.
+The containment probe also opens every bounded installed library as UID10001.
+Re-run the source-pinned stages on the revised candidate manually; the earlier
+image and receipts remain historical evidence and do not qualify this repair.
 
 Docker CLI clients use a private empty configuration with an explicit local
 Unix socket, so client proxy settings are not injected. Global Docker settings
@@ -51,7 +62,8 @@ to a fresh0700 directory outside Git. The writer does not execute the runner.
    evidence, without push/tag cleanup or claims of qualification.
 4. **transport:** run only `ContainerPrivateInputQualificationTest`,12 cases,
    fail-fast. The first descriptor positive must pass. Other cases cover actual
-   UID/capability/write observations, file/linked FIFO/unlinked FIFO/TTY refusal,
+   UID/capability/write and installed-library readability observations,
+   file/linked FIFO/unlinked FIFO/TTY refusal,
    valid offline check-config in parent+worker, trailing/oversized frames, held
    EOF under the unchanged parent budget, capped stdout/stderr pressure and
    interrupted attach with observed owned-container removal. If provenance

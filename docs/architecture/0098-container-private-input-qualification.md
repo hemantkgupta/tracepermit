@@ -8,7 +8,8 @@
 
 Add test-only fixtures and explicit human-run tasks to `eks-sandbox-bundle`.
 Do not alter the installed lifecycle protocol, descriptor provenance checks,
-authority, SQL, grants, production classes, image recipe or suspended EKS List.
+authority, SQL, grants, production Java classes or suspended EKS List. Image
+installation permissions are normalized for the non-root runtime as below.
 Accepted main at preparation is PR135 merge
 `3ad4f01de9c1b753df1ed58e3ddad1da1500a539`.
 
@@ -43,7 +44,20 @@ checksum/extract/ownership/read-only commands, and commits the stopped filesyste
 with the fixed non-root entry point and source/archive labels. No Dockerfile
 frontend, package install, registry pull/push or source mount is used. This
 qualifies only that recorded local image assembly, not reproducible registry
-builds or the Dockerfile frontend. The original Dockerfile remains unchanged.
+builds or the Dockerfile frontend. Both assembly paths normalize public compiled
+artifacts with `chmod -R a+rX,a-w` after root ownership: directories and existing
+executables remain traversable/executable, libraries become readable, and all
+write bits are removed. Private runtime frames are never installation artifacts.
+
+The initial human transport run at `6f35ba2` passed6 cases before the application
+launch failed with182 stderr bytes, no stdout and exit1;1 case was fail-fast
+skipped and4 planned cases were unrun. All7 owned containers had removal receipts.
+Read-only inspection found the recorded lifecycle JAR at0600; the prior
+`chown root:root`/`chmod a-w` recipe left it0400, unreadable by UID10001.
+Bootstrap and lifecycle classes were present. Exact stderr text was not retained.
+The containment probe now actually opens every bounded installed library under
+UID10001 and checks immutable permissions plus the required class entries.
+The revised source is uncompiled; old passes do not qualify the repair.
 
 Runtime containers use UID/GID10001, read-only roots, no capabilities or privilege
 escalation, private PID/IPC/cgroup namespaces, no published ports, no restart or

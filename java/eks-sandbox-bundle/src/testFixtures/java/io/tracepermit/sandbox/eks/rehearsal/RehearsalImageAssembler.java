@@ -23,7 +23,7 @@ public final class RehearsalImageAssembler {
       test -x /opt/java/openjdk/bin/java
       rm /tmp/lifecycle.tar /tmp/sandbox.tar
       chown -R root:root /opt/tracepermit /opt/sandbox
-      chmod -R a-w /opt/tracepermit /opt/sandbox
+      chmod -R a+rX,a-w /opt/tracepermit /opt/sandbox
       """;
 
   private RehearsalImageAssembler() {}

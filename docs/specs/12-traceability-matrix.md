@@ -7,9 +7,13 @@ under `eks-sandbox-bundle` test/testFixtures/containerTest sources. Eight offlin
 controls inspect the closed plan, metadata mutations, channel bounds and normal
 archive exclusion.12 explicit transport cases require the actual unchanged
 descriptor check and private framing/EOF, observed non-root/write/capability
-constraints, refusal controls, bounded pressure and owned cleanup. Two PG16.4
+constraints, actual immutable-library readability, refusal controls, bounded
+pressure and owned cleanup. Two PG16.4
 cases exercise fresh installed containers and durable no-resend reconciliation.
-No new case, build or image has run. Default tests do not substitute for these
+At `6f35ba2`, human focused18/18 and image assembly passed; transport reported
+6pass/1failure/1fail-fast skip, with4 planned cases unrun. The public-artifact
+permission repair and refreshed gate results remain unqualified. Default tests
+do not substitute for these
 manual container gates. See [ADR0098](../architecture/0098-container-private-input-qualification.md)
 and the [runbook](../runbooks/eks-container-private-input.md). Daemon/host custody,
 EKS transport/audit, kernel resource exhaustion, network isolation, live providers

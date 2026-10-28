@@ -25,7 +25,7 @@ RUN case "$JAVA21_IMAGE" in *@sha256:*) ;; *) exit 1 ;; esac \
     && test -x /opt/java/openjdk/bin/java \
     && rm /tmp/lifecycle.tar /tmp/sandbox.tar \
     && chown -R root:root /opt/tracepermit /opt/sandbox \
-    && chmod -R a-w /opt/tracepermit /opt/sandbox
+    && chmod -R a+rX,a-w /opt/tracepermit /opt/sandbox
 LABEL io.tracepermit.source-commit=$SOURCE_COMMIT
 USER 10001:10001
 WORKDIR /opt/sandbox

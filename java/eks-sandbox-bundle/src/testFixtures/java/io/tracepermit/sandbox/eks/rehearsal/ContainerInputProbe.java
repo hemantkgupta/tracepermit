@@ -123,7 +123,34 @@ public final class ContainerInputProbe {
     }
     Path temporary = Files.createTempFile("tp-owned-writable-tmp-", ".txt");
     Files.delete(temporary);
+    readableInstalledLibraries();
     System.out.print("CONTAINMENT_VERIFIED\n");
     System.out.flush();
+  }
+
+  private static void readableInstalledLibraries() throws Exception {
+    boolean bootstrap = false, lifecycle = false;
+    int count = 0;
+    try (var files = Files.newDirectoryStream(Path.of("/opt/tracepermit/lib"), "*.jar")) {
+      for (Path file : files) {
+        if (++count > 128 || !Files.isRegularFile(file, java.nio.file.LinkOption.NOFOLLOW_LINKS)
+            || Files.size(file) > 64L * 1024 * 1024) {
+          throw new AssertionError("PROBE_INSTALLED_LIBRARY_BOUND");
+        }
+        var mode = Files.getPosixFilePermissions(file);
+        if (!mode.contains(java.nio.file.attribute.PosixFilePermission.OTHERS_READ)
+            || mode.contains(java.nio.file.attribute.PosixFilePermission.OWNER_WRITE)
+            || mode.contains(java.nio.file.attribute.PosixFilePermission.GROUP_WRITE)
+            || mode.contains(java.nio.file.attribute.PosixFilePermission.OTHERS_WRITE)) {
+          throw new AssertionError("PROBE_INSTALLED_LIBRARY_PERMISSIONS");
+        }
+        // Actually open every library as UID10001; metadata alone is insufficient.
+        try (var jar = new java.util.jar.JarFile(file.toFile())) {
+          bootstrap |= jar.getJarEntry("io/tracepermit/agentcore/lifecyclecli/Bootstrap.class") != null;
+          lifecycle |= jar.getJarEntry("io/tracepermit/agentcore/lifecyclecli/LifecycleCli.class") != null;
+        }
+      }
+    }
+    if (!bootstrap || !lifecycle) throw new AssertionError("PROBE_INSTALLED_LIFECYCLE_CLASSES_MISSING");
   }
 }

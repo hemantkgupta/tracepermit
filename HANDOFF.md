@@ -8,16 +8,26 @@ owned-container profile, bounded attach I/O, actual descriptor negatives,
 offline image assembly and two PG16.4 lifecycle cases. Default EKS tests gain
 eight offline harness cases;12 transport and2 PG cases are explicit human-run
 gates with no skipped-case fallback. The installed CLI, descriptor/trust code,
-SQL/grants, production classes, Dockerfile, suspended List and CI are unchanged.
+SQL/grants, production Java classes, suspended List and CI are unchanged. The
+Dockerfile and equivalent local assembler normalize public installed artifacts
+to be readable/traversable and non-writable after root ownership, including
+archives produced under a private `umask 077`.
 
 [ADR0098](docs/architecture/0098-container-private-input-qualification.md), the
 [runbook](docs/runbooks/eks-container-private-input.md) and
 [learning note](docs/learning/attached-stdin-is-not-secret-custody.md) distinguish
 local plumbing from daemon/host and EKS custody. A failed first provenance gate
 stops before private frames; no alternate pipe, file/key input or caller flag is
-accepted. Air, Cloud1/2 and Gemini files remain untouched. No tests, compilation,
-container/image action, CI, deployment or worker message ran for this candidate.
-Private source-pinned commands and finite stop conditions are handed to the human.
+accepted. Air, Cloud1/2 and Gemini files remain untouched. Human validation at
+`6f35ba2` passed18/18 focused cases and image assembly, then transport reported
+6pass/1failure/1fail-fast skip, with4 planned cases unrun. The first application
+call had182 stderr bytes and no stdout; all7 owned containers were observed
+removed. Archive inspection found the lifecycle JAR at0600, which the original
+ownership/read-only recipe left root-only readable. The repair adds actual
+installed-library readability checks under UID10001. That repair is uncompiled
+and all refreshed gates remain pending. Old receipts are preserved separately;
+the writer ran no validation, Docker, CI, deployment or worker messages. Private
+source-pinned commands and finite stop conditions are handed to the human.
 
 ## EKS synthetic sandbox bundle — implemented; manual validation pending
 
