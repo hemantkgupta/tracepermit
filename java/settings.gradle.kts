@@ -23,6 +23,7 @@ include(
   "agentcore-registration-http-cli",
   "agentcore-operation-lifecycle-cli",
   "agentcore-organization-lifecycle-cli",
+  "eks-sandbox-bundle",
   "observability-otel",
   "conformance",
 )

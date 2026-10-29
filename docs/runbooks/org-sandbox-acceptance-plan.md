@@ -1,8 +1,11 @@
 # Organization sandbox acceptance plan
 
 Status: **proposed acceptance contract; no deployment or real-target authorization**.
-Prepared 2026-10-27 and updated 2026-10-28 from accepted main
-`35a791ffeba1a6b0b10e3e072e97f1085d80eed3`.
+Prepared 2026-10-27 and updated 2026-10-28 against accepted main
+`dfb7b3b11ed7af3b4d0230fae9adf6e514289ba5`. This planning refresh records PR133's
+verified-subject independence repair and PR134's retirement of MariaDB10.x
+integration qualification; it is not fresh deployment or final-composition
+qualification. PostgreSQL16.4 and MariaDB11.4.13 remain the active engines.
 
 This plan defines the evidence needed to move the installed synthetic pilot into
 one organization-owned non-production sandbox. It does not select an organization,
@@ -31,6 +34,21 @@ remain binding. This plan changes no requirement status.
 | Reliability                                                                | [Issue126](https://github.com/hemantkgupta/tracepermit/issues/126) preserves failures; local process-harness repairs are a separate workstream     | Passing unchanged tests and complete aggregate coverage on the release candidate        |
 | Org identity, protected credentials, enforced routing and audit deployment | Deployment requirements/design only                                                                                                                | The exact organization-owned composition and negative-control evidence below            |
 | Non-production provider action                                             | Existing narrow adapter foundations are synthetically qualified only                                                                               | Separate adapter/topology review and explicit live non-production approval              |
+
+The [offline EKS bundle](eks-synthetic-sandbox-bundle.md) and
+[ADR0097](../architecture/0097-offline-eks-sandbox-bundle.md) prepare suspended
+synthetic workloads and explicit operator inputs only. Its initial human-run
+feature results do not qualify the refreshed composition, image, private input
+transport, PVC, CNI/RBAC/admission or cluster isolation. Those gates remain open.
+The organization-profile installed operator is separate work and is not enabled
+by this bundle or acceptance-plan refresh.
+
+The subsequent [container/private-input rehearsal](eks-container-private-input.md)
+adds explicit local OCI qualification fixtures under
+[ADR0098](../architecture/0098-container-private-input-qualification.md).
+Their compilation and manual gates are pending. They do not replace EKS
+attach/audit custody, native-sidecar/PVC, CNI/RBAC/admission or live-provider
+acceptance, and do not authorize deployment.
 
 PR128's accepted qualification exception does not waive any sandbox gate or
 future PR. Track E's three contract decisions are already approved; they do not
@@ -184,9 +202,12 @@ and cleanup/ownership. Keep original failed evidence when a repair is made.
 
 ### G4 — Durable concurrency, crashes and uncertainty
 
-- Use actual PostgreSQL16.4/MariaDB11.4.13/MariaDB10.6.25 qualification for the
-  supported composition, then pin the chosen deployment engine and restricted
+- Use actual PostgreSQL16.4/MariaDB11.4.13 qualification for the supported
+  composition under [ADR0094](../architecture/0094-mariadb-10-qualification-retirement.md),
+  then pin the chosen deployment engine and restricted
   runtime/operator grants. Runtime performs no DDL or privilege expansion.
+  Historical MariaDB10.x receipts do not qualify this composition; fresh 10.x
+  integration is retired and requires a separately reviewed restoration.
 - Exercise multi-process contention with the existing full contender/workload
   controls. Prove authority is shared and one-use, rather than process-local.
 - Inject failures before claim acknowledgement, around acknowledged

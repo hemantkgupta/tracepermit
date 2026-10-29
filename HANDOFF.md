@@ -1,5 +1,65 @@
 # TracePermit implementation handoff
 
+## EKS container/private-input rehearsal — implemented; validation pending
+
+Local Mac owns `codex/eks-container-private-input` from accepted PR135 main
+`3ad4f01de9c1b753df1ed58e3ddad1da1500a539`. Test-only EKS fixtures add a closed
+owned-container profile, bounded attach I/O, actual descriptor negatives,
+offline image assembly and two PG16.4 lifecycle cases. Default EKS tests gain
+eight offline harness cases;12 transport and2 PG cases are explicit human-run
+gates with no skipped-case fallback. The installed CLI, descriptor/trust code,
+SQL/grants, production Java classes, suspended List and CI are unchanged. The
+Dockerfile and equivalent local assembler normalize public installed artifacts
+to be readable/traversable and non-writable after root ownership, including
+archives produced under a private `umask 077`.
+
+[ADR0098](docs/architecture/0098-container-private-input-qualification.md), the
+[runbook](docs/runbooks/eks-container-private-input.md) and
+[learning note](docs/learning/attached-stdin-is-not-secret-custody.md) distinguish
+local plumbing from daemon/host and EKS custody. A failed first provenance gate
+stops before private frames; no alternate pipe, file/key input or caller flag is
+accepted. Air, Cloud1/2 and Gemini files remain untouched. Human validation at
+`6f35ba2` passed18/18 focused cases and image assembly, then transport reported
+6pass/1failure/1fail-fast skip, with4 planned cases unrun. The first application
+call had182 stderr bytes and no stdout; all7 owned containers were observed
+removed. Archive inspection found the lifecycle JAR at0600, which the original
+ownership/read-only recipe left root-only readable. The repair adds actual
+installed-library readability checks under UID10001. That repair is uncompiled
+and all refreshed gates remain pending. Old receipts are preserved separately;
+the writer ran no validation, Docker, CI, deployment or worker messages. Private
+source-pinned commands and finite stop conditions are handed to the human.
+
+## EKS synthetic sandbox bundle — implemented; manual validation pending
+
+Local Mac owns `codex/eks-sandbox-bundle`, normally refreshed with accepted main
+`dfb7b3b11ed7af3b4d0230fae9adf6e514289ba5` (PR133 and PR134 included).
+The original feature and human-run evidence remain attached to base
+`35a791ffeba1a6b0b10e3e072e97f1085d80eed3`. The new Java renderer/checker,
+fixed deployment template, separately invoked TCP probe, packaging recipe,
+ADR0097 and EKS-specific tests/docs do not modify Track E runtime, provider
+integration or existing process helpers. Shared settings/specification entries
+are additive. Mac Air is not messaged or polled; the human coordinates its lane.
+
+The first closed profile requires explicit Linux EC2/IPv4/VPC-CNI strict-mode
+and Kubernetes1.33–1.36 declarations, separate namespace/node-pool identities,
+digest-pinned preloaded images and an operator-preinitialized restricted V7
+PostgreSQL16.4-alpine ReadWriteOncePod claim/UID. Both Jobs are suspended; no
+cloud client, deploy/apply mode, RoleBinding, Secret, public route, migration,
+credential acquisition or application retry is added. Existing lifecycle
+60s/5s/1s budgets and all authority/no-resend behavior stay unchanged.
+
+The original human-run feature gate passed 10 EKS cases, followed by a repository
+run with 3,761 recorded Java cases, zero failures/errors and one inherited skip;
+coverage was 94.083611% LINE and 77.338933% BRANCH with recorded cache/up-to-date
+reuse. Those receipts do not qualify this refreshed composition. Its focused,
+repository and aggregate coverage checks remain manual and pending. Image and
+actual cluster qualification remain unrun. New source/runtime/cache commands
+with private log and exit capture are supplied outside Git. The accepted PR134
+qualification policy retains PostgreSQL16.4 and MariaDB11.4.13 and historical
+10.x runtime recognition; no superseded local runtime-rejection draft is imported.
+No agent-run validation, CI retry, deployment, provider call, push or readiness
+claim accompanies this local integration checkpoint.
+
 GitHub is authoritative. Keep credentials, raw claims and private operator/customer
 planning outside Git. Historical receipts below are not fresh qualification.
 

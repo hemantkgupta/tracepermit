@@ -1,5 +1,49 @@
 # Requirements traceability matrix
 
+## Container/private-input rehearsal — new gates unrun
+
+Partial SEC-003/007/008/012/019, REL-002/005 and OPS-005 fixtures are implemented
+under `eks-sandbox-bundle` test/testFixtures/containerTest sources. Eight offline
+controls inspect the closed plan, metadata mutations, channel bounds and normal
+archive exclusion.12 explicit transport cases require the actual unchanged
+descriptor check and private framing/EOF, observed non-root/write/capability
+constraints, actual immutable-library readability, refusal controls, bounded
+pressure and owned cleanup. Two PG16.4
+cases exercise fresh installed containers and durable no-resend reconciliation.
+At `6f35ba2`, human focused18/18 and image assembly passed; transport reported
+6pass/1failure/1fail-fast skip, with4 planned cases unrun. The public-artifact
+permission repair and refreshed gate results remain unqualified. Default tests
+do not substitute for these
+manual container gates. See [ADR0098](../architecture/0098-container-private-input-qualification.md)
+and the [runbook](../runbooks/eks-container-private-input.md). Daemon/host custody,
+EKS transport/audit, kernel resource exhaustion, network isolation, live providers
+and requirement-wide acceptance remain unqualified. Other workers' contracts,
+fault helpers and source remain separate.
+
+## Offline EKS synthetic rehearsal bundle — validation pending
+
+Partial SEC-003/007/008/012, REL-002/005 and OPS-005 preparation is implemented
+in `eks-sandbox-bundle` and `deploy/sandbox/eks/`: exact private configuration,
+digest/source/cluster binding declarations, suspended restricted Jobs, distinct
+non-automount identities, fixed default-deny policy, no public/provider route,
+and a bounded TCP observation tool. No whole-ID status changes.
+
+`EksSandboxBundleTest` adds independent field assertions, weakened-manifest
+mutation controls, strict config/parser/private-file/redaction tests, offline
+network/process/listener tripwires and source-free distribution checks. Tests
+are written but not run by the implementation writer. The rendered artifact
+does not verify actual CNI/RBAC/admission/image/PVC/custody properties. Cluster,
+image, credential and live-provider acceptance remain separate gates. See
+[ADR0097](../architecture/0097-offline-eks-sandbox-bundle.md), its
+[runbook](../runbooks/eks-synthetic-sandbox-bundle.md) and the
+[learning note](../learning/rendered-policy-is-not-deployed-isolation.md).
+
+The initial human-run feature passed 10 focused EKS cases and a repository gate
+at 94.083611% LINE/77.338933% BRANCH with recorded reused results. Those receipts
+belong to the PR130-base feature. The normally refreshed PR133/134 composition
+requires new manual focused/repository evidence; no cluster or requirement-wide
+acceptance follows from that earlier pass.
+
 **Current scope update, validation pending:** MariaDB 10.x integration
 qualification is retired under
 [ADR0094](../architecture/0094-mariadb-10-qualification-retirement.md).
