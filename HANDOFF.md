@@ -1,5 +1,19 @@
 # TracePermit implementation handoff
 
+## Lifecycle archive interoperability — implemented; validation pending
+
+Local Mac owns `codex/lifecycle-archive-compatibility` from accepted PR144 main
+`936ec9724f30eff3e3b2f02c39df8d37c1862ee7`. A module-only build source set
+finalizes fresh distTar output with standard USTAR full-name/prefix headers,
+preserving payloads, paths and metadata. It is excluded from product JARs.
+Runtime/protocol/authority, output path, Air's org module, Cloud1's four tests,
+Cloud2's strict verifier and CI remain unchanged. The
+[runbook](docs/runbooks/lifecycle-archive-compatibility.md) separates31 producer
+and two actual-distribution cases, the public unchanged-parser comparison and
+full repository gates. All new compilation,40-case focused, compatibility and
+repository/coverage stages are UNRUN. Human validation only; no deployment,
+publication, worker message or automatic retry follows.
+
 ## P1 EKS rehearsal readiness packet — implemented; validation pending
 
 Local Mac owns `codex/eks-rehearsal-readiness`, layered on published PR144
