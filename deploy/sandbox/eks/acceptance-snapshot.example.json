@@ -1,0 +1,152 @@
+{
+  "schemaVersion": "1.0",
+  "profile": "tracepermit-eks-organization-acceptance-v1",
+  "planFingerprint": "REQUIRED_EXACT_PLAN_FINGERPRINT",
+  "contextFingerprint": "REQUIRED_OPERATOR_VALUE",
+  "clusterUid": "REQUIRED_OPERATOR_VALUE",
+  "capturedAt": "REQUIRED_UTC_INSTANT",
+  "posture": {},
+  "controls": {
+    "VERSION_COMPATIBILITY_REVIEW": {
+      "status": "NOT_RUN",
+      "evidenceSha256": null,
+      "observedAt": null
+    },
+    "ADMISSION_RESTRICTED_POSITIVE": {
+      "status": "NOT_RUN",
+      "evidenceSha256": null,
+      "observedAt": null
+    },
+    "ADMISSION_RESTRICTED_DENIAL": {
+      "status": "NOT_RUN",
+      "evidenceSha256": null,
+      "observedAt": null
+    },
+    "AGENT_RBAC_DENIAL": {
+      "status": "NOT_RUN",
+      "evidenceSha256": null,
+      "observedAt": null
+    },
+    "TRUSTED_RBAC_DENIAL": {
+      "status": "NOT_RUN",
+      "evidenceSha256": null,
+      "observedAt": null
+    },
+    "NETWORK_POSITIVE_CONTROL": {
+      "status": "NOT_RUN",
+      "evidenceSha256": null,
+      "observedAt": null
+    },
+    "NETWORK_METADATA_DENIAL": {
+      "status": "NOT_RUN",
+      "evidenceSha256": null,
+      "observedAt": null
+    },
+    "NETWORK_KUBEAPI_DENIAL": {
+      "status": "NOT_RUN",
+      "evidenceSha256": null,
+      "observedAt": null
+    },
+    "NETWORK_PROVIDER_DENIAL": {
+      "status": "NOT_RUN",
+      "evidenceSha256": null,
+      "observedAt": null
+    },
+    "NETWORK_NODE_SOCKET_DENIAL": {
+      "status": "NOT_RUN",
+      "evidenceSha256": null,
+      "observedAt": null
+    },
+    "NETWORK_STARTUP_DENIAL": {
+      "status": "NOT_RUN",
+      "evidenceSha256": null,
+      "observedAt": null
+    },
+    "NETWORK_RESCHEDULE_DENIAL": {
+      "status": "NOT_RUN",
+      "evidenceSha256": null,
+      "observedAt": null
+    },
+    "NETWORK_CONTROLLER_OUTAGE": {
+      "status": "NOT_RUN",
+      "evidenceSha256": null,
+      "observedAt": null
+    },
+    "DNS_PROXY_REDIRECT_DENIAL": {
+      "status": "NOT_RUN",
+      "evidenceSha256": null,
+      "observedAt": null
+    },
+    "PRIVATE_STDIN_PROVENANCE": {
+      "status": "NOT_RUN",
+      "evidenceSha256": null,
+      "observedAt": null
+    },
+    "PRIVATE_INPUT_EOF": {
+      "status": "NOT_RUN",
+      "evidenceSha256": null,
+      "observedAt": null
+    },
+    "PRIVATE_INPUT_LEAK_DENIAL": {
+      "status": "NOT_RUN",
+      "evidenceSha256": null,
+      "observedAt": null
+    },
+    "ATTACH_AUDIT_CUSTODY": {
+      "status": "NOT_RUN",
+      "evidenceSha256": null,
+      "observedAt": null
+    },
+    "ORG_IMAGE_LAUNCHER_BINDING": {
+      "status": "NOT_RUN",
+      "evidenceSha256": null,
+      "observedAt": null
+    },
+    "PVC_STOPPED_WRITER_BINDING": {
+      "status": "NOT_RUN",
+      "evidenceSha256": null,
+      "observedAt": null
+    },
+    "RUNTIME_GRANT_DENIAL": {
+      "status": "NOT_RUN",
+      "evidenceSha256": null,
+      "observedAt": null
+    },
+    "FRESH_IDENTITY_DENIAL": {
+      "status": "NOT_RUN",
+      "evidenceSha256": null,
+      "observedAt": null
+    },
+    "INDEPENDENT_REVIEW_DENIAL": {
+      "status": "NOT_RUN",
+      "evidenceSha256": null,
+      "observedAt": null
+    },
+    "UNKNOWN_NO_RESEND": {
+      "status": "NOT_RUN",
+      "evidenceSha256": null,
+      "observedAt": null
+    },
+    "STOP_FRESH_ADMISSION_DENIAL": {
+      "status": "NOT_RUN",
+      "evidenceSha256": null,
+      "observedAt": null
+    },
+    "STOP_READ_ONLY_RECONCILIATION": {
+      "status": "NOT_RUN",
+      "evidenceSha256": null,
+      "observedAt": null
+    },
+    "STOP_OWNED_CLEANUP": {
+      "status": "NOT_RUN",
+      "evidenceSha256": null,
+      "observedAt": null
+    },
+    "STOP_AUDIT_ACCOUNTING": {
+      "status": "NOT_RUN",
+      "evidenceSha256": null,
+      "observedAt": null
+    }
+  },
+  "stop": null
+}

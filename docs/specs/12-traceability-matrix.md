@@ -1,5 +1,27 @@
 # Requirements traceability matrix
 
+## P1 readiness documentation and release assembly — validation pending
+
+Partial FR-008/009/012/015, SEC-003/006/007/008/012/019, REL-002/005/008 and
+OPS-005 preparation is organized by the
+[readiness packet](../planning/eks-p1-rehearsal-readiness.md), blank campaign
+record and28-control worksheet. Existing PR144 Java/protocol/control semantics
+remain unchanged. Local source/artifact bookkeeping is not an attestor or an
+authenticated operator procedure. New manual focused/assembly/repository gates
+are UNRUN; no cluster, live provider, stop guarantee or whole-ID acceptance.
+
+## EKS preflight/containment/stop preparation — validation pending
+
+Partial FR-008/009/012/015, SEC-003/006/007/008/012/019, REL-002/005/008 and
+OPS-005 preparation is implemented in the additional EKS acceptance launcher.
+It pins a closed suspended organization variant and28 manual controls, preserves
+missing/unknown/failure/stale reports, and checks exact profile/generation plus
+single-attempt stop accounting. Its36 new tests and all refreshed gates are
+unrun. No deployed containment, observation provenance, operator authentication,
+stop cancellation, live target or requirement-wide acceptance is claimed.
+See [ADR0099](../architecture/0099-offline-eks-acceptance-kit.md) and the
+[manual runbook](../runbooks/eks-rehearsal-acceptance-kit.md).
+
 ## Container/private-input rehearsal — new gates unrun
 
 Partial SEC-003/007/008/012/019, REL-002/005 and OPS-005 fixtures are implemented

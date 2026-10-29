@@ -1,5 +1,43 @@
 # TracePermit implementation handoff
 
+## P1 EKS rehearsal readiness packet — implemented; validation pending
+
+Local Mac owns `codex/eks-rehearsal-readiness`, layered on published PR144
+head `01c4cc625c8e7b8620d85d8a6ffd81c7eb2b1579` over accepted main
+`7c33ea1ad1c5ef9dae07df235f28db14a1ea2c14`. PR144's validated source is
+preserved. This new documentation tree is unvalidated; PR144's54/54 and
+repository receipts are dependency evidence only. The
+[readiness packet](docs/planning/eks-p1-rehearsal-readiness.md),
+[manual runbook](docs/runbooks/eks-p1-rehearsal-readiness.md) and blank campaign/
+28-control worksheet organize private source/artifact/owner/evidence records.
+The human-run assembler copies the installed EKS distribution without archive
+extraction, deployment, observation fabrication or approval. Actual org inputs,
+image/custody/containment acceptance and an externally authenticated exact-profile
+quarantine procedure remain hard gates. No new Java authority/admin adapter,
+CI or worker action is introduced. All new manual stages are UNRUN.
+
+## EKS preflight and emergency-stop acceptance kit — implemented; validation pending
+
+Local Mac owns `codex/eks-rehearsal-acceptance`, based on accepted PR143 merge
+`7c33ea1ad1c5ef9dae07df235f28db14a1ea2c14`. The additional source-free
+`tracepermit-eks-acceptance` launcher prepares a fixed suspended organization
+variant, a28-control manual catalog and redacted consistency assessments of
+private normalized snapshots. All-positive reported evidence remains
+`REVIEW_REQUIRED`; no execution, retry, cluster acceptance or no-late-effect
+authority is granted. The stop record binds exact profile/generation and
+accounts separately for terminal and unknown work. No administrative adapter,
+kubeconfig, AWS/Kubernetes SDK, deployment or cluster capture command is added.
+
+[ADR0099](docs/architecture/0099-offline-eks-acceptance-kit.md), the
+[runbook](docs/runbooks/eks-rehearsal-acceptance-kit.md) and
+[learning note](docs/learning/a-stop-record-is-not-a-cancelled-effect.md) record
+the limits. Existing renderer/CLI/provenance/durable authority, SQL/grants,
+container qualification and CI bytes are preserved. New compilation,54-case
+focused and repository/coverage gates are unrun; source-pinned human commands
+follow. The writer has run no validation, cluster/container/CI action or worker
+message. Air owns only its separately relayed organization-image qualification;
+Cloud1/2 source and artifacts remain untouched.
+
 ## EKS container/private-input rehearsal — implemented; validation pending
 
 Local Mac owns `codex/eks-container-private-input` from accepted PR135 main

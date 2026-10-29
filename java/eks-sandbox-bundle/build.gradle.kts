@@ -1,4 +1,5 @@
 import org.gradle.api.tasks.SourceSetContainer
+import org.gradle.jvm.application.tasks.CreateStartScripts
 
 plugins {
   application
@@ -17,6 +18,26 @@ application {
   applicationName = "tracepermit-eks-sandbox"
   mainClass = "io.tracepermit.sandbox.eks.EksSandboxMain"
   applicationDefaultJvmArgs = listOf("-Xms16m", "-Xmx64m", "-XX:ActiveProcessorCount=2")
+}
+
+val acceptanceScripts by tasks.registering(CreateStartScripts::class) {
+  applicationName = "tracepermit-eks-acceptance"
+  mainClass.set("io.tracepermit.sandbox.eks.EksAcceptanceMain")
+  outputDir = layout.buildDirectory.dir("acceptanceScripts").get().asFile
+  classpath = files(tasks.jar) + configurations.runtimeClasspath.get()
+  defaultJvmOpts = application.applicationDefaultJvmArgs
+}
+distributions.named("main") {
+  contents {
+    from(rootProject.layout.projectDirectory.dir("../deploy/sandbox/eks")) {
+      include("acceptance-plan.example.json", "acceptance-snapshot.example.json")
+      into("examples")
+    }
+    from(acceptanceScripts) {
+      into("bin")
+      filePermissions { unix("rwxr-xr-x") }
+    }
+  }
 }
 
 tasks.processResources {

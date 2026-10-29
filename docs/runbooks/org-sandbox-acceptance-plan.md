@@ -1,6 +1,14 @@
 # Organization sandbox acceptance plan
 
 Status: **proposed acceptance contract; no deployment or real-target authorization**.
+
+The2026-10-29 implementation checkpoint is accepted PR143 merge
+`7c33ea1ad1c5ef9dae07df235f28db14a1ea2c14`, including PR142's local container
+qualification. The [new offline acceptance kit](eks-rehearsal-acceptance-kit.md)
+adds a suspended organization variant and preflight/stop consistency records;
+its new validation is pending. The older dated receipts below remain historical.
+Actual cluster, input/audit custody, administrative stop procedure and provider
+approval gates remain open. No supplied record becomes execution authority.
 Prepared 2026-10-27 and updated 2026-10-28 against accepted main
 `dfb7b3b11ed7af3b4d0230fae9adf6e514289ba5`. This planning refresh records PR133's
 verified-subject independence repair and PR134's retirement of MariaDB10.x
