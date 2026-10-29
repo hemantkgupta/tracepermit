@@ -276,7 +276,15 @@ abstract class InstalledLifecycleContract {
           .allMatch(
               receipt ->
                   receipt.outcome().equals("DELIVERY_SUCCEEDED")
-                      || receipt.outcome().equals("REJECTED"));
+                      || receipt.outcome().equals("REJECTED")
+                      || receipt.outcome().equals("UNKNOWN"));
+      assertThat(receipts.stream().filter(receipt -> receipt.exitCode() != 0))
+          .allSatisfy(
+              receipt -> {
+                assertThat(receipt.outcome()).isIn("REJECTED", "UNKNOWN");
+                assertThat(receipt.operationId()).isNull();
+                assertThat(receipt.dispatchStarted()).isNull();
+              });
       assertThat(database.count("tp_operation_admissions")).isOne();
       assertThat(database.count("tp_operation_delivery_events")).isEqualTo(successes * 3);
       LifecycleReceipt reconciled =

@@ -1,6 +1,6 @@
 # Okta/GitHub organization sandbox composition
 
-Status: **implementation candidate; fixture review pending; no live authority or target access**.
+Status: **library candidate locally qualified on three engines; no live authority or target access**.
 
 Requirements: FR-001/008/009/012/015; SEC-001/002/003/006/007/008/012/019;
 REL-002/005/008; OPS-005. This candidate promotes no whole requirement.
@@ -14,8 +14,10 @@ authorization to call Okta or GitHub.
 
 ## Implemented Java packet
 
-The candidate adds only library types. It adds no listener, launcher, main class,
-credential source, token endpoint, login, deployment or live target call.
+The qualified composition remains a library surface. ADR0096 separately composes
+it into a local source-free synthetic launcher with registration; that executable
+adds no listener, credential source, token endpoint, login, deployment or live
+target call.
 
 | API                                                                     | Contract                                                                                                                                                                                                                                                                                                                                                                                 |
 | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -63,6 +65,15 @@ static AgentCoreRegistrationIngress organization(
     BusinessOperationRepository repository,
     Clock clock,
     AgentCoreRegistrationIngress.OrganizationEnrollment enrollment);
+
+static DurableAgentCoreRegistration organization(
+    OidcAccessTokenVerifier verifier,
+    AgentCoreRegistrationIngress.OrganizationEnrollment enrollment,
+    Clock clock,
+    DataSource replaySource,
+    DataSource operationSource,
+    long replayCapacity,
+    Duration replayDmlBudget);
 ```
 
 The new `AgentCoreRegistrationIngress.OrganizationEnrollment`,
@@ -168,14 +179,24 @@ organization-binding, Okta-authority and permit-codec cases passed locally on
 8. the new permit codec accepts only the trusted composition's exact adapter ID,
    while the old constructor produces unchanged Track E bytes.
 
-The console build/typecheck/124-test slice, 152-scenario Java environment check,
-formatting and documentation-link checks also passed. The aggregate Java check
-encountered existing database/process harness failures and then a PostgreSQL
-socket-read hang, so it was interrupted and is not a green qualification result.
-Database-engine, crash, concurrency, coverage, installed, three-engine and
-live-provider cases remain qualification work; this source change does not claim
-their results. No hosted CI, deployment, login, live-provider token minting or
+The published Java candidate at
+`8108598a658121735dbd59d5a44053b3ff22da7a` passed 27/27 focused engine cases.
+The later fresh aggregate recorded 3,807 cases with one inherited skip and
+94.089457% line/76.854231% branch coverage. Earlier failed/hung aggregate
+attempts remain historical evidence; the later pass does not establish their
+root causes. No hosted CI, deployment, login, live-provider token minting or
 live target call was executed.
+
+The additive
+[organization-profile three-engine contract](../runbooks/org-sandbox-three-engine-qualification.md)
+now composes the accepted libraries on PostgreSQL16.4, MariaDB11.4.13 and
+MariaDB10.6.25 with restricted runtime grants and runtime-generated RSA/Ed25519
+material. It covers the exact organization lifecycle, negative authority/profile
+matrix, eight-way contention, writer-time expiry after a real row-lock wait,
+durable unknown/no-resend reconciliation and the retained Track E compatibility
+surface. All 27 engine cases passed in the published receipt above. Those results
+qualify that Java tree only, not later documentation edits or the separate
+ADR0096 installed operator, whose manual validation remains pending.
 
 ## Genuinely new approvals still required
 

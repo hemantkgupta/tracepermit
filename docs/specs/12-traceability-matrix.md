@@ -84,6 +84,10 @@ requires current authority and returns a rollback-only defensive observation.
 identity, full lifecycle/restart, wrong-key/signature/EOF rejection, durable
 confirmed rejection and unknown, no-repeat reconciliation and eight-process
 admission contention on PostgreSQL 16.4, MariaDB 11.4.13 and MariaDB 10.6.25.
+Contention retains at most one acknowledged success; every non-success must exit
+nonzero and may be only a redacted `REJECTED` or conservative `UNKNOWN`, while
+the one-admission, delivery-event and read-only reconciliation assertions remain
+active.
 `ArchiveBoundaryTest`, `SupervisorBoundaryTest`, `LifecycleProtocolBoundaryTest`,
 `LaunchBoundaryTest` and the PostgreSQL same-worker mirror cover source-free
 inventory, bounded supervision, fail-closed receipts/frames and measurable
@@ -1383,17 +1387,37 @@ removed.
 
 ## Okta/GitHub organization sandbox implementation candidate
 
-This is source plus focused generated/offline fixture coverage, not full
-qualification evidence or a requirement-status promotion. The focused fixtures
-passed locally on 2026-10-28; aggregate database/process and three-engine
-qualification remains incomplete.
+This is scoped local synthetic evidence, not live-provider qualification or a
+requirement-status promotion. The published Java candidate at
+`8108598a658121735dbd59d5a44053b3ff22da7a` passed 27/27 focused engine cases;
+the fresh aggregate recorded 3,807 cases, one inherited skip and
+94.089457% line/76.854231% branch coverage. No hosted CI was run for that tree.
 
-| Requirements                            | Candidate enforcement point                                                                                                                                                                                                  | Fixture evidence and remaining boundary                                                                                                                                                                                                                                        |
-| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| FR-001/008/009/012; SEC-001/002/003/012 | `GitHubOrganizationTargetBinding`, `GitHubOrganizationOperationBinding`, sealed `GitHubOperationProfile`/`GitHubTargetBinding`/`BoundGitHubOperation`; closed organization registration factory; exact action parser binding | `GitHubOrganizationOperationBindingTest` and `AgentCoreRegistrationIngressTest` passed locally for registration/rebinding, exact profile, substitutions, invalid environment/ref/ID/permissions and Track E compatibility. No real target/transport.                           |
-| SEC-001/002/003/006; FR-008/009/012     | `OktaOperationAuthority`, `OktaOperationReviewerRoster`; Okta `REQUESTER` attenuation in `AgentCoreRegistrationIngress`                                                                                                      | `OktaOperationAuthorityTest` passed locally with generated RS256 fixtures for role/scope/enrollment/independence/five-minute cap. No live Okta, ingress or revocation.                                                                                                         |
-| SEC-006/019; REL-002/005/008            | V4–V7 repositories accept only the sealed profile; permit codec pins the trusted composition's adapter ID; synthetic delivery remains no-retry/read-only reconciliation                                                      | Focused `OperationPermitCodecTest` cross-adapter refusal and unchanged Track E-byte cases passed. Aggregate durable suites did not complete because of database/process failures and a PostgreSQL socket-read hang. Real organization dispatch/reconciliation remains unwired. |
-| SEC-007/008/019; FR-015; OPS-005        | Explicit stop before credential/key source, ingress, live target or deployment                                                                                                                                               | [Composition contract](../design/okta-github-org-sandbox-composition.md) records the four new approvals. EKS containment, custody, bypass proof and live qualification remain external gates.                                                                                  |
+| Requirements                            | Candidate enforcement point                                                                                                                                                                                                  | Fixture evidence and remaining boundary                                                                                                                                                                                                              |
+| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| FR-001/008/009/012; SEC-001/002/003/012 | `GitHubOrganizationTargetBinding`, `GitHubOrganizationOperationBinding`, sealed `GitHubOperationProfile`/`GitHubTargetBinding`/`BoundGitHubOperation`; closed organization registration factory; exact action parser binding | `GitHubOrganizationOperationBindingTest` and `AgentCoreRegistrationIngressTest` passed locally for registration/rebinding, exact profile, substitutions, invalid environment/ref/ID/permissions and Track E compatibility. No real target/transport. |
+| SEC-001/002/003/006; FR-008/009/012     | `OktaOperationAuthority`, `OktaOperationReviewerRoster`; Okta `REQUESTER` attenuation in `AgentCoreRegistrationIngress`                                                                                                      | `OktaOperationAuthorityTest` passed locally with generated RS256 fixtures for role/scope/enrollment/independence/five-minute cap. No live Okta, ingress or revocation.                                                                               |
+| SEC-006/019; REL-002/005/008            | V4–V7 repositories accept only the sealed profile; permit codec pins the trusted composition's adapter ID; synthetic delivery remains no-retry/read-only reconciliation                                                      | Focused cross-adapter and unchanged Track E-byte cases passed, followed by 27/27 engine cases and the fresh aggregate receipt above. Real organization dispatch/reconciliation remains unwired.                                                      |
+| SEC-007/008/019; FR-015; OPS-005        | Explicit stop before credential/key source, ingress, live target or deployment                                                                                                                                               | [Composition contract](../design/okta-github-org-sandbox-composition.md) records the four new approvals. EKS containment, custody, bypass proof and live qualification remain external gates.                                                        |
+
+`OrgSandboxLifecycleContract` plus `PostgresOrgSandboxLifecycleTest`,
+`MariaDb114OrgSandboxLifecycleTest` and `MariaDb106OrgSandboxLifecycleTest`
+provide the passed three-engine source coverage for FR-001/008/009/012/015,
+SEC-001/002/003/006/012/019 and REL-002/005/008. The contract composes verified
+Okta enrollment/independent review, exact organization binding, durable review,
+permit/admission, synthetic delivery and read-only no-resend reconciliation under
+restricted grants. It includes profile/target substitutions, adapter pinning,
+eight-way contention, real row-lock expiry and legacy Track E compatibility.
+This is not a requirement-status promotion. The additive source-free operator
+maps the same IDs to `OrganizationOperatorProtocol`, `OrganizationOperatorConfig`,
+`OrganizationOperatorRuntime`, `OrganizationOperatorReceipt` and
+`DurableAgentCoreRegistration.organization(...)`; its installed PostgreSQL and
+boundary validation remains pending under
+[ADR0096](../architecture/0096-source-free-organization-profile-synthetic-operator.md).
+The installed eight-process boundary retains a maximum of one acknowledged
+success and requires every losing receipt to be an explicit non-authorizing
+`REJECTED` or conservative `UNKNOWN` with nonzero exit and no operation/dispatch
+metadata; it does not infer a target-call count from the process boundary.
 
 ## Proposed pending-request cancellation and upgrade gate
 

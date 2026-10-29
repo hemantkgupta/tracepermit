@@ -453,12 +453,19 @@ EKS action is an automated prerequisite. Any later live stage requires the exact
 approved custody, ingress, manifest and EKS contracts plus G0–G6 in the
 [organization sandbox plan](../runbooks/org-sandbox-acceptance-plan.md).
 
-The manual-validation restriction was lifted on 2026-10-28. The focused
-generated/offline organization binding, registration, Okta authority and permit
-codec fixtures passed; the console build, typecheck and 124-test suite, the
-152-scenario Java environment check, formatting and documentation-link checks
-also passed. The aggregate Java check is not green: existing database/process
-harness cases failed and a PostgreSQL socket read later hung until the run was
-interrupted. Database-engine, crash, concurrency, coverage, installed and
-three-engine qualification therefore remain required. No hosted CI, deployment,
-login, live-provider token minting or live target call was executed.
+The published organization-library Java candidate at
+`8108598a658121735dbd59d5a44053b3ff22da7a` passed 27/27 focused cases across
+PostgreSQL16.4, MariaDB11.4.13 and MariaDB10.6.25. The later fresh aggregate
+recorded 3,807 cases with one inherited skip and passed the unchanged coverage
+floors at 94.089457% line/76.854231% branch. Preserve the earlier failures and
+socket hang as historical attempts; the final receipt does not establish their
+root causes. No hosted CI, deployment, login, live-provider token minting or
+live target call was executed.
+
+`OrgSandboxLifecycleContract` supplies that completed focused matrix without
+changing grants, assertions, deadlines, workloads or aggregate thresholds. The
+new source-free organization operator has its own unexecuted PostgreSQL16.4
+installed-process and boundary tests. Run those focused tests before repository
+and coverage gates, with fresh runtime-generated keys/tokens and private
+stdout/stderr/exit capture. The exact order and stop conditions are in the
+[operator qualification runbook](../runbooks/source-free-organization-profile-synthetic-operator.md).
