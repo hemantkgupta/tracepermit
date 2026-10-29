@@ -80,7 +80,10 @@ tasks.distTar {
   val finalArchive = archiveFile
   val producerExec = organizationArchiveExec
   val producerRoot = archiveBaseName.zip(archiveVersion) { name, version -> "$name-$version" }
-  val producerClasspath = organizationUstarTool
+  // Capture the artifact view rather than the Configuration itself. Gradle can
+  // snapshot this FileCollection for configuration-cache task actions without
+  // serializing the unsupported Configuration model object.
+  val producerClasspath = organizationUstarTool.incoming.artifactView {}.files
   val producerJava = javaToolchains.launcherFor(java.toolchain).map { it.executablePath.asFile }
   doLast {
     val raw = rawArchive.get().asFile
