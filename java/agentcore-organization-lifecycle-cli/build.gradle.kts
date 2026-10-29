@@ -24,6 +24,7 @@ dependencies {
 
 // Explicit human-run organization-container qualification. It is not part of checkAll or CI.
 val organizationContainerTest by sourceSets.creating {
+  java.srcDir("src/containerTest/java")
   compileClasspath += sourceSets.named("test").get().runtimeClasspath
   runtimeClasspath += output + compileClasspath
 }
