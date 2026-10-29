@@ -1,5 +1,12 @@
 # TracePermit specifications
 
+The [P1 quarantine contract](../design/eks-p1-quarantine-procedure-contract.md)
+records the human-selected org-approved authenticated administration route.
+Its [review runbook](../runbooks/eks-p1-quarantine-procedure-review.md) separates
+operator authority, privileged connection custody, acknowledged state change,
+independent observations and cancellation limits. No admin adapter or trust
+mapping is implemented; actual org selection and all new acceptance remain pending.
+
 The [lifecycle archive producer update](../runbooks/lifecycle-archive-compatibility.md)
 keeps installed paths/payloads/metadata while emitting standard USTAR headers
 from a fresh build-only step. Runtime and verifier contracts are unchanged;

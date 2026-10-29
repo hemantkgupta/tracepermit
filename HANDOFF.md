@@ -1,5 +1,26 @@
 # TracePermit implementation handoff
 
+## P1 org-owned quarantine procedure — contract prepared; acceptance pending
+
+The human selected an org-approved authenticated admin procedure. Local Mac
+records the [contract](docs/design/eks-p1-quarantine-procedure-contract.md),
+[review matrix](docs/runbooks/eks-p1-quarantine-procedure-review.md) and blank
+private record on `codex/eks-quarantine-contract`, normally refreshed from its
+original `23d438d` checkpoint onto accepted PR146/147 main
+`d4faf0714c56b2f7d05f8ce38f0a45a85ac558d0`.
+This documentation-only packet adds no admin tool, auth mapping, grant/schema,
+runtime change or deployment command. The actual org procedure/version,
+identity/custody/writer route, administrative-session lifetime, finite cleanup
+and non-dispatching admission probe remain required. Canonical authority
+fingerprints and the offline digest projection are recorded separately. All 20
+org cases remain UNRUN. The original documentation tree passed human focused
+and repository checks; those receipts remain bound to `23d438d`, not this
+refreshed tree. The refresh resolves three additive doc unions and records
+permit preparation before quarantine plus actual admission-only refusal
+afterward. It adds no executable probe. Refreshed local checks are pending.
+All accepted runtime/build/test/CI bytes and worker evidence are preserved;
+no worker message, agent validation or publication occurs.
+
 ## PR146 configuration-cache correction — implemented; manual validation pending
 
 The human-integrated PR146 head `4d838718f9c6f34f807a0ea3ff68f3a712f8bd86`
