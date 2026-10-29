@@ -96,6 +96,8 @@ final class EksAcceptanceMainTest {
     }
     Path root;
     try (var files = Files.list(extraction)) { var children = files.toList(); assertThat(children).hasSize(1); root = children.get(0); }
+    assertThat(Files.readString(root.resolve("examples/acceptance-plan.example.json"))).contains("REQUIRED_OPERATOR_VALUE");
+    assertThat(Files.readString(root.resolve("examples/acceptance-snapshot.example.json"))).contains("NOT_RUN");
     Path launcher = root.resolve("bin/tracepermit-eks-acceptance"), plan = plan(), result = directory.resolve("installed-catalog.json");
     assertThat(Files.isExecutable(launcher)).isTrue();
     var builder = new ProcessBuilder(launcher.toString(), "catalog", plan.toString(), result.toString()).directory(extraction.toFile());

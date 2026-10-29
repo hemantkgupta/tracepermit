@@ -29,6 +29,10 @@ val acceptanceScripts by tasks.registering(CreateStartScripts::class) {
 }
 distributions.named("main") {
   contents {
+    from(rootProject.layout.projectDirectory.dir("../deploy/sandbox/eks")) {
+      include("acceptance-plan.example.json", "acceptance-snapshot.example.json")
+      into("examples")
+    }
     from(acceptanceScripts) {
       into("bin")
       filePermissions { unix("rwxr-xr-x") }
