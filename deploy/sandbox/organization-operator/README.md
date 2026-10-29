@@ -73,6 +73,13 @@ existing mode receipt. It captures private stdout, stderr and numeric exits for
 each stage. It does not install, download, pull, push, deploy or contact a live
 provider.
 
+Gradle distribution archives may carry different entry timestamps when rebuilt
+in separate modes. Inventory and image receipts therefore retain both byte
+hashes. Image provenance binds the runtime label to the SHA256 of the exact tar
+copied by the image stage, then compares its complete entry inventory with the
+separately extracted inventory instead of treating timestamp-varying tar bytes
+as a source-equivalence claim.
+
 ## Limits
 
 The qualification makes no target invocation-count or exactly-once claim.

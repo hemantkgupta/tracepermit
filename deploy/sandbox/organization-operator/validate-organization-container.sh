@@ -311,18 +311,33 @@ tp_image() {
 }
 
 tp_image_provenance() {
+  local executed_archive="$TP_RUN_DIR/organization.tar"
+  local executed_inventory="$TP_RUN_DIR/executed-organization-archive.inventory"
+  local extraction="$TP_RUN_DIR/executed-organization-archive"
+  local receipt_sha
+  [[ -f "$executed_archive" ]]
+  receipt_sha="$(tp_image_field_from "$TP_RUN_DIR/assembled-organization-image.json" organizationArchiveSha256)"
+  [[ "$(/sbin/sha256sum "$executed_archive" | awk '{print $1}')" == "$receipt_sha" ]]
+  /sbin/sha256sum "$executed_archive" >"$TP_RUN_DIR/executed-organization-archive.sha256"
+  /usr/bin/tar -tf "$executed_archive" >"$executed_inventory"
+  mkdir -m 700 "$extraction"
+  /usr/bin/tar -xf "$executed_archive" -C "$extraction"
+  printf '%s\n' "$extraction" >"$TP_RUN_DIR/executed-organization-archive.extraction"
+  [[ "$(find "$extraction" -type f -path '*/bin/tracepermit-synthetic-organization-operator' | wc -l | tr -d ' ')" == 1 ]]
+  [[ -x "$(find "$extraction" -type f -path '*/bin/tracepermit-synthetic-organization-operator')" ]]
   "$TP_NODE" --input-type=commonjs - \
     "$TP_LOG_ROOT/inventory/organization-archive-inventory.json" \
     "$TP_RUN_DIR/assembled-organization-image.json" \
-    "$TP_EXPECTED_HEAD" "$TP_SOURCE_MANIFEST" <<'NODE'
+    "$executed_inventory" "$TP_EXPECTED_HEAD" "$TP_SOURCE_MANIFEST" <<'NODE'
 const fs = require("node:fs");
 const inventory = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
 const image = JSON.parse(fs.readFileSync(process.argv[3], "utf8"));
-const source = process.argv[4];
-const manifest = process.argv[5];
+const executedInventory = fs.readFileSync(process.argv[4], "utf8").split(/\r?\n/).filter(Boolean);
+const source = process.argv[5];
+const manifest = process.argv[6];
 if (inventory.sourceCommit !== source || image.sourceCommit !== source ||
     inventory.sourceManifestSha256 !== manifest || image.sourceManifestSha256 !== manifest ||
-    inventory.organizationArchiveSha256 !== image.organizationArchiveSha256 ||
+    JSON.stringify(inventory.archiveInventory) !== JSON.stringify(executedInventory) ||
     image.installRoot !== "/opt/organization" ||
     image.entrypoint !== "/opt/organization/bin/tracepermit-synthetic-organization-operator" ||
     image.registryPull !== false || image.imagePush !== false || image.qualification !== "UNRUN" ||
@@ -330,6 +345,7 @@ if (inventory.sourceCommit !== source || image.sourceCommit !== source ||
 console.log(JSON.stringify({
   sourceCommit: source,
   sourceManifestSha256: manifest,
+  inventoryArchiveSha256: inventory.organizationArchiveSha256,
   organizationArchiveSha256: image.organizationArchiveSha256,
   runtimeImageId: image.runtimeImageId,
   entrypoint: image.entrypoint,
@@ -337,10 +353,14 @@ console.log(JSON.stringify({
 NODE
 }
 
-tp_image_field() {
+tp_image_field_from() {
   "$TP_NODE" -e \
     'const r=require(process.argv[1]); const v=r[process.argv[2]]; if(typeof v!=="string")process.exit(1); process.stdout.write(v)' \
-    "$TP_LOG_ROOT/image/assembled-organization-image.json" "$1"
+    "$1" "$2"
+}
+
+tp_image_field() {
+  tp_image_field_from "$TP_LOG_ROOT/image/assembled-organization-image.json" "$1"
 }
 
 tp_container_test() {
