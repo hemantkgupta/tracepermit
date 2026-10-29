@@ -13,7 +13,7 @@ import org.junit.jupiter.api.Timeout;
 
 /** Fresh installed processes, generated authority material and restricted PostgreSQL16.4. */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
-@Timeout(300)
+@Timeout(240)
 final class PostgresOrganizationContainerLifecycleQualificationTest {
   private OrganizationContainerQualificationEnvironment environment;
 
