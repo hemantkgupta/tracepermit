@@ -1,5 +1,15 @@
 # Requirements traceability matrix
 
+## P1 readiness documentation and release assembly — validation pending
+
+Partial FR-008/009/012/015, SEC-003/006/007/008/012/019, REL-002/005/008 and
+OPS-005 preparation is organized by the
+[readiness packet](../planning/eks-p1-rehearsal-readiness.md), blank campaign
+record and28-control worksheet. Existing PR144 Java/protocol/control semantics
+remain unchanged. Local source/artifact bookkeeping is not an attestor or an
+authenticated operator procedure. New manual focused/assembly/repository gates
+are UNRUN; no cluster, live provider, stop guarantee or whole-ID acceptance.
+
 ## EKS preflight/containment/stop preparation — validation pending
 
 Partial FR-008/009/012/015, SEC-003/006/007/008/012/019, REL-002/005/008 and
