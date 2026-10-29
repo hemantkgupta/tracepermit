@@ -16,3 +16,10 @@ does not authenticate a human, and a pre-call token check does not prove what
 happens after a database wait. The [org procedure contract](../design/eks-p1-quarantine-procedure-contract.md)
 requires that mapping and its lifetime semantics before the drill. No new admin
 command or implicit authority is created by writing the contract.
+
+A denial probe must also reach the boundary it claims to test. The permit
+issuer requires ready authority, so issuing only after quarantine tests the
+issuer, not admission. Prepare the legitimate unspent permit beforehand and
+call admission only after the exact stop, within the original validity bounds.
+If preparation expires, record an inconclusive case; do not extend its lifetime
+or invoke delivery to obtain a result.

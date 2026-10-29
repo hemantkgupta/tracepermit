@@ -24,6 +24,8 @@
   "unknownCompletionIncidentProcedureReference": null,
   "independentReadbackIdentityAndRouteReference": null,
   "nonDispatchingAdmissionProbeReference": null,
+  "probePermitPreparationReference": null,
+  "probeDeadlineAndPositiveControlReference": null,
   "syntheticWorkloadAndTimeWindowReference": null,
   "independentAuditCustodyReference": null,
   "independentSecurityReviewerReference": null,

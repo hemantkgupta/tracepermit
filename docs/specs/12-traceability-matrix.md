@@ -11,6 +11,16 @@ UNRUN, including in-flight authorization semantics, commit/cleanup uncertainty,
 independent writer observations and non-dispatching admission denial. No whole-ID
 promotion; neither a privileged DataSource nor a filled record is human authority.
 
+## Lifecycle producer archive format — validation pending
+
+Partial SEC-003/012, REL-002 and OPS-002/004 release preparation uses a module-only
+build source set and the unchanged distTar output path. Full names, entry
+metadata and payloads are preserved; unsupported input fails without verifier
+broadening or old-digest substitution.31 producer and two actual-distribution
+cases are written, not run. Existing tests/runtime/coverage gates remain active.
+All new focused/compatibility/repository stages are UNRUN; no whole-ID acceptance.
+See the [runbook](../runbooks/lifecycle-archive-compatibility.md).
+
 ## P1 readiness documentation and release assembly — validation pending
 
 Partial FR-008/009/012/015, SEC-003/006/007/008/012/019, REL-002/005/008 and

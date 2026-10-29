@@ -1,18 +1,19 @@
 # P1 EKS rehearsal readiness packet
 
-Status: **implemented documentation packet; new manual validation UNRUN**.
+Status: **accepted readiness dependencies; quarantine-contract refresh validation pending**.
 This packet prepares a human-operated synthetic campaign. It grants no cluster,
 identity, provider, administration or target permission. It introduces no new
 Java behavior, credential source, authenticated ingress or quarantine adapter.
 
-The source dependency is draft [PR144](https://github.com/hemantkgupta/tracepermit/pull/144)
-head `01c4cc625c8e7b8620d85d8a6ffd81c7eb2b1579`, tree
-`14069d031fd96d868fdd9ac98c6a0e071461f883`, over accepted PR143 main
-`7c33ea1ad1c5ef9dae07df235f28db14a1ea2c14`, tree
-`236c8805c91c3ba686f98a83443da06cd54c6a0e`. That PR's human-run54-case
-and repository results are dependency receipts, not validation of this later
-documentation tree. PR144 remains subject to its own review and merge decision.
-The integration owner must pin the actual accepted release before a cluster run.
+PR144, including the stacked PR145 readiness packet, was accepted at
+`936ec9724f30eff3e3b2f02c39df8d37c1862ee7`. The current source baseline
+also includes PR147 organization-container qualification and PR146 lifecycle
+USTAR/configuration-cache work: main
+`d4faf0714c56b2f7d05f8ce38f0a45a85ac558d0`, tree
+`abdfa8d034057dbd1d07235034d5cb12f4ecbca2`. Earlier component and packet
+receipts remain bound to their recorded source/artifacts; they do not qualify
+this later documentation tree or an actual cluster. The integration owner must
+pin the final accepted release again before a separately approved campaign.
 
 ## What is prepared
 
@@ -100,10 +101,11 @@ must retain restricted grants. Its acknowledged COMMIT plus cleanup must be
 distinguished from commit uncertainty. No blind repeat or replacement authority
 may be inferred from an uncertain administration outcome.
 
-The org may propose an already approved externally authenticated administration
-procedure. If it instead needs a new installed adapter or new custody mechanism,
-return that exact trust contract for human review before implementation. This
-packet selects neither option and contains no administration/SQL command.
+The human selected the already org-approved externally authenticated procedure
+route. Its actual name/version, operator mapping, custody, writer route and
+deadline semantics still need review. A new installed adapter or custody
+mechanism would need its own trust contract before implementation. This packet
+adds neither and contains no administration/SQL command.
 
 Stop new submissions first; quarantine the exact profile/generation through the
 approved procedure; observe fresh admission refusal; classify every started

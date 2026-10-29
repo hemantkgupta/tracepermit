@@ -7,10 +7,13 @@ token flow, credential source, remote endpoint, grant or schema. Track E and
 all existing requester/reviewer decisions remain unchanged.
 
 Source baseline: accepted main
-`936ec9724f30eff3e3b2f02c39df8d37c1862ee7`, tree
-`f9ef77909cc26cf47419516f39ed2cc17729c308`. PR #146's separate lifecycle
-packaging candidate is not a dependency of this contract. The org route choice
-is not approval of an as-yet unidentified procedure or a cluster campaign.
+`d4faf0714c56b2f7d05f8ce38f0a45a85ac558d0`, tree
+`abdfa8d034057dbd1d07235034d5cb12f4ecbca2`, includes accepted PR146 and
+PR147. Their archive/container results do not qualify this authenticated
+administration workflow. The org route choice is not approval of an as-yet
+unidentified procedure or a cluster campaign. The original documentation
+checkpoint `23d438d` passed human focused/repository checks on its earlier
+base; this refreshed contract requires its own manual checks.
 
 The source review pins the existing
 [administration helper](../../java/persistence-operations/src/main/java/io/tracepermit/persistence/operations/OperationAuthorityAdministration.java),
@@ -155,10 +158,33 @@ a delivery-lease claim or dispatch.
 It must not use `deliver-synthetic` to test whether an uncertain stop succeeded:
 if authority is still ready, that would permit a fresh target effect.
 
+The concrete permit issuer also requires current ready authority. Prepare the
+legitimately evaluated, independently reviewed probe operation and its valid,
+unspent permit **before quarantine**, through the existing concrete issuer and
+trusted fresh execute identity. Keep the serialized permit in memory only;
+the probe receives no administrator credential. A permit-issuer refusal after
+quarantine is not an admission refusal.
+
+After the authenticated administration procedure, independently observe the
+exact intended writer/profile/generation as quarantined. Then call admission
+only while the original permit, approval and requester authority remain valid.
+Use a separately qualified positive admission control on a distinct disposable
+fixture to establish the prerequisites; never consume the stop probe's permit
+as its own pre-check. If the admin procedure consumes the validity window,
+record an inconclusive case rather than extend a lifetime, reconstruct a permit
+or automatically repeat the scenario.
+
+`OPERATION_AUTHORITY_NOT_READY` also covers missing/staged controls. The code
+alone is therefore insufficient: retain exact independent quarantined readback,
+valid-prerequisite evidence and operation-specific before/after admission,
+facts, outbox and delivery observations. A profile mismatch or unrelated denial
+cannot stand in for successful quarantine enforcement.
+
 Use a separately approved disposable probe operation/fixture and independent
 database observations. If admission unexpectedly succeeds, record a failed stop
 control and stop the probe; never continue to target dispatch or silently delete
-the resulting evidence. A profile guard check alone, spent permit, invalid
+the resulting evidence. Admission COMMIT/cleanup/output uncertainty remains
+UNKNOWN with read-only reconciliation and no retry. A profile guard check alone, spent permit, invalid
 identity, missing operation or disconnected database is not fresh-admission
 denial proof. No installed admission-only probe is shipped by this contract;
 its actual org procedure/artifact is a required input before the drill.
