@@ -1,5 +1,11 @@
 # TracePermit specifications
 
+The [P1 rehearsal readiness packet](../planning/eks-p1-rehearsal-readiness.md)
+and [manual runbook](../runbooks/eks-p1-rehearsal-readiness.md) organize the
+existing acceptance catalog, blank private campaign and exact release evidence.
+They add no execution or operator authority. PR144 remains a source dependency;
+new documentation/assembly gates and actual org acceptance are unrun.
+
 [ADR0099](../architecture/0099-offline-eks-acceptance-kit.md) adds an offline
 preflight/containment/emergency-stop preparation and assessment kit from
 accepted PR143. Its [manual runbook](../runbooks/eks-rehearsal-acceptance-kit.md)

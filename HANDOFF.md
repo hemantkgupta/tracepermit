@@ -1,5 +1,21 @@
 # TracePermit implementation handoff
 
+## P1 EKS rehearsal readiness packet — implemented; validation pending
+
+Local Mac owns `codex/eks-rehearsal-readiness`, layered on published PR144
+head `01c4cc625c8e7b8620d85d8a6ffd81c7eb2b1579` over accepted main
+`7c33ea1ad1c5ef9dae07df235f28db14a1ea2c14`. PR144's validated source is
+preserved. This new documentation tree is unvalidated; PR144's54/54 and
+repository receipts are dependency evidence only. The
+[readiness packet](docs/planning/eks-p1-rehearsal-readiness.md),
+[manual runbook](docs/runbooks/eks-p1-rehearsal-readiness.md) and blank campaign/
+28-control worksheet organize private source/artifact/owner/evidence records.
+The human-run assembler copies the installed EKS distribution without archive
+extraction, deployment, observation fabrication or approval. Actual org inputs,
+image/custody/containment acceptance and an externally authenticated exact-profile
+quarantine procedure remain hard gates. No new Java authority/admin adapter,
+CI or worker action is introduced. All new manual stages are UNRUN.
+
 ## EKS preflight and emergency-stop acceptance kit — implemented; validation pending
 
 Local Mac owns `codex/eks-rehearsal-acceptance`, based on accepted PR143 merge
