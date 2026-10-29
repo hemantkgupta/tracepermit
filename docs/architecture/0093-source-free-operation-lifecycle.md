@@ -112,3 +112,17 @@ The [qualification runbook](../runbooks/source-free-operation-lifecycle.md)
 records exact commands, engines, evidence and remaining gates. The
 [learning note](../learning/synthetic-lifecycle-success-is-not-live-execution.md)
 explains why a successful synthetic delivery receipt remains execution-disabled.
+
+## Producer format compatibility update — validation pending
+
+A module-only build source set finalizes fresh lifecycle TAR output with
+standard USTAR name/prefix fields, preserving complete paths, payloads and
+entry metadata before distTar completes. It is excluded from installed JARs.
+The runtime/bootstrap/protocol/authority and all deadlines remain unchanged.
+Unsupported input fails without truncation, verifier broadening or old-digest
+substitution. This preserves the existing trust decisions and adds no adapter.
+
+The [manual compatibility runbook](../runbooks/lifecycle-archive-compatibility.md)
+defines producer/installed cases, raw/final inventory comparison, an unchanged
+public TAR-parser comparator and unchanged repository/coverage gates. All new
+stages are UNRUN; earlier receipts do not qualify the new producer/archive.

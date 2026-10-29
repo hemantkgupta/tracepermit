@@ -1,5 +1,11 @@
 # TracePermit specifications
 
+The [lifecycle archive producer update](../runbooks/lifecycle-archive-compatibility.md)
+keeps installed paths/payloads/metadata while emitting standard USTAR headers
+from a fresh build-only step. Runtime and verifier contracts are unchanged;
+all new manual producer/installed/compatibility/repository gates are UNRUN.
+See the ADR0093 producer update.
+
 The [P1 rehearsal readiness packet](../planning/eks-p1-rehearsal-readiness.md)
 and [manual runbook](../runbooks/eks-p1-rehearsal-readiness.md) organize the
 existing acceptance catalog, blank private campaign and exact release evidence.
