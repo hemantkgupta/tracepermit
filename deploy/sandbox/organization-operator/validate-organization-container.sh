@@ -8,9 +8,10 @@ readonly TP_BRANCH="codex/organization-container-qualification"
 readonly TP_ACCEPTED_MAIN="7c33ea1ad1c5ef9dae07df235f28db14a1ea2c14"
 readonly TP_ACCEPTED_TREE="236c8805c91c3ba686f98a83443da06cd54c6a0e"
 readonly TP_ACCEPTED_PARENTS="99e0d8e19fc1754e8ce5ee699500be4dc62a7581 793ee5cd5458b2e202662fff5d78708360c09749"
-readonly TP_IMPLEMENTATION="dd89fae5ece1c124f2fcab1c1d2d0d04f0e13895"
-readonly TP_IMPLEMENTATION_TREE="02d7288708b168d479f4d07b903c0a66cc67cac9"
-readonly TP_SOURCE_MANIFEST="e2c632bac299db7a45826f69eed95b46ad1412a1332739f8aa78640240cf6d48"
+readonly TP_IMPLEMENTATION="3b1d8134cd9a74fe34faba90171aede8228f81cc"
+readonly TP_IMPLEMENTATION_TREE="d050e6eceebe3e5b90e29685dbcbda168adc1af6"
+readonly TP_IMPLEMENTATION_PARENT="95dea29d5fc28ccbf7d9e906f4cf2c71988030d4"
+readonly TP_SOURCE_MANIFEST="4635aa4c1dc0f862a433a904c4aa1294fb08fd9c013fdf58cdec30b595e8b68d"
 readonly TP_JAVA_HOME="/Users/hemantkgupta/.jenv/versions/21"
 readonly TP_JAVA_REAL_HOME="/opt/homebrew/Cellar/openjdk@21/21.0.13.0.2/libexec/openjdk.jdk/Contents/Home"
 readonly TP_GRADLE_USER_HOME="$TP_CHECKOUT/.cache/gradle"
@@ -133,7 +134,7 @@ tp_source_guards() {
   [[ "$(git rev-parse "$TP_ACCEPTED_MAIN^{tree}")" == "$TP_ACCEPTED_TREE" ]]
   [[ "$(git show -s --format=%P "$TP_ACCEPTED_MAIN")" == "$TP_ACCEPTED_PARENTS" ]]
   [[ "$(git rev-parse "$TP_IMPLEMENTATION^{tree}")" == "$TP_IMPLEMENTATION_TREE" ]]
-  [[ "$(git show -s --format=%P "$TP_IMPLEMENTATION")" == "$TP_ACCEPTED_MAIN" ]]
+  [[ "$(git show -s --format=%P "$TP_IMPLEMENTATION")" == "$TP_IMPLEMENTATION_PARENT" ]]
   git merge-base --is-ancestor "$TP_ACCEPTED_MAIN" "$TP_IMPLEMENTATION"
   git merge-base --is-ancestor "$TP_IMPLEMENTATION" "$TP_EXPECTED_HEAD"
 
