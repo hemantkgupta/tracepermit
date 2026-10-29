@@ -1,5 +1,12 @@
 # TracePermit specifications
 
+The [P1 quarantine contract](../design/eks-p1-quarantine-procedure-contract.md)
+records the human-selected org-approved authenticated administration route.
+Its [review runbook](../runbooks/eks-p1-quarantine-procedure-review.md) separates
+operator authority, privileged connection custody, acknowledged state change,
+independent observations and cancellation limits. No admin adapter or trust
+mapping is implemented; actual org selection and all new acceptance remain pending.
+
 The [P1 rehearsal readiness packet](../planning/eks-p1-rehearsal-readiness.md)
 and [manual runbook](../runbooks/eks-p1-rehearsal-readiness.md) organize the
 existing acceptance catalog, blank private campaign and exact release evidence.

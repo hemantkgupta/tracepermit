@@ -87,6 +87,12 @@ execution, retry, cluster acceptance or guarantee against a late effect.
 
 ## Stop decision that remains open
 
+The human has selected the org-approved authenticated admin procedure route.
+The [procedure contract](../design/eks-p1-quarantine-procedure-contract.md)
+specifies the remaining actual procedure/custody/route/lifetime inputs and 20
+planned cases. This route choice does not qualify an unidentified org tool,
+add an installed command or approve an actual stop drill.
+
 `OperationAuthorityAdministration.quarantine` accepts a separately privileged
 DataSource and an exact expected profile. It is a library operation; it does not
 authenticate an org operator or supply/install that connection. Runtime users

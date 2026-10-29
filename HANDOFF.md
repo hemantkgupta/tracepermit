@@ -1,5 +1,20 @@
 # TracePermit implementation handoff
 
+## P1 org-owned quarantine procedure — contract prepared; acceptance pending
+
+The human selected an org-approved authenticated admin procedure. Local Mac
+records the [contract](docs/design/eks-p1-quarantine-procedure-contract.md),
+[review matrix](docs/runbooks/eks-p1-quarantine-procedure-review.md) and blank
+private record on `codex/eks-quarantine-contract` from accepted main `936ec97`.
+This documentation-only packet adds no admin tool, auth mapping, grant/schema,
+runtime change or deployment command. The actual org procedure/version,
+identity/custody/writer route, administrative-session lifetime, finite cleanup
+and non-dispatching admission probe remain required. Canonical authority
+fingerprints and the offline digest projection are recorded separately. All 20
+org cases and new local documentation/repository gates are UNRUN. PR #146's
+validated source/artifact and all worker evidence remain preserved; no worker
+messages, agent validation or publication occurs.
+
 ## P1 EKS rehearsal readiness packet — implemented; validation pending
 
 Local Mac owns `codex/eks-rehearsal-readiness`, layered on published PR144

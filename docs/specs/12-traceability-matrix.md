@@ -1,5 +1,16 @@
 # Requirements traceability matrix
 
+## Org-owned P1 quarantine procedure — contract only
+
+Partial FR-008/009/012/015, SEC-003/006/009/012/019, REL-002/005/008 and
+OPS-005 responsibilities are mapped by the
+[procedure contract](../design/eks-p1-quarantine-procedure-contract.md).
+The org route was selected; no actual procedure, authenticated admin adapter,
+grant or runtime behavior is implemented/qualified here. All 20 manual cases remain
+UNRUN, including in-flight authorization semantics, commit/cleanup uncertainty,
+independent writer observations and non-dispatching admission denial. No whole-ID
+promotion; neither a privileged DataSource nor a filled record is human authority.
+
 ## P1 readiness documentation and release assembly — validation pending
 
 Partial FR-008/009/012/015, SEC-003/006/007/008/012/019, REL-002/005/008 and
