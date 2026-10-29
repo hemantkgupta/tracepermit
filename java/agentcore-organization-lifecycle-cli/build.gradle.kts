@@ -85,7 +85,13 @@ tasks.distTar {
   doLast {
     val raw = rawArchive.get().asFile
     raw.parentFile.mkdirs()
-    finalArchive.get().asFile.copyTo(raw, overwrite = true)
+    if (raw.exists() && !raw.delete()) {
+      throw GradleException("Cannot replace the prior private raw organization archive")
+    }
+    finalArchive.get().asFile.copyTo(raw, overwrite = false)
+    if (!raw.setReadOnly()) {
+      throw GradleException("Cannot make the raw organization archive read-only")
+    }
     producerExec.javaexec {
       executable = producerJava.get().absolutePath
       classpath = producerClasspath
