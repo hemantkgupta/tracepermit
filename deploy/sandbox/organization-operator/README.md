@@ -28,14 +28,14 @@ behavior. It does not authorize deployment or a live provider call.
 
 ## Manual case matrix
 
-| Mode | Expected selectors/cases | Contract |
-| --- | ---: | --- |
-| `focused` | 7 / 24 | Existing protocol, identity, receipt, archive, process boundary and installed PostgreSQL operator tests, including the eight-contender accepted case. |
-| `inventory` | 1 / 1 | Exact archive SHA256/inventory/extraction, source-free class origins, fixed recipe and entrypoint. |
-| `image` | no JUnit selector | Offline local assembly, native cached base, immutable public install, exact source/archive labels and owned cleanup. |
-| `transport` | 1 / 14 | Attached pipe positive first; containment; file, linked FIFO, unlinked FIFO and TTY refusal; valid EOF; malformed, trailing and oversized input; held EOF; bounded stdout/stderr; interruption and owned cleanup. |
-| `postgresql` | 1 / 3 | Installed-container register/evaluate/independent review/deliver/reconcile for success, denial and durable synthetic unknown; second delivery refused and runtime grants remain restricted. |
-| `repository` | repository gates | One complete `pnpm check`, fresh aggregate coverage receipt at 94% LINE / 75% BRANCH, formatting, links/helpers, 13 flow/drift cases and diff checks. |
+| Mode         | Expected selectors/cases | Contract                                                                                                                                                                                                          |
+| ------------ | -----------------------: | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `focused`    |                   7 / 24 | Existing protocol, identity, receipt, archive, process boundary and installed PostgreSQL operator tests, including the eight-contender accepted case.                                                             |
+| `inventory`  |                    1 / 1 | Exact archive SHA256/inventory/extraction, source-free class origins, fixed recipe and entrypoint.                                                                                                                |
+| `image`      |        no JUnit selector | Offline local assembly, native cached base, immutable public install, exact source/archive labels and owned cleanup.                                                                                              |
+| `transport`  |                   1 / 14 | Attached pipe positive first; containment; file, linked FIFO, unlinked FIFO and TTY refusal; valid EOF; malformed, trailing and oversized input; held EOF; bounded stdout/stderr; interruption and owned cleanup. |
+| `postgresql` |                    1 / 3 | Installed-container register/evaluate/independent review/deliver/reconcile for success, denial and durable synthetic unknown; second delivery refused and runtime grants remain restricted.                       |
+| `repository` |         repository gates | One complete `pnpm check`, fresh aggregate coverage receipt at 94% LINE / 75% BRANCH, formatting, links/helpers, 13 flow/drift cases and diff checks.                                                             |
 
 Every installed command uses a fresh constrained container process. The
 PostgreSQL16.4 fixture generates requester/reviewer tokens and permit keys at
