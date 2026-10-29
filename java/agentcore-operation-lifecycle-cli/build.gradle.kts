@@ -44,20 +44,24 @@ tasks.distTar {
   dependsOn(tasks.named(archiveTool.classesTaskName))
   inputs.files(archiveTool.output).withPropertyName("ustarProducerClasses")
   outputs.file(rawLifecycleTar)
+  // Capture task-local values: script-level properties are not configuration-cache serializable.
+  val rawArchive = rawLifecycleTar
+  val finalArchive = archiveFile
+  val producerExec = archiveExec
+  val producerRoot = archiveBaseName.zip(archiveVersion) { name, version -> "$name-$version" }
   val producerClasspath = archiveTool.runtimeClasspath
   val producerJava = javaToolchains.launcherFor(java.toolchain).map { it.executablePath.asFile }
   // Normalize only this newly generated output before the producer task completes.
   // Preserve the task type/path used by existing test and container consumers.
   doLast {
-    val raw = rawLifecycleTar.get().asFile
+    val raw = rawArchive.get().asFile
     raw.parentFile.mkdirs()
-    archiveFile.get().asFile.copyTo(raw, overwrite = true)
-    archiveExec.javaexec {
+    finalArchive.get().asFile.copyTo(raw, overwrite = true)
+    producerExec.javaexec {
       executable = producerJava.get().absolutePath
       classpath = producerClasspath
       mainClass.set("io.tracepermit.agentcore.archive.LifecycleUstar")
-      args(archiveFile.get().asFile.absolutePath,
-        "${archiveBaseName.get()}-${archiveVersion.get()}")
+      args(finalArchive.get().asFile.absolutePath, producerRoot.get())
     }.assertNormalExitValue()
   }
 }

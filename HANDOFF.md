@@ -1,5 +1,23 @@
 # TracePermit implementation handoff
 
+## PR146 configuration-cache correction — implemented; manual validation pending
+
+The human-integrated PR146 head `4d838718f9c6f34f807a0ea3ff68f3a712f8bd86`
+includes accepted PR147 main `7436762752d6efa00cfa0d1e2ac57b274e080e54`.
+Its core job failed while storing Gradle's configuration cache because the new
+distTar action captured Kotlin build-script properties. The correction binds
+the raw/final archive providers, injected execution service and root-name
+provider inside task configuration before the action is created. The normalizer,
+runtime, output identity contract, assertions, CI configuration-cache policy
+and all security/deadline/coverage settings remain unchanged.
+
+The [runbook](docs/runbooks/lifecycle-archive-compatibility.md) adds separate
+human-run cache-store and cache-reuse gates with fail-on-problem behavior and
+private state. Earlier no-configuration-cache passes remain historical results;
+they do not qualify this correction. All new cache, focused, compatibility and
+repository gates are pending. No validation, CI retry, push or worker message
+was run by the writer.
+
 ## Lifecycle archive interoperability — implemented; validation pending
 
 Local Mac owns `codex/lifecycle-archive-compatibility` from accepted PR144 main

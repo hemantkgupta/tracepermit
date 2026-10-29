@@ -1,7 +1,11 @@
 # Lifecycle archive producer compatibility
 
-Status: **implemented; compilation and all new validation UNRUN**.
-Base: accepted main `936ec9724f30eff3e3b2f02c39df8d37c1862ee7`, tree
+Status: **configuration-cache correction implemented; refreshed validation UNRUN**.
+The correction starts at human-integrated PR146 head
+`4d838718f9c6f34f807a0ea3ff68f3a712f8bd86`, tree
+`a4917ef4246427fdbb80e80bc8be95e0b928d84e`, which includes accepted PR147
+main `7436762752d6efa00cfa0d1e2ac57b274e080e54`. The original producer base
+was accepted main `936ec9724f30eff3e3b2f02c39df8d37c1862ee7`, tree
 `f9ef77909cc26cf47419516f39ed2cc17729c308`. This local Mac task changes
 the legacy lifecycle TAR producer only. Air's organization packaging, Cloud1's
 four COMMIT-loss tests and Cloud2's verifier remain separately owned.
@@ -51,6 +55,23 @@ The coordinator supplies exact checkout/commit/tree/runtime/cache-pinned Bash
 commands with fresh private stdout/stderr logs and numeric exits. The writer
 runs no build/test/syntax/container/CI command. Stop on the first failure.
 
+Before the stages below, run the separately supplied **cache-store** and
+**cache-reuse** commands. They use the same exact task/arguments/source and a
+fresh private project-cache directory, configuration caching enabled with
+problems set to fail, build-cache reuse disabled, and forced task execution.
+The first must store a valid entry; the second must explicitly reuse it and
+execute distTar again. Preserve each stage's raw/final archives, hashes and
+inventory. Do not delete or repair an existing cache, downgrade problems to
+warnings, disable configuration caching in CI or retry a failed stage.
+
+CI run `40848551793`, core job `123368686831`, failed configuration-cache
+serialization at the integrated source because doLast referenced top-level
+rawLifecycleTar and archiveExec properties. The correction captures providers
+and the injected service locally during task configuration. Prior 40-case and
+repository passes at `86c1ff6` used configuration caching disabled; preserve
+those receipts without describing them as coverage of this regression. The
+unchanged producer and runtime still require the refreshed stages below.
+
 1. **focused:** One offline/single-worker invocation selects31 new producer
    cases, two actual-distribution cases and seven existing archive/launcher/
    protocol/supervisor cases:40 expected cases, no new skips. Preserve fresh
@@ -66,7 +87,7 @@ runs no build/test/syntax/container/CI command. Stop on the first failure.
    INVALID for the GNU intermediate and MISMATCH for a wrong digest. This checks
    the published TAR inventory/digest boundary only, not the evidence ledger,
    Cloud2's unpublished candidate or COMPLETE_AS_SUPPLIED truth.
-3. **repo:** After reviewed focused/compatibility passes, run unchanged pnpm check,
+3. **repo:** After reviewed cache-store/cache-reuse/focused/compatibility passes, run unchanged pnpm check,
    pnpm format:check, links/helpers,13flow/drift checks, diff and94LINE/75BRANCH
    aggregate gates. Record actual cache/up-to-date/inherited-skip limits. Active
    PG16.4/MariaDB11.4 policy remains unchanged;10.x remains retired. No automatic

@@ -14,3 +14,9 @@ Manual qualification compares the fresh raw/final inventories and uses the
 unchanged published parser as an independent comparator. That checks
 compatibility, not source truth, credential custody or permission to deploy.
 See the [runbook](../runbooks/lifecycle-archive-compatibility.md).
+
+A format pass also does not qualify every build mode. A Kotlin task action can
+produce valid bytes without configuration caching and fail when CI serializes
+that action. Capture task inputs/services at configuration time, then manually
+test both cache creation and cache reuse with real task execution. Disabling
+the CI cache would hide that integration defect rather than qualify the fix.
