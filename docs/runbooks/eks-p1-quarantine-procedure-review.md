@@ -100,3 +100,14 @@ and trust/custody/route references, local versus org case results, fresh/cache/
 skip limits, failures, readback/cleanup observations and ownership. Stop if any
 required boundary is unestablished. No publication, activation, profile recovery,
 live provider or deployment is authorized automatically.
+
+## Separate PostgreSQL library cases
+
+The [component qualification](postgres-quarantine-admission-qualification.md)
+adds 19 manual test executions for the unchanged helper/admission boundary:
+otherwise-valid ACL denials, exact pins, actual lock waiting, JDBC
+acknowledgement faults and a preissued valid permit refused by real admission.
+These are implemented with validation pending. They construct no delivery or
+target and do not supply the org admission-only artifact. They do not mark any
+Q01–Q20 row accepted, prove wire-level reply loss, authenticate an operator or
+qualify administrative session revocation during a wait.

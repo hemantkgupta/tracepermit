@@ -1,5 +1,17 @@
 # Requirements traceability matrix
 
+## PostgreSQL quarantine/admission component cases — validation pending
+
+Partial FR-008/009/012/015, SEC-003/006/009/012/019, REL-002/005/008 and OPS-005
+map to the unchanged authority administration/control and permit/admission
+libraries plus 19 new `PostgresQuarantineAdmissionTest` executions. Exact stopped
+pins, a preissued valid permit reaching real admission, immutable-row readback,
+actual lock wait, restricted-role SQLState 42501 and JDBC acknowledgement faults
+are specified in the [qualification runbook](../runbooks/postgres-quarantine-admission-qualification.md).
+All new checks are UNRUN; no whole-ID promotion. No installed org admin/probe,
+real operator authentication/revocation, wrong-writer binding, wire-level loss,
+target count or cancellation guarantee is established. Org Q01–Q20 remain UNRUN.
+
 ## Org-owned P1 quarantine procedure — contract only
 
 Partial FR-008/009/012/015, SEC-003/006/009/012/019, REL-002/005/008 and

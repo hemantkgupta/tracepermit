@@ -23,3 +23,11 @@ issuer, not admission. Prepare the legitimate unspent permit beforehand and
 call admission only after the exact stop, within the original validity bounds.
 If preparation expires, record an inconclusive case; do not extend its lifetime
 or invoke delivery to obtain a result.
+
+The [PostgreSQL component cases](../runbooks/postgres-quarantine-admission-qualification.md)
+make these distinctions explicit using a preissued permit, independent readback
+and a real admission-only call. Missing/staged authority, expired credentials,
+invalid signatures and issuer refusal can all produce a denial without proving
+the intended stop. JDBC post-COMMIT/close faults are narrower than transport
+loss. All new tests remain unrun; none authenticates the org administrator or
+creates an installed probe.
