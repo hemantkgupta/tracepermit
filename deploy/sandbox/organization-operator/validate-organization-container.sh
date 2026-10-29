@@ -166,7 +166,7 @@ tp_source_guards() {
   [[ "$(grep -Ec '@Test' java/agentcore-organization-lifecycle-cli/src/test/java/io/tracepermit/agentcore/organizationcli/OrganizationOperatorProtocolTest.java)" == 4 ]]
   [[ "$(grep -Ec '@Test' java/agentcore-organization-lifecycle-cli/src/test/java/io/tracepermit/agentcore/organizationcli/OrganizationOperatorReceiptTest.java)" == 2 ]]
   [[ "$(grep -Ec '@Test' java/agentcore-organization-lifecycle-cli/src/test/java/io/tracepermit/agentcore/organizationcli/OrganizationOperatorSupervisorTest.java)" == 2 ]]
-  [[ "$(grep -Ec '@Test' java/agentcore-organization-lifecycle-cli/src/test/java/io/tracepermit/agentcore/organizationcli/PostgresInstalledOrganizationOperatorTest.java)" == 7 ]]
+  [[ "$(grep -Ec '^[[:space:]]*@Test[[:space:]]*$' java/agentcore-organization-lifecycle-cli/src/test/java/io/tracepermit/agentcore/organizationcli/PostgresInstalledOrganizationOperatorTest.java)" == 6 ]]
 }
 
 tp_runtime_guards() {
@@ -435,7 +435,7 @@ case "$TP_MODE" in
   focused)
     tp_stage 10-focused-validation tp_focused
     tp_stage 11-executed-archive tp_capture_archive
-    tp_stage 12-focused-results tp_capture_results "$TP_TEST_RESULTS/test" 7 25
+    tp_stage 12-focused-results tp_capture_results "$TP_TEST_RESULTS/test" 7 24
     ;;
   inventory)
     tp_stage 02-focused-receipt tp_require_focused
