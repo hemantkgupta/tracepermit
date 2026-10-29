@@ -301,3 +301,9 @@ execution-disabled ingress, with explicit NIO deadlines and bounded admission.
 It has no executable/default wiring, public edge, OBO or execution capability.
 The [runbook](../runbooks/agentcore-loopback-registration-http.md) separates
 synthetic signed HTTP/JDBC evidence from future deployment and authority gates.
+
+The [PostgreSQL quarantine/admission component qualification](../runbooks/postgres-quarantine-admission-qualification.md)
+adds test-only cases for the unchanged control and admission libraries. Its 19
+executions and repository gates are pending manual validation; they do not
+qualify the selected org-owned procedure, identity, installed denial probe or
+actual EKS stop drill.
