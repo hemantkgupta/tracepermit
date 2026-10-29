@@ -45,18 +45,18 @@ See the [contract](eks-sandbox-contract.md) for stage and authority limits.
 
 ## C. Database, credentials and evidence
 
-| Exact input                                                                                                                        | Value   |
-| ---------------------------------------------------------------------------------------------------------------------------------- | ------- |
-| P1 engine/image: PostgreSQL16.4, MariaDB11.4.13 or MariaDB10.6.25; immutable image digest and architecture                         | PENDING |
-| Disposable loopback sidecar confirmation; database/schema names, ephemeral/storage class policy and resource limits                | PENDING |
-| Restricted runtime/operator identity references and grant policy; stopped-writer initialization/upgrade/restore owners             | PENDING |
-| Existing schema/active authority profile fingerprint, policy/artifact/action/target/precondition pins and recovery generation      | PENDING |
-| Track E Ed25519 public-key fingerprint and approved per-delivery private-frame supply method, without key material                 | PENDING |
-| GitHub RSA key custody option and trusted-container delivery format; secret/KMS/provider reference and approved IAM resource scope | PENDING |
-| Source-signing custody/public pin only if the selected ingress actually uses source attestation                                    | PENDING |
-| Rotation/revocation owner and timing; no agent-readable mounts/identity; no default credential-chain fallback                      | PENDING |
-| Independent audit sink, write identity, retention/delete authority, encryption and redaction requirements                          | PENDING |
-| Audit outage behavior, backup/restore and emergency-stop procedure; limits for already-started/unknown work                        | PENDING |
+| Exact input                                                                                                                                         | Value   |
+| --------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| Closed P1 engine/image: PostgreSQL16.4; immutable image digest and architecture. MariaDB11.4 qualification is separate;10.x integration is retired. | PENDING |
+| Disposable loopback sidecar confirmation; database/schema names, ephemeral/storage class policy and resource limits                                 | PENDING |
+| Restricted runtime/operator identity references and grant policy; stopped-writer initialization/upgrade/restore owners                              | PENDING |
+| Existing schema/active authority profile fingerprint, policy/artifact/action/target/precondition pins and recovery generation                       | PENDING |
+| Track E Ed25519 public-key fingerprint and approved per-delivery private-frame supply method, without key material                                  | PENDING |
+| GitHub RSA key custody option and trusted-container delivery format; secret/KMS/provider reference and approved IAM resource scope                  | PENDING |
+| Source-signing custody/public pin only if the selected ingress actually uses source attestation                                                     | PENDING |
+| Rotation/revocation owner and timing; no agent-readable mounts/identity; no default credential-chain fallback                                       | PENDING |
+| Independent audit sink, write identity, retention/delete authority, encryption and redaction requirements                                           | PENDING |
+| Audit outage behavior, backup/restore and emergency-stop procedure; limits for already-started/unknown work                                         | PENDING |
 
 ## D. Okta — identifiers and public configuration only
 

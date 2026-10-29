@@ -1,5 +1,27 @@
 # TracePermit implementation handoff
 
+## EKS preflight and emergency-stop acceptance kit — implemented; validation pending
+
+Local Mac owns `codex/eks-rehearsal-acceptance`, based on accepted PR143 merge
+`7c33ea1ad1c5ef9dae07df235f28db14a1ea2c14`. The additional source-free
+`tracepermit-eks-acceptance` launcher prepares a fixed suspended organization
+variant, a28-control manual catalog and redacted consistency assessments of
+private normalized snapshots. All-positive reported evidence remains
+`REVIEW_REQUIRED`; no execution, retry, cluster acceptance or no-late-effect
+authority is granted. The stop record binds exact profile/generation and
+accounts separately for terminal and unknown work. No administrative adapter,
+kubeconfig, AWS/Kubernetes SDK, deployment or cluster capture command is added.
+
+[ADR0099](docs/architecture/0099-offline-eks-acceptance-kit.md), the
+[runbook](docs/runbooks/eks-rehearsal-acceptance-kit.md) and
+[learning note](docs/learning/a-stop-record-is-not-a-cancelled-effect.md) record
+the limits. Existing renderer/CLI/provenance/durable authority, SQL/grants,
+container qualification and CI bytes are preserved. New compilation,54-case
+focused and repository/coverage gates are unrun; source-pinned human commands
+follow. The writer has run no validation, cluster/container/CI action or worker
+message. Air owns only its separately relayed organization-image qualification;
+Cloud1/2 source and artifacts remain untouched.
+
 ## EKS container/private-input rehearsal — implemented; validation pending
 
 Local Mac owns `codex/eks-container-private-input` from accepted PR135 main

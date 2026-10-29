@@ -1,5 +1,12 @@
 # TracePermit specifications
 
+[ADR0099](../architecture/0099-offline-eks-acceptance-kit.md) adds an offline
+preflight/containment/emergency-stop preparation and assessment kit from
+accepted PR143. Its [manual runbook](../runbooks/eks-rehearsal-acceptance-kit.md)
+keeps supplied evidence, human acceptance and execution authority separate.
+The organization variant remains suspended; no SDK, cluster access, admin
+adapter or live effect is introduced. New qualification is pending.
+
 [ADR0098](../architecture/0098-container-private-input-qualification.md) adds
 test-only, manually invoked container/private-input qualification fixtures.
 Its [runbook](../runbooks/eks-container-private-input.md) keeps the actual
