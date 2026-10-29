@@ -1,5 +1,16 @@
 # Quality and acceptance
 
+## Explicit manual container/private-input gates
+
+[ADR0098](../architecture/0098-container-private-input-qualification.md) adds
+eight default offline harness tests and an explicit manual Test task with12
+transport and2 PG16.4 cases. Default `pnpm check` is not container qualification.
+Actual stdin provenance must pass before private input, with no pipe/file or
+caller-flag workaround. Missing images fail rather than pull or skip. Stop on
+each nonzero human-run stage. The [runbook](../runbooks/eks-container-private-input.md)
+requires exact source/image/archive evidence and unchanged94/75 aggregate gates;
+no compiled or executed result is claimed for this new candidate.
+
 ## Offline EKS bundle candidate — manual evidence pending
 
 The separate `:eks-sandbox-bundle:test` gate covers the fixed suspended manifest

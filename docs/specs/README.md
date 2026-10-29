@@ -1,5 +1,15 @@
 # TracePermit specifications
 
+[ADR0098](../architecture/0098-container-private-input-qualification.md) adds
+test-only, manually invoked container/private-input qualification fixtures.
+Its [runbook](../runbooks/eks-container-private-input.md) keeps the actual
+descriptor positive/refusal controls, container observations and PG lifecycle
+separate from EKS custody/deployment acceptance. A human-run transport failure
+identified root-only-readable installed libraries; public image artifacts now
+receive non-root-readable, immutable permissions and an actual readability
+probe. Refreshed gates are unrun. Runtime Java, authority and supported-engine
+policy are unchanged; earlier partial receipts remain separate.
+
 [ADR0097](../architecture/0097-offline-eks-sandbox-bundle.md) adds an offline
 EKS synthetic rehearsal renderer/checker and a separately invoked bounded TCP
 probe. Its [runbook](../runbooks/eks-synthetic-sandbox-bundle.md) distinguishes
