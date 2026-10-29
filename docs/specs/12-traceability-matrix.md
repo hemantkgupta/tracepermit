@@ -8,7 +8,8 @@ libraries plus 19 new `PostgresQuarantineAdmissionTest` executions. Exact stoppe
 pins, a preissued valid permit reaching real admission, immutable-row readback,
 actual lock wait, restricted-role SQLState 42501 and JDBC acknowledgement faults
 are specified in the [qualification runbook](../runbooks/postgres-quarantine-admission-qualification.md).
-All new checks are UNRUN; no whole-ID promotion. No installed org admin/probe,
+The first human run recorded 15 passes/four counter-assertion failures; the
+corrected counter candidate remains UNRUN. No whole-ID promotion. No installed org admin/probe,
 real operator authentication/revocation, wrong-writer binding, wire-level loss,
 target count or cancellation guarantee is established. Org Q01–Q20 remain UNRUN.
 

@@ -29,5 +29,5 @@ make these distinctions explicit using a preissued permit, independent readback
 and a real admission-only call. Missing/staged authority, expired credentials,
 invalid signatures and issuer refusal can all produce a denial without proving
 the intended stop. JDBC post-COMMIT/close faults are narrower than transport
-loss. All new tests remain unrun; none authenticates the org administrator or
-creates an installed probe.
+loss. The initial run retained four test-counter failures; corrected validation is
+pending. None authenticates the org administrator or creates an installed probe.

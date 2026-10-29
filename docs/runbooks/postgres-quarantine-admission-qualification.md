@@ -1,7 +1,7 @@
 # PostgreSQL quarantine and admission component qualification
 
-Status: **implemented; manual validation pending**. All 19 new executions are
-UNRUN. The baseline is accepted PR148 main
+Status: **counter correction implemented; manual validation pending**. The
+corrected candidate's 19 executions are UNRUN. The baseline is accepted PR148 main
 `a769ecc3087348c400de0fdde5c2a60a3a5c319f`. This test-only slice uses the existing
 V7 PostgreSQL 16.4 fixture and the unchanged administration, authority, review,
 permit and admission libraries. It adds no production API, installed probe,
@@ -76,6 +76,28 @@ Java wrapper connections, not kernel sockets or all PostgreSQL sessions. No raw
 permit, key, token, generated password, exception cause or org identifier is
 written to test evidence. Readback remains an observation, never a promoted
 success acknowledgement after UNKNOWN.
+
+## First manual result and counter correction
+
+At source `10647d9252d7d7e06f6a06f77b3339e7b0e6ea98`, the human focused run
+executed all 19 cases: **15 passed, four failed, zero errors/skips**. The first
+failures were the preissued-permit case, repeated quarantine and the two
+quarantine acknowledgement faults. Each asserted that all owner-connection
+COMMIT calls equaled one. The observed totals were 10, or 28 after three admin
+calls; schema validation also uses separately committed transactions. Those
+failed cases did not reach every subsequent assertion, so they are not passed
+admission/refusal or complete acknowledgement-proof receipts.
+
+The test-only source now retains the total count and separately counts real
+COMMIT returns on connections where the exact quarantine UPDATE or admission
+INSERT already affected one row. Unselected commits remain counted. Every case
+checks total accounting, and fixed role/count diagnostics enter the private
+XML/logs. Exact-one mutation-commit assertions remain, with explicit zero
+mutation commits for rolled-back, stale and ACL-denied controls. No count budget
+is raised, no mutation/UNKNOWN/cleanup assertion is removed, and no production,
+query/permit/identity bound or grant changes. The original XML/logs and original
+source manifest are retained. This correction has not been run by the writer;
+repeat the focused stage manually before any repository stage.
 
 ## Human-run stages
 

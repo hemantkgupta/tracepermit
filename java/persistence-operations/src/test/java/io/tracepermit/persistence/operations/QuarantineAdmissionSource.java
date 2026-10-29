@@ -28,7 +28,11 @@ final class QuarantineAdmissionSource implements DataSource {
   final AtomicInteger open = new AtomicInteger();
   final AtomicInteger quarantineWrites = new AtomicInteger();
   final AtomicInteger admissionWrites = new AtomicInteger();
+  // Preserve all real COMMIT calls, including Flyway validation's separate transactions.
   final AtomicInteger commits = new AtomicInteger();
+  final AtomicInteger quarantineCommits = new AtomicInteger();
+  final AtomicInteger admissionCommits = new AtomicInteger();
+  final AtomicInteger unselectedCommits = new AtomicInteger();
   final AtomicInteger injected = new AtomicInteger();
   volatile String deniedState;
 
@@ -46,6 +50,9 @@ final class QuarantineAdmissionSource implements DataSource {
     quarantineWrites.set(0);
     admissionWrites.set(0);
     commits.set(0);
+    quarantineCommits.set(0);
+    admissionCommits.set(0);
+    unselectedCommits.set(0);
     injected.set(0);
     deniedState = null;
   }
@@ -64,6 +71,10 @@ final class QuarantineAdmissionSource implements DataSource {
         delegate.commit();
         committed[0] = true;
         commits.incrementAndGet();
+        // A selected statement qualifies only after executeUpdate returned exactly one row.
+        if (selected[0]) quarantineCommits.incrementAndGet();
+        if (selected[1]) admissionCommits.incrementAndGet();
+        if (!selected[0] && !selected[1]) unselectedCommits.incrementAndGet();
         if (selected[0] && fault == Fault.QUARANTINE_COMMIT || selected[1] && fault == Fault.ADMISSION_COMMIT) {
           injected.incrementAndGet();
           throw new SQLException("SYNTHETIC_AFTER_REAL_COMMIT");

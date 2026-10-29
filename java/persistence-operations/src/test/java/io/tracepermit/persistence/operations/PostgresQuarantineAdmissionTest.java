@@ -28,7 +28,19 @@ final class PostgresQuarantineAdmissionTest {
 
   @BeforeAll void start() { fixture.start(); }
   @BeforeEach void reset() throws Exception { fixture.reset(); }
-  @AfterEach void noOwnedConnectionsRemain() { fixture.assertNoOwnedConnections(); }
+  @AfterEach void noOwnedConnectionsRemain() {
+    fixture.assertNoOwnedConnections();
+    var sources = List.of(fixture.owner, fixture.runtime, fixture.observer);
+    var roles = List.of("owner", "runtime", "observer");
+    for (int index = 0; index < sources.size(); index++) {
+      var source = sources.get(index);
+      assertThat(source.commits.get()).isEqualTo(source.quarantineCommits.get()
+          + source.admissionCommits.get() + source.unselectedCommits.get());
+      System.out.printf("QUARANTINE_JDBC_COUNTS role=%s total=%d quarantine=%d admission=%d unselected=%d open=%d%n",
+          roles.get(index), source.commits.get(), source.quarantineCommits.get(),
+          source.admissionCommits.get(), source.unselectedCommits.get(), source.open.get());
+    }
+  }
   @AfterAll void stop() { fixture.close(); }
 
   @Test void readyPositiveCalibrationAdmitsExactlyOnceWithoutDelivery() throws Exception {
@@ -42,6 +54,8 @@ final class PostgresQuarantineAdmissionTest {
     assertClaimedWithoutDelivery();
     assertThat(fixture.control()).isEqualTo(before);
     assertThat(fixture.runtime.admissionWrites.get()).isEqualTo(1);
+    assertThat(fixture.runtime.admissionCommits.get()).isEqualTo(1);
+    assertThat(fixture.runtime.quarantineCommits.get()).isZero();
   }
 
   @Test void preissuedUnspentPermitReachesAdmissionAfterAcknowledgedExactQuarantine() throws Exception {
@@ -52,7 +66,8 @@ final class PostgresQuarantineAdmissionTest {
     OperationAuthorityAdministration.quarantine(fixture.owner, fixture.profile);
     fixture.assertQuarantined(before);
     assertThat(fixture.owner.quarantineWrites.get()).isEqualTo(1);
-    assertThat(fixture.owner.commits.get()).isEqualTo(1);
+    assertThat(fixture.owner.quarantineCommits.get()).isEqualTo(1);
+    assertThat(fixture.owner.admissionCommits.get()).isZero();
     assertValidTime(permit);
     assertCode(() -> repository.admit(fixture.execution(approved, fresh()), permit), OPERATION_AUTHORITY_NOT_READY);
     assertThat(fixture.runtime.admissionWrites.get()).isZero();
@@ -80,7 +95,8 @@ final class PostgresQuarantineAdmissionTest {
     finally { fixture.owner.fault = NONE; }
     assertThat(fixture.owner.injected.get()).isEqualTo(1);
     assertThat(fixture.owner.quarantineWrites.get()).isEqualTo(1);
-    assertThat(fixture.owner.commits.get()).isEqualTo(1);
+    assertThat(fixture.owner.quarantineCommits.get()).isEqualTo(1);
+    assertThat(fixture.owner.admissionCommits.get()).isZero();
     fixture.assertQuarantined(before);
     fixture.assertQuarantined(before); // A second read never promotes this call to acknowledged success.
     assertThat(fixture.data()).isEqualTo(data);
@@ -100,6 +116,8 @@ final class PostgresQuarantineAdmissionTest {
     finally { fixture.runtime.fault = NONE; }
     assertThat(fixture.runtime.injected.get()).isEqualTo(1);
     assertThat(fixture.runtime.commits.get()).isEqualTo(1);
+    assertThat(fixture.runtime.admissionCommits.get()).isEqualTo(1);
+    assertThat(fixture.runtime.quarantineCommits.get()).isZero();
     assertThat(fixture.runtime.admissionWrites.get()).isEqualTo(1);
     assertClaimedWithoutDelivery();
     var observed = fixture.data();
@@ -119,11 +137,14 @@ final class PostgresQuarantineAdmissionTest {
       } finally { connection.rollback(); }
     }
     assertThat(fixture.control()).isEqualTo(before);
+    assertThat(fixture.owner.quarantineCommits.get()).isZero();
     assertCode(() -> OperationAuthorityAdministration.quarantine(fixture.runtime, fixture.profile), OPERATION_STORAGE_UNAVAILABLE);
     assertThat(fixture.runtime.deniedState).isEqualTo("42501");
     assertThat(fixture.runtime.quarantineWrites.get()).isEqualTo(1);
+    assertThat(fixture.runtime.quarantineCommits.get()).isZero();
     assertCode(() -> OperationAuthorityAdministration.quarantine(fixture.observer, fixture.profile), OPERATION_STORAGE_UNAVAILABLE);
     assertThat(fixture.observer.deniedState).isEqualTo("42501");
+    assertThat(fixture.observer.quarantineCommits.get()).isZero();
     try (var connection = fixture.runtime.getConnection()) {
       try (var query = connection.prepareStatement("SELECT has_column_privilege(current_user, 'tp_operation_authority_controls', 'lock_marker', 'UPDATE'), has_table_privilege(current_user, 'tp_operation_delivery_events', 'INSERT')")) {
         query.setQueryTimeout(5);
@@ -173,6 +194,7 @@ final class PostgresQuarantineAdmissionTest {
         ? new BusinessOperationScope(SCOPE.tenantId(), "other-synthetic-workspace", SCOPE.requesterPrincipalId()) : SCOPE;
     BusinessOperationAuthorityProfile expected = fixture.profile(scope, mismatch.equals("generation") ? 2 : 1, policy);
     assertCode(() -> OperationAuthorityAdministration.quarantine(fixture.owner, expected), OPERATION_STATE_STALE);
+    assertThat(fixture.owner.quarantineCommits.get()).isZero();
     assertThat(fixture.control()).isEqualTo(before); assertThat(fixture.data()).isEqualTo(data);
   }
 
@@ -217,7 +239,8 @@ final class PostgresQuarantineAdmissionTest {
     assertCode(() -> OperationAuthorityAdministration.quarantine(fixture.owner, fixture.profile), OPERATION_STATE_STALE);
     assertCode(() -> OperationAuthorityAdministration.activateStaged(fixture.owner, fixture.profile), OPERATION_STATE_STALE);
     fixture.assertQuarantined(before); assertThat(fixture.data()).isEqualTo(data);
-    assertThat(fixture.owner.commits.get()).isEqualTo(1);
+    assertThat(fixture.owner.quarantineCommits.get()).isEqualTo(1);
+    assertThat(fixture.owner.admissionCommits.get()).isZero();
   }
 
   @Test void syntheticConnectionUnavailabilityIsNotAnEstablishedStop() throws Exception {

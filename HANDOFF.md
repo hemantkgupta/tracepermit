@@ -11,11 +11,16 @@ missing/staged authority, issuer-only refusal and unavailable storage. JDBC
 post-COMMIT/post-close faults preserve UNKNOWN despite independent observation;
 real control-lock waiting, exact stale pins and SQLState 42501 ACL denial are
 covered. No delivery repository or target is constructed. Production, existing
-tests/build/CI/schema/grants and other worker paths are unchanged. All new
-checks are UNRUN; the [runbook](docs/runbooks/postgres-quarantine-admission-qualification.md)
+tests/build/CI/schema/grants and other worker paths are unchanged. Corrected
+candidate checks are UNRUN; the [runbook](docs/runbooks/postgres-quarantine-admission-qualification.md)
 defines separate human focused/repository stages and provenance limits. These
 component cases do not qualify the actual org admin/probe or Q01–Q20. No
 validation, deployment, CI action or worker message was performed by the writer.
+The first human run at `10647d9` executed 19 cases, 15 passed/four failed with no
+errors/skips. Four total-COMMIT assertions included schema-validation commits;
+the test-only correction retains totals and adds exact mutation-commit counters
+and reconciliation diagnostics. The failed cases' later assertions were not
+all reached. Original evidence is preserved; corrected qualification is pending.
 
 ## P1 org-owned quarantine procedure — contract prepared; acceptance pending
 
