@@ -19,6 +19,7 @@ class OrganizationArchiveFormatTest {
     Path finalized = Path.of(System.getProperty("tracepermit.organization.archive"));
     var comparison = OrganizationArchiveInventory.compare(raw, finalized);
 
+    assertThat(Files.isWritable(raw)).isFalse();
     assertThat(comparison.raw().gnuLongNames()).isGreaterThan(0);
     assertThat(comparison.finalized().gnuLongNames()).isZero();
     assertThat(comparison.finalized().prefixEntries()).isGreaterThan(0);
