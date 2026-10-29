@@ -1,6 +1,20 @@
+import javax.inject.Inject
+import org.gradle.process.ExecOperations
+
 plugins { application }
 
 val bootstrap by sourceSets.creating
+val organizationUstarTool by configurations.creating {
+  isCanBeConsumed = false
+  isCanBeResolved = true
+  description = "Build-only accepted lifecycle USTAR producer for this distribution."
+}
+abstract class OrganizationArchiveExecServices {
+  @get:Inject abstract val execOperations: ExecOperations
+}
+val organizationArchiveExec =
+  objects.newInstance<OrganizationArchiveExecServices>().execOperations
+val rawOrganizationTar = layout.buildDirectory.file("tmp/ustar-producer/fresh-gradle.tar")
 tasks.named<JavaCompile>(bootstrap.compileJavaTaskName) {
   options.release = 8
   options.compilerArgs.add("-Xlint:-options")
@@ -20,6 +34,15 @@ dependencies {
   testImplementation(platform("org.testcontainers:testcontainers-bom:1.21.4"))
   testImplementation("org.testcontainers:postgresql")
   testRuntimeOnly("org.slf4j:slf4j-nop:1.7.36")
+  add(
+    organizationUstarTool.name,
+    project(
+      mapOf(
+        "path" to ":agentcore-operation-lifecycle-cli",
+        "configuration" to "lifecycleUstarToolElements",
+      ),
+    ),
+  )
 }
 
 // Explicit human-run organization-container qualification. It is not part of checkAll or CI.
@@ -48,6 +71,30 @@ application {
   applicationDefaultJvmArgs = listOf("-Xms16m", "-Xmx64m", "-XX:ActiveProcessorCount=2")
 }
 
+tasks.distTar {
+  dependsOn(organizationUstarTool)
+  inputs.files(organizationUstarTool).withPropertyName("acceptedLifecycleUstarTool")
+  outputs.file(rawOrganizationTar)
+  // Capture task-local values so both producer and consumer remain configuration-cache safe.
+  val rawArchive = rawOrganizationTar
+  val finalArchive = archiveFile
+  val producerExec = organizationArchiveExec
+  val producerRoot = archiveBaseName.zip(archiveVersion) { name, version -> "$name-$version" }
+  val producerClasspath = organizationUstarTool
+  val producerJava = javaToolchains.launcherFor(java.toolchain).map { it.executablePath.asFile }
+  doLast {
+    val raw = rawArchive.get().asFile
+    raw.parentFile.mkdirs()
+    finalArchive.get().asFile.copyTo(raw, overwrite = true)
+    producerExec.javaexec {
+      executable = producerJava.get().absolutePath
+      classpath = producerClasspath
+      mainClass.set("io.tracepermit.agentcore.archive.LifecycleUstar")
+      args(finalArchive.get().asFile.absolutePath, producerRoot.get())
+    }.assertNormalExitValue()
+  }
+}
+
 tasks.test {
   dependsOn(tasks.distTar)
   jvmArgs("-Djava.security.manager=allow")
@@ -58,6 +105,10 @@ tasks.test {
   systemProperty(
     "tracepermit.organization.testClasspath",
     sourceSets.test.get().runtimeClasspath.asPath,
+  )
+  systemProperty(
+    "tracepermit.organization.rawArchive",
+    rawOrganizationTar.get().asFile.absolutePath,
   )
   systemProperty("tracepermit.repositoryRoot", rootProject.projectDir.parentFile.absolutePath)
 }

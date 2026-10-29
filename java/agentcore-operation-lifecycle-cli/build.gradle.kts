@@ -6,6 +6,18 @@ plugins { application }
 val bootstrap by sourceSets.creating
 // Build-only producer code: never included in the installed application JAR.
 val archiveTool by sourceSets.creating
+val lifecycleUstarToolJar by tasks.registering(Jar::class) {
+  description = "Build-only USTAR finalizer shared with source-free distribution producers."
+  archiveBaseName.set("tracepermit-lifecycle-ustar-tool")
+  archiveClassifier.set("build-only")
+  from(archiveTool.output)
+}
+val lifecycleUstarToolElements by configurations.creating {
+  isCanBeConsumed = true
+  isCanBeResolved = false
+  description = "Compiled JDK-only USTAR producer; never a product runtime dependency."
+}
+artifacts { add(lifecycleUstarToolElements.name, lifecycleUstarToolJar) }
 abstract class LifecycleArchiveExecServices {
   @get:Inject abstract val execOperations: ExecOperations
 }
