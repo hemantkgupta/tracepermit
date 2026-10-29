@@ -1,5 +1,17 @@
 # Quality and acceptance
 
+## Offline EKS preflight and stop consistency gates
+
+[ADR0099](../architecture/0099-offline-eks-acceptance-kit.md) adds36 planned
+unit/installed-archive cases to the existing18 default EKS cases. The54-case
+human-run focused stage checks closed plans, suspended organization manifests,
+posture mutations, stale/substituted/unknown observations, strict stop accounting,
+private files, redacted output and zero process/DNS/network effects. Even all
+reported passes must remain `REVIEW_REQUIRED`. Actual cluster, custody and stop
+observations remain separate org-approved manual gates. Compilation and all new
+validation are pending; unchanged full repository and94LINE/75BRANCH floors
+still apply. See the [runbook](../runbooks/eks-rehearsal-acceptance-kit.md).
+
 ## Explicit manual container/private-input gates
 
 [ADR0098](../architecture/0098-container-private-input-qualification.md) adds
