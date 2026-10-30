@@ -18,6 +18,10 @@ evidence for the named local durable approval profile. The separate
 model-selected read/block with Java CLI-origin events; remaining endpoint
 security qualification is not implied. The [Gate C deterministic record](evidence/gate-c-deterministic-presenters-2026-10-15.md)
 refreshes automated qualification across Scenarios 4, 5, 7, 9, 10, and 11 via `pnpm demo:gate-c`.
+The [2026-10-16 native observation record](evidence/native-endpoint-observation-2026-10-16.md)
+adds one bounded model-selected read with retained native process facts and a
+matching new server event at the pinned PR #23 revision. It is positive-path
+evidence, not completion of every native negative or production control.
 
 ## Safety and claim boundary
 
