@@ -1,8 +1,8 @@
 dependencies {
   api(project(":execution"))
   api(project(":security"))
-  implementation("org.flywaydb:flyway-core:13.10.3")
-  implementation("org.flywaydb:flyway-mysql:13.10.3")
+  implementation("org.flywaydb:flyway-core:13.11.1")
+  implementation("org.flywaydb:flyway-mysql:13.11.1")
   api("org.mariadb.jdbc:mariadb-java-client:3.5.7")
 
   testImplementation(platform("org.testcontainers:testcontainers-bom:1.21.4"))

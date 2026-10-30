@@ -3,8 +3,8 @@ dependencies {
   api(project(":policy"))
   api(project(":security"))
   implementation(project(":contracts"))
-  implementation("org.flywaydb:flyway-core:13.10.3")
-  implementation("org.flywaydb:flyway-database-postgresql:13.10.3")
+  implementation("org.flywaydb:flyway-core:13.11.1")
+  implementation("org.flywaydb:flyway-database-postgresql:13.11.1")
   api("org.postgresql:postgresql:42.7.14")
 
   testImplementation(project(":application"))
