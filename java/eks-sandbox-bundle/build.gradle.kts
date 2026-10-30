@@ -7,10 +7,10 @@ plugins {
 }
 
 dependencies {
-  implementation(platform("com.fasterxml.jackson:jackson-bom:2.18.3"))
+  implementation(platform("com.fasterxml.jackson:jackson-bom:2.22.4"))
   implementation("com.fasterxml.jackson.core:jackson-databind")
   testFixturesImplementation(project(":agentcore-registration-cli"))
-  testFixturesImplementation(platform("com.fasterxml.jackson:jackson-bom:2.18.3"))
+  testFixturesImplementation(platform("com.fasterxml.jackson:jackson-bom:2.22.4"))
   testFixturesImplementation("com.fasterxml.jackson.core:jackson-databind")
 }
 
