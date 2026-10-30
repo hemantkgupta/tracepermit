@@ -6,6 +6,25 @@ This local-only qualification packages the accepted source-free organization
 operator without changing its protocol, authority, receipt, deadline or target
 behavior. It does not authorize deployment or a live provider call.
 
+## Archive producer contract
+
+The organization `distTar` retains its typed task, output filename and
+`tracepermit-synthetic-organization-operator-0.1.0-SNAPSHOT` root. It resolves
+the accepted lifecycle USTAR finalizer through a build-only consumable
+configuration. That tool is not a runtime dependency and is absent from the
+installed archive and product JARs.
+
+Each forced fresh build first preserves Gradle's raw TAR at
+`build/tmp/ustar-producer/fresh-gradle.tar`, then finalizes the distribution in
+place before tests begin. The final TAR uses standard USTAR name/prefix fields
+while preserving ordered logical paths, payload hashes, types, permissions,
+UID/GID, owners/groups and modification times. Unsupported input fails closed;
+there is no name truncation, verifier widening or permissive fallback.
+
+The previous PR147 archives, images, digests and private receipts remain
+immutable historical evidence. They do not qualify these newly generated
+bytes. New archive and image bytes receive new recorded identities.
+
 ## Fixed image contract
 
 - Accepted archive: the actual
@@ -26,16 +45,30 @@ behavior. It does not authorize deployment or a live provider call.
 - Image assembly uses one owned, network-disabled container, `--pull=never`,
   the cached native-architecture base ID and no registry push.
 
-## Manual case matrix
+## Manual case sequence
 
-| Mode         | Expected selectors/cases | Contract                                                                                                                                                                                                          |
-| ------------ | -----------------------: | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `focused`    |                   7 / 24 | Existing protocol, identity, receipt, archive, process boundary and installed PostgreSQL operator tests, including the eight-contender accepted case.                                                             |
-| `inventory`  |                    1 / 1 | Exact archive SHA256/inventory/extraction, source-free class origins, fixed recipe and entrypoint.                                                                                                                |
-| `image`      |        no JUnit selector | Offline local assembly, native cached base, immutable public install, exact source/archive labels and owned cleanup.                                                                                              |
-| `transport`  |                   1 / 14 | Attached pipe positive first; containment; file, linked FIFO, unlinked FIFO and TTY refusal; valid EOF; malformed, trailing and oversized input; held EOF; bounded stdout/stderr; interruption and owned cleanup. |
-| `postgresql` |                    1 / 3 | Installed-container register/evaluate/independent review/deliver/reconcile for success, denial and durable synthetic unknown; second delivery refused and runtime grants remain restricted.                       |
-| `repository` |         repository gates | One complete `pnpm check`, fresh aggregate coverage receipt at 94% LINE / 75% BRANCH, formatting, links/helpers, 13 flow/drift cases and diff checks.                                                             |
+- `cache-create`: force both lifecycle-producer and organization-consumer
+  `distTar` tasks with configuration cache enabled, problems set to fail and
+  build-cache reuse disabled; require a newly stored entry and executed tasks.
+- `cache-reuse`: repeat the exact forced tasks against the same private project
+  cache; require configuration-cache reuse and executed, non-cached tasks.
+- `focused`: run the accepted lifecycle producer/format selectors (2 selectors,
+  33 cases) and the organization format plus existing boundary selectors (8
+  selectors, 26 cases). Preserve private immutable raw and final TAR copies.
+- `compatibility`: stream-compare every ordered raw/final logical entry and its
+  payload/metadata. Compile the byte-unchanged published strict parser privately
+  and require final `MATCH`, raw GNU `INVALID` and wrong-digest `MISMATCH`.
+- `inventory`: 1 selector / 1 case for the exact finalized archive, source-free
+  class origins, fixed recipe and entrypoint.
+- `image`: offline local assembly, native cached base, immutable public install,
+  exact source/final-archive labels and owned cleanup.
+- `transport`: 1 selector / 14 cases covering the attached-pipe positive first,
+  containment, file/FIFO/TTY refusal, EOF/framing bounds, interruption and
+  owned cleanup.
+- `postgresql`: 1 selector / 3 cases covering installed-container success,
+  denial, durable synthetic unknown, no resend and restricted runtime grants.
+- `repository`: literal `pnpm check`, fresh aggregate coverage at 94% LINE / 75%
+  BRANCH, formatting, links/helpers, 13 flow/drift cases and diff checks.
 
 Every installed command uses a fresh constrained container process. The
 PostgreSQL16.4 fixture generates requester/reviewer tokens and permit keys at
@@ -51,14 +84,17 @@ is local synthetic qualification, not an EKS networking claim.
 ## Human-run sequence
 
 Use the exact candidate commit and tree from the handoff. Reuse the same private
-root for all six commands and stop after the first failure:
+root for all nine commands and stop after the first failure:
 
 ```bash
 export TRACEPERMIT_EXPECTED_HEAD='<exact handoff commit>'
 export TRACEPERMIT_EXPECTED_TREE='<exact handoff tree>'
-export TRACEPERMIT_PRIVATE_LOG_DIR="/private/tmp/tracepermit-organization-container-$TRACEPERMIT_EXPECTED_HEAD"
+export TRACEPERMIT_PRIVATE_LOG_DIR="/private/tmp/tracepermit-organization-archive-$TRACEPERMIT_EXPECTED_HEAD"
 
+bash /Users/hemantkgupta/code-all-air/tracepermit/deploy/sandbox/organization-operator/validate-organization-container.sh cache-create
+bash /Users/hemantkgupta/code-all-air/tracepermit/deploy/sandbox/organization-operator/validate-organization-container.sh cache-reuse
 bash /Users/hemantkgupta/code-all-air/tracepermit/deploy/sandbox/organization-operator/validate-organization-container.sh focused
+bash /Users/hemantkgupta/code-all-air/tracepermit/deploy/sandbox/organization-operator/validate-organization-container.sh compatibility
 bash /Users/hemantkgupta/code-all-air/tracepermit/deploy/sandbox/organization-operator/validate-organization-container.sh inventory
 bash /Users/hemantkgupta/code-all-air/tracepermit/deploy/sandbox/organization-operator/validate-organization-container.sh image
 bash /Users/hemantkgupta/code-all-air/tracepermit/deploy/sandbox/organization-operator/validate-organization-container.sh transport
@@ -73,12 +109,12 @@ existing mode receipt. It captures private stdout, stderr and numeric exits for
 each stage. It does not install, download, pull, push, deploy or contact a live
 provider.
 
-Gradle distribution archives may carry different entry timestamps when rebuilt
-in separate modes. Inventory and image receipts therefore retain both byte
-hashes. Image provenance binds the runtime label to the SHA256 of the exact tar
-copied by the image stage, then compares its complete entry inventory with the
-separately extracted inventory instead of treating timestamp-varying tar bytes
-as a source-equivalence claim.
+Focused validation is the sole authoritative fresh organization archive build.
+Compatibility and every container mode require the raw and final build outputs
+to remain byte-identical to the focused private copies. Image provenance binds
+the runtime label to that exact final SHA256; no prior PR147 image or archive is
+reused as new-format evidence. The repository stage may rebuild after all
+archive/image evidence is preserved and does not retroactively change it.
 
 ## Limits
 
@@ -89,6 +125,10 @@ ingress, CNI/RBAC, hostile-node isolation, COMMIT-loss injection and the
 separate artifact verifier remain outside this scope. MariaDB is not enabled
 for the organization-container gate; the accepted MariaDB11.4 composition is
 retained only in the final repository aggregate. MariaDB10.x remains retired.
+
+The published strict parser is only a private compatibility comparator. These
+stages do not establish independent provenance, EKS custody, deployment
+readiness, target invocation counts or exactly-once execution.
 
 Raw logs, generated tokens, keys, permits, database credentials and JDBC URLs
 remain private under the selected `/private/tmp` receipt root.
