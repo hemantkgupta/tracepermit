@@ -39,7 +39,7 @@ dependencies {
 
   testImplementation(project(":agentcore-durable-registration"))
   testImplementation(project(":persistence-identity"))
-  testImplementation(platform("org.testcontainers:testcontainers-bom:1.21.4"))
+  testImplementation(platform("org.testcontainers:testcontainers-bom:2.0.5"))
   testImplementation("org.testcontainers:postgresql")
   testImplementation("org.testcontainers:mariadb")
   testRuntimeOnly("org.slf4j:slf4j-nop:1.7.36")

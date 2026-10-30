@@ -31,7 +31,7 @@ dependencies {
   implementation(project(":persistence-operations"))
 
   testImplementation(project(":persistence-identity"))
-  testImplementation(platform("org.testcontainers:testcontainers-bom:1.21.4"))
+  testImplementation(platform("org.testcontainers:testcontainers-bom:2.0.5"))
   testImplementation("org.testcontainers:postgresql")
   testRuntimeOnly("org.slf4j:slf4j-nop:1.7.36")
   add(
