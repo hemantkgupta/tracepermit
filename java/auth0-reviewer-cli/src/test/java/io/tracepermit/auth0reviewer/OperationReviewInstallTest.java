@@ -18,6 +18,7 @@ final class OperationReviewInstallTest {
 
   @Test void installedReviewAndIdentityLaunchersRemainSeparateAndNoTestFixtureIsShipped() throws Exception {
     Path original = Path.of(System.getProperty("tracepermit.reviewer.install"));
+    String originalHash = manifest(original);
     Path installed = temp.resolve("installed");
     try (var paths = Files.walk(original)) {
       for (Path path : paths.sorted(Comparator.comparingInt(Path::getNameCount)).toList()) {
@@ -27,6 +28,7 @@ final class OperationReviewInstallTest {
         else Files.copy(path,copy,StandardCopyOption.COPY_ATTRIBUTES);
       }
     }
+    assertThat(manifest(installed)).isEqualTo(originalHash);
     assertThat(installed.toRealPath().startsWith(Path.of(System.getProperty("tracepermit.repositoryRoot")).toRealPath())).isFalse();
     Path review = installed.resolve("bin/tracepermit-auth0-operation-review");
     assertThat(Files.isExecutable(review)).isTrue();
@@ -56,6 +58,22 @@ final class OperationReviewInstallTest {
       assertThat(new String(p.getInputStream().readNBytes(4096),StandardCharsets.UTF_8))
           .contains("CONFIG_VALID","\"command\":\"check-config\"","\"executionEnabled\":false")
           .doesNotContain("publicKeySpki","password","REVIEW_APPROVED");
+      assertThat(manifest(installed)).isEqualTo(originalHash);
+      assertThat(manifest(original)).isEqualTo(originalHash);
+      System.out.println("AUTH0_OPERATION_REVIEW_INSTALL_SHA256=" + originalHash);
     } finally {if (p.isAlive()) {p.destroyForcibly();assertThat(p.waitFor(5,TimeUnit.SECONDS)).isTrue();}}
+  }
+
+  private static String manifest(Path home) throws Exception {
+    var files = new java.util.TreeMap<String,String>();
+    try (var paths = Files.walk(home)) {
+      for (Path p : paths.filter(Files::isRegularFile).toList()) {
+        assertThat(Files.isSymbolicLink(p)).isFalse();
+        files.put(home.relativize(p).toString(),java.util.HexFormat.of().formatHex(
+            java.security.MessageDigest.getInstance("SHA-256").digest(Files.readAllBytes(p))));
+      }
+    }
+    return io.tracepermit.contracts.CanonicalJson.sha256(
+        ReviewerConfiguration.JSON.valueToTree(files));
   }
 }
