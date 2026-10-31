@@ -108,9 +108,16 @@ public final class Auth0OrganizationReview {
     /** One attempt only. Reverify bearer and exact snapshot; reuse the existing locked transaction. */
     public Result review(byte[] bearer) {
       if (!attempted.compareAndSet(false, true)) return failure("REJECTED");
+      String header;
+      try {
+        header = authorization(bearer);
+      } catch (IllegalArgumentException invalidInput) {
+        // This branch precedes runtime/JDBC work; do not broaden the post-attempt catch below.
+        return failure("REJECTED");
+      }
       try {
         var receipt = new OrganizationOperatorRuntime(config)
-            .reviewPinned(authorization(bearer), operationId, decision, snapshotHash);
+            .reviewPinned(header, operationId, decision, snapshotHash);
         return new Result(receipt);
       } catch (Auth0OperationAuthorityException | BusinessOperationTransitionException
           | OrganizationFailure failure) {

@@ -73,3 +73,10 @@ by these tests. All new compilation, tests, repository gates and coverage are
 UNRUN. Interactive installed live review, authenticated remote ingress, EKS
 custody and the live GitHub executor remain separate integration/acceptance work.
 See the [manual runbook](../runbooks/auth0-operation-review.md).
+
+The initial human focused attempt at d17e2465 stopped on malformed bearer input
+being classified UNKNOWN. The correction handles only format rejection before
+runtime construction or JDBC work. Storage/commit uncertainty and unexpected
+post-attempt failures remain UNKNOWN. No assertion, deadline, grant or retry
+rule is relaxed; the original failure and fail-fast skip remain recorded.
+Qualification of the corrected candidate is pending.
