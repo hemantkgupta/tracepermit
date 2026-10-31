@@ -1,5 +1,18 @@
 # Interface contracts
 
+## Explicit Auth0 organization selection — validation pending
+
+The installed organization config accepts optional `identityProfile`, defaulting
+to the existing Okta profile. Explicit Auth0 uses namespaced `roleClaim` instead
+of Okta `groupClaim`/`roleGroup`, `at+jwt`, exact separate client/scope bindings
+and a 300-second maximum. The organization Auth0 registration factories are
+separate from the unchanged Okta factories. The organization database allowlist
+now includes exact MariaDB 11.4.13 via the existing loopback datasource. Private
+frame order, EOF, key custody, command/receipt schemas, timeouts and no-resend
+rules remain unchanged. See [ADR0103](../architecture/0103-explicit-auth0-organization-composition.md).
+All new qualification is pending; this interface adds no live provider or tool.
+
+
 The [Auth0 reviewer foundation](../architecture/0102-auth0-reviewer-pkce-foundation.md) adds a separate RFC 9068 role profile,
 exact enrolled operation-authority wrapper and identity-only local code/S256
 PKCE helper. Requirements FR-003/007/012; SEC-002/004/009/011/012/015;

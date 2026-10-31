@@ -553,6 +553,104 @@ final class AgentCoreRegistrationIngressTest {
         Duration.ofDays(30));
   }
 
+  private OidcAccessTokenVerifier auth0Verifier() {
+    var provider = new OidcProviderConfiguration(URI.create(ISSUER + "/"), AUDIENCE,
+        URI.create(ISSUER + "/jwks"), URI.create(AUDIENCE + "/metadata"),
+        List.of(URI.create(ISSUER + "/")), "Synthetic Auth0 registration",
+        Map.of("synthetic-client", "Synthetic machine"),
+        "https://tracepermit.example.invalid/tenant",
+        Map.of("synthetic-org", SCOPE.tenantId()),
+        Set.of(AgentCoreRegistrationIngress.REQUIRED_SCOPE), ConnectorOrigin.CLI,
+        Duration.ofMinutes(5), Duration.ofMinutes(1), Duration.ofSeconds(30),
+        OidcTokenProfile.auth0("https://tracepermit.example.invalid/roles", "REQUESTER"));
+    return new OidcAccessTokenVerifier(
+        issuer -> (ISSUER + "/").equals(issuer) ? Optional.of(provider) : Optional.empty(),
+        (config, id, algorithm, now) -> {
+          if (!"synthetic-key".equals(id) || !"RS256".equals(algorithm)) {
+            throw new IllegalStateException("Untrusted synthetic key");
+          }
+          return (RSAPublicKey) KEY.getPublic();
+        }, clock);
+  }
+
+  private AgentCoreRegistrationIngress.OrganizationEnrollment auth0Enrollment() {
+    var original = organizationEnrollment(SCOPE);
+    return new AgentCoreRegistrationIngress.OrganizationEnrollment(
+        ISSUER + "/", ISSUER + "/#synthetic-client@clients", "synthetic-client", SCOPE,
+        original.targetProfile(), original.retentionPolicyId(), original.retention());
+  }
+
+  private static String auth0Token(Consumer<ObjectNode> mutation) throws Exception {
+    return token(claims -> {
+      claims.remove("org_id");
+      claims.put("iss", ISSUER + "/");
+      claims.put("sub", "synthetic-client@clients")
+          .put("https://tracepermit.example.invalid/tenant", "synthetic-org");
+      claims.putArray("https://tracepermit.example.invalid/roles").add("REQUESTER");
+      mutation.accept(claims);
+    });
+  }
+
+  @Test
+  void explicitAuth0OrganizationRegistrationKeepsReplayBindingAndNoExecution() throws Exception {
+    var replay = new InMemoryWorkloadIdentityReplayStore();
+    var ingress = AgentCoreRegistrationIngress.organizationAuth0(
+        auth0Verifier(), replay, repository, clock, auth0Enrollment());
+    String authorization = auth0Token(claims -> {});
+    var receipt = ingress.register(authorization, null, body());
+    assertThat(receipt.created()).isTrue();
+    assertThat(receipt.executionEnabled()).isFalse();
+    assertThat(auth0Enrollment().targetProfile().bind(SCOPE, repository.latest).targetBinding())
+        .isEqualTo(auth0Enrollment().targetProfile().targetBinding());
+    assertThat(repository.latest.toString()).doesNotContain(authorization.substring(7));
+    rejected(() -> ingress.register(authorization, null, body()),
+        "AGENTCORE_REGISTRATION_REJECTED");
+    assertThat(repository.calls.get()).isEqualTo(1);
+  }
+
+  @Test
+  void organizationFactoriesDoNotFallbackBetweenOktaAndAuth0() throws Exception {
+    var replayCalls = new AtomicInteger();
+    WorkloadIdentityReplayStore replay = (tenant, issuer, fingerprint, expiry, now) -> {
+      replayCalls.incrementAndGet(); return true;
+    };
+    var oktaOnly = AgentCoreRegistrationIngress.organization(
+        auth0Verifier(), replay, repository, clock, auth0Enrollment());
+    rejected(() -> oktaOnly.register(auth0Token(claims -> {}), null, body()),
+        "AGENTCORE_IDENTITY_REJECTED");
+    var auth0Only = AgentCoreRegistrationIngress.organizationAuth0(
+        oktaVerifier(), replay, repository, clock, organizationEnrollment(SCOPE));
+    rejected(() -> auth0Only.register(oktaToken("pilot-requesters", "cross-provider"), null, body()),
+        "AGENTCORE_IDENTITY_REJECTED");
+    assertThat(replayCalls.get()).isZero();
+    assertThat(repository.calls.get()).isZero();
+  }
+
+  @ParameterizedTest
+  @ValueSource(strings = {"sub", "client_id", "tenant", "role", "scope", "expired", "cid", "scp"})
+  void auth0IdentitySubstitutionCannotReachReplayOrRepository(String mutation) throws Exception {
+    var replayCalls = new AtomicInteger();
+    var ingress = AgentCoreRegistrationIngress.organizationAuth0(auth0Verifier(),
+        (tenant, issuer, fingerprint, expiry, now) -> { replayCalls.incrementAndGet(); return true; },
+        repository, clock, auth0Enrollment());
+    String authorization = auth0Token(claims -> {
+      switch (mutation) {
+        case "sub" -> claims.put("sub", "auth0|human");
+        case "client_id" -> claims.put("client_id", "synthetic-reviewer");
+        case "tenant" -> claims.put("https://tracepermit.example.invalid/tenant", "other-tenant");
+        case "role" -> claims.putArray("https://tracepermit.example.invalid/roles").add("REVIEWER");
+        case "scope" -> claims.put("scope", "operations.decide");
+        case "expired" -> claims.put("exp", NOW.getEpochSecond());
+        case "cid" -> claims.put("cid", "synthetic-client");
+        case "scp" -> claims.putArray("scp").add("operations.register");
+        default -> throw new AssertionError();
+      }
+    });
+    rejected(() -> ingress.register(authorization, null, body()), "AGENTCORE_IDENTITY_REJECTED");
+    assertThat(replayCalls.get()).isZero();
+    assertThat(repository.calls.get()).isZero();
+  }
+
   private static byte[] body() { return request().toString().getBytes(StandardCharsets.UTF_8); }
   private static ObjectNode request() {
     return JsonSupport.MAPPER.createObjectNode().put("schemaVersion", "1.0")

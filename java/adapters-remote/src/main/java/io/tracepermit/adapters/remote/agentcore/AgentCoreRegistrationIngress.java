@@ -151,6 +151,7 @@ public final class AgentCoreRegistrationIngress {
   private final BusinessOperationRepository repository;
   private final Clock clock;
   private final EnrollmentContract enrollment;
+  private final String organizationIdentityProfile;
 
   public AgentCoreRegistrationIngress(
       OidcAccessTokenVerifier verifier,
@@ -169,7 +170,18 @@ public final class AgentCoreRegistrationIngress {
       Clock clock,
       OrganizationEnrollment enrollment) {
     return new AgentCoreRegistrationIngress(
-        verifier, replay, repository, clock, (EnrollmentContract) enrollment);
+        verifier, replay, repository, clock, enrollment, OidcTokenProfile.OKTA);
+  }
+
+  /** Explicit Auth0 organization factory; the original factory remains Okta-only. */
+  public static AgentCoreRegistrationIngress organizationAuth0(
+      OidcAccessTokenVerifier verifier,
+      WorkloadIdentityReplayStore replay,
+      BusinessOperationRepository repository,
+      Clock clock,
+      OrganizationEnrollment enrollment) {
+    return new AgentCoreRegistrationIngress(
+        verifier, replay, repository, clock, enrollment, OidcTokenProfile.AUTH0);
   }
 
   private AgentCoreRegistrationIngress(
@@ -178,11 +190,22 @@ public final class AgentCoreRegistrationIngress {
       BusinessOperationRepository repository,
       Clock clock,
       EnrollmentContract enrollment) {
+    this(verifier, replay, repository, clock, enrollment, null);
+  }
+
+  private AgentCoreRegistrationIngress(
+      OidcAccessTokenVerifier verifier,
+      WorkloadIdentityReplayStore replay,
+      BusinessOperationRepository repository,
+      Clock clock,
+      EnrollmentContract enrollment,
+      String organizationIdentityProfile) {
     this.verifier = Objects.requireNonNull(verifier);
     this.replay = Objects.requireNonNull(replay);
     this.repository = Objects.requireNonNull(repository);
     this.clock = Objects.requireNonNull(clock);
     this.enrollment = Objects.requireNonNull(enrollment);
+    this.organizationIdentityProfile = organizationIdentityProfile;
   }
 
   private static void validateEnrollment(
@@ -229,7 +252,7 @@ public final class AgentCoreRegistrationIngress {
           && identity.hasScope(REQUIRED_SCOPE)
           && identity.senderConstraint().isEmpty()
           && (enrollment instanceof OrganizationEnrollment
-              ? OidcTokenProfile.OKTA.equals(identity.authenticationProfile())
+              ? organizationIdentityProfile.equals(identity.authenticationProfile())
                   && identity.mappedRole().filter("REQUESTER"::equals).isPresent()
               : !OidcTokenProfile.OKTA.equals(identity.authenticationProfile())
                   || identity.mappedRole().filter("REQUESTER"::equals).isPresent()));

@@ -9,7 +9,7 @@ import io.tracepermit.identity.OidcTokenProfile;
 import java.time.Clock;
 
 /** Separate Auth0 profile; reuses the exact enrollment, roster and independence checks. */
-public final class Auth0OperationAuthority {
+public final class Auth0OperationAuthority implements OperationIdentityAuthority {
   private final OktaOperationAuthority delegate;
 
   public Auth0OperationAuthority(OidcAccessTokenVerifier requesterVerifier,

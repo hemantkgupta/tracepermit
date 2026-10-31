@@ -1,5 +1,19 @@
 # TracePermit implementation handoff
 
+## Auth0 organization wiring — implemented; validation pending
+
+Separate Auth0 organization registration factories and explicit installed
+provider selection reuse the existing verified identity/enrollment/roster
+checks. Okta remains the default and its original factory remains Okta-only.
+The installed organization config additionally accepts MariaDB 11.4.13 through
+the existing exact-version loopback datasource. New signed-token, zero-effect
+and installed MariaDB cases are UNRUN; repository and coverage gates are UNRUN.
+No token, provider setting, AWS/EKS deployment, live GitHub or worker action ran.
+See [ADR0103](docs/architecture/0103-explicit-auth0-organization-composition.md)
+and the [runbook](docs/runbooks/auth0-organization-composition.md). Air's live
+executor remains a separate integration dependency; this target stays synthetic.
+
+
 The [Auth0 reviewer foundation](docs/architecture/0102-auth0-reviewer-pkce-foundation.md) adds a separate RFC 9068 role profile,
 exact enrolled operation-authority wrapper and identity-only local code/S256
 PKCE helper. Requirements FR-003/007/012; SEC-002/004/009/011/012/015;

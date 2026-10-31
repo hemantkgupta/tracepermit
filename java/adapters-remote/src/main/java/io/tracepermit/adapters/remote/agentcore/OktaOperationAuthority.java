@@ -23,7 +23,7 @@ import java.util.stream.Collectors;
  *
  * <p>This is a library boundary only: it opens no listener and accepts no command-body identity.
  */
-public final class OktaOperationAuthority {
+public final class OktaOperationAuthority implements OperationIdentityAuthority {
   private static final Set<String> REQUESTER_SCOPES =
       Set.of("operations.register", "operations.evaluate", "operations.execute");
 

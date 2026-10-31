@@ -1,13 +1,12 @@
 package io.tracepermit.agentcore.organizationcli;
 
-import static io.tracepermit.agentcore.organizationcli.OrganizationOperatorProtocol.fields;
-import static io.tracepermit.agentcore.organizationcli.OrganizationOperatorProtocol.number;
-import static io.tracepermit.agentcore.organizationcli.OrganizationOperatorProtocol.text;
-
 import com.fasterxml.jackson.databind.JsonNode;
 import io.tracepermit.adapters.remote.agentcore.AgentCoreRegistrationIngress;
+import io.tracepermit.adapters.remote.agentcore.Auth0OperationAuthority;
+
 import io.tracepermit.adapters.remote.agentcore.OktaOperationAuthority;
 import io.tracepermit.adapters.remote.agentcore.OktaOperationReviewerRoster;
+import io.tracepermit.adapters.remote.agentcore.OperationIdentityAuthority;
 import io.tracepermit.adapters.remote.github.GitHubBusinessOperationBinding;
 import io.tracepermit.adapters.remote.github.GitHubOrganizationOperationBinding;
 import io.tracepermit.adapters.remote.github.GitHubOrganizationTargetBinding;
@@ -39,6 +38,9 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
+import static io.tracepermit.agentcore.organizationcli.OrganizationOperatorProtocol.fields;
+import static io.tracepermit.agentcore.organizationcli.OrganizationOperatorProtocol.number;
+import static io.tracepermit.agentcore.organizationcli.OrganizationOperatorProtocol.text;
 
 /** Closed organization operator configuration. Parsing is offline and opens no connection. */
 final class OrganizationOperatorConfig {
@@ -93,6 +95,7 @@ final class OrganizationOperatorConfig {
   private final OktaOperationAuthority.RequesterEnrollment requesterEnrollment;
   private final OktaOperationReviewerRoster reviewerRoster;
   private final String reviewerClientId;
+  private final String identityProfile;
 
   private OrganizationOperatorConfig(
       InstalledOperationsRuntime.Plan replay,
@@ -105,7 +108,7 @@ final class OrganizationOperatorConfig {
       AgentCoreRegistrationIngress.OrganizationEnrollment registrationEnrollment,
       OktaOperationAuthority.RequesterEnrollment requesterEnrollment,
       OktaOperationReviewerRoster reviewerRoster,
-      String reviewerClientId) {
+      String reviewerClientId, String identityProfile) {
     this.replay = replay;
     this.operations = operations;
     this.scope = scope;
@@ -117,6 +120,7 @@ final class OrganizationOperatorConfig {
     this.requesterEnrollment = requesterEnrollment;
     this.reviewerRoster = reviewerRoster;
     this.reviewerClientId = reviewerClientId;
+    this.identityProfile = identityProfile;
   }
 
   static OrganizationOperatorConfig parse(JsonNode root) {
@@ -137,7 +141,10 @@ final class OrganizationOperatorConfig {
               "reviewerProvider",
               "requesterEnrollment",
               "reviewerMemberships"),
-          Set.of());
+          Set.of("identityProfile"));
+      String identityProfile = root.has("identityProfile")
+          ? text(root, "identityProfile", 64) : OidcTokenProfile.OKTA;
+      require(Set.of(OidcTokenProfile.OKTA, OidcTokenProfile.AUTH0).contains(identityProfile));
       require(
           "1.0".equals(text(root, "schemaVersion", 3))
               && OrganizationOperatorProtocol.PROFILE.equals(text(root, "profile", 96))
@@ -163,38 +170,32 @@ final class OrganizationOperatorConfig {
               root.get("requesterProvider"),
               scope.tenantId(),
               Set.of("operations.register", "operations.evaluate", "operations.execute"),
-              "REQUESTER");
+              "REQUESTER", identityProfile);
       Provider reviewer =
           provider(
               root.get("reviewerProvider"),
               scope.tenantId(),
               Set.of("operations.decide"),
-              "REVIEWER");
+              "REVIEWER", identityProfile);
       require(!requester.clientId().equals(reviewer.clientId()));
+      if (OidcTokenProfile.AUTH0.equals(identityProfile)) {
+        for (String name : Set.of("issuer", "audience", "tenantClaim", "tenantValue", "roleClaim")) {
+          require(root.path("requesterProvider").path(name)
+              .equals(root.path("reviewerProvider").path(name)));
+        }
+        require(requester.configuration().issuer().toString().endsWith("/"));
+        require(root.path("requesterEnrollment").path("verifiedSubjectId").asText()
+            .equals(requester.configuration().issuer() + "#" + requester.clientId() + "@clients"));
+      }
       Enrollment enrollment =
           enrollment(root.get("requesterEnrollment"), scope, expected.profile(), requester);
-      // Constructor validation pins the complete profile, independent roster and enrollment.
-      new OktaOperationAuthority(
-          requester.verifier(Clock.systemUTC()),
-          reviewer.verifier(Clock.systemUTC()),
-          scope,
-          enrollment.authority(),
-          roster,
-          authority,
-          reviewer.clientId(),
-          Clock.systemUTC());
-      return new OrganizationOperatorConfig(
-          replay,
-          operations,
-          scope,
-          expected.profile(),
-          authority,
-          requester,
-          reviewer,
-          enrollment.registration(),
-          enrollment.authority(),
-          roster,
-          reviewer.clientId());
+      var configured = new OrganizationOperatorConfig(
+          replay, operations, scope, expected.profile(), authority, requester, reviewer,
+          enrollment.registration(), enrollment.authority(), roster, reviewer.clientId(),
+          identityProfile);
+      // Validate the exact enrollment, independent roster and pinned profile offline.
+      configured.authority(Clock.systemUTC());
+      return configured;
     } catch (OrganizationFailure failure) {
       throw failure;
     } catch (RuntimeException failure) {
@@ -207,7 +208,7 @@ final class OrganizationOperatorConfig {
   private static Database database(JsonNode value) {
     fields(value, Set.of("engine", "host", "port", "catalog", "user", "password"), Set.of());
     require(
-        "POSTGRESQL_16_4".equals(text(value, "engine", 32))
+        Set.of("POSTGRESQL_16_4", "MARIADB_11_4_13").contains(text(value, "engine", 32))
             && "127.0.0.1".equals(text(value, "host", 16)));
     String catalog = text(value, "catalog", 63);
     String user = text(value, "user", 63);
@@ -358,10 +359,10 @@ final class OrganizationOperatorConfig {
   }
 
   private static Provider provider(
-      JsonNode value, String tenantId, Set<String> exactScopes, String role) {
-    fields(
-        value,
-        Set.of(
+      JsonNode value, String tenantId, Set<String> exactScopes, String role,
+      String identityProfile) {
+    boolean auth0 = OidcTokenProfile.AUTH0.equals(identityProfile);
+    Set<String> required = new HashSet<>(Set.of(
             "issuer",
             "audience",
             "keyId",
@@ -378,13 +379,13 @@ final class OrganizationOperatorConfig {
             "jwksUri",
             "metadataUri",
             "origin",
-            "groupClaim",
-            "roleGroup",
-            "supportedScopes"),
-        Set.of());
+            "supportedScopes"));
+    if (auth0) required.add("roleClaim");
+    else required.addAll(Set.of("groupClaim", "roleGroup"));
+    fields(value, required, Set.of());
     require(
         "RS256".equals(text(value, "algorithm", 8))
-            && "JWT".equals(text(value, "jwtType", 16))
+            && (auth0 ? "at+jwt" : "JWT").equals(text(value, "jwtType", 16))
             && "CLI".equals(text(value, "origin", 8))
             && tenantId.equals(text(value, "tenantId", 128)));
     byte[] encoded = canonicalBase64(value, "publicKeySpki", 4_096);
@@ -400,8 +401,10 @@ final class OrganizationOperatorConfig {
             .equals(exactScopes));
     String issuer = text(value, "issuer", 512);
     String clientId = text(value, "clientId", 256);
-    String groupClaim = text(value, "groupClaim", 64);
-    String roleGroup = text(value, "roleGroup", 128);
+    OidcTokenProfile tokenProfile = auth0
+        ? OidcTokenProfile.auth0(text(value, "roleClaim", 256), role)
+        : OidcTokenProfile.okta(text(value, "groupClaim", 64),
+            Map.of(text(value, "roleGroup", 128), role));
     var configuration =
         new OidcProviderConfiguration(
             URI.create(issuer),
@@ -415,10 +418,10 @@ final class OrganizationOperatorConfig {
             Map.of(text(value, "tenantValue", 256), tenantId),
             scopes,
             ConnectorOrigin.CLI,
-            Duration.ofSeconds(number(value, "maximumTokenLifetimeSeconds", 1, 900)),
+            Duration.ofSeconds(number(value, "maximumTokenLifetimeSeconds", 1, auth0 ? 300 : 900)),
             Duration.ofSeconds(number(value, "keyCacheSeconds", 1, 900)),
             Duration.ofSeconds(number(value, "refreshCooldownSeconds", 1, 900)),
-            OidcTokenProfile.okta(groupClaim, Map.of(roleGroup, role)));
+            tokenProfile);
     return new Provider(configuration, key, keyId, clientId);
   }
 
@@ -599,16 +602,19 @@ final class OrganizationOperatorConfig {
     return requesterProvider.verifier(clock);
   }
 
-  OktaOperationAuthority authority(Clock clock) {
+  boolean usesAuth0() {
+    return OidcTokenProfile.AUTH0.equals(identityProfile);
+  }
+
+  OperationIdentityAuthority authority(Clock clock) {
+    if (usesAuth0()) {
+      return new Auth0OperationAuthority(
+          requesterProvider.verifier(clock), reviewerProvider.verifier(clock), scope,
+          requesterEnrollment, reviewerRoster, authorityProfile, reviewerClientId, clock);
+    }
     return new OktaOperationAuthority(
-        requesterProvider.verifier(clock),
-        reviewerProvider.verifier(clock),
-        scope,
-        requesterEnrollment,
-        reviewerRoster,
-        authorityProfile,
-        reviewerClientId,
-        clock);
+        requesterProvider.verifier(clock), reviewerProvider.verifier(clock), scope,
+        requesterEnrollment, reviewerRoster, authorityProfile, reviewerClientId, clock);
   }
 
   @Override

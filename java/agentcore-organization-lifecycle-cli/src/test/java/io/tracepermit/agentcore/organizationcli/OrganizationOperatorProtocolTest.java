@@ -104,7 +104,7 @@ class OrganizationOperatorProtocolTest {
     assertConfigInvalid(fixture.configuration.deepCopy().put("unexpected", true));
     assertConfigInvalid(fixture.configuration.deepCopy().put("replayCapacity", 65));
     ObjectNodeEngine.mutate(
-        fixture.configuration.deepCopy(), value -> value.put("engine", "MARIADB_11_4_13"));
+        fixture.configuration.deepCopy(), value -> value.put("engine", "MARIADB_10_6_25"));
 
     var sameStore = fixture.configuration.deepCopy();
     ((com.fasterxml.jackson.databind.node.ObjectNode) sameStore.path("operations"))
