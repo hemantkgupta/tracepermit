@@ -1,12 +1,8 @@
 package io.tracepermit.auth0reviewer;
 
-import io.tracepermit.adapters.http.requester.ReviewerCallback;
-import io.tracepermit.adapters.remote.SsrfSafeHttpsJwkSetSource;
 import io.tracepermit.agentcore.cli.InstalledPrivateInput;
-import java.awt.Desktop;
 import java.io.DataInputStream;
 import java.time.Clock;
-import java.time.Duration;
 import java.util.Arrays;
 import java.util.Set;
 import java.util.concurrent.*;
@@ -29,19 +25,7 @@ public final class Auth0ReviewerMain {
       if ("check-config".equals(args[0])) {
         System.out.println("{\"schemaVersion\":1,\"outcome\":\"CONFIG_VALID\",\"executionEnabled\":false}");
       } else {
-        var transport = new SsrfSafeHttpsJwkSetSource(Set.of(config.issuer().resolve("oauth/token")),
-            Duration.ofSeconds(3), Duration.ofSeconds(5));
-        var connector = boundedLogin(() -> new ReviewerLogin(config,
-            (state, authorization) -> ReviewerCallback.await(ReviewerConfiguration.CALLBACK, state,
-                config.issuer().toString(), authorization, uri -> {
-                  try {
-                    if (!Desktop.isDesktopSupported() || !Desktop.getDesktop().isSupported(Desktop.Action.BROWSE))
-                      throw new IllegalStateException();
-                    Desktop.getDesktop().browse(uri);
-                  } catch (Exception denied) { throw new IllegalStateException("BROWSER_UNAVAILABLE"); }
-                }),
-            form -> transport.postForm(config.issuer().resolve("oauth/token"), form, null),
-            new java.security.SecureRandom(), Clock.systemUTC()).login());
+        var connector = boundedLogin(() -> ReviewerLogin.live(config, Clock.systemUTC()).login());
         System.out.println("{\"schemaVersion\":1,\"outcome\":\"REVIEWER_VERIFIED\",\"credentialFingerprint\":\"" +
             connector.credentialFingerprint().value() + "\",\"executionEnabled\":false}");
       }

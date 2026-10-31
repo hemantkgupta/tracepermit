@@ -1,5 +1,15 @@
 # Requirements traceability matrix
 
+The [explicit Auth0 PKCE operation-review handoff](../architecture/0104-explicit-auth0-pkce-operation-review.md)
+adds a separate review launcher with private three-frame input, exact provider
+join, pending snapshot/profile pins and terminal decision confirmation. The
+existing identity-only helper and Okta paths remain separate. The same durable
+review transaction rechecks state and authority; no signer or delivery is added.
+Requirements FR-003/007/008/009/012/015; SEC-002/003/004/006/009/011/012/015;
+REL-001/002/004/005; DATA-001; OPS-002/004. All new gates are UNRUN; this is not
+live Auth0/EKS/GitHub or whole-requirement acceptance. See the
+[manual runbook](../runbooks/auth0-operation-review.md).
+
 The [explicit Auth0 organization composition](../architecture/0103-explicit-auth0-organization-composition.md)
 adds separate Auth0 registration factories, provider-selected installed authority
 and MariaDB 11.4.13 organization configuration. Existing Okta factories, SQL,

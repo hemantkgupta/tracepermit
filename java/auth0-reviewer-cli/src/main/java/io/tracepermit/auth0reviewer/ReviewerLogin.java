@@ -1,13 +1,17 @@
 package io.tracepermit.auth0reviewer;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import io.tracepermit.adapters.http.requester.ReviewerCallback;
+import io.tracepermit.adapters.remote.SsrfSafeHttpsJwkSetSource;
 import io.tracepermit.identity.*;
+import java.awt.Desktop;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.time.Clock;
+import java.time.Duration;
 import java.util.*;
 
 /** Identity qualification only. No credential persistence, operation approval or target call. */
@@ -29,7 +33,32 @@ final class ReviewerLogin {
     this.clock = Objects.requireNonNull(clock);
   }
 
+  /** The same fixed live transport/callback for identity-only and operation-review commands. */
+  static ReviewerLogin live(ReviewerConfiguration config, Clock clock) {
+    var transport = new SsrfSafeHttpsJwkSetSource(Set.of(config.issuer().resolve("oauth/token")),
+        Duration.ofSeconds(3), Duration.ofSeconds(5));
+    return new ReviewerLogin(config,
+        (state, authorization) -> ReviewerCallback.await(ReviewerConfiguration.CALLBACK, state,
+            config.issuer().toString(), authorization, uri -> {
+              try {
+                if (!Desktop.isDesktopSupported()
+                    || !Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
+                  throw new IllegalStateException();
+                }
+                Desktop.getDesktop().browse(uri);
+              } catch (Exception denied) { throw new IllegalStateException("BROWSER_UNAVAILABLE"); }
+            }),
+        form -> transport.postForm(config.issuer().resolve("oauth/token"), form, null),
+        new SecureRandom(), clock);
+  }
+
   AuthenticatedConnector login() {
+    try (var credential = loginForReview()) {
+      return credential.identity();
+    }
+  }
+
+  ReviewCredential loginForReview() {
     try {
       String state = randomValue();
       String verifier = randomValue();
@@ -68,7 +97,8 @@ final class ReviewerLogin {
           verified.mappedRole().filter("REVIEWER"::equals).isEmpty() ||
           !verified.clientId().equals(config.client()) ||
           !verified.organizationId().equals(config.tenant()) || verified.senderConstraint().isPresent()) throw rejected();
-      return verified;
+      return new ReviewCredential(verified,
+          n.path("access_token").textValue().getBytes(StandardCharsets.US_ASCII));
     } catch (Exception rejected) { throw rejected(); }
   }
 

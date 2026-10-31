@@ -139,23 +139,31 @@ final class OrganizationOperatorRuntime {
 
   private OrganizationOperatorReceipt review(
       String command, OrganizationOperatorProtocol.Input input) {
-    OktaOperationAuthority.ReviewAuthority authority =
-        identities.reviewer(input.authorization());
-    JsonNode current =
-        inspector().inspect(configuration.scope(), input.command().operationId()).operation();
-    var decision = BusinessOperationReview.Decision.valueOf(input.command().decision());
+    return reviewPinned(input.authorization(), input.command().operationId(),
+        input.command().decision(), null);
+  }
+
+  OrganizationOperatorReceipt reviewPinned(String authorization, String operationId,
+      String selectedDecision, String expectedSnapshotHash) {
+    OktaOperationAuthority.ReviewAuthority authority = identities.reviewer(authorization);
+    JsonNode current = inspector().inspect(configuration.scope(), operationId).operation();
+    if (expectedSnapshotHash != null
+        && !expectedSnapshotHash.equals(io.tracepermit.contracts.CanonicalJson.sha256(current))) {
+      throw new OrganizationFailure("REJECTED");
+    }
+    var decision = BusinessOperationReview.Decision.valueOf(selectedDecision);
     JsonNode result =
         reviews()
             .review(
                 new BusinessOperationReview(
                     configuration.scope(),
-                    input.command().operationId(),
+                    operationId,
                     PLANNER.observe(configuration.scope(), current),
                     authority.reviewer(),
                     decision),
                 authority.membership());
     return state(
-        command,
+        "review",
         decision == BusinessOperationReview.Decision.APPROVE
             ? "REVIEW_APPROVED"
             : "REVIEW_DENIED",

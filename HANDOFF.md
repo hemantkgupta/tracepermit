@@ -1,5 +1,22 @@
 # TracePermit implementation handoff
 
+## Auth0 operation-review handoff — implemented; validation pending
+
+Local Mac owns codex/auth0-operation-review from the preserved validated
+organization checkpoint 9f6cb302. A separate launcher joins the existing PKCE
+helper to a narrow pending-operation preview and exact terminal decision. It
+retains no bearer outside private process memory, accepts no signing/delivery
+inputs, and uses the same durable review transaction with a pinned snapshot.
+The existing login remains identity-only, and Okta remains unchanged. Shared
+synthetic fixtures moved to test fixtures; new offline, installed-directory and
+MariaDB session/guard cases are written but UNRUN. All compilation, repository
+and coverage gates on this candidate remain UNRUN. No live token, setting,
+provider, EKS/AWS, CI, publication or worker action ran. See
+[ADR0104](docs/architecture/0104-explicit-auth0-pkce-operation-review.md) and the
+[runbook](docs/runbooks/auth0-operation-review.md). Actual installed interactive
+review, pending-pin export, remote ingress and Air's live executor integration
+remain separate work; this is not an end-to-end demo completion claim.
+
 ## Auth0 organization wiring — implemented; validation pending
 
 Separate Auth0 organization registration factories and explicit installed

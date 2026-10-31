@@ -1,5 +1,18 @@
 # Interface contracts
 
+## Explicit Auth0 PKCE durable review — validation pending
+
+A separate tracepermit-auth0-operation-review-v1 helper accepts only check-config
+or review, and exactly reviewer config / organization config / decision-intent
+frames plus EOF. Intent pins the UUID, snapshot hash, APPROVE or DENY and both
+profile fingerprints. No bearer, trusted-context flag, callback or execution
+option is accepted in that body. PKCE login precedes a private verified preview
+and exact controlling-terminal confirmation. The durable transaction rechecks
+the same expected snapshot under its existing locks; no implicit refresh or retry
+is allowed. The 240-second command total does not extend old login/operator
+budgets. See [ADR0104](../architecture/0104-explicit-auth0-pkce-operation-review.md).
+New tests, repository gates and installed/live qualification remain pending.
+
 ## Explicit Auth0 organization selection — validation pending
 
 The installed organization config accepts optional `identityProfile`, defaulting
