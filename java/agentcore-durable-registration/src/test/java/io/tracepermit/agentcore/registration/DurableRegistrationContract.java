@@ -65,12 +65,32 @@ abstract class DurableRegistrationContract {
         db.replay, db.operations, 128, Duration.ofSeconds(2));
   }
 
-  @Test void publicSurfaceHasNoRepositoryReplayOrExecutionOverride() {
+  @Test void publicSurfaceHasNoRepositoryReplayOrExecutionOverride() throws NoSuchMethodException {
     assertThat(DurableAgentCoreRegistration.class.getConstructors()).isEmpty();
     assertThat(java.util.Arrays.stream(DurableAgentCoreRegistration.class.getDeclaredMethods())
         .filter(method -> java.lang.reflect.Modifier.isPublic(method.getModifiers()))
         .map(java.lang.reflect.Method::getName))
-        .containsExactlyInAnyOrder("create", "organization", "register");
+        .containsExactlyInAnyOrder("create", "organization", "organizationAuth0", "register");
+    for (String name : List.of("create", "organization", "organizationAuth0")) {
+      Class<?> enrollmentType = name.equals("create")
+          ? AgentCoreRegistrationIngress.Enrollment.class
+          : AgentCoreRegistrationIngress.OrganizationEnrollment.class;
+      var factory = DurableAgentCoreRegistration.class.getDeclaredMethod(name,
+          io.tracepermit.identity.OidcAccessTokenVerifier.class, enrollmentType,
+          java.time.Clock.class, javax.sql.DataSource.class, javax.sql.DataSource.class,
+          long.class, Duration.class);
+      assertThat(factory.getModifiers())
+          .isEqualTo(java.lang.reflect.Modifier.PUBLIC | java.lang.reflect.Modifier.STATIC);
+      assertThat(factory.getReturnType()).isEqualTo(DurableAgentCoreRegistration.class);
+      assertThat(factory.isVarArgs()).isFalse();
+      assertThat(factory.getExceptionTypes()).isEmpty();
+    }
+    var register = DurableAgentCoreRegistration.class.getDeclaredMethod(
+        "register", String.class, String.class, byte[].class);
+    assertThat(register.getModifiers()).isEqualTo(java.lang.reflect.Modifier.PUBLIC);
+    assertThat(register.getReturnType()).isEqualTo(AgentCoreRegistrationIngress.Receipt.class);
+    assertThat(register.isVarArgs()).isFalse();
+    assertThat(register.getExceptionTypes()).isEmpty();
     assertThat(java.util.Arrays.stream(AgentCoreRegistrationIngress.Receipt.class.getRecordComponents())
         .map(java.lang.reflect.RecordComponent::getName)).containsExactly("created", "operationId");
     counts(0, 0);
