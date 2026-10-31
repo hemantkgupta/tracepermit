@@ -12,6 +12,22 @@ final class ReviewerConfigurationTest {
     assertThat(config.toString()).isEqualTo("ReviewerConfiguration[redacted]");
     assertThat(ReviewerConfiguration.CALLBACK.toString()).isEqualTo("http://127.0.0.1:41839/reviewer/callback");
   }
+  @Test void emptyOversizeMalformedUtf8AndWeakPublicKeyAreRejected() throws Exception {
+    for (byte[] input : new byte[][]{new byte[0], new byte[16385], new byte[]{(byte) 0xc3, (byte) 0x28}}) {
+      assertThatThrownBy(() -> ReviewerConfiguration.parse(input)).hasMessage("REVIEWER_CONFIG_INVALID").hasNoCause();
+    }
+    var weak = java.security.KeyPairGenerator.getInstance("RSA");
+    weak.initialize(1024);
+    var json = ReviewerFixtures.json().put("publicKeySpki",
+        java.util.Base64.getEncoder().encodeToString(weak.generateKeyPair().getPublic().getEncoded()));
+    assertThatThrownBy(() -> ReviewerConfiguration.parse(ReviewerFixtures.bytes(json)))
+        .hasMessage("REVIEWER_CONFIG_INVALID").hasNoCause();
+    // Unpadded base64 decodes, but is not the canonical public-key encoding required here.
+    var unpadded = ReviewerFixtures.json().put("publicKeySpki", "AQ");
+    assertThatThrownBy(() -> ReviewerConfiguration.parse(ReviewerFixtures.bytes(unpadded)))
+        .hasMessage("REVIEWER_CONFIG_INVALID").hasNoCause();
+  }
+
   @ParameterizedTest @ValueSource(strings = {"missing", "extra", "issuer", "issuer-path", "callback", "client",
       "subject", "tenant", "keyId", "publicKeySpki", "management", "schemaVersion", "typed", "duplicate", "trailing"})
   void refusesInvalidTrustBeforeAnyEffects(String changed) {
