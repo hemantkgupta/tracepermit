@@ -31,6 +31,9 @@ public final class BrowserIdTokenVerifier {
   public BrowserIdTokenVerifier(OidcProviderConfiguration provider,
       OidcVerificationKeyResolver keys, Clock clock, String organization) {
     this.provider = java.util.Objects.requireNonNull(provider);
+    if (provider.tokenProfile().isAuth0()) {
+      throw new IllegalArgumentException("AUTH0_PROFILE_IS_ACCESS_TOKEN_ONLY");
+    }
     this.keys = java.util.Objects.requireNonNull(keys);
     this.clock = java.util.Objects.requireNonNull(clock);
     if (organization != null && ((!provider.tokenProfile().isOkta() && !"org_id".equals(provider.tenantClaim()))

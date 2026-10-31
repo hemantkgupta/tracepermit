@@ -1,5 +1,12 @@
 # TracePermit implementation handoff
 
+The [Auth0 reviewer foundation](docs/architecture/0102-auth0-reviewer-pkce-foundation.md) adds a separate RFC 9068 role profile,
+exact enrolled operation-authority wrapper and identity-only local code/S256
+PKCE helper. Requirements FR-003/007/012; SEC-002/004/009/011/012/015;
+REL-001/004. Okta retains its own profile. All new tests and repository gates
+are UNRUN; callback registration, Action activation, actual tokens and installed
+org/ingress/executor integration remain pending. No review or target is invoked.
+
 ## PostgreSQL quarantine/admission tests — implemented; validation pending
 
 Local Mac owns `codex/postgres-quarantine-admission` from accepted PR148 main

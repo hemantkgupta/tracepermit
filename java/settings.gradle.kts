@@ -1,6 +1,7 @@
 rootProject.name = "tracepermit-java"
 
 include(
+  "auth0-reviewer-cli",
   "contracts",
   "policy",
   "security",

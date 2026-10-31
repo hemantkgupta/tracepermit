@@ -67,6 +67,7 @@ public final class OktaOperationAuthority {
   private final RequesterEnrollment requesterEnrollment;
   private final OktaOperationReviewerRoster reviewerRoster;
   private final Clock clock;
+  private final String requiredProfile;
 
   public OktaOperationAuthority(
       OidcAccessTokenVerifier requesterVerifier,
@@ -77,7 +78,17 @@ public final class OktaOperationAuthority {
       BusinessOperationAuthorityProfile authorityProfile,
       String reviewerClientId,
       Clock clock) {
+    this(requesterVerifier, reviewerVerifier, scope, requesterEnrollment, reviewerRoster,
+        authorityProfile, reviewerClientId, clock, OidcTokenProfile.OKTA);
+  }
+
+  OktaOperationAuthority(OidcAccessTokenVerifier requesterVerifier,
+      OidcAccessTokenVerifier reviewerVerifier, BusinessOperationScope scope,
+      RequesterEnrollment requesterEnrollment, OktaOperationReviewerRoster reviewerRoster,
+      BusinessOperationAuthorityProfile authorityProfile, String reviewerClientId,
+      Clock clock, String requiredProfile) {
     try {
+      require(Set.of(OidcTokenProfile.OKTA, OidcTokenProfile.AUTH0).contains(requiredProfile));
       require(
           requesterVerifier != null
               && reviewerVerifier != null
@@ -113,6 +124,7 @@ public final class OktaOperationAuthority {
     this.requesterEnrollment = requesterEnrollment;
     this.reviewerRoster = reviewerRoster;
     this.clock = clock;
+    this.requiredProfile = requiredProfile;
   }
 
   public TrustedRequesterContext requester(String authorization, String requiredScope) {
@@ -182,7 +194,7 @@ public final class OktaOperationAuthority {
     try {
       AuthenticatedConnector connector = verifier.authenticate(authorization);
       Instant now = clock.instant();
-      if (!OidcTokenProfile.OKTA.equals(connector.authenticationProfile())
+      if (!requiredProfile.equals(connector.authenticationProfile())
           || connector.senderConstraint().isPresent()
           || !connector.hasScope(ConnectorScope.of(requiredScope))
           || connector.mappedRole().filter(requiredRole::equals).isEmpty()

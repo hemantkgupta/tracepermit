@@ -10,16 +10,19 @@ import java.util.Set;
 /** Operator-selected token grammar; groups never leave verification as raw claims. */
 public final class OidcTokenProfile {
   public static final String STANDARD = "oauth-access-token-jwt-rs256-v1";
+  public static final String AUTH0 = "auth0-rfc9068-rs256-v1";
   public static final String OKTA = "okta-custom-as-jwt-rs256-v1";
   private static final Set<String> ROLES = Set.of("REQUESTER", "REVIEWER", "VIEWER");
   private static final Set<String> RESERVED = Set.of(
       "iss", "aud", "sub", "iat", "exp", "nbf", "jti", "nonce", "cid", "client_id",
       "scope", "scp", "cnf", "azp", "at_hash", "roles");
-  private static final OidcTokenProfile DEFAULT = new OidcTokenProfile(null, Map.of());
+  private static final OidcTokenProfile DEFAULT = new OidcTokenProfile(STANDARD, null, Map.of());
+  private final String profile;
   private final String groupClaim;
   private final Map<String, String> mappings;
 
-  private OidcTokenProfile(String groupClaim, Map<String, String> mappings) {
+  private OidcTokenProfile(String profile, String groupClaim, Map<String, String> mappings) {
+    this.profile = profile;
     this.groupClaim = groupClaim;
     this.mappings = Map.copyOf(mappings);
   }
@@ -31,21 +34,29 @@ public final class OidcTokenProfile {
     mappings.forEach((group, role) -> require(group != null && !group.isBlank()
         && group.length() <= 128 && group.chars().noneMatch(Character::isISOControl)
         && role != null && ROLES.contains(role)));
-    return new OidcTokenProfile(groupClaim, mappings);
+    return new OidcTokenProfile(OKTA, groupClaim, mappings);
   }
 
-  public boolean isOkta() { return groupClaim != null; }
-  public String authenticationProfile() { return isOkta() ? OKTA : STANDARD; }
+  public static OidcTokenProfile auth0(String roleClaim, String expectedRole) {
+    require(namespacedClaim(roleClaim) && expectedRole != null && Set.of("REQUESTER", "REVIEWER").contains(expectedRole));
+    return new OidcTokenProfile(AUTH0, roleClaim, Map.of(expectedRole, expectedRole));
+  }
+
+  public boolean isOkta() { return OKTA.equals(profile); }
+  public boolean isAuth0() { return AUTH0.equals(profile); }
+  public String authenticationProfile() { return profile; }
 
   public void validateTenantClaim(String tenantClaim) {
     if (isOkta()) require(customClaim(tenantClaim) && !groupClaim.equals(tenantClaim));
+    if (isAuth0()) require(namespacedClaim(tenantClaim) && !groupClaim.equals(tenantClaim));
   }
 
   /** Call only after signature, issuer, audience, client, tenant and time validation. */
   public Optional<String> mappedRole(JsonNode verifiedClaims) {
-    if (!isOkta()) return Optional.empty();
+    if (!isOkta() && !isAuth0()) return Optional.empty();
     JsonNode groups = verifiedClaims.get(groupClaim);
     require(groups != null && groups.isArray() && !groups.isEmpty() && groups.size() <= 100);
+    if (isAuth0()) require(groups.size() == 1);
     Set<String> unique = new HashSet<>();
     String selected = null;
     for (JsonNode group : groups) {
@@ -61,6 +72,17 @@ public final class OidcTokenProfile {
     }
     require(selected != null);
     return Optional.of(Objects.requireNonNull(selected));
+  }
+
+  private static boolean namespacedClaim(String name) {
+    if (name == null || name.length() > 256) return false;
+    try {
+      java.net.URI uri = java.net.URI.create(name);
+      return "https".equals(uri.getScheme()) && uri.getHost() != null &&
+          uri.getUserInfo() == null && uri.getQuery() == null && uri.getFragment() == null &&
+          uri.getPort() == -1 && uri.getPath() != null && !uri.getPath().isEmpty() &&
+          name.chars().noneMatch(Character::isISOControl);
+    } catch (IllegalArgumentException rejected) { return false; }
   }
 
   private static boolean customClaim(String name) {

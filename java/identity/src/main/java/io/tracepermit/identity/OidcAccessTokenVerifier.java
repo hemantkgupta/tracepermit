@@ -106,6 +106,12 @@ public final class OidcAccessTokenVerifier implements ConnectorAuthenticator {
     } catch (IllegalArgumentException failure) {
       throw invalidClaims("GROUP_MAPPING");
     }
+    if (provider.tokenProfile().isAuth0() &&
+        (mappedRole.filter("REVIEWER"::equals).isPresent()
+            ? !parsed.subject().contains("|") || parsed.subject().endsWith("@clients")
+            : !parsed.subject().equals(parsed.clientId() + "@clients"))) {
+      throw invalidClaims("SUBJECT_ROLE_BINDING");
+    }
     return new AuthenticatedConnector(
         provider.issuer() + "#" + parsed.subject(),
         parsed.displayName(),
@@ -160,6 +166,14 @@ public final class OidcAccessTokenVerifier implements ConnectorAuthenticator {
     Set<String> audiences = parseAudiences(claims.get("aud"));
     String subject = requiredSubjectIdentifier(claims);
     if (okta && (claims.has("client_id") || claims.has("scope"))) throw invalidClaims("CLAIM_SHAPE");
+    if (provider.tokenProfile().isAuth0() && (claims.has("cid") || claims.has("scp")
+        || claims.has("azp") || claims.has("permissions") || claims.has("cnf"))) {
+      throw invalidClaims("CLAIM_SHAPE");
+    }
+    if (provider.tokenProfile().isAuth0() && !Set.of(provider.resourceAudience(),
+        provider.issuer().toString() + "userinfo").containsAll(audiences)) {
+      throw invalidClaims("AUDIENCE_SHAPE");
+    }
     String clientId = requiredIdentifier(claims, okta ? "cid" : "client_id");
     String clientName = provider.clientName(clientId);
     if (clientName == null) throw invalidClaims("CLIENT_MAPPING");
