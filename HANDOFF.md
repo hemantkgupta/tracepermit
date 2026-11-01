@@ -26,6 +26,16 @@ coverage, and still requires unchanged original/copied installation manifests.
 A new test checks relative and absolute destination handling without changing
 other agent options. This harness repair is implemented; all validation on the
 new candidate is pending. Both failed receipts remain preserved.
+The repaired 9b8ff752 candidate then passed the human focused gate: 224 cases,
+zero failures/errors/skips, all 56 tasks executed. Its MariaDB gate stopped in
+fixture setup before review: the default registration body contained a newline
+that the unchanged installed protocol rejects (one failure, one fail-fast skip).
+The fixture now uses a permitted Unicode line separator, with explicit terminal
+ASCII-escape assertions; an offline protocol regression retains newline, carriage
+return and escape-control rejection. Closed setup outcome diagnostics were added
+without logging bodies, identities or credentials. This test-only correction is
+implemented; focused, MariaDB and repository qualification on the new tree is
+pending. The passed old-tree focused receipt and failed MariaDB receipt remain.
 No live token, setting,
 provider, EKS/AWS, CI, publication or worker action ran. See
 [ADR0104](docs/architecture/0104-explicit-auth0-pkce-operation-review.md) and the

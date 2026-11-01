@@ -53,7 +53,7 @@ final class MariaDb114OperationReviewSessionTest {
     assertThat(store.count("tp_operation_admissions")).isZero();
     assertThat(store.count("tp_operation_admission_outbox")).isZero();
     assertThat(store.count("tp_operation_delivery_events")).isZero();
-    assertThat(terminal.toString()).contains(id, snapshot, "\\u03c0", "\\n").doesNotContain("π", "😀");
+    assertThat(terminal.toString()).contains(id, snapshot, "\\u03c0", "\\ud83d\\ude00", "\\u2028").doesNotContain("π", "😀", "\u2028");
     // An explicitly separate synthetic requester call is possible only after committed review.
     assertThat(store.deliveryOutcome(id)).isEqualTo("DELIVERY_SUCCEEDED");
     assertThat(input.plan.review(store.fixture.reviewerToken(store.fixture.reviewerSubject())).exitCode())

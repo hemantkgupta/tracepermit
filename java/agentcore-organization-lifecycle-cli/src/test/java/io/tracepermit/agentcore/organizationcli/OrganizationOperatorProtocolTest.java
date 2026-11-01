@@ -99,6 +99,30 @@ class OrganizationOperatorProtocolTest {
   }
 
   @Test
+  void registrationBodyRejectsControlsAndAcceptsEscapableUnicode() throws java.io.IOException {
+    var fixture = OrganizationOperatorFixture.auth0();
+    fixture.useReviewHelperClaims();
+    byte[] bearer = fixture.requesterToken(fixture.requesterSubject(), Set.of("operations.register"));
+    var registration = (com.fasterxml.jackson.databind.node.ObjectNode)
+        OrganizationOperatorProtocol.JSON.readTree(fixture.registrationBytes("body-shape"));
+    for (String body : new String[] {"line\nnext", "line\rnext", "escape\u001b[31m"}) {
+      registration.put("body", body);
+      byte[] frames = OrganizationOperatorFixture.frames(fixture.configBytes(), bearer,
+          registration.toString().getBytes(StandardCharsets.UTF_8));
+      assertThatThrownBy(() -> OrganizationOperatorProtocol.read(new ByteArrayInputStream(frames), "register"))
+          .isInstanceOf(OrganizationFailure.class).hasMessage("INPUT_INVALID");
+    }
+    String unicode = "Unicode data: π 😀\u2028A second line.";
+    registration.put("body", unicode);
+    byte[] frames = OrganizationOperatorFixture.frames(fixture.configBytes(), bearer,
+        registration.toString().getBytes(StandardCharsets.UTF_8));
+    try (var input = OrganizationOperatorProtocol.read(new ByteArrayInputStream(frames), "register")) {
+      assertThat(OrganizationOperatorProtocol.JSON.readTree(input.registration()).path("body").textValue())
+          .isEqualTo(unicode);
+    }
+  }
+
+  @Test
   void closedConfigurationRejectsEngineBoundsAndTargetOrRosterSubstitution() {
     var fixture = new OrganizationOperatorFixture();
     assertConfigInvalid(fixture.configuration.deepCopy().put("unexpected", true));

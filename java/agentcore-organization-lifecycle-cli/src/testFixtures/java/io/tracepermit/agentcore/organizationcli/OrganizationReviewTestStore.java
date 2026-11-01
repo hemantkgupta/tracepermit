@@ -89,7 +89,7 @@ public final class OrganizationReviewTestStore implements AutoCloseable {
   }
 
   public String pending(String requestKey) {
-    return pending(requestKey, "No live provider. Unicode data: π 😀\nA second line.");
+    return pending(requestKey, "No live provider. Unicode data: π 😀\u2028A second line.");
   }
 
   public String pending(String requestKey, String body) {
@@ -101,10 +101,10 @@ public final class OrganizationReviewTestStore implements AutoCloseable {
     registration.put("body", body);
     var registered = worker("register", fixture.requesterToken(fixture.requesterSubject(),
         Set.of("operations.register")), registration.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
-    require("CREATED".equals(registered.outcome()));
+    requireOutcome(registered, "CREATED", "REGISTER");
     String id = registered.operationId();
-    require("EVALUATED".equals(worker("evaluate", fixture.requesterToken(fixture.requesterSubject(),
-        Set.of("operations.evaluate")), fixture.commandBytes(id, "evaluate", null)).outcome()));
+    requireOutcome(worker("evaluate", fixture.requesterToken(fixture.requesterSubject(),
+        Set.of("operations.evaluate")), fixture.commandBytes(id, "evaluate", null)), "EVALUATED", "EVALUATE");
     return id;
   }
 
@@ -166,6 +166,12 @@ public final class OrganizationReviewTestStore implements AutoCloseable {
     try (var connection = source.getConnection();var statement = connection.createStatement()) {
       statement.setQueryTimeout(5);statement.execute(sql);
     } catch (SQLException failure) { throw new AssertionError("SYNTHETIC_REVIEW_ADMIN_FAILED"); }
+  }
+  private static void requireOutcome(OrganizationOperatorReceipt receipt, String expected, String phase) {
+    // Closed receipt outcomes only: never emit request bodies, identities, tokens or JDBC errors.
+    if (!expected.equals(receipt.outcome())) {
+      throw new AssertionError("SYNTHETIC_REVIEW_" + phase + "_EXPECTED_" + expected + "_GOT_" + receipt.outcome());
+    }
   }
   private static void require(boolean value) { if (!value) throw new AssertionError("SYNTHETIC_REVIEW_FIXTURE_INVALID"); }
   @Override public synchronized void close() {
