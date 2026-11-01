@@ -16,6 +16,16 @@ classification fix now precedes runtime/JDBC work; existing UNKNOWN handling
 for storage and commit uncertainty is retained. The unchanged negative test
 still requires REJECTED and zero database connections. Full focused, MariaDB,
 repository and coverage gates on the corrected candidate remain UNRUN.
+The next human focused run at 87522f52 passed the organization selections but
+stopped at the installed-helper post-launch byte manifest (26 helper cases,
+one failure and one fail-fast skip). The helper returned CONFIG_VALID first.
+Gradle's relative coverage file option was inherited after changing the child
+working directory to the copied installation. The test now anchors that same
+coverage destination to the parent test working directory, retains append/file
+coverage, and still requires unchanged original/copied installation manifests.
+A new test checks relative and absolute destination handling without changing
+other agent options. This harness repair is implemented; all validation on the
+new candidate is pending. Both failed receipts remain preserved.
 No live token, setting,
 provider, EKS/AWS, CI, publication or worker action ran. See
 [ADR0104](docs/architecture/0104-explicit-auth0-pkce-operation-review.md) and the
