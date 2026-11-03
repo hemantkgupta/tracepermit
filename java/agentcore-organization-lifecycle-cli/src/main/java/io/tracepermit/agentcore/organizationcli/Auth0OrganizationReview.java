@@ -124,10 +124,13 @@ public final class Auth0OrganizationReview {
         return failure("REJECTED");
       } catch (BusinessOperationStorageException failure) {
         return failure(switch (failure.code()) {
+          // Schema validation also collapses connection/transport failure into this
+          // code. A submitted review cannot treat that ambiguous observation as a
+          // known readiness result. Preserve UNKNOWN and the consumed attempt.
           case OPERATION_COMMIT_UNKNOWN, OPERATION_STORAGE_UNAVAILABLE,
-              OPERATION_DELIVERY_RESULT_UNKNOWN -> "UNKNOWN";
-          case OPERATION_SCHEMA_NOT_READY, OPERATION_AUTHORITY_NOT_READY,
-              OPERATION_DATABASE_UNSUPPORTED, OPERATION_WRITER_REQUIRED -> "NOT_READY";
+              OPERATION_DELIVERY_RESULT_UNKNOWN, OPERATION_SCHEMA_NOT_READY -> "UNKNOWN";
+          case OPERATION_AUTHORITY_NOT_READY, OPERATION_DATABASE_UNSUPPORTED,
+              OPERATION_WRITER_REQUIRED -> "NOT_READY";
           default -> "REJECTED";
         });
       } catch (RuntimeException failure) { return failure("UNKNOWN"); }

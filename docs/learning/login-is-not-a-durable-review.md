@@ -17,3 +17,8 @@ automatic retry would be unsafe. Even an acknowledged approval is not execution:
 a separate requester, original permit and controlled delivery path are required.
 The new helper contains no signer or target port. All new qualification remains
 pending until its human-run receipts are reviewed.
+
+A schema-validation error can also represent an unreachable database. After
+submitting the new helper's review, this ambiguous observation stays UNKNOWN;
+it does not prove a schema defect or grant another attempt. The same prepared
+plan refuses resubmission even with a fresh valid reviewer token.

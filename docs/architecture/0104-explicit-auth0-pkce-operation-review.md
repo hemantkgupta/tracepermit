@@ -53,6 +53,12 @@ expiry and membership/identity deadlines. A changed snapshot is not refreshed
 or silently accepted. There is one attempt per prepared plan. Commit, storage
 or command uncertainty remains UNKNOWN with automaticRetryAllowed false.
 Readback/reconciliation is separate; there is no automatic resend.
+In this new review facade, schema-validation refusal is also UNKNOWN: the
+existing validator uses the same error for connection loss and schema mismatch,
+so it cannot establish a known backend readiness outcome after submission.
+The prepared attempt remains consumed. Deterministic authority quarantine,
+unsupported-engine and writer-required results retain NOT_READY. The original
+organization command's result mapping is unchanged.
 
 This new command has a 240-second total budget with six seconds reserved,
 5-second input, 1-second terminal availability, existing 120-second login,

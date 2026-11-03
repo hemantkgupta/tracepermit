@@ -13,6 +13,11 @@ is allowed. The 240-second command total does not extend old login/operator
 budgets. See [ADR0104](../architecture/0104-explicit-auth0-pkce-operation-review.md).
 New tests, repository gates and installed/live qualification remain pending.
 
+For this review handoff only, schema-validation failure after submission is
+UNKNOWN because validation also collapses connection failure into that code.
+The attempt remains spent and automaticRetryAllowed remains false; no existing
+organization-command mapping, SQL, deadline or grant is changed.
+
 ## Explicit Auth0 organization selection — validation pending
 
 The installed organization config accepts optional `identityProfile`, defaulting

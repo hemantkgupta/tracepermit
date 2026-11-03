@@ -151,7 +151,11 @@ final class MariaDb114OperationReviewSessionTest {
     };
     var result = run(input, answer, new StringWriter(), c -> {});
     assertThat(result.exit()).isEqualTo(1);assertThat(text(result)).contains("UNKNOWN", "\"automaticRetryAllowed\":false");
-    assertThat(input.plan.review(store.fixture.reviewerToken(store.fixture.reviewerSubject())).exitCode()).isEqualTo(1);
+    var refusedRetry = input.plan.review(store.fixture.reviewerToken(store.fixture.reviewerSubject()));
+    assertThat(refusedRetry.exitCode()).isEqualTo(1);
+    assertThat(new String(refusedRetry.bytes(), StandardCharsets.UTF_8))
+        .contains("\"outcome\":\"REJECTED\"", "\"automaticRetryAllowed\":false")
+        .doesNotContain("REVIEW_APPROVED", "REVIEW_DENIED");
     assertThat(exchanges).hasValue(1);
   }
 

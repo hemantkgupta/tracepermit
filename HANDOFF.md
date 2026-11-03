@@ -36,6 +36,19 @@ return and escape-control rejection. Closed setup outcome diagnostics were added
 without logging bodies, identities or credentials. This test-only correction is
 implemented; focused, MariaDB and repository qualification on the new tree is
 pending. The passed old-tree focused receipt and failed MariaDB receipt remain.
+The corrected c3d0299d candidate passed human focused qualification: 225 cases,
+zero failures/errors/skips, 56 tasks executed. Its MariaDB run JWpdfm then
+reached review and stopped on the unchanged unavailable-storage regression:
+the helper returned NOT_READY instead of UNKNOWN after the fixture database
+was stopped. Retained XML records 11 cases: eight passed, one failed and two
+skipped; the console reports ten completed/one skipped. Neither report is a
+completed matrix. The new review facade now conservatively maps ambiguous
+schema-validation failure (which includes connection failure) to UNKNOWN.
+The test retains its original UNKNOWN/no-retry assertion and adds explicit
+REJECTED/automaticRetryAllowed:false checks for the spent-plan retry. Other
+readiness mappings, old operator behavior, SQL, grants and bounds are unchanged.
+This correction is implemented; current-tree focused, MariaDB and repository
+qualification are pending. Prior pass/failure/skip receipts remain intact.
 No live token, setting,
 provider, EKS/AWS, CI, publication or worker action ran. See
 [ADR0104](docs/architecture/0104-explicit-auth0-pkce-operation-review.md) and the
