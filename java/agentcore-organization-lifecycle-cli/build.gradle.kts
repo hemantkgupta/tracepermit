@@ -38,7 +38,7 @@ dependencies {
   testFixturesImplementation(project(":contracts"))
   testFixturesImplementation(project(":identity"))
   testFixturesImplementation(project(":agentcore-registration-cli"))
-  testFixturesImplementation(platform("com.fasterxml.jackson:jackson-bom:2.18.3"))
+  testFixturesImplementation(platform("com.fasterxml.jackson:jackson-bom:2.22.4"))
   testFixturesImplementation("com.fasterxml.jackson.core:jackson-databind")
   testFixturesImplementation(project(":persistence-identity"))
   testFixturesImplementation(project(":persistence-operations"))
