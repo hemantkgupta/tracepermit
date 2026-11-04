@@ -65,7 +65,7 @@ jobs:
           distribution: temurin
           java-version: 21
       - name: Restore and refresh job-scoped Gradle state
-        uses: gradle/actions/setup-gradle@4c125117fe7c5aed11272ec4213f602f012f89f2
+        uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c
         with:
           cache-read-only: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
       - name: Verify the React console
@@ -110,7 +110,7 @@ jobs:
           distribution: temurin
           java-version: 21
       - name: Restore and refresh job-scoped Gradle state
-        uses: gradle/actions/setup-gradle@4c125117fe7c5aed11272ec4213f602f012f89f2
+        uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c
         with:
           cache-read-only: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
       - name: Qualify fresh database state
@@ -158,7 +158,7 @@ jobs:
           distribution: temurin
           java-version: 21
       - name: Restore and refresh job-scoped Gradle state
-        uses: gradle/actions/setup-gradle@4c125117fe7c5aed11272ec4213f602f012f89f2
+        uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c
         with:
           cache-read-only: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
       - name: Qualify operation transactions on the selected engine
@@ -209,7 +209,7 @@ jobs:
           distribution: temurin
           java-version: 21
       - name: Restore and refresh job-scoped Gradle state
-        uses: gradle/actions/setup-gradle@4c125117fe7c5aed11272ec4213f602f012f89f2
+        uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c
         with:
           cache-read-only: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
       - name: Download coverage from this workflow run
@@ -247,7 +247,7 @@ jobs:
           distribution: temurin
           java-version: 21
       - name: Restore and refresh job-scoped Gradle state
-        uses: gradle/actions/setup-gradle@4c125117fe7c5aed11272ec4213f602f012f89f2
+        uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c
         with:
           cache-read-only: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
       - name: Verify source-free simulator approval distribution
@@ -292,7 +292,7 @@ jobs:
           distribution: temurin
           java-version: 21
       - name: Restore and refresh job-scoped Gradle state
-        uses: gradle/actions/setup-gradle@4c125117fe7c5aed11272ec4213f602f012f89f2
+        uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c
         with:
           cache-read-only: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
       - name: Verify deterministic presenter qualification (Gate C)
@@ -362,7 +362,7 @@ jobs:
           distribution: temurin
           java-version: 21
       - name: Restore and refresh job-scoped Gradle state
-        uses: gradle/actions/setup-gradle@4c125117fe7c5aed11272ec4213f602f012f89f2
+        uses: gradle/actions/setup-gradle@0723195856401067f7a2779048b490ace7a47d7c
         with:
           cache-read-only: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
       - name: Explicitly prepare the pinned Playwright Chromium
