@@ -42,11 +42,11 @@ dependencies {
   testFixturesImplementation("com.fasterxml.jackson.core:jackson-databind")
   testFixturesImplementation(project(":persistence-identity"))
   testFixturesImplementation(project(":persistence-operations"))
-  testFixturesImplementation(platform("org.testcontainers:testcontainers-bom:1.21.4"))
+  testFixturesImplementation(platform("org.testcontainers:testcontainers-bom:2.0.5"))
   testFixturesImplementation("org.testcontainers:mariadb")
 
   testImplementation(project(":persistence-identity"))
-  testImplementation(platform("org.testcontainers:testcontainers-bom:1.21.4"))
+  testImplementation(platform("org.testcontainers:testcontainers-bom:2.0.5"))
   testImplementation("org.testcontainers:postgresql")
   testImplementation("org.testcontainers:mariadb")
   testRuntimeOnly("org.slf4j:slf4j-nop:1.7.36")
