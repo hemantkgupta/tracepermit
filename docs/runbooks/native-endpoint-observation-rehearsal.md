@@ -1,7 +1,9 @@
 # Native endpoint process-observation rehearsal
 
-Scope: Java development stdio connector and local simulators. This runbook
-prepares a new proof; it is **not evidence that this native rehearsal passed**.
+Scope: Java development stdio connector and local simulators. This procedure
+is not itself evidence of a pass. The
+[2026-10-16 positive capture record](../demo-scenarios/evidence/native-endpoint-observation-2026-10-16.md)
+retains one successful named native bounded read; negative paths remain separate.
 The earlier [model allow/block record](../demo-scenarios/evidence/codex-native-endpoint-2026-10-15.md)
 is unchanged. Requirements: FR-016/017; SEC-003/012/014; OPS-004.
 
@@ -13,6 +15,12 @@ retains separate suite/counter results; it does not complete the native gate.
 Use the active checkout and Java 21. Run one Gradle task per checkout. Stop only
 your own previous fixture/client when changing profiles; do not kill unrelated
 listeners, copy signing keys or weaken an observer/expiry check.
+
+If another task is changing the shared checkout, use an isolated clean worktree
+pinned to the revision being qualified. Start both launchers there and generate
+fresh keys/session state; never copy them from the other checkout. The launcher
+must continue to reject `BACKEND_BUILD_MISMATCH`. Build caches may be reused;
+source/runtime provenance must still refer to the pinned revision.
 
 In one terminal, start `pnpm demo` from the revision being qualified and leave
 it running. This builds the Java connector and creates a fresh ephemeral enrolled
@@ -69,15 +77,22 @@ gateway canonical-action hash.
 
 ## 3. One bounded read, then stop
 
-Use only the connector runbook's **Prompt A**, unchanged: one `/app/staging`
+Use only the connector runbook's **Prompt A** operation: one `/app/staging`
 `ERROR` read with limit 2 through `tracepermit_endpoint`. Do not request a batch,
 automatic retry, token refresh or a destructive real operation.
+Select by exact server namespace and fully qualified tool name, not by a broad
+`tracepermit` substring or description search across other installed servers.
+On ambiguity, report only candidate names and stop without invoking a tool.
 
 Correlate the new capture's request hash/time and actual process facts with the
 MCP `allow / BOUNDED_LOG_READ / executed / simulated` result and one fresh Java
 action-feed event. If the result omits an event/trace ID, do not invent it; use
 the independently read server projection as in the prior evidence record.
 Capture alone proves neither gateway verification nor a simulator dispatch.
+The current public action projection omits the request/executable hashes. Record
+the temporal/single-call correlation honestly; do not claim independent server
+hash agreement. The binding covers full MCP method/params, including any client
+metadata, not just the visible tool arguments.
 The normal console is read-only and does not expose this private capture file.
 
 If any step fails, stop and retain only its safe code. An empty/partial file or
@@ -116,7 +131,8 @@ requests have no policy event; the unchanged ledger is not an audit stream for
 those pre-policy rejections. Keep native observation, HTTP verifier tests,
 model-selection evidence and measured invocation counters separately labeled.
 
-Gate B still needs the fresh native capture/result correlation and any remaining
-native negative-path rehearsal. Protected key custody/enrollment, platform code
+The dated positive record supplies fresh native capture/result correlation for
+one read. Gate B still needs the remaining native negative-path rehearsal and
+separately measured invocation evidence where required. Protected key custody/enrollment, platform code
 signatures, production replay state and target/host egress isolation remain out
 of scope. See [ADR 0038](../architecture/0038-private-endpoint-observation-capture.md).

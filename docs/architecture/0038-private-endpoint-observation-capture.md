@@ -1,6 +1,6 @@
 # ADR 0038 — Opt-in private endpoint observation capture
 
-- Status: proposed; implemented for local review
+- Status: accepted; implemented for the development profile
 - Date: 2026-10-16
 - Requirements: FR-016/017; SEC-003/012/014; OPS-004
 
@@ -63,8 +63,10 @@ The per-process bounds are not a global storage quota across client restarts.
 Automated HTTP tests exercise missing proof, changed request, different valid
 credential and replay against an otherwise allowed simulated read, asserting no
 additional dispatch. Their synthetic observation is not native-client or
-model-driven attack evidence. Gate B stays partial until fresh native records
-and the remaining independently scoped rehearsal evidence are retained.
+model-driven attack evidence. The
+[2026-10-16 positive record](../demo-scenarios/evidence/native-endpoint-observation-2026-10-16.md)
+retains fresh native process facts with one model read and a matching server
+event. Remaining negative-path/counter qualification keeps Gate B partial.
 
 ## Verification
 

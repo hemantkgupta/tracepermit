@@ -1,0 +1,133 @@
+{
+  "schemaVersion": "1.0",
+  "evidenceKind": "operator-prompted-native-endpoint-positive",
+  "qualifiedCommit": "84b559d2bf80e7e97bf56d191cf6a0118695f992",
+  "scope": "Named local simulator profile; positive capture/result correlation only; Gate B remains partial",
+  "client": {
+    "name": "Codex CLI",
+    "version": "0.162.1",
+    "model": "gpt-5.6-sol",
+    "platform": "macos",
+    "javaVersion": "21.0.12.1"
+  },
+  "request": {
+    "tool": "aws.logs.filter_log_events",
+    "server": "tracepermit_endpoint",
+    "arguments": {
+      "logGroupName": "/app/staging",
+      "filterPattern": "ERROR",
+      "limit": 2
+    },
+    "callStartedAt": "2026-10-16T06:27:13.762Z",
+    "completedAt": "2026-10-16T06:27:16.865Z"
+  },
+  "processObservation": {
+    "schemaVersion": "1.0",
+    "kind": "endpoint-process-observation",
+    "stage": "stability_checked_before_forward",
+    "requestBindingProfile": "tracepermit-mcp-method-params-v1",
+    "requestHash": "sha256:c39498c131534d776094a20de26388ac45940b1cf1c90dcdf0741024cc43c92f",
+    "sequence": 4,
+    "capturedAt": "2026-10-16T06:27:16.825676Z",
+    "platform": "macos",
+    "assurance": "development",
+    "terminalAttached": true,
+    "process": {
+      "processId": 96644,
+      "executableName": "codex",
+      "executableHash": "sha256:74c6a6d263f40d65f99c27a815275f5b4ed0bcc2baecc396b4cf3255498bdfc0",
+      "parentExecutableName": "bash",
+      "startedAt": "2026-10-16T06:26:33.240Z"
+    }
+  },
+  "processObservationChecks": {
+    "directoryMode": "0700",
+    "fileMode": "0600",
+    "installedClientHashMatched": true,
+    "nativeClientCwdMatchedPinnedCheckout": true,
+    "source": "Operator-reviewed selected local capture; not signed immutable evidence"
+  },
+  "mcpResult": {
+    "schemaVersion": "1.0",
+    "simulated": true,
+    "evaluation": {
+      "classification": {
+        "actionClass": "read",
+        "severity": "low",
+        "score": 10,
+        "operation": "aws.logs.filter_log_events",
+        "signals": ["READ_VERB"],
+        "semanticIntents": [],
+        "classifierKind": "deterministic",
+        "classifierVersion": "0.1.0"
+      },
+      "decision": {
+        "outcome": "allow",
+        "reasonCode": "BOUNDED_LOG_READ",
+        "policyId": "pol-aws-agentic-demo-001",
+        "policyVersion": 1,
+        "matchedRuleId": "allow-cloudwatch-read"
+      }
+    },
+    "execution": {
+      "status": "executed",
+      "result": {
+        "schemaVersion": "1.0",
+        "mode": "simulated",
+        "system": "aws",
+        "operation": "aws.logs.filter_log_events",
+        "logGroupName": "/app/staging",
+        "matchCount": 0,
+        "events": []
+      }
+    }
+  },
+  "actionFeed": {
+    "baseline": {
+      "total": 8,
+      "cliEvents": 0,
+      "seededEvents": 8
+    },
+    "after": {
+      "total": 9,
+      "cliEvents": 1
+    },
+    "newEvent": {
+      "eventId": "052bb2d6-b87d-4032-83cf-5baa67cd063b",
+      "observedAt": "2026-10-16T06:27:16.841120Z",
+      "traceId": "60fb46b4c712dfb2c6288e343e557979",
+      "origin": "cli",
+      "target": {
+        "system": "aws",
+        "environment": "staging",
+        "accountId": "simulated-123",
+        "resourceType": "cloudwatch-log-group",
+        "toolName": "aws.logs.filter_log_events"
+      },
+      "decision": {
+        "outcome": "allow",
+        "reasonCode": "BOUNDED_LOG_READ",
+        "policyId": "pol-aws-agentic-demo-001",
+        "policyVersion": 1,
+        "matchedRuleId": "allow-cloudwatch-read"
+      },
+      "executionStatus": "succeeded",
+      "simulated": true
+    }
+  },
+  "correlation": {
+    "basis": "One model-selected bounded read; process/time sequence and independently read new server event agree on the operation and outcome",
+    "serverProjectionContainsRequestHash": false,
+    "serverProjectionContainsExecutableHash": false,
+    "mcpResultContainsEventId": false,
+    "mcpResultContainsTraceId": false,
+    "independentLiveSimulatorInvocationCounterRetained": false
+  },
+  "limitations": [
+    "Native negative cases not exercised by this read",
+    "Action-feed delta is not an independent simulator invocation counter",
+    "Public action projection contains no requestHash or executableHash: cross-source correlation uses the single call, timing, tool, arguments and outcome, not independently matched server hashes",
+    "Request hash covers full MCP method/params, potentially including transport metadata; do not equate it with a hash reconstructed from visible tool arguments alone",
+    "Capture is an editable local diagnostic, not cryptographic protection against same-user compromise"
+  ]
+}

@@ -305,13 +305,19 @@ This is separate from bearer-only durable approvals. Full retained process facts
 manual proof-negative rehearsal, measured live dispatch counts, protected keys,
 managed enrollment and host-wide anti-bypass are not established by this pair.
 
-An optional `--capture-observations` launch now prepares a private, bounded Java
-process-fact/request-hash transcript for a future native rehearsal. It is off
+An optional `--capture-observations` launch supplies a private, bounded Java
+process-fact/request-hash transcript. It is off
 by default and records after stability checking but before gateway forwarding;
 it is not acceptance/execution proof. The four-case HTTP rejection test uses a
 synthetic observation and measures no extra dispatches. See the
-[capture runbook](../runbooks/native-endpoint-observation-rehearsal.md); no new
-native/model qualification is implied.
+[capture runbook](../runbooks/native-endpoint-observation-rehearsal.md).
+The [2026-10-16 native positive record](../demo-scenarios/evidence/native-endpoint-observation-2026-10-16.md)
+retains actual Codex executable/start-time/hash/terminal observations, one
+model-selected bounded simulated read and one new matching server event at
+`84b559d`. The server projection omits the local request/executable hashes;
+correlation is temporal and single-call, not independently cross-signed.
+Native negative-path qualification and measured live dispatch counts remain
+separate gaps. This does not qualify the concurrently developed policy changes.
 
 ### Authenticated approval API foundation
 
