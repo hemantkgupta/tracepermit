@@ -13,7 +13,7 @@ dependencies {
   testImplementation(project(":policy"))
   testImplementation(project(":security"))
   testImplementation(project(":simulator"))
-  testImplementation(platform("org.testcontainers:testcontainers-bom:1.21.4"))
+  testImplementation(platform("org.testcontainers:testcontainers-bom:2.0.5"))
   testImplementation("org.testcontainers:postgresql")
   testImplementation("org.postgresql:postgresql:42.7.14")
   testRuntimeOnly("org.slf4j:slf4j-nop:1.7.36")
