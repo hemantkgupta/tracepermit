@@ -1,5 +1,42 @@
 # Interface contracts
 
+## Explicit Auth0 PKCE durable review — validation pending
+
+A separate tracepermit-auth0-operation-review-v1 helper accepts only check-config
+or review, and exactly reviewer config / organization config / decision-intent
+frames plus EOF. Intent pins the UUID, snapshot hash, APPROVE or DENY and both
+profile fingerprints. No bearer, trusted-context flag, callback or execution
+option is accepted in that body. PKCE login precedes a private verified preview
+and exact controlling-terminal confirmation. The durable transaction rechecks
+the same expected snapshot under its existing locks; no implicit refresh or retry
+is allowed. The 240-second command total does not extend old login/operator
+budgets. See [ADR0104](../architecture/0104-explicit-auth0-pkce-operation-review.md).
+New tests, repository gates and installed/live qualification remain pending.
+
+For this review handoff only, schema-validation failure after submission is
+UNKNOWN because validation also collapses connection failure into that code.
+The attempt remains spent and automaticRetryAllowed remains false; no existing
+organization-command mapping, SQL, deadline or grant is changed.
+
+## Explicit Auth0 organization selection — validation pending
+
+The installed organization config accepts optional `identityProfile`, defaulting
+to the existing Okta profile. Explicit Auth0 uses namespaced `roleClaim` instead
+of Okta `groupClaim`/`roleGroup`, `at+jwt`, exact separate client/scope bindings
+and a 300-second maximum. The organization Auth0 registration factories are
+separate from the unchanged Okta factories. The organization database allowlist
+now includes exact MariaDB 11.4.13 via the existing loopback datasource. Private
+frame order, EOF, key custody, command/receipt schemas, timeouts and no-resend
+rules remain unchanged. See [ADR0103](../architecture/0103-explicit-auth0-organization-composition.md).
+All new qualification is pending; this interface adds no live provider or tool.
+
+The [Auth0 reviewer foundation](../architecture/0102-auth0-reviewer-pkce-foundation.md) adds a separate RFC 9068 role profile,
+exact enrolled operation-authority wrapper and identity-only local code/S256
+PKCE helper. Requirements FR-003/007/012; SEC-002/004/009/011/012/015;
+REL-001/004. Okta retains its own profile. All new tests and repository gates
+are UNRUN; callback registration, Action activation, actual tokens and installed
+org/ingress/executor integration remain pending. No review or target is invoked.
+
 **Status:** Current interfaces plus target extensions  
 **Applies to:** MCP, internal HTTP, control plane, and signed artifacts
 

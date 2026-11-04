@@ -1,5 +1,81 @@
 # TracePermit implementation handoff
 
+## Auth0 operation-review handoff — implemented; validation pending
+
+Local Mac owns codex/auth0-operation-review from the preserved validated
+organization checkpoint 9f6cb302. A separate launcher joins the existing PKCE
+helper to a narrow pending-operation preview and exact terminal decision. It
+retains no bearer outside private process memory, accepts no signing/delivery
+inputs, and uses the same durable review transaction with a pinned snapshot.
+The existing login remains identity-only, and Okta remains unchanged. Shared
+synthetic fixtures moved to test fixtures; new offline, installed-directory and
+MariaDB session/guard cases are written. The first human focused run at d17e2465
+stopped on a malformed-bearer classification mismatch: the organization facade
+reported four cases, two passed/one failed/one fail-fast skip. The input-only
+classification fix now precedes runtime/JDBC work; existing UNKNOWN handling
+for storage and commit uncertainty is retained. The unchanged negative test
+still requires REJECTED and zero database connections. Full focused, MariaDB,
+repository and coverage gates on the corrected candidate remain UNRUN.
+The next human focused run at 87522f52 passed the organization selections but
+stopped at the installed-helper post-launch byte manifest (26 helper cases,
+one failure and one fail-fast skip). The helper returned CONFIG_VALID first.
+Gradle's relative coverage file option was inherited after changing the child
+working directory to the copied installation. The test now anchors that same
+coverage destination to the parent test working directory, retains append/file
+coverage, and still requires unchanged original/copied installation manifests.
+A new test checks relative and absolute destination handling without changing
+other agent options. This harness repair is implemented; all validation on the
+new candidate is pending. Both failed receipts remain preserved.
+The repaired 9b8ff752 candidate then passed the human focused gate: 224 cases,
+zero failures/errors/skips, all 56 tasks executed. Its MariaDB gate stopped in
+fixture setup before review: the default registration body contained a newline
+that the unchanged installed protocol rejects (one failure, one fail-fast skip).
+The fixture now uses a permitted Unicode line separator, with explicit terminal
+ASCII-escape assertions; an offline protocol regression retains newline, carriage
+return and escape-control rejection. Closed setup outcome diagnostics were added
+without logging bodies, identities or credentials. This test-only correction is
+implemented; focused, MariaDB and repository qualification on the new tree is
+pending. The passed old-tree focused receipt and failed MariaDB receipt remain.
+The corrected c3d0299d candidate passed human focused qualification: 225 cases,
+zero failures/errors/skips, 56 tasks executed. Its MariaDB run JWpdfm then
+reached review and stopped on the unchanged unavailable-storage regression:
+the helper returned NOT_READY instead of UNKNOWN after the fixture database
+was stopped. Retained XML records 11 cases: eight passed, one failed and two
+skipped; the console reports ten completed/one skipped. Neither report is a
+completed matrix. The new review facade now conservatively maps ambiguous
+schema-validation failure (which includes connection failure) to UNKNOWN.
+The test retains its original UNKNOWN/no-retry assertion and adds explicit
+REJECTED/automaticRetryAllowed:false checks for the spent-plan retry. Other
+readiness mappings, old operator behavior, SQL, grants and bounds are unchanged.
+This correction is implemented; current-tree focused, MariaDB and repository
+qualification are pending. Prior pass/failure/skip receipts remain intact.
+No live token, setting,
+provider, EKS/AWS, CI, publication or worker action ran. See
+[ADR0104](docs/architecture/0104-explicit-auth0-pkce-operation-review.md) and the
+[runbook](docs/runbooks/auth0-operation-review.md). Actual installed interactive
+review, pending-pin export, remote ingress and Air's live executor integration
+remain separate work; this is not an end-to-end demo completion claim.
+
+## Auth0 organization wiring — implemented; validation pending
+
+Separate Auth0 organization registration factories and explicit installed
+provider selection reuse the existing verified identity/enrollment/roster
+checks. Okta remains the default and its original factory remains Okta-only.
+The installed organization config additionally accepts MariaDB 11.4.13 through
+the existing exact-version loopback datasource. New signed-token, zero-effect
+and installed MariaDB cases are UNRUN; repository and coverage gates are UNRUN.
+No token, provider setting, AWS/EKS deployment, live GitHub or worker action ran.
+See [ADR0103](docs/architecture/0103-explicit-auth0-organization-composition.md)
+and the [runbook](docs/runbooks/auth0-organization-composition.md). Air's live
+executor remains a separate integration dependency; this target stays synthetic.
+
+The [Auth0 reviewer foundation](docs/architecture/0102-auth0-reviewer-pkce-foundation.md) adds a separate RFC 9068 role profile,
+exact enrolled operation-authority wrapper and identity-only local code/S256
+PKCE helper. Requirements FR-003/007/012; SEC-002/004/009/011/012/015;
+REL-001/004. Okta retains its own profile. All new tests and repository gates
+are UNRUN; callback registration, Action activation, actual tokens and installed
+org/ingress/executor integration remain pending. No review or target is invoked.
+
 ## PostgreSQL quarantine/admission tests — implemented; validation pending
 
 Local Mac owns `codex/postgres-quarantine-admission` from accepted PR148 main

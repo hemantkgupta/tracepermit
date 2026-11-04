@@ -22,39 +22,105 @@ import java.util.Set;
 import java.util.UUID;
 
 /** Runtime-generated cryptographic fixture with deterministic non-secret organization pins. */
-final class OrganizationOperatorFixture {
-  static final String ISSUER = "https://synthetic.okta.invalid/oauth2/org-operator";
-  static final String AUDIENCE = "https://tracepermit.synthetic.invalid/org-operator";
-  static final String EXTERNAL_TENANT = "synthetic-org";
-  static final String TENANT = "tenant:synthetic-org";
-  static final String WORKSPACE = "github-org-sandbox";
-  static final String REQUESTER_CLIENT = "tracepermit-org-requester";
-  static final String REVIEWER_CLIENT = "tracepermit-org-reviewer";
-  static final String REQUESTER_SUBJECT = "00u-synthetic-requester";
-  static final String REVIEWER_SUBJECT = "00u-synthetic-reviewer";
-  static final String REQUESTER_GROUP = "org-sandbox-requesters";
-  static final String REVIEWER_GROUP = "org-sandbox-reviewers";
-  static final String REQUESTER_PRINCIPAL = "principal:synthetic-requester-owner";
-  static final String HASH = "sha256:" + "a".repeat(64);
+public final class OrganizationOperatorFixture {
+  public static final String ISSUER = "https://synthetic.okta.invalid/oauth2/org-operator";
+  public static final String AUDIENCE = "https://tracepermit.synthetic.invalid/org-operator";
+  public static final String EXTERNAL_TENANT = "synthetic-org";
+  public static final String TENANT = "tenant:synthetic-org";
+  public static final String WORKSPACE = "github-org-sandbox";
+  public static final String REQUESTER_CLIENT = "tracepermit-org-requester";
+  public static final String REVIEWER_CLIENT = "tracepermit-org-reviewer";
+  public static final String REQUESTER_SUBJECT = "00u-synthetic-requester";
+  public static final String REVIEWER_SUBJECT = "00u-synthetic-reviewer";
+  public static final String REQUESTER_GROUP = "org-sandbox-requesters";
+  public static final String REVIEWER_GROUP = "org-sandbox-reviewers";
+  public static final String REQUESTER_PRINCIPAL = "principal:synthetic-requester-owner";
+  public static final String HASH = "sha256:" + "a".repeat(64);
 
-  final KeyPair requesterKey = rsa();
-  final KeyPair reviewerKey = rsa();
-  final KeyPair permitKey = ed25519();
-  final ObjectNode configuration;
+  public final KeyPair requesterKey = rsa();
+  public final KeyPair reviewerKey = rsa();
+  public final KeyPair permitKey = ed25519();
+  public final ObjectNode configuration;
+  private final boolean auth0;
+  public static final String AUTH0_ISSUER = "https://synthetic.au.auth0.com/";
+  public static final String AUTH0_REVIEWER = "auth0|synthetic-reviewer";
+  public static final String ROLE_CLAIM = "https://tracepermit.example.invalid/claims/roles";
+  public static final String TENANT_CLAIM = "https://tracepermit.example.invalid/claims/tenant_id";
 
-  OrganizationOperatorFixture() {
+  public OrganizationOperatorFixture() {
     this(REVIEWER_SUBJECT);
   }
 
-  OrganizationOperatorFixture(String reviewerSubject) {
+  public OrganizationOperatorFixture(String reviewerSubject) {
+    this(reviewerSubject, false);
+  }
+
+  private OrganizationOperatorFixture(String reviewerSubject, boolean auth0) {
+    this.auth0 = auth0;
     configuration = configuration(reviewerSubject);
   }
 
-  byte[] configBytes() {
+  public static OrganizationOperatorFixture auth0() {
+    return new OrganizationOperatorFixture(AUTH0_REVIEWER, true);
+  }
+
+  public String issuer() {
+    return auth0 ? AUTH0_ISSUER : ISSUER;
+  }
+
+  public String requesterSubject() {
+    return auth0 ? REQUESTER_CLIENT + "@clients" : REQUESTER_SUBJECT;
+  }
+
+  public String reviewerSubject() {
+    return auth0 ? AUTH0_REVIEWER : REVIEWER_SUBJECT;
+  }
+
+  public byte[] requesterTokenWithClaims(java.util.function.Consumer<ObjectNode> mutation) {
+    return token(requesterKey, "requester-key", REQUESTER_CLIENT, requesterSubject(),
+        REQUESTER_GROUP, Set.of("operations.execute"), Duration.ofMinutes(5), mutation)
+        .getBytes(StandardCharsets.US_ASCII);
+  }
+
+  public byte[] reviewerTokenWithClaims(java.util.function.Consumer<ObjectNode> mutation) {
+    return token(reviewerKey, "reviewer-key", REVIEWER_CLIENT, reviewerSubject(),
+        REVIEWER_GROUP, Set.of("operations.decide"), Duration.ofMinutes(5), mutation)
+        .getBytes(StandardCharsets.US_ASCII);
+  }
+
+  /** Same synthetic profile with the fixed PKCE helper's exact claim names and tenant mapping. */
+  public void useReviewHelperClaims() {
+    for (String name : List.of("requesterProvider", "reviewerProvider")) {
+      ((ObjectNode)configuration.path(name))
+          .put("tenantClaim", "https://tracepermit.org/claims/tenant_id")
+          .put("roleClaim", "https://tracepermit.org/claims/roles")
+          .put("tenantValue", TENANT);
+    }
+  }
+
+  public ObjectNode reviewerConfiguration() {
+    return OrganizationOperatorProtocol.JSON.createObjectNode()
+        .put("schemaVersion", "1.0").put("issuer", issuer()).put("audience", AUDIENCE)
+        .put("clientId", REVIEWER_CLIENT).put("expectedSubject", reviewerSubject())
+        .put("tenant", TENANT).put("keyId", "reviewer-key")
+        .put("publicKeySpki", Base64.getEncoder().encodeToString(reviewerKey.getPublic().getEncoded()))
+        .put("callbackUri", "http://127.0.0.1:41839/reviewer/callback");
+  }
+
+  public ObjectNode reviewCommand(String operationId, String hash, String decision) {
+    var parsed = OrganizationOperatorConfig.parse(configuration);
+    return OrganizationOperatorProtocol.JSON.createObjectNode()
+        .put("schemaVersion", "1.0").put("profile", Auth0OrganizationReview.PROFILE)
+        .put("operationId", operationId).put("expectedSnapshotHash", hash).put("decision", decision)
+        .put("authorityProfileFingerprint", parsed.authorityProfile().fingerprint())
+        .put("expectedProfileFingerprint", parsed.expectedProfile().fingerprint());
+  }
+
+  public byte[] configBytes() {
     return configuration.toString().getBytes(StandardCharsets.UTF_8);
   }
 
-  byte[] registrationBytes(String key) {
+  public byte[] registrationBytes(String key) {
     return OrganizationOperatorProtocol.JSON
         .createObjectNode()
         .put("schemaVersion", "1.0")
@@ -65,7 +131,7 @@ final class OrganizationOperatorFixture {
         .getBytes(StandardCharsets.UTF_8);
   }
 
-  byte[] commandBytes(String operationId, String command, String value) {
+  public byte[] commandBytes(String operationId, String command, String value) {
     ObjectNode frame =
         OrganizationOperatorProtocol.JSON
             .createObjectNode()
@@ -77,7 +143,7 @@ final class OrganizationOperatorFixture {
     return frame.toString().getBytes(StandardCharsets.UTF_8);
   }
 
-  byte[] requesterToken(String subject, Set<String> scopes) {
+  public byte[] requesterToken(String subject, Set<String> scopes) {
     return token(
             requesterKey,
             "requester-key",
@@ -89,7 +155,7 @@ final class OrganizationOperatorFixture {
         .getBytes(StandardCharsets.US_ASCII);
   }
 
-  byte[] reviewerToken(String subject) {
+  public byte[] reviewerToken(String subject) {
     return token(
             reviewerKey,
             "reviewer-key",
@@ -101,11 +167,11 @@ final class OrganizationOperatorFixture {
         .getBytes(StandardCharsets.US_ASCII);
   }
 
-  byte[] privateKey() {
+  public byte[] privateKey() {
     return permitKey.getPrivate().getEncoded();
   }
 
-  static byte[] frames(byte[]... values) {
+  public static byte[] frames(byte[]... values) {
     try {
       var bytes = new ByteArrayOutputStream();
       var output = new DataOutputStream(bytes);
@@ -176,7 +242,7 @@ final class OrganizationOperatorFixture {
         new OktaOperationReviewerRoster(
             List.of(
                 new OktaOperationReviewerRoster.Entry(
-                    ISSUER + "#" + reviewerSubject,
+                    issuer() + "#" + reviewerSubject,
                     REVIEWER_CLIENT,
                     TENANT,
                     WORKSPACE,
@@ -187,6 +253,7 @@ final class OrganizationOperatorFixture {
 
     ObjectNode root = OrganizationOperatorProtocol.JSON.createObjectNode();
     root.put("schemaVersion", "1.0").put("profile", OrganizationOperatorProtocol.PROFILE);
+    if (auth0) root.put("identityProfile", io.tracepermit.identity.OidcTokenProfile.AUTH0);
     database(root.putObject("replay"), 54_321, "tp_org_replay", "replay-secret");
     database(root.putObject("operations"), 54_322, "tp_org_operations", "operation-secret");
     root.put("replayCapacity", 64).put("replayDmlMillis", 2_000);
@@ -246,8 +313,8 @@ final class OrganizationOperatorFixture {
         REVIEWER_GROUP,
         List.of("operations.decide"));
     root.putObject("requesterEnrollment")
-        .put("issuer", ISSUER)
-        .put("verifiedSubjectId", ISSUER + "#" + REQUESTER_SUBJECT)
+        .put("issuer", issuer())
+        .put("verifiedSubjectId", issuer() + "#" + requesterSubject())
         .put("clientId", REQUESTER_CLIENT)
         .put("tenantId", TENANT)
         .put("workspaceId", WORKSPACE)
@@ -256,7 +323,7 @@ final class OrganizationOperatorFixture {
         .put("retentionSeconds", 3_600);
     root.putArray("reviewerMemberships")
         .addObject()
-        .put("verifiedSubjectId", ISSUER + "#" + reviewerSubject)
+        .put("verifiedSubjectId", issuer() + "#" + reviewerSubject)
         .put("clientId", REVIEWER_CLIENT)
         .put("tenantId", TENANT)
         .put("workspaceId", WORKSPACE)
@@ -276,7 +343,7 @@ final class OrganizationOperatorFixture {
         .put("password", password);
   }
 
-  private static void provider(
+  private void provider(
       ObjectNode provider,
       KeyPair key,
       String keyId,
@@ -284,24 +351,28 @@ final class OrganizationOperatorFixture {
       String roleGroup,
       List<String> scopes) {
     provider
-        .put("issuer", ISSUER)
+        .put("issuer", issuer())
         .put("audience", AUDIENCE)
         .put("keyId", keyId)
         .put("algorithm", "RS256")
-        .put("jwtType", "JWT")
+        .put("jwtType", auth0 ? "at+jwt" : "JWT")
         .put("publicKeySpki", Base64.getEncoder().encodeToString(key.getPublic().getEncoded()))
-        .put("tenantClaim", "tracepermit_tenant")
+        .put("tenantClaim", auth0 ? TENANT_CLAIM : "tracepermit_tenant")
         .put("tenantValue", EXTERNAL_TENANT)
         .put("tenantId", TENANT)
         .put("clientId", client)
-        .put("maximumTokenLifetimeSeconds", 900)
+        .put("maximumTokenLifetimeSeconds", auth0 ? 300 : 900)
         .put("keyCacheSeconds", 300)
         .put("refreshCooldownSeconds", 30)
-        .put("jwksUri", ISSUER + "/v1/keys")
+        .put("jwksUri", issuer() + (auth0 ? ".well-known/jwks.json" : "/v1/keys"))
         .put("metadataUri", AUDIENCE + "/.well-known/oauth-protected-resource")
         .put("origin", "CLI")
         .put("groupClaim", "groups")
         .put("roleGroup", roleGroup);
+    if (auth0) {
+      provider.remove(List.of("groupClaim", "roleGroup"));
+      provider.put("roleClaim", ROLE_CLAIM);
+    }
     scopes.forEach(value -> provider.withArray("supportedScopes").add(value));
   }
 
@@ -313,27 +384,44 @@ final class OrganizationOperatorFixture {
       String group,
       Set<String> scopes,
       Duration lifetime) {
+    return token(key, keyId, client, subject, group, scopes, lifetime, claims -> {});
+  }
+
+  private String token(KeyPair key, String keyId, String client, String subject, String group,
+      Set<String> scopes, Duration lifetime,
+      java.util.function.Consumer<ObjectNode> mutation) {
     try {
       Instant now = Instant.now();
       ObjectNode header =
           OrganizationOperatorProtocol.JSON
               .createObjectNode()
               .put("alg", "RS256")
-              .put("typ", "JWT")
+              .put("typ", auth0 ? "at+jwt" : "JWT")
               .put("kid", keyId);
       ObjectNode claims =
           OrganizationOperatorProtocol.JSON
               .createObjectNode()
-              .put("iss", ISSUER)
+              .put("iss", issuer())
               .put("aud", AUDIENCE)
               .put("sub", subject)
               .put("cid", client)
               .put("tracepermit_tenant", EXTERNAL_TENANT)
               .put("iat", now.minusSeconds(1).getEpochSecond())
-              .put("exp", now.plus(lifetime).getEpochSecond())
+              .put("exp", now.plus(lifetime).minusSeconds(auth0 ? 1 : 0).getEpochSecond())
               .put("jti", UUID.randomUUID().toString());
       scopes.stream().sorted().forEach(value -> claims.withArray("scp").add(value));
       claims.putArray("groups").add(group);
+      if (auth0) {
+        claims.remove(List.of("cid", "tracepermit_tenant", "scp", "groups"));
+        String providerName = client.equals(REQUESTER_CLIENT) ? "requesterProvider" : "reviewerProvider";
+        var configured = configuration.path(providerName);
+        claims.put("client_id", client).put(configured.path("tenantClaim").asText(),
+                configured.path("tenantValue").asText())
+            .put("scope", scopes.stream().sorted().collect(java.util.stream.Collectors.joining(" ")));
+        claims.putArray(configured.path("roleClaim").asText())
+            .add(client.equals(REQUESTER_CLIENT) ? "REQUESTER" : "REVIEWER");
+      }
+      mutation.accept(claims);
       Base64.Encoder encoder = Base64.getUrlEncoder().withoutPadding();
       String body =
           encoder.encodeToString(OrganizationOperatorProtocol.JSON.writeValueAsBytes(header))

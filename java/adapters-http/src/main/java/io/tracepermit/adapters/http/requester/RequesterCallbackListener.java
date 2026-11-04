@@ -40,6 +40,7 @@ final class RequesterCallbackListener {
 
   String await(String expectedState, String expectedIssuer, URI authorizationUri,
       BrowserOpener browser) {
+    long deadline = System.nanoTime() + flowTimeout.toNanos();
     try (ServerSocket listener = new ServerSocket()) {
       listener.setReuseAddress(false);
       try {
@@ -53,7 +54,7 @@ final class RequesterCallbackListener {
       try (Socket connection = listener.accept()) {
         connection.setSoTimeout(Math.toIntExact(connectionTimeout.toMillis()));
         try {
-          Map<String, String> parameters = parse(connection);
+          Map<String, String> parameters = parse(connection, deadline);
           if (!expectedState.equals(parameters.get("state"))
               || !expectedIssuer.equals(parameters.get("iss"))) {
             respond(connection, 400, "Sign-in rejected.");
@@ -77,9 +78,9 @@ final class RequesterCallbackListener {
     }
   }
 
-  private Map<String, String> parse(Socket connection) {
+  private Map<String, String> parse(Socket connection, long deadline) {
     try {
-      byte[] head = readHead(connection);
+      byte[] head = readHead(connection, deadline, connectionTimeout);
       String request = new String(head, StandardCharsets.US_ASCII);
       String[] lines = request.split("\\r\\n", -1);
       require(lines.length >= 3 && lines[lines.length - 1].isEmpty()
@@ -120,10 +121,14 @@ final class RequesterCallbackListener {
     }
   }
 
-  private static byte[] readHead(Socket connection) throws IOException {
+  private static byte[] readHead(Socket connection, long flowDeadline, Duration timeout) throws IOException {
+    long deadline = Math.min(flowDeadline, System.nanoTime() + timeout.toNanos());
     ByteArrayOutputStream output = new ByteArrayOutputStream();
     int state = 0;
     while (output.size() <= MAXIMUM_HEAD_BYTES) {
+      long remaining = deadline - System.nanoTime();
+      if (remaining <= 0) throw new SocketTimeoutException();
+      connection.setSoTimeout((int) Math.max(1, Math.min(5000, remaining / 1_000_000)));
       int value = connection.getInputStream().read();
       if (value < 0) break;
       require(value == '\r' || value == '\n' || value >= 0x20 && value <= 0x7e);

@@ -81,6 +81,11 @@ public record OidcProviderConfiguration(
     }
     Objects.requireNonNull(origin);
     maximumTokenLifetime = boundedPositive(maximumTokenLifetime, MAXIMUM_TOKEN_LIFETIME, "maximumTokenLifetime");
+    if (tokenProfile.isAuth0() && (!issuer.toString().endsWith("/")
+        || maximumTokenLifetime.compareTo(Duration.ofMinutes(5)) > 0
+        || clientNames.size() != 1 || clientNames.containsKey(resourceAudience))) {
+      throw new IllegalArgumentException("Invalid Auth0 provider binding.");
+    }
     jwksCacheLifetime = boundedPositive(jwksCacheLifetime, MAXIMUM_CACHE_LIFETIME, "jwksCacheLifetime");
     forcedRefreshCooldown = boundedPositive(forcedRefreshCooldown, jwksCacheLifetime, "forcedRefreshCooldown");
   }

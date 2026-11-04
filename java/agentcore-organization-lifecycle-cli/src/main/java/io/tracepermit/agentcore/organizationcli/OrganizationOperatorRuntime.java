@@ -2,8 +2,10 @@ package io.tracepermit.agentcore.organizationcli;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import io.tracepermit.adapters.remote.agentcore.AgentCoreRegistrationIngress;
+import io.tracepermit.adapters.remote.agentcore.Auth0OperationAuthorityException;
 import io.tracepermit.adapters.remote.agentcore.OktaOperationAuthority;
 import io.tracepermit.adapters.remote.agentcore.OktaOperationAuthorityException;
+import io.tracepermit.adapters.remote.agentcore.OperationIdentityAuthority;
 import io.tracepermit.agentcore.registration.DurableAgentCoreRegistration;
 import io.tracepermit.application.BusinessOperationEvaluation;
 import io.tracepermit.application.BusinessOperationExecution;
@@ -53,7 +55,7 @@ final class OrganizationOperatorRuntime {
   private final OrganizationOperatorConfig configuration;
   private final DataSource source;
   private final Clock clock;
-  private final OktaOperationAuthority identities;
+  private final OperationIdentityAuthority identities;
 
   OrganizationOperatorRuntime(OrganizationOperatorConfig configuration) {
     this.configuration = configuration;
@@ -79,7 +81,8 @@ final class OrganizationOperatorRuntime {
       return OrganizationOperatorReceipt.failure(command, "NOT_READY");
     } catch (BusinessOperationStorageException failure) {
       return OrganizationOperatorReceipt.failure(command, storageFailure(failure.code()));
-    } catch (BusinessOperationTransitionException | OktaOperationAuthorityException failure) {
+    } catch (BusinessOperationTransitionException | OktaOperationAuthorityException
+        | Auth0OperationAuthorityException failure) {
       return OrganizationOperatorReceipt.failure(command, "REJECTED");
     } catch (OrganizationFailure failure) {
       return OrganizationOperatorReceipt.failure(command, failure.code);
@@ -94,14 +97,15 @@ final class OrganizationOperatorRuntime {
     byte[] body = input.registration();
     try {
       var registration =
-          DurableAgentCoreRegistration.organization(
-              configuration.requesterVerifier(clock),
-              configuration.registrationEnrollment(),
-              clock,
-              configuration.replay().source(),
-              source,
-              configuration.replayCapacity(),
-              configuration.replayDmlBudget());
+          configuration.usesAuth0()
+              ? DurableAgentCoreRegistration.organizationAuth0(
+                  configuration.requesterVerifier(clock), configuration.registrationEnrollment(),
+                  clock, configuration.replay().source(), source, configuration.replayCapacity(),
+                  configuration.replayDmlBudget())
+              : DurableAgentCoreRegistration.organization(
+                  configuration.requesterVerifier(clock), configuration.registrationEnrollment(),
+                  clock, configuration.replay().source(), source, configuration.replayCapacity(),
+                  configuration.replayDmlBudget());
       AgentCoreRegistrationIngress.Receipt receipt =
           registration.register(input.authorization(), null, body);
       return OrganizationOperatorReceipt.registration(receipt.created(), receipt.operationId());
@@ -135,23 +139,31 @@ final class OrganizationOperatorRuntime {
 
   private OrganizationOperatorReceipt review(
       String command, OrganizationOperatorProtocol.Input input) {
-    OktaOperationAuthority.ReviewAuthority authority =
-        identities.reviewer(input.authorization());
-    JsonNode current =
-        inspector().inspect(configuration.scope(), input.command().operationId()).operation();
-    var decision = BusinessOperationReview.Decision.valueOf(input.command().decision());
+    return reviewPinned(input.authorization(), input.command().operationId(),
+        input.command().decision(), null);
+  }
+
+  OrganizationOperatorReceipt reviewPinned(String authorization, String operationId,
+      String selectedDecision, String expectedSnapshotHash) {
+    OktaOperationAuthority.ReviewAuthority authority = identities.reviewer(authorization);
+    JsonNode current = inspector().inspect(configuration.scope(), operationId).operation();
+    if (expectedSnapshotHash != null
+        && !expectedSnapshotHash.equals(io.tracepermit.contracts.CanonicalJson.sha256(current))) {
+      throw new OrganizationFailure("REJECTED");
+    }
+    var decision = BusinessOperationReview.Decision.valueOf(selectedDecision);
     JsonNode result =
         reviews()
             .review(
                 new BusinessOperationReview(
                     configuration.scope(),
-                    input.command().operationId(),
+                    operationId,
                     PLANNER.observe(configuration.scope(), current),
                     authority.reviewer(),
                     decision),
                 authority.membership());
     return state(
-        command,
+        "review",
         decision == BusinessOperationReview.Decision.APPROVE
             ? "REVIEW_APPROVED"
             : "REVIEW_DENIED",

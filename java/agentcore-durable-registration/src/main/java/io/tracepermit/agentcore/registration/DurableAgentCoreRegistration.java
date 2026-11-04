@@ -47,6 +47,25 @@ public final class DurableAgentCoreRegistration {
       DataSource operationSource,
       long replayCapacity,
       Duration replayDmlBudget) {
+    return organization(verifier, enrollment, clock, replaySource, operationSource,
+        replayCapacity, replayDmlBudget, false);
+  }
+
+  /** Explicit Auth0 composition with the same validate-only stores and replay semantics. */
+  public static DurableAgentCoreRegistration organizationAuth0(
+      OidcAccessTokenVerifier verifier,
+      AgentCoreRegistrationIngress.OrganizationEnrollment enrollment,
+      Clock clock, DataSource replaySource, DataSource operationSource,
+      long replayCapacity, Duration replayDmlBudget) {
+    return organization(verifier, enrollment, clock, replaySource, operationSource,
+        replayCapacity, replayDmlBudget, true);
+  }
+
+  private static DurableAgentCoreRegistration organization(
+      OidcAccessTokenVerifier verifier,
+      AgentCoreRegistrationIngress.OrganizationEnrollment enrollment,
+      Clock clock, DataSource replaySource, DataSource operationSource,
+      long replayCapacity, Duration replayDmlBudget, boolean auth0) {
     try {
       Objects.requireNonNull(verifier);
       Objects.requireNonNull(enrollment);
@@ -57,8 +76,11 @@ public final class DurableAgentCoreRegistration {
       var operations =
           new JdbcBusinessOperationRepository(Objects.requireNonNull(operationSource));
       return new DurableAgentCoreRegistration(
-          AgentCoreRegistrationIngress.organization(
-              verifier, replay, operations, clock, enrollment));
+          auth0
+              ? AgentCoreRegistrationIngress.organizationAuth0(
+                  verifier, replay, operations, clock, enrollment)
+              : AgentCoreRegistrationIngress.organization(
+                  verifier, replay, operations, clock, enrollment));
     } catch (RuntimeException invalid) {
       throw new InitializationException();
     }
